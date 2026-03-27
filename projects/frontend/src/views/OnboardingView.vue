@@ -67,6 +67,8 @@ const PRODUCTS_QUERY = `
       energyConsumptionMwh
       unitName
       unitSymbol
+      isProOnly
+      isUnlockedForCurrentPlayer
       description
       recipes {
         quantity
@@ -645,6 +647,13 @@ function formatTimeRemaining(expiresAtUtc: string): string {
 
         <div class="form-group">
           <span class="form-section-title">{{ t('onboarding.selectProduct') }}</span>
+          <p class="catalog-note">
+            {{
+              auth.isProSubscriber
+                ? t('onboarding.proCatalogUnlocked')
+                : t('onboarding.proCatalogNote')
+            }}
+          </p>
           <div class="product-grid">
             <button
               v-for="prod in products"
@@ -1157,6 +1166,12 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-text);
+}
+
+.catalog-note {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
 }
 
 .form-group input {

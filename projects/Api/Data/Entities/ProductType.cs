@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Api.Data.Entities;
 
@@ -37,6 +38,10 @@ public sealed class ProductType
 
     /// <summary>Whether this product is available to Pro subscribers only.</summary>
     public bool IsProOnly { get; set; }
+
+    /// <summary>Whether the current GraphQL caller can use this product right now.</summary>
+    [NotMapped]
+    public bool IsUnlockedForCurrentPlayer { get; set; }
 
     /// <summary>Display name for the produced unit (e.g. Piece, Crate).</summary>
     [MaxLength(50)]

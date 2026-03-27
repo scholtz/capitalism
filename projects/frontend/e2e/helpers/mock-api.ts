@@ -165,6 +165,7 @@ export type MockProductType = {
   unitSymbol?: string
   imageUrl?: string | null
   isProOnly: boolean
+  isUnlockedForCurrentPlayer?: boolean
   description: string | null
   recipes: {
     resourceType?: { id: string; name: string; slug?: string; unitName?: string; unitSymbol?: string } | null
@@ -776,6 +777,39 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building not found' }] }) })
       }
 
+      const activePlayer = state.players.find((candidate) => candidate.id === state.currentUserId)
+      const hasActiveProSubscription = !!activePlayer?.proSubscriptionEndsAtUtc
+        && new Date(activePlayer.proSubscriptionEndsAtUtc).getTime() > Date.now()
+
+      for (const unit of input.units ?? []) {
+        if (!unit.productTypeId) {
+          continue
+        }
+
+        const product = state.productTypes.find((candidate) => candidate.id === unit.productTypeId)
+        const isRetainingExistingProduct = [
+          ...(building.units ?? []),
+          ...(building.pendingConfiguration?.units ?? []),
+        ].some((candidate) =>
+          candidate.gridX === unit.gridX
+          && candidate.gridY === unit.gridY
+          && (candidate.productTypeId ?? null) === unit.productTypeId,
+        )
+
+        if (product?.isProOnly && !hasActiveProSubscription && !isRetainingExistingProduct) {
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              errors: [{
+                message: `Pro subscription unlocks additional products to manufacture and sell. Activate Pro to use ${product.name}.`,
+                extensions: { code: 'PRO_SUBSCRIPTION_REQUIRED' },
+              }],
+            }),
+          })
+        }
+      }
+
       const currentUnits = new Map(building.units.map((unit) => [`${unit.gridX},${unit.gridY}`, unit]))
       const desiredUnits = new Map(
         (input.units ?? []).map((unit: MockBuildingUnit, index: number) => {
@@ -971,11 +1005,21 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
 
     if (query.includes('productTypes')) {
       const industry = body.variables?.industry
+      const activePlayer = state.players.find((player) => player.id === state.currentUserId)
+      const hasActiveProSubscription = !!activePlayer?.proSubscriptionEndsAtUtc
+        && new Date(activePlayer.proSubscriptionEndsAtUtc).getTime() > Date.now()
       const filtered = industry ? state.productTypes.filter((p) => p.industry === industry) : state.productTypes
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ data: { productTypes: filtered } }),
+        body: JSON.stringify({
+          data: {
+            productTypes: filtered.map((product) => ({
+              ...product,
+              isUnlockedForCurrentPlayer: product.isProOnly ? hasActiveProSubscription : true,
+            })),
+          },
+        }),
       })
     }
 

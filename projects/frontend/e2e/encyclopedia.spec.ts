@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { setupMockApi } from './helpers/mock-api'
+import { makePlayer, makeStartupPackOffer, setupMockApi } from './helpers/mock-api'
 
 test.describe('Manufacturing encyclopedia', () => {
   test('shows raw material cards and product recipes', async ({ page }) => {
@@ -110,5 +110,80 @@ test.describe('Manufacturing encyclopedia', () => {
     await expect(page.getByRole('heading', { name: 'Výrobná encyklopédia' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Drevo' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Elektronický Stôl' }).first()).toBeVisible()
+  })
+
+  test('updates locked pro products after claiming startup pack', async ({ page }) => {
+    const player = makePlayer({
+      startupPackOffer: makeStartupPackOffer(),
+      companies: [
+        {
+          id: 'company-pro',
+          playerId: 'player-1',
+          name: 'Premium Works',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player],
+      productTypes: [
+        {
+          id: 'prod-chair',
+          name: 'Wooden Chair',
+          slug: 'wooden-chair',
+          industry: 'FURNITURE',
+          basePrice: 45,
+          baseCraftTicks: 2,
+          outputQuantity: 20,
+          energyConsumptionMwh: 1,
+          unitName: 'Chair',
+          unitSymbol: 'chairs',
+          isProOnly: false,
+          description: 'A basic wooden chair.',
+          recipes: [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', unitName: 'Ton', unitSymbol: 't' }, inputProductType: null, quantity: 1 }],
+        },
+        {
+          id: 'prod-premium-desk',
+          name: 'Premium Desk',
+          slug: 'premium-desk',
+          industry: 'FURNITURE',
+          basePrice: 180,
+          baseCraftTicks: 4,
+          outputQuantity: 4,
+          energyConsumptionMwh: 1.6,
+          unitName: 'Desk',
+          unitSymbol: 'desks',
+          isProOnly: true,
+          description: 'Advanced office furniture line.',
+          recipes: [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', unitName: 'Ton', unitSymbol: 't' }, inputProductType: null, quantity: 2 }],
+        },
+      ],
+    })
+
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/encyclopedia')
+    const premiumDeskCard = page.getByRole('button', { name: /Premium Desk/ })
+    await expect(premiumDeskCard).toContainText('Requires Pro')
+    await premiumDeskCard.click()
+    await expect(page.locator('.selected-product')).toContainText('Pro unlocks this product and other advanced goods')
+
+    await page.goto('/dashboard')
+    await page.getByRole('button', { name: 'Claim startup pack' }).click()
+    await expect(page.getByText('Your Pro access is active until')).toBeVisible()
+
+    await page.goto('/encyclopedia')
+    await expect(page.getByRole('button', { name: /Premium Desk/ })).toContainText('Pro unlocked')
+    await page.getByRole('button', { name: /Premium Desk/ }).click()
+    await expect(page.locator('.selected-product')).toContainText('Your active Pro access unlocks this product immediately.')
   })
 })

@@ -749,4 +749,126 @@ test.describe('Building detail upgrades', () => {
     await breadOption.click()
     await expect(page.locator('.selected-chip')).toContainText('Bread')
   })
+
+  test('locks pro manufacturing outputs until pro access becomes active', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-pro-lock',
+      playerId: player.id,
+      name: 'Access Test Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-pro-lock',
+          companyId: 'company-pro-lock',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Access Test Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'pu-1',
+              buildingId: 'building-pro-lock',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+            },
+            {
+              id: 'mu-1',
+              buildingId: 'building-pro-lock',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: true,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player],
+      productTypes: [
+        {
+          id: 'prod-chair',
+          name: 'Wooden Chair',
+          slug: 'wooden-chair',
+          industry: 'FURNITURE',
+          basePrice: 45,
+          baseCraftTicks: 2,
+          outputQuantity: 20,
+          energyConsumptionMwh: 1,
+          unitName: 'Chair',
+          unitSymbol: 'chairs',
+          isProOnly: false,
+          description: 'Starter furniture.',
+          recipes: [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', unitName: 'Ton', unitSymbol: 't' }, inputProductType: null, quantity: 1 }],
+        },
+        {
+          id: 'prod-premium-chair',
+          name: 'Premium Chair',
+          slug: 'premium-chair',
+          industry: 'FURNITURE',
+          basePrice: 120,
+          baseCraftTicks: 4,
+          outputQuantity: 6,
+          energyConsumptionMwh: 1.4,
+          unitName: 'Chair',
+          unitSymbol: 'chairs',
+          isProOnly: true,
+          description: 'Advanced premium chair.',
+          recipes: [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', unitName: 'Ton', unitSymbol: 't' }, inputProductType: null, quantity: 2 }],
+        },
+      ],
+    })
+
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-pro-lock')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 1, 0).click()
+
+    const premiumButton = page.getByRole('button', { name: /Premium Chair/ })
+    await expect(premiumButton).toBeDisabled()
+    await expect(premiumButton).toContainText('Pro')
+    await expect(page.getByText('Pro unlocks additional products to manufacture and sell.')).toBeVisible()
+
+    player.proSubscriptionEndsAtUtc = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    await page.reload()
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    await getGridCell(getGridSection(page, 'Planned Upgrade'), 1, 0).click()
+
+    await expect(page.getByRole('button', { name: /Premium Chair/ })).toBeEnabled()
+  })
 })

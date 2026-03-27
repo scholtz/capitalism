@@ -12,6 +12,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => player.value?.role === 'ADMIN')
+  const isProSubscriber = computed(() =>
+    !!player.value?.proSubscriptionEndsAtUtc
+    && new Date(player.value.proSubscriptionEndsAtUtc).getTime() > Date.now(),
+  )
 
   function initFromStorage() {
     const stored = localStorage.getItem('auth_token')
@@ -129,6 +133,7 @@ export const useAuthStore = defineStore('auth', () => {
     error,
     isAuthenticated,
     isAdmin,
+    isProSubscriber,
     initFromStorage,
     setStartupPackOffer,
     register,

@@ -201,6 +201,13 @@ public sealed class Mutation
     {
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
         var nowUtc = DateTime.UtcNow;
+        var player = await db.Players.FindAsync(userId)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+        var hasActiveProSubscription = ProductAccessService.HasActiveProSubscription(player, nowUtc);
 
         // Validate industry
         if (!Industry.StarterIndustries.Contains(input.Industry))
@@ -237,6 +244,11 @@ public sealed class Mutation
                     .SetMessage("Product not found, doesn't belong to selected industry, or is not available for onboarding.")
                     .SetCode("INVALID_PRODUCT")
                     .Build());
+        }
+
+        if (!ProductAccessService.IsUnlockedForPlayer(product, hasActiveProSubscription))
+        {
+            throw ProductAccessService.CreateProAccessException(product.Name);
         }
 
         var starterResourceId = product.Recipes
@@ -310,16 +322,10 @@ public sealed class Mutation
         );
 
         // Mark onboarding as completed for this player
-        var player = await db.Players.FindAsync(userId);
-        if (player is not null)
-        {
-            player.OnboardingCompletedAtUtc = nowUtc;
-        }
+        player.OnboardingCompletedAtUtc = nowUtc;
 
         await db.SaveChangesAsync();
-        var startupPackOffer = player is null
-            ? null
-            : await StartupPackService.EnsureOfferForPlayerAsync(db, player, nowUtc);
+        var startupPackOffer = await StartupPackService.EnsureOfferForPlayerAsync(db, player, nowUtc);
 
         return new OnboardingResult
         {
@@ -335,6 +341,62 @@ public sealed class Mutation
     {
         return StarterOnboardingProductByIndustry.TryGetValue(product.Industry, out var starterSlug)
             && string.Equals(product.Slug, starterSlug, StringComparison.Ordinal);
+    }
+
+    private static async Task EnsureSubmittedProductsAreAccessibleAsync(
+        AppDbContext db,
+        Building building,
+        IReadOnlyCollection<BuildingConfigurationUnitInput> submittedUnits,
+        bool hasActiveProSubscription)
+    {
+        var submittedProductIds = submittedUnits
+            .Where(unit => unit.ProductTypeId is not null)
+            .Select(unit => unit.ProductTypeId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (submittedProductIds.Count == 0)
+        {
+            return;
+        }
+
+        var productsById = await db.ProductTypes
+            .Where(product => submittedProductIds.Contains(product.Id))
+            .ToDictionaryAsync(product => product.Id);
+
+        foreach (var unit in submittedUnits.Where(candidate => candidate.ProductTypeId is not null))
+        {
+            var productId = unit.ProductTypeId!.Value;
+            if (!productsById.TryGetValue(productId, out var product))
+            {
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetMessage("Product not found.")
+                        .SetCode("INVALID_PRODUCT")
+                        .Build());
+            }
+
+            if (!product.IsProOnly
+                || hasActiveProSubscription
+                || IsRetainingExistingProProduct(building, unit.GridX, unit.GridY, productId))
+            {
+                continue;
+            }
+
+            throw ProductAccessService.CreateProAccessException(product.Name);
+        }
+    }
+
+    private static bool IsRetainingExistingProProduct(Building building, int gridX, int gridY, Guid productTypeId)
+    {
+        return building.Units.Any(unit =>
+                   unit.GridX == gridX
+                   && unit.GridY == gridY
+                   && unit.ProductTypeId == productTypeId)
+               || (building.PendingConfiguration?.Units.Any(unit =>
+                   unit.GridX == gridX
+                   && unit.GridY == gridY
+                   && unit.ProductTypeId == productTypeId) ?? false);
     }
 
     /// <summary>Queues a building configuration update that becomes active after the required ticks have passed.</summary>
@@ -381,6 +443,13 @@ public sealed class Mutation
                     .SetCode("BUILDING_CONFIGURATION_NOT_SUPPORTED")
                     .Build());
         }
+
+        var subscriptionEndsAtUtc = await db.Players
+            .Where(player => player.Id == userId)
+            .Select(player => player.ProSubscriptionEndsAtUtc)
+            .FirstOrDefaultAsync();
+        var hasActiveProSubscription = ProductAccessService.HasActiveProSubscription(subscriptionEndsAtUtc, DateTime.UtcNow);
+        await EnsureSubmittedProductsAreAccessibleAsync(db, building, input.Units, hasActiveProSubscription);
 
         var plan = await BuildingConfigurationService.StoreConfigurationAsync(db, building, input.Units, gameState.CurrentTick);
         await db.SaveChangesAsync();

@@ -7,8 +7,11 @@ type SelectorItem = {
   id: string
   name: string
   description?: string | null
+  helperText?: string | null
   groupLabel: string
   unitSymbol?: string | null
+  badge?: string | null
+  disabled?: boolean
 }
 
 const props = defineProps<{
@@ -54,6 +57,10 @@ const groupedItems = computed(() => {
 })
 
 function selectItem(item: SelectorItem) {
+  if (item.disabled) {
+    return
+  }
+
   emit('update:modelValue', { kind: item.kind, id: item.id })
 }
 </script>
@@ -70,6 +77,7 @@ function selectItem(item: SelectorItem) {
 
     <div v-if="selectedItem" class="selected-chip" role="status">
       <strong>{{ selectedItem.name }}</strong>
+      <span v-if="selectedItem.badge" class="selected-badge">{{ selectedItem.badge }}</span>
       <span class="selected-meta">{{ selectedItem.groupLabel }} <template v-if="selectedItem.unitSymbol">· {{ selectedItem.unitSymbol }}</template></span>
       <button type="button" class="clear-btn" @click="emit('update:modelValue', null)">×</button>
     </div>
@@ -83,12 +91,17 @@ function selectItem(item: SelectorItem) {
             :key="`${item.kind}-${item.id}`"
             type="button"
             class="selector-option"
-            :class="{ active: selectedItem?.kind === item.kind && selectedItem?.id === item.id }"
+            :class="{ active: selectedItem?.kind === item.kind && selectedItem?.id === item.id, disabled: item.disabled }"
+            :disabled="item.disabled"
             @click="selectItem(item)"
           >
-            <span class="option-title">{{ item.name }}</span>
+            <span class="option-title-row">
+              <span class="option-title">{{ item.name }}</span>
+              <span v-if="item.badge" class="option-badge">{{ item.badge }}</span>
+            </span>
             <span class="option-meta">{{ item.kind === 'resource' ? t('buildingDetail.selector.itemKindResource') : t('buildingDetail.selector.itemKindProduct') }}<template v-if="item.unitSymbol"> · {{ item.unitSymbol }}</template></span>
             <span v-if="item.description" class="option-description">{{ item.description }}</span>
+            <span v-if="item.helperText" class="option-description">{{ item.helperText }}</span>
           </button>
         </div>
       </template>
@@ -137,11 +150,26 @@ function selectItem(item: SelectorItem) {
 }
 
 .selected-meta,
+.selected-badge,
 .option-meta,
 .option-description,
 .selector-empty,
 .selector-group-label {
   color: var(--color-text-secondary);
+}
+
+.selected-badge,
+.option-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 109, 0, 0.35);
+  background: rgba(255, 109, 0, 0.12);
+  color: var(--color-tertiary);
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 .clear-btn {
@@ -184,9 +212,21 @@ function selectItem(item: SelectorItem) {
   cursor: pointer;
 }
 
+.selector-option.disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .selector-option.active {
   border-color: var(--color-primary);
   box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.option-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .option-title {

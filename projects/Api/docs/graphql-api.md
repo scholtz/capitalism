@@ -55,10 +55,13 @@ Lists all raw material types (encyclopaedia).
 ### `productTypes(industry: String)`
 Lists product types, optionally filtered by industry.
 
+- `isProOnly` marks premium-only catalog entries.
+- `isUnlockedForCurrentPlayer` reflects the authenticated caller's current entitlement state.
+
 ```graphql
 query {
   productTypes(industry: "FURNITURE") {
-    id name slug industry basePrice baseCraftTicks
+    id name slug industry basePrice baseCraftTicks isProOnly isUnlockedForCurrentPlayer
     recipes { resourceType { name } quantity }
   }
 }
@@ -186,3 +189,4 @@ Onboarding wizard completion: creates a company, factory (with default units), a
 | `CITY_NOT_FOUND` | City ID doesn't exist |
 | `INVALID_INDUSTRY` | Not a valid starter industry |
 | `INVALID_PRODUCT` | Product not found or wrong industry |
+| `PRO_SUBSCRIPTION_REQUIRED` | The selected product is locked to active Pro subscribers |

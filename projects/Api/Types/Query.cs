@@ -84,8 +84,21 @@ public sealed class Query
     /// <summary>Lists all product types, optionally filtered by industry.</summary>
     public async Task<List<ProductType>> GetProductTypes(
         string? industry,
-        [Service] AppDbContext db)
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
     {
+        var hasActiveProSubscription = false;
+        if (httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true)
+        {
+            var userId = httpContextAccessor.HttpContext.User.GetRequiredUserId();
+            var subscriptionEndsAtUtc = await db.Players
+                .Where(player => player.Id == userId)
+                .Select(player => player.ProSubscriptionEndsAtUtc)
+                .FirstOrDefaultAsync();
+
+            hasActiveProSubscription = ProductAccessService.HasActiveProSubscription(subscriptionEndsAtUtc, DateTime.UtcNow);
+        }
+
         var query = db.ProductTypes
             .Include(p => p.Recipes)
             .ThenInclude(r => r.ResourceType)
@@ -98,7 +111,9 @@ public sealed class Query
             query = query.Where(p => p.Industry == industry);
         }
 
-        return await query.OrderBy(p => p.Name).ToListAsync();
+        var products = await query.OrderBy(p => p.Name).ToListAsync();
+        ProductAccessService.ApplyAccessMetadata(products, hasActiveProSubscription);
+        return products;
     }
 
     /// <summary>

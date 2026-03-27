@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AdvancedItemSelector from '@/components/buildings/AdvancedItemSelector.vue'
+import { isProductLocked } from '@/lib/productAccess'
 import {
   getLocalizedProductDescription,
   getLocalizedProductName,
@@ -20,8 +21,11 @@ type SelectorItem = {
   id: string
   name: string
   description?: string | null
+  helperText?: string | null
   groupLabel: string
   unitSymbol?: string | null
+  badge?: string | null
+  disabled?: boolean
 }
 
 type EditableGridUnit = {
@@ -135,10 +139,25 @@ const allSelectableItems = computed<SelectorItem[]>(() => [
     id: product.id,
     name: getLocalizedProductName(product, locale.value),
     description: getLocalizedProductDescription(product, locale.value),
+    helperText: isProductLocked(product) ? t('catalog.proDetail') : null,
     groupLabel: t('buildingDetail.selector.products'),
     unitSymbol: product.unitSymbol,
+    badge: product.isProOnly ? t('catalog.proBadge') : null,
+    disabled: isProductLocked(product),
   })),
 ])
+const lockedConfiguredProducts = computed(() => {
+  const configuredProductIds = new Set(
+    [...activeUnits.value, ...pendingUnits.value]
+      .map((unit) => unit.productTypeId)
+      .filter((value): value is string => !!value),
+  )
+
+  return productTypes.value.filter((product) => configuredProductIds.has(product.id) && isProductLocked(product))
+})
+const lockedConfiguredProductNames = computed(() =>
+  lockedConfiguredProducts.value.map((product) => getLocalizedProductName(product, locale.value)).join(', '),
+)
 const isUpgradeInProgress = computed(() => pendingConfiguration.value !== null)
 const showPlanningSection = computed(() => isEditing.value)
 const remainingUpgradeTicks = computed(() => {
@@ -994,9 +1013,16 @@ function getManufacturingSelectableItems(unit: EditableGridUnit | undefined): Se
       id: product.id,
       name: getLocalizedProductName(product, locale.value),
       description: getLocalizedProductDescription(product, locale.value),
+      helperText: isProductLocked(product) ? t('catalog.proDetail') : null,
       groupLabel: t('buildingDetail.selector.availableOutputs'),
       unitSymbol: product.unitSymbol,
+      badge: product.isProOnly ? t('catalog.proBadge') : null,
+      disabled: isProductLocked(product),
     }))
+}
+
+function getProductOptionLabel(product: ProductType) {
+  return product.isProOnly ? `${product.name} · ${t('catalog.proBadge')}` : product.name
 }
 
 function updateSelectedUnitConfig(field: string, value: unknown) {
@@ -1140,6 +1166,8 @@ async function loadBuilding() {
           energyConsumptionMwh
           unitName
           unitSymbol
+          isProOnly
+          isUnlockedForCurrentPlayer
           description
           recipes {
             quantity
@@ -1279,6 +1307,17 @@ onMounted(async () => {
         <div class="upgrade-pill">
           {{ t('buildingDetail.upgradeAppliesAt', { tick: pendingConfiguration!.appliesAtTick }) }}
         </div>
+      </div>
+
+      <div v-if="lockedConfiguredProducts.length > 0" class="pro-access-banner" role="status">
+        <strong>{{ t('catalog.proLockedTitle') }}</strong>
+        <p>
+          {{
+            t('buildingDetail.proAccessGrandfathered', {
+              products: lockedConfiguredProductNames,
+            })
+          }}
+        </p>
       </div>
 
       <div class="main-content">
@@ -1518,6 +1557,7 @@ onMounted(async () => {
                       @update:model-value="setItemSelection(getDraftUnitAt(selectedCell.x, selectedCell.y), $event)"
                     />
                   </div>
+                  <p class="config-help">{{ t('buildingDetail.proAccessHint') }}</p>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.maxPrice') }}</label>
                     <input type="number" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.maxPrice" @input="updateSelectedUnitConfig('maxPrice', ($event.target as HTMLInputElement).valueAsNumber || null)" min="0" step="0.01" />
@@ -1552,6 +1592,7 @@ onMounted(async () => {
                   <p class="config-help">
                     {{ t('buildingDetail.config.outputProductHelp') }}
                   </p>
+                  <p class="config-help">{{ t('buildingDetail.proAccessHint') }}</p>
                 </template>
 
                 <!-- B2B Sales unit config -->
@@ -1577,9 +1618,17 @@ onMounted(async () => {
                     <label class="config-label">{{ t('buildingDetail.config.productType') }}</label>
                     <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''" @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)">
                       <option value="">{{ t('buildingDetail.config.none') }}</option>
-                      <option v-for="pt in productTypes" :key="pt.id" :value="pt.id">{{ pt.name }}</option>
+                      <option
+                        v-for="pt in productTypes"
+                        :key="pt.id"
+                        :value="pt.id"
+                        :disabled="isProductLocked(pt)"
+                      >
+                        {{ getProductOptionLabel(pt) }}
+                      </option>
                     </select>
                   </div>
+                  <p class="config-help">{{ t('buildingDetail.proAccessHint') }}</p>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.minPrice') }}</label>
                     <input type="number" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.minPrice" @input="updateSelectedUnitConfig('minPrice', ($event.target as HTMLInputElement).valueAsNumber || null)" min="0" step="0.01" />
@@ -1624,7 +1673,14 @@ onMounted(async () => {
                     <label class="config-label">{{ t('buildingDetail.config.productType') }}</label>
                     <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''" @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)">
                       <option value="">{{ t('buildingDetail.config.anyProduct') }}</option>
-                      <option v-for="pt in productTypes" :key="pt.id" :value="pt.id">{{ pt.name }}</option>
+                      <option
+                        v-for="pt in productTypes"
+                        :key="pt.id"
+                        :value="pt.id"
+                        :disabled="isProductLocked(pt)"
+                      >
+                        {{ getProductOptionLabel(pt) }}
+                      </option>
                     </select>
                   </div>
                 </template>
@@ -1938,9 +1994,23 @@ onMounted(async () => {
   background: linear-gradient(135deg, rgba(19, 127, 236, 0.09), rgba(0, 200, 83, 0.08));
 }
 
+.pro-access-banner {
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgba(255, 109, 0, 0.3);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 109, 0, 0.08);
+}
+
 .upgrade-banner p {
   margin: 0.35rem 0 0;
   font-size: 0.875rem;
+}
+
+.pro-access-banner p {
+  margin: 0.35rem 0 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
 }
 
 .grid-header {

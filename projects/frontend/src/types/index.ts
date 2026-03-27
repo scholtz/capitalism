@@ -276,6 +276,8 @@ export interface ProductType {
   energyConsumptionMwh: number
   unitName: string
   unitSymbol: string
+  isProOnly: boolean
+  isUnlockedForCurrentPlayer: boolean
   description: string | null
   recipes: Recipe[]
 }

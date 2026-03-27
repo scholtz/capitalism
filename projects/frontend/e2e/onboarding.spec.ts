@@ -254,6 +254,7 @@ test.describe('Onboarding wizard', () => {
 
     await expect(page.locator('.product-card')).toHaveCount(1)
     await expect(page.locator('.product-card')).toContainText('Wooden Chair')
+    await expect(page.getByText('Your starter company uses the free catalog.')).toBeVisible()
   })
 
   test('back button navigates to previous step', async ({ page }) => {

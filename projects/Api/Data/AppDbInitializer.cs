@@ -100,7 +100,10 @@ public sealed class AppDbInitializer(
 
     private void SeedProducts()
     {
-        dbContext.ProductTypes.AddRange(GetProductSeeds().Select(seed => new ProductType
+        var seeds = GetProductSeeds();
+        var proOnlySlugs = DetermineInitialProOnlyProductSlugs(seeds);
+
+        dbContext.ProductTypes.AddRange(seeds.Select(seed => new ProductType
         {
             Id = CreateDeterministicGuid($"product:{seed.Slug}"),
             Name = seed.Name,
@@ -110,6 +113,7 @@ public sealed class AppDbInitializer(
             BaseCraftTicks = seed.BaseCraftTicks,
             OutputQuantity = seed.OutputQuantity,
             EnergyConsumptionMwh = seed.EnergyConsumptionMwh,
+            IsProOnly = proOnlySlugs.Contains(seed.Slug),
             UnitName = seed.UnitName,
             UnitSymbol = seed.UnitSymbol,
             Description = seed.Description
@@ -181,6 +185,35 @@ public sealed class AppDbInitializer(
         .. GetElectronicsProducts(),
         .. GetConstructionProducts()
     ];
+
+    private static HashSet<string> DetermineInitialProOnlyProductSlugs(IReadOnlyList<ProductSeed> seeds)
+    {
+        var proOnlySlugs = seeds
+            .Where(seed => seed.Industry is Industry.Electronics or Industry.Construction)
+            .Select(seed => seed.Slug)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+
+            foreach (var seed in seeds)
+            {
+                if (proOnlySlugs.Contains(seed.Slug))
+                {
+                    continue;
+                }
+
+                if (seed.Ingredients.Any(ingredient => ingredient.ProductSlug is not null && proOnlySlugs.Contains(ingredient.ProductSlug)))
+                {
+                    changed |= proOnlySlugs.Add(seed.Slug);
+                }
+            }
+        }
+
+        return proOnlySlugs;
+    }
 
     private static IEnumerable<ProductSeed> GetFurnitureProducts()
     {

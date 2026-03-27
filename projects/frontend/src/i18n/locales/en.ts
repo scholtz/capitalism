@@ -93,6 +93,8 @@ export default {
     completionGoDashboard: 'Go to Dashboard',
     completionViewLeaderboard: 'View Leaderboard',
     alreadyOnboarded: 'You have already completed onboarding.',
+    proCatalogNote: 'Your starter company uses the free catalog. Pro later unlocks more products to manufacture and sell.',
+    proCatalogUnlocked: 'Your Pro access is active. Advanced products unlock in the encyclopedia and building planners right away.',
   },
   startupPack: {
     eyebrow: 'Limited-time startup pack',
@@ -183,6 +185,17 @@ export default {
     compositionTitle: 'Requirement composition',
     compositionHelp: 'Visualize each upstream requirement flowing into the selected manufactured product.',
   },
+  catalog: {
+    free: 'Free catalog',
+    proBadge: 'Pro',
+    proRequired: 'Requires Pro',
+    proUnlocked: 'Pro unlocked',
+    proDetail: 'Pro unlocks this product and other advanced goods to manufacture and sell.',
+    proUnlockedDetail: 'Your active Pro access unlocks this product immediately.',
+    discoveryLocked: '{count} advanced products are visible for planning and unlock with Pro.',
+    discoveryUnlocked: 'Your active Pro access unlocks the full advanced product catalog.',
+    proLockedTitle: 'Existing Pro products detected',
+  },
 
   buildings: {
     title: 'Buy Building',
@@ -254,6 +267,8 @@ export default {
     loadFailed: 'Failed to load building',
     storeUpgradeFailed: 'Failed to store building upgrade',
     saleFailed: 'Failed to update building sale status',
+    proAccessHint: 'Pro unlocks additional products to manufacture and sell. Locked products stay visible here for planning.',
+    proAccessGrandfathered: '{products} can keep running, but changing or expanding locked products now requires Pro again.',
     emptySlot: 'Empty',
     addUnit: 'Add Unit',
     upgradeUnit: 'Upgrade',

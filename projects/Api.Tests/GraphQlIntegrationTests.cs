@@ -337,6 +337,56 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task ProductTypes_ReturnAccessMetadataForFreeAndProPlayers()
+    {
+        var freeResult = await ExecuteGraphQlAsync(
+            """
+            {
+              productTypes(industry: "ELECTRONICS") {
+                slug
+                isProOnly
+                isUnlockedForCurrentPlayer
+              }
+            }
+            """);
+
+        var freeProduct = freeResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .First(product => product.GetProperty("slug").GetString() == "electronic-components");
+
+        Assert.True(freeProduct.GetProperty("isProOnly").GetBoolean());
+        Assert.False(freeProduct.GetProperty("isUnlockedForCurrentPlayer").GetBoolean());
+
+        var token = await RegisterAndGetTokenAsync("pro-catalog@test.com", "Pro Catalog");
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(candidate => candidate.Email == "pro-catalog@test.com");
+            player.ProSubscriptionEndsAtUtc = DateTime.UtcNow.AddDays(30);
+            await db.SaveChangesAsync();
+        }
+
+        var proResult = await ExecuteGraphQlAsync(
+            """
+            {
+              productTypes(industry: "ELECTRONICS") {
+                slug
+                isProOnly
+                isUnlockedForCurrentPlayer
+              }
+            }
+            """,
+            token: token);
+
+        var proProduct = proResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .First(product => product.GetProperty("slug").GetString() == "electronic-components");
+
+        Assert.True(proProduct.GetProperty("isProOnly").GetBoolean());
+        Assert.True(proProduct.GetProperty("isUnlockedForCurrentPlayer").GetBoolean());
+    }
+
+    [Fact]
     public async Task GameState_ReturnsInitialState()
     {
         await ResetGameStateAsync();
@@ -468,6 +518,192 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             token);
 
         Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_NonProCannotAssignNewProProduct()
+    {
+        var token = await RegisterAndGetTokenAsync("pro-config@test.com", "Pro Config");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Locked Products Ltd" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Locked Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var productResult = await ExecuteGraphQlAsync(
+            """
+            {
+              productTypes(industry: "ELECTRONICS") {
+                id
+                slug
+              }
+            }
+            """);
+        var proProductId = productResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .First(product => product.GetProperty("slug").GetString() == "electronic-components")
+            .GetProperty("id")
+            .GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) {
+                id
+              }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = proProductId }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("PRO_SUBSCRIPTION_REQUIRED", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+        Assert.Contains("unlocks additional products to manufacture and sell", errors[0].GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ExpiredProCanKeepExistingLockedProductInPlace()
+    {
+        var token = await RegisterAndGetTokenAsync("expired-pro@test.com", "Expired Pro");
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(candidate => candidate.Email == "expired-pro@test.com");
+            player.ProSubscriptionEndsAtUtc = DateTime.UtcNow.AddDays(30);
+            await db.SaveChangesAsync();
+        }
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Legacy Pro Co" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Legacy Pro Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString()!;
+
+        var productResult = await ExecuteGraphQlAsync(
+            """
+            {
+              productTypes(industry: "ELECTRONICS") {
+                id
+                slug
+              }
+            }
+            """,
+            token: token);
+        var proProductId = productResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .First(product => product.GetProperty("slug").GetString() == "electronic-components")
+            .GetProperty("id")
+            .GetString();
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) {
+                id
+              }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = proProductId }
+                    }
+                }
+            },
+            token);
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(candidate => candidate.Email == "expired-pro@test.com");
+            player.ProSubscriptionEndsAtUtc = DateTime.UtcNow.AddMinutes(-1);
+            await db.SaveChangesAsync();
+        }
+
+        var retainResult = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) {
+                id
+              }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = proProductId }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(retainResult.TryGetProperty("errors", out _));
+
+        var moveResult = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) {
+                id
+              }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null },
+                        new { unitType = "MANUFACTURING", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = proProductId }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(moveResult.TryGetProperty("errors", out var moveErrors));
+        Assert.Equal("PRO_SUBSCRIPTION_REQUIRED", moveErrors[0].GetProperty("extensions").GetProperty("code").GetString());
     }
 
         [Fact]

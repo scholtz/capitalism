@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { gqlRequest } from '@/lib/graphql'
+import { isProductLocked } from '@/lib/productAccess'
 import {
   getLocalizedCategory,
   getLocalizedIndustry,
@@ -15,9 +16,11 @@ import {
   getProductImageUrl,
   getResourceImageUrl,
 } from '@/lib/catalogPresentation'
+import { useAuthStore } from '@/stores/auth'
 import type { ProductType, ResourceType } from '@/types'
 
 const { t, locale } = useI18n()
+const auth = useAuthStore()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -45,6 +48,7 @@ const filteredProducts = computed(() => {
 })
 
 const selectedProduct = computed(() => filteredProducts.value.find((product) => product.id === selectedProductId.value) ?? filteredProducts.value[0] ?? null)
+const lockedProductCount = computed(() => products.value.filter((product) => isProductLocked(product)).length)
 
 watch(filteredProducts, (nextProducts) => {
   if (nextProducts.length === 0) {
@@ -87,6 +91,8 @@ onMounted(async () => {
           energyConsumptionMwh
           unitName
           unitSymbol
+          isProOnly
+          isUnlockedForCurrentPlayer
           description
           recipes {
             quantity
@@ -140,6 +146,18 @@ function getProductCardImage(product: ProductType) {
 
 function getRecipeText(product: ProductType) {
   return getLocalizedRecipeSummary(product, locale.value)
+}
+
+function getProductAccessText(product: ProductType) {
+  if (!product.isProOnly) {
+    return t('catalog.free')
+  }
+
+  return isProductLocked(product) ? t('catalog.proRequired') : t('catalog.proUnlocked')
+}
+
+function getProductAccessDetail(product: ProductType) {
+  return isProductLocked(product) ? t('catalog.proDetail') : t('catalog.proUnlockedDetail')
 }
 
 function getIngredientImage(recipe: ProductType['recipes'][number]) {
@@ -211,6 +229,13 @@ function getIngredientImage(recipe: ProductType['recipes'][number]) {
         <div class="section-header">
           <h2>{{ t('encyclopedia.manufacturedProducts') }}</h2>
           <p>{{ t('encyclopedia.manufacturedProductsHelp') }}</p>
+          <p class="catalog-note">
+            {{
+              auth.isProSubscriber
+                ? t('catalog.discoveryUnlocked')
+                : t('catalog.discoveryLocked', { count: lockedProductCount })
+            }}
+          </p>
         </div>
 
         <div class="filters">
@@ -227,8 +252,20 @@ function getIngredientImage(recipe: ProductType['recipes'][number]) {
             <img :src="getProductCardImage(selectedProduct)" :alt="getProductCardName(selectedProduct)" class="selected-product-image" />
             <div class="selected-product-copy">
               <p class="product-industry">{{ getIndustryLabel(selectedProduct.industry) }}</p>
+              <div class="product-access-row">
+                <span
+                  v-if="selectedProduct.isProOnly"
+                  class="product-access-badge"
+                  :class="{ locked: isProductLocked(selectedProduct), unlocked: !isProductLocked(selectedProduct) }"
+                >
+                  {{ getProductAccessText(selectedProduct) }}
+                </span>
+              </div>
               <h3>{{ getProductCardName(selectedProduct) }}</h3>
               <p class="product-description">{{ getProductCardDescription(selectedProduct) }}</p>
+              <p v-if="selectedProduct.isProOnly" class="product-access-detail">
+                {{ getProductAccessDetail(selectedProduct) }}
+              </p>
               <div class="product-meta">
                 <span>{{ t('encyclopedia.basePrice') }}: ${{ selectedProduct.basePrice }}</span>
                 <span>{{ t('encyclopedia.craftTime') }}: {{ selectedProduct.baseCraftTicks }}</span>
@@ -278,6 +315,13 @@ function getIngredientImage(recipe: ProductType['recipes'][number]) {
                 <h3>{{ getProductCardName(product) }}</h3>
                 <p class="product-industry">{{ getIndustryLabel(product.industry) }}</p>
               </div>
+              <span
+                v-if="product.isProOnly"
+                class="product-access-badge"
+                :class="{ locked: isProductLocked(product), unlocked: !isProductLocked(product) }"
+              >
+                {{ getProductAccessText(product) }}
+              </span>
               <span class="product-batch">{{ product.outputQuantity }} {{ product.unitSymbol }}</span>
             </div>
             <p class="product-description">{{ getProductCardDescription(product) }}</p>
@@ -320,13 +364,15 @@ function getIngredientImage(recipe: ProductType['recipes'][number]) {
 .eyebrow,
 .subtitle,
 .section-header p,
+.catalog-note,
 .resource-description,
 .product-description,
 .product-industry,
 .recipe-line,
 .resource-meta,
 .product-meta,
-.composition-header p {
+.composition-header p,
+.product-access-detail {
   color: var(--color-text-secondary);
 }
 
@@ -403,6 +449,35 @@ function getIngredientImage(recipe: ProductType['recipes'][number]) {
   gap: 0.75rem;
   text-align: left;
   cursor: pointer;
+}
+
+.product-access-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.product-access-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.product-access-badge.locked {
+  color: var(--color-tertiary);
+  border-color: rgba(255, 109, 0, 0.45);
+  background: rgba(255, 109, 0, 0.12);
+}
+
+.product-access-badge.unlocked {
+  color: var(--color-secondary);
+  border-color: rgba(0, 200, 83, 0.45);
+  background: rgba(0, 200, 83, 0.12);
 }
 
 .product-card.active {
