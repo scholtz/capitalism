@@ -63,8 +63,8 @@ The game is seeded with:
 - Player roles: `PLAYER`, `ADMIN`.
 - Key GraphQL operations:
   - **Queries**: `me`, `cities`, `city(id)`, `resourceTypes`, `productTypes(industry?)`, `rankings`, `myCompanies`, `gameState`, `starterIndustries`
-  - **Mutations**: `register(input)`, `login(input)`, `createCompany(input)`, `placeBuilding(input)`, `completeOnboarding(input)`
-- The `completeOnboarding` mutation creates a company with $500K starting capital, a factory (4 default units), and a sales shop (3 default units) in the chosen city.
+  - **Mutations**: `register(input)`, `login(input)`, `createCompany(input)`, `placeBuilding(input)`, `completeOnboarding(input)`, `startOnboardingCompany(input)`, `finishOnboarding(input)`, `purchaseLot(input)`
+- The staged onboarding flow now uses `startOnboardingCompany` to create the first company and purchase the first factory lot, then `finishOnboarding` to select the starter product, purchase the first sales shop lot, configure both buildings, and complete onboarding.
 
 ## Server-controlled game state
 - Never trust client-provided values for derived or economy-sensitive fields. Activation ticks, upgrade durations, ownership, IDs, server timestamps, levels, prices, balances, and similar progression state must be computed or validated on the backend.
@@ -81,9 +81,9 @@ The game is seeded with:
 - Token expiry: 120 minutes. HS256 signing.
 
 ## Frontend pages
-- **HomeView** (`/`): Hero section, game status cards (tick, tax rate, active players), leaderboard table. CTA changes based on auth state: "Get Started" (unauthenticated) → "Start Your Empire" (no companies) → "Go to Dashboard" (has companies).
+- **HomeView** (`/`): Hero section, game status cards (tick, tax rate, active players), leaderboard table. CTA changes based on auth state: "Get Started" (unauthenticated) → "Start Your Empire" (authenticated but onboarding not completed) → "Go to Dashboard" (onboarding completed).
 - **LoginView** (`/login`): Login/Register toggle form with email, password, optional display name.
-- **OnboardingView** (`/onboarding`): 3-step wizard: (1) choose industry, (2) choose city, (3) name company + pick product. Calls `completeOnboarding` mutation. Redirects to dashboard on success.
+- **OnboardingView** (`/onboarding`): guided staged onboarding flow: (1) choose industry, (2) choose city, (3) name company + purchase the first factory lot on the city map, (4) choose starter product + purchase the first sales shop lot, then completion. If onboarding is interrupted after the factory purchase, the player resumes directly into the shop step using backend-owned onboarding state.
 - **DashboardView** (`/dashboard`): Player info, company cards with buildings list, empty state with link to onboarding.
 
 ## Playwright E2E testing
@@ -144,6 +144,7 @@ Use Playwright's accessible locators in this order of preference:
 - Playwright tests run via `.github/workflows/playwright.yml`.
 - Only Chromium is used in CI. Run all browsers locally if needed.
 - The CI workflow builds the client first then runs `npm run test:e2e`.
+- If you change onboarding, auth routing, home CTA behavior, or dashboard redirect/resume behavior, run the broader affected specs locally instead of only a single targeted onboarding spec. At minimum include `e2e/onboarding.spec.ts` and `e2e/home.spec.ts`, and run `npm run test:e2e` if the change touches shared routing or mocked auth behavior.
 
 ### Running tests locally
 ```bash
@@ -157,7 +158,7 @@ npx playwright test --debug --project=chromium
 ```
 
 ## Backend testing
-- Integration tests in `Api.Tests/GraphQlIntegrationTests.cs` use `WebApplicationFactory` with InMemory SQLite.
+- Integration tests in `Api.Tests/GraphQlIntegrationTests.cs` use `WebApplicationFactory` with a unique SQLite database per test factory instance.
 - Test factory in `Api.Tests/Infrastructure/ApiWebApplicationFactory.cs`.
 - Tests cover: health check, auth (register, login, duplicate email, wrong password), game data queries, company management, building placement, onboarding flow, rankings.
 - Run with: `dotnet test projects/Api.Tests`
@@ -197,6 +198,7 @@ dotnet test ../Api.Tests  # Run integration tests
 - For Playwright changes or UI flows covered by Playwright, install browsers if needed and run the relevant spec exactly as CI expects:
   - `cd projects/frontend && npx playwright install --with-deps chromium`
   - `cd projects/frontend && npx playwright test --project=chromium e2e/<relevant-spec>.ts`
+- For onboarding/auth/routing changes, do not stop at a single happy-path spec. Run the broader Playwright surface that CI depends on (`npm run test:e2e`) or, if you are narrowing scope, explicitly include both onboarding and home/dashboard coverage so CTA and redirect regressions are caught before pushing.
 - If you discover pre-existing failing tests outside the changed area, call them out explicitly in progress/final reporting instead of assuming the repository is green.
 
 ## HotChocolate v15 notes

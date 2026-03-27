@@ -114,6 +114,7 @@ test.describe('Manufacturing encyclopedia', () => {
 
   test('updates locked pro products after claiming startup pack', async ({ page }) => {
     const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T12:00:00Z',
       startupPackOffer: makeStartupPackOffer(),
       companies: [
         {
