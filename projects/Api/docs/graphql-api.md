@@ -117,6 +117,34 @@ Returns available industries for new player onboarding.
 }
 ```
 
+### `cityLots(cityId: UUID!)`
+Lists building lots for a city, including ownership and availability state.
+
+```graphql
+query CityLots($cityId: UUID!) {
+  cityLots(cityId: $cityId) {
+    id name description district latitude longitude price suitableTypes
+    ownerCompanyId buildingId
+    ownerCompany { id name }
+    building { id name type }
+  }
+}
+```
+
+### `lot(id: UUID!)`
+Gets a single building lot by ID.
+
+```graphql
+query GetLot($id: UUID!) {
+  lot(id: $id) {
+    id name description district latitude longitude price suitableTypes
+    ownerCompanyId buildingId
+    ownerCompany { id name }
+    building { id name type }
+  }
+}
+```
+
 ## Mutations
 
 ### `register(input: RegisterInput!)`
@@ -179,6 +207,27 @@ Onboarding wizard completion: creates a company, factory (with default units), a
 
 **Returns:** `OnboardingResult { company, factory, salesShop, selectedProduct }`
 
+### `purchaseLot(input: PurchaseLotInput!)` *(requires auth)*
+Purchases a building lot and places a building on it. Validates lot availability, building type suitability, and company funds. Deducts lot price from company cash.
+
+**Input:**
+| Field | Type | Required |
+|-------|------|----------|
+| companyId | UUID | Yes |
+| lotId | UUID | Yes |
+| buildingType | String | Yes (must be in lot's suitableTypes) |
+| buildingName | String | Yes |
+
+**Returns:** `PurchaseLotResult { lot, building, company }`
+
+**Error codes:**
+| Code | Description |
+|------|-------------|
+| `LOT_NOT_FOUND` | Building lot doesn't exist |
+| `LOT_ALREADY_OWNED` | Lot has already been purchased |
+| `UNSUITABLE_BUILDING_TYPE` | Building type not suitable for this lot |
+| `INSUFFICIENT_FUNDS` | Company doesn't have enough cash |
+
 ## Error Codes
 | Code | Description |
 |------|-------------|
@@ -190,3 +239,7 @@ Onboarding wizard completion: creates a company, factory (with default units), a
 | `INVALID_INDUSTRY` | Not a valid starter industry |
 | `INVALID_PRODUCT` | Product not found or wrong industry |
 | `PRO_SUBSCRIPTION_REQUIRED` | The selected product is locked to active Pro subscribers |
+| `LOT_NOT_FOUND` | Building lot doesn't exist |
+| `LOT_ALREADY_OWNED` | Lot has already been purchased by another company |
+| `UNSUITABLE_BUILDING_TYPE` | Building type not in the lot's suitable types list |
+| `INSUFFICIENT_FUNDS` | Company doesn't have enough cash for the lot price |

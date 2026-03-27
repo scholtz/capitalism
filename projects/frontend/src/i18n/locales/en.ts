@@ -418,6 +418,8 @@ export default {
     lotCount: '{count} lots',
     owner: 'Owner',
     building: 'Building',
+    company: 'Company',
+    manageBuilding: 'Manage Building',
     districts: {
       'Industrial Zone': 'Industrial Zone',
       'Commercial District': 'Commercial District',

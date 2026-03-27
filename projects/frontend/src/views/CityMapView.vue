@@ -516,7 +516,7 @@ watch(viewMode, async (mode) => {
               </div>
 
               <div v-if="companies.length > 1" class="form-group">
-                <label>Company</label>
+                <label>{{ t('cityMap.company') }}</label>
                 <select v-model="selectedCompanyId" class="form-select">
                   <option v-for="c in companies" :key="c.id" :value="c.id">
                     {{ c.name }} ({{ formatCurrency(c.cash) }})
@@ -549,7 +549,7 @@ watch(viewMode, async (mode) => {
               :to="`/building/${selectedLot.buildingId}`"
               class="btn btn-primary"
             >
-              {{ t('buildingDetail.manage') || 'Manage Building' }}
+              {{ t('cityMap.manageBuilding') }}
             </RouterLink>
           </div>
         </aside>

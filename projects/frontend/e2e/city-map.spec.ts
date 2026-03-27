@@ -155,7 +155,7 @@ test.describe('City Map View', () => {
     // Should show success message or the lot should become owned
     await expect(
       page.getByText(/purchased successfully/i).or(page.locator('.status-badge.yours')),
-    ).toBeVisible({ timeout: 10000 })
+    ).toBeVisible()
   })
 
   test('shows owned lots with different status', async ({ page }) => {
@@ -196,7 +196,7 @@ test.describe('City Map View', () => {
     await expect(page.locator('.status-badge.owned')).toBeVisible()
 
     // Purchase button should NOT be present for owned lots
-    await expect(page.getByRole('button', { name: /Purchase Lot/i })).not.toBeVisible()
+    await expect(page.getByRole('button', { name: /Purchase Lot/i })).toBeHidden()
   })
 
   test('handles already-purchased lot error gracefully', async ({ page }) => {
@@ -225,10 +225,8 @@ test.describe('City Map View', () => {
     await page.getByRole('button', { name: /Purchase Lot/i }).click()
 
     // Now mark the lot as owned before form submission to simulate race condition
-    const lot = state.buildingLots.find((l) => l.id === 'lot-commercial-1')
-    if (lot) {
-      lot.ownerCompanyId = 'other-company'
-    }
+    const lot = state.buildingLots.find((l) => l.id === 'lot-commercial-1')!
+    lot.ownerCompanyId = 'other-company'
 
     await page.locator('.form-select').selectOption('SALES_SHOP')
     await page.locator('.form-input').fill('My Shop')

@@ -416,6 +416,8 @@ export default {
     lotCount: '{count} pozemkov',
     owner: 'Vlastník',
     building: 'Budova',
+    company: 'Spoločnosť',
+    manageBuilding: 'Spravovať budovu',
     districts: {
       'Industrial Zone': 'Priemyselná zóna',
       'Commercial District': 'Obchodná štvrť',

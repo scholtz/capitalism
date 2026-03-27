@@ -416,6 +416,8 @@ export default {
     lotCount: '{count} Grundstücke',
     owner: 'Eigentümer',
     building: 'Gebäude',
+    company: 'Unternehmen',
+    manageBuilding: 'Gebäude verwalten',
     districts: {
       'Industrial Zone': 'Industriegebiet',
       'Commercial District': 'Geschäftsviertel',

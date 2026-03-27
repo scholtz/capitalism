@@ -381,7 +381,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
           </RouterLink>
           <RouterLink
             v-if="company.buildings.length > 0 && company.buildings[0]"
-            :to="`/city/${company.buildings[0]!.cityId}`"
+            :to="`/city/${company.buildings[0].cityId}`"
             class="btn btn-secondary"
           >
             🗺️ {{ t('nav.cityMap') }}
