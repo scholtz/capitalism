@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { gqlRequest } from '@/lib/graphql'
 import { trackStartupPackEvent } from '@/lib/startupPackAnalytics'
@@ -11,20 +11,25 @@ import {
   getLocalizedResourceName,
   getProductImageUrl,
 } from '@/lib/catalogPresentation'
+import OnboardingLotSelector from '@/components/onboarding/OnboardingLotSelector.vue'
 import { useAuthStore } from '@/stores/auth'
 import type {
+  BuildingLot,
   City,
-  ProductType,
   OnboardingResult,
+  OnboardingStartResult,
+  ProductType,
   StartupPackClaimResult,
   StartupPackOffer,
 } from '@/types'
 
 const { t, locale } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
 const PROGRESS_KEY = 'onboarding_progress'
+const STARTING_CASH = 500_000
 
 const CITIES_QUERY = `
   {
@@ -50,6 +55,26 @@ const CITIES_QUERY = `
         }
         abundance
       }
+    }
+  }
+`
+
+const LOTS_QUERY = `
+  query CityLots($cityId: UUID!) {
+    cityLots(cityId: $cityId) {
+      id
+      cityId
+      name
+      description
+      district
+      latitude
+      longitude
+      price
+      suitableTypes
+      ownerCompanyId
+      buildingId
+      ownerCompany { id name }
+      building { id name type }
     }
   }
 `
@@ -108,29 +133,89 @@ const error = ref<string | null>(null)
 const offerLoading = ref(false)
 const offerError = ref<string | null>(null)
 const offerMessage = ref<string | null>(null)
+const onboardingCompanyCash = ref<number | null>(null)
 
-// Data
 const industries = ref<string[]>([])
 const cities = ref<City[]>([])
 const products = ref<ProductType[]>([])
+const cityLots = ref<BuildingLot[]>([])
 
-// Selections
 const selectedIndustry = ref('')
 const selectedCityId = ref('')
 const selectedProductId = ref('')
+const selectedFactoryLotId = ref('')
+const selectedShopLotId = ref('')
 const companyName = ref('')
 
-// Completion result (for step 4)
 const completionResult = ref<OnboardingResult | null>(null)
 const startupPackOffer = ref<StartupPackOffer | null>(null)
 
-const selectedCity = computed(() => cities.value.find((c) => c.id === selectedCityId.value))
-const selectedProduct = computed(() => products.value.find((p) => p.id === selectedProductId.value))
-const canShowSummary = computed(() => !!selectedCity.value && !!companyName.value && !!selectedProduct.value)
+const selectedCity = computed(() => cities.value.find((city) => city.id === selectedCityId.value) ?? null)
+const selectedProduct = computed(() => products.value.find((product) => product.id === selectedProductId.value) ?? null)
+const selectedFactoryLot = computed(() => cityLots.value.find((lot) => lot.id === selectedFactoryLotId.value) ?? null)
+const selectedShopLot = computed(() => cityLots.value.find((lot) => lot.id === selectedShopLotId.value) ?? null)
+const starterCompany = computed(() => {
+  const companyId = auth.player?.onboardingCompanyId
+  if (!companyId) {
+    return auth.player?.companies.find((company) => company.name === companyName.value) ?? null
+  }
+
+  return auth.player?.companies.find((company) => company.id === companyId) ?? null
+})
+const starterCash = computed(() => onboardingCompanyCash.value ?? starterCompany.value?.cash ?? STARTING_CASH)
+
+const availableFactoryLots = computed(() =>
+  cityLots.value.filter((lot) => lot.suitableTypes.split(',').map((type) => type.trim()).includes('FACTORY')),
+)
+const availableShopLots = computed(() =>
+  cityLots.value.filter((lot) => lot.suitableTypes.split(',').map((type) => type.trim()).includes('SALES_SHOP')),
+)
+const recommendedFactoryLotIds = computed(() => {
+  const industrialLots = availableFactoryLots.value
+    .filter((lot) => !lot.ownerCompanyId && /industrial/i.test(lot.district))
+    .sort((left, right) => left.price - right.price)
+
+  if (industrialLots.length > 0) {
+    return industrialLots.slice(0, 2).map((lot) => lot.id)
+  }
+
+  return availableFactoryLots.value
+    .filter((lot) => !lot.ownerCompanyId)
+    .sort((left, right) => left.price - right.price)
+    .slice(0, 2)
+    .map((lot) => lot.id)
+})
+const recommendedShopLotIds = computed(() => {
+  const commercialLots = availableShopLots.value
+    .filter((lot) => !lot.ownerCompanyId && /(commercial|business)/i.test(lot.district))
+    .sort((left, right) => left.price - right.price)
+
+  if (commercialLots.length > 0) {
+    return commercialLots.slice(0, 2).map((lot) => lot.id)
+  }
+
+  return availableShopLots.value
+    .filter((lot) => !lot.ownerCompanyId)
+    .sort((left, right) => left.price - right.price)
+    .slice(0, 2)
+    .map((lot) => lot.id)
+})
 
 const canProceedStep1 = computed(() => !!selectedIndustry.value)
 const canProceedStep2 = computed(() => !!selectedCityId.value)
-const canProceedStep3 = computed(() => !!selectedProductId.value && !!companyName.value)
+const canProceedStep3 = computed(() =>
+  !!companyName.value.trim()
+  && !!selectedFactoryLot.value
+  && !selectedFactoryLot.value.ownerCompanyId
+  && STARTING_CASH >= selectedFactoryLot.value.price,
+)
+const canProceedStep4 = computed(() =>
+  !!selectedProduct.value
+  && !!selectedShopLot.value
+  && !selectedShopLot.value.ownerCompanyId
+  && starterCash.value >= selectedShopLot.value.price,
+)
+const canShowStep4Summary = computed(() => !!selectedProduct.value && !!selectedFactoryLot.value && !!selectedShopLot.value)
 const activeStartupPackOffer = computed(() =>
   startupPackOffer.value
   && ['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(startupPackOffer.value.status)
@@ -156,6 +241,34 @@ const industryDescriptions: Record<string, string> = {
   HEALTHCARE: 'Manufacture medicines from chemical minerals.',
 }
 
+function stepToKey(value: number): string {
+  if (value === 2) return 'city'
+  if (value === 3) return 'factory'
+  if (value === 4) return 'shop'
+  if (value === 5) return 'complete'
+  return 'industry'
+}
+
+function keyToStep(value: unknown): number {
+  if (value === 'city') return 2
+  if (value === 'factory') return 3
+  if (value === 'shop') return 4
+  if (value === 'complete') return 5
+  return 1
+}
+
+function getMaxReachableStep(): number {
+  if (completionResult.value) return 5
+  if (auth.player?.onboardingCurrentStep === 'SHOP_SELECTION') return 4
+  if (selectedCityId.value) return 3
+  if (selectedIndustry.value) return 2
+  return 1
+}
+
+function clampStep(requestedStep: number): number {
+  return Math.min(Math.max(requestedStep, 1), getMaxReachableStep())
+}
+
 function saveProgress() {
   try {
     localStorage.setItem(
@@ -166,6 +279,8 @@ function saveProgress() {
         cityId: selectedCityId.value,
         productId: selectedProductId.value,
         companyName: companyName.value,
+        factoryLotId: selectedFactoryLotId.value,
+        shopLotId: selectedShopLotId.value,
       }),
     )
   } catch {
@@ -182,29 +297,94 @@ function clearProgress() {
 }
 
 function restoreProgress() {
-  // Don't restore if onboarding was already completed
   if (auth.player?.onboardingCompletedAtUtc) {
     clearProgress()
     return
   }
+
   try {
     const raw = localStorage.getItem(PROGRESS_KEY)
     if (!raw) return
+
     const saved = JSON.parse(raw)
-    if (saved.step && saved.step >= 1 && saved.step <= 3) {
-      step.value = saved.step
-    }
-    if (saved.industry) selectedIndustry.value = saved.industry
-    if (saved.cityId) selectedCityId.value = saved.cityId
-    if (saved.productId) selectedProductId.value = saved.productId
-    if (saved.companyName) companyName.value = saved.companyName
+    if (typeof saved.industry === 'string') selectedIndustry.value = saved.industry
+    if (typeof saved.cityId === 'string') selectedCityId.value = saved.cityId
+    if (typeof saved.productId === 'string') selectedProductId.value = saved.productId
+    if (typeof saved.companyName === 'string') companyName.value = saved.companyName
+    if (typeof saved.factoryLotId === 'string') selectedFactoryLotId.value = saved.factoryLotId
+    if (typeof saved.shopLotId === 'string') selectedShopLotId.value = saved.shopLotId
+    if (typeof saved.step === 'number') step.value = clampStep(saved.step)
   } catch {
     // corrupted data — ignore
   }
 }
 
-// Persist progress whenever selections change
-watch([step, selectedIndustry, selectedCityId, selectedProductId, companyName], saveProgress)
+watch(
+  [step, selectedIndustry, selectedCityId, selectedProductId, companyName, selectedFactoryLotId, selectedShopLotId],
+  saveProgress,
+)
+
+watch(step, async (currentStep) => {
+  const currentKey = stepToKey(currentStep)
+  if (route.query.step !== currentKey) {
+    await router.replace({ query: { ...route.query, step: currentKey } })
+  }
+})
+
+async function loadProducts() {
+  if (!selectedIndustry.value) return
+
+  loading.value = true
+  try {
+    const data = await gqlRequest<{ productTypes: ProductType[] }>(PRODUCTS_QUERY, {
+      industry: selectedIndustry.value,
+    })
+    const allowedSlugs = starterProductSlugByIndustry[selectedIndustry.value] ?? []
+    products.value = data.productTypes.filter((product) => allowedSlugs.includes(product.slug))
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'Failed to load products'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadLots() {
+  if (!selectedCityId.value) {
+    cityLots.value = []
+    return
+  }
+
+  loading.value = true
+  try {
+    const data = await gqlRequest<{ cityLots: BuildingLot[] }>(LOTS_QUERY, { cityId: selectedCityId.value })
+    cityLots.value = data.cityLots
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'Failed to load city lots'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function syncOngoingOnboardingState() {
+  if (auth.player?.onboardingCurrentStep !== 'SHOP_SELECTION') {
+    onboardingCompanyCash.value = null
+    return
+  }
+
+  selectedIndustry.value = auth.player.onboardingIndustry ?? selectedIndustry.value
+  selectedCityId.value = auth.player.onboardingCityId ?? selectedCityId.value
+  selectedFactoryLotId.value = auth.player.onboardingFactoryLotId ?? selectedFactoryLotId.value
+
+  const ongoingCompany = auth.player.companies.find(
+    (company) => company.id === auth.player?.onboardingCompanyId,
+  )
+  if (ongoingCompany) {
+    companyName.value = ongoingCompany.name
+    onboardingCompanyCash.value = ongoingCompany.cash
+  }
+
+  step.value = 4
+}
 
 onMounted(async () => {
   if (!auth.isAuthenticated) {
@@ -212,12 +392,10 @@ onMounted(async () => {
     return
   }
 
-  // Ensure player data is loaded (may be null if only token was restored from storage)
   if (!auth.player) {
     await auth.fetchMe()
   }
 
-  // If the player already completed onboarding and has companies, redirect to dashboard
   if (auth.player?.onboardingCompletedAtUtc && auth.player.companies.length > 0) {
     router.push('/dashboard')
     return
@@ -231,21 +409,22 @@ onMounted(async () => {
       ),
       gqlRequest<{ cities: City[] }>(CITIES_QUERY),
     ])
+
     industries.value = industriesData.starterIndustries.industries
     cities.value = citiesData.cities
 
-    // Restore saved progress (step, selections) after data is loaded
     restoreProgress()
+    await syncOngoingOnboardingState()
 
-    // If we restored a step > 1 with an industry, reload products so the product list is ready
-    if (step.value > 1 && selectedIndustry.value) {
-      const data = await gqlRequest<{ productTypes: ProductType[] }>(
-        PRODUCTS_QUERY,
-        { industry: selectedIndustry.value },
-      )
-      const allowedSlugs = starterProductSlugByIndustry[selectedIndustry.value] ?? []
-      products.value = data.productTypes.filter((product) => allowedSlugs.includes(product.slug))
+    if (selectedIndustry.value) {
+      await loadProducts()
     }
+
+    if (selectedCityId.value) {
+      await loadLots()
+    }
+
+    step.value = clampStep(keyToStep(route.query.step))
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to load data'
   } finally {
@@ -253,42 +432,82 @@ onMounted(async () => {
   }
 })
 
-async function loadProducts() {
-  loading.value = true
-  try {
-    const data = await gqlRequest<{ productTypes: ProductType[] }>(
-      PRODUCTS_QUERY,
-      { industry: selectedIndustry.value },
-    )
-    const allowedSlugs = starterProductSlugByIndustry[selectedIndustry.value] ?? []
-    products.value = data.productTypes.filter((product) => allowedSlugs.includes(product.slug))
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Failed to load products'
-  } finally {
-    loading.value = false
-  }
-}
+async function nextStep() {
+  error.value = null
 
-function nextStep() {
   if (step.value === 1 && canProceedStep1.value) {
-    loadProducts()
+    await loadProducts()
     step.value = 2
-  } else if (step.value === 2 && canProceedStep2.value) {
+    return
+  }
+
+  if (step.value === 2 && canProceedStep2.value) {
+    await loadLots()
     step.value = 3
   }
 }
 
 function prevStep() {
-  if (step.value > 1) step.value--
+  if (step.value > 1 && auth.player?.onboardingCurrentStep !== 'SHOP_SELECTION') {
+    step.value--
+  }
+}
+
+async function startOnboardingCompany() {
+  if (!canProceedStep3.value || !selectedFactoryLot.value) return
+
+  loading.value = true
+  error.value = null
+
+  try {
+    const result = await gqlRequest<{ startOnboardingCompany: OnboardingStartResult }>(
+      `mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+        startOnboardingCompany(input: $input) {
+          nextStep
+          company { id name cash }
+          factory { id name type }
+          factoryLot {
+            id cityId name description district latitude longitude price suitableTypes
+            ownerCompanyId buildingId
+            ownerCompany { id name }
+            building { id name type }
+          }
+        }
+      }`,
+      {
+        input: {
+          industry: selectedIndustry.value,
+          cityId: selectedCityId.value,
+          companyName: companyName.value.trim(),
+          factoryLotId: selectedFactoryLotId.value,
+        },
+      },
+    )
+
+    onboardingCompanyCash.value = result.startOnboardingCompany.company.cash
+    selectedFactoryLotId.value = result.startOnboardingCompany.factoryLot.id
+    await auth.fetchMe()
+    await loadLots()
+    step.value = 4
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : t('onboarding.lotUnavailableBody')
+    await loadLots()
+    if (selectedFactoryLot.value?.ownerCompanyId) {
+      selectedFactoryLotId.value = ''
+    }
+  } finally {
+    loading.value = false
+  }
 }
 
 async function completeOnboarding() {
   loading.value = true
   error.value = null
+
   try {
-    const result = await gqlRequest<{ completeOnboarding: OnboardingResult }>(
-      `mutation CompleteOnboarding($input: OnboardingInput!) {
-        completeOnboarding(input: $input) {
+    const result = await gqlRequest<{ finishOnboarding: OnboardingResult }>(
+      `mutation FinishOnboarding($input: FinishOnboardingInput!) {
+        finishOnboarding(input: $input) {
           company { id name cash }
           factory { id name type }
           salesShop { id name type }
@@ -310,16 +529,16 @@ async function completeOnboarding() {
       }`,
       {
         input: {
-          industry: selectedIndustry.value,
-          cityId: selectedCityId.value,
           productTypeId: selectedProductId.value,
-          companyName: companyName.value,
+          shopLotId: selectedShopLotId.value,
         },
       },
     )
-    completionResult.value = result.completeOnboarding
-    startupPackOffer.value = result.completeOnboarding.startupPackOffer
-    auth.setStartupPackOffer(result.completeOnboarding.startupPackOffer)
+
+    completionResult.value = result.finishOnboarding
+    startupPackOffer.value = result.finishOnboarding.startupPackOffer
+    auth.setStartupPackOffer(result.finishOnboarding.startupPackOffer)
+    onboardingCompanyCash.value = result.finishOnboarding.company.cash
     clearProgress()
     await auth.fetchMe()
     startupPackOffer.value = auth.startupPackOffer ?? startupPackOffer.value
@@ -328,9 +547,17 @@ async function completeOnboarding() {
     } else if (startupPackOffer.value) {
       trackStartupPackEvent('view', { context: 'onboarding', status: startupPackOffer.value.status })
     }
-    step.value = 4
+    step.value = 5
   } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Onboarding failed'
+    error.value = e instanceof Error ? e.message : t('onboarding.lotUnavailableBody')
+    await auth.fetchMe()
+    await loadLots()
+    onboardingCompanyCash.value =
+      auth.player?.companies.find((company) => company.id === auth.player?.onboardingCompanyId)?.cash
+      ?? onboardingCompanyCash.value
+    if (selectedShopLot.value?.ownerCompanyId) {
+      selectedShopLotId.value = ''
+    }
   } finally {
     loading.value = false
   }
@@ -464,7 +691,7 @@ async function claimStartupPackOffer() {
 }
 
 function formatIndustry(industry: string): string {
-  return industry.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  return industry.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
 function getProductName(product: ProductType): string {
@@ -527,37 +754,35 @@ function formatTimeRemaining(expiresAtUtc: string): string {
 <template>
   <div class="onboarding-view">
     <div class="onboarding-container container">
-      <div v-if="step < 4" class="onboarding-header">
+      <div v-if="step < 5" class="onboarding-header">
         <h1>{{ t('onboarding.title') }}</h1>
         <p class="subtitle">{{ t('onboarding.subtitle') }}</p>
       </div>
 
-      <div v-if="step < 4" class="progress-bar">
+      <div v-if="step < 5" class="progress-bar">
         <div class="progress-segment" :class="{ active: step >= 1, done: step > 1 }">
-          <div class="progress-step">
-            <span v-if="step > 1" class="check-icon">✓</span>
-            <span v-else>1</span>
-          </div>
+          <div class="progress-step"><span v-if="step > 1" class="check-icon">✓</span><span v-else>1</span></div>
           <span class="progress-label">{{ t('onboarding.step1Title') }}</span>
         </div>
         <div class="progress-line" :class="{ active: step > 1 }"></div>
         <div class="progress-segment" :class="{ active: step >= 2, done: step > 2 }">
-          <div class="progress-step">
-            <span v-if="step > 2" class="check-icon">✓</span>
-            <span v-else>2</span>
-          </div>
+          <div class="progress-step"><span v-if="step > 2" class="check-icon">✓</span><span v-else>2</span></div>
           <span class="progress-label">{{ t('onboarding.step2Title') }}</span>
         </div>
         <div class="progress-line" :class="{ active: step > 2 }"></div>
-        <div class="progress-segment" :class="{ active: step >= 3 }">
-          <div class="progress-step">3</div>
+        <div class="progress-segment" :class="{ active: step >= 3, done: step > 3 }">
+          <div class="progress-step"><span v-if="step > 3" class="check-icon">✓</span><span v-else>3</span></div>
           <span class="progress-label">{{ t('onboarding.step3Title') }}</span>
+        </div>
+        <div class="progress-line" :class="{ active: step > 3 }"></div>
+        <div class="progress-segment" :class="{ active: step >= 4 }">
+          <div class="progress-step">4</div>
+          <span class="progress-label">{{ t('onboarding.step4Title') }}</span>
         </div>
       </div>
 
       <div v-if="error" class="error-message" role="alert">{{ error }}</div>
 
-      <!-- Step 1: Choose Industry -->
       <div v-if="step === 1" class="step-content">
         <div class="step-header">
           <h2>{{ t('onboarding.step1Title') }}</h2>
@@ -584,7 +809,6 @@ function formatTimeRemaining(expiresAtUtc: string): string {
         </div>
       </div>
 
-      <!-- Step 2: Choose City -->
       <div v-if="step === 2" class="step-content">
         <div class="step-header">
           <h2>{{ t('onboarding.step2Title') }}</h2>
@@ -608,8 +832,8 @@ function formatTimeRemaining(expiresAtUtc: string): string {
             </div>
             <div class="city-resources">
               <span class="resource-label">{{ t('onboarding.resources') }}:</span>
-              <span v-for="(r, i) in city.resources" :key="i" class="resource-badge">
-                {{ getCityResourceName(city, i) }}
+              <span v-for="(resource, index) in city.resources" :key="index" class="resource-badge">
+                {{ getCityResourceName(city, index) }}
               </span>
             </div>
           </button>
@@ -626,14 +850,24 @@ function formatTimeRemaining(expiresAtUtc: string): string {
         </div>
       </div>
 
-      <!-- Step 3: Choose Product & Name Company -->
-      <div v-if="step === 3" class="step-content">
+      <div v-if="step === 3" class="step-content step-content-wide">
         <div class="step-header">
           <h2>{{ t('onboarding.step3Title') }}</h2>
           <p class="step-desc">{{ t('onboarding.step3Desc') }}</p>
         </div>
 
-        <div class="form-group">
+        <div class="budget-grid">
+          <article class="budget-card">
+            <span class="budget-label">{{ t('onboarding.startingCash') }}</span>
+            <strong>${{ formatCurrency(STARTING_CASH) }}</strong>
+          </article>
+          <article class="budget-card" :class="{ warning: !!selectedFactoryLot && STARTING_CASH < selectedFactoryLot.price }">
+            <span class="budget-label">{{ t('onboarding.cashAfterPurchase') }}</span>
+            <strong>${{ formatCurrency(Math.max(STARTING_CASH - (selectedFactoryLot?.price ?? 0), 0)) }}</strong>
+          </article>
+        </div>
+
+        <div class="form-group compact">
           <label for="companyName">{{ t('onboarding.companyName') }}</label>
           <input
             id="companyName"
@@ -645,14 +879,78 @@ function formatTimeRemaining(expiresAtUtc: string): string {
           />
         </div>
 
+        <div class="guidance-panel">
+          <h3>{{ t('onboarding.factoryGuideTitle') }}</h3>
+          <p>{{ t('onboarding.factoryGuideBody') }}</p>
+          <ul>
+            <li>{{ t('onboarding.factoryGuideHint1') }}</li>
+            <li>{{ t('onboarding.factoryGuideHint2') }}</li>
+            <li>{{ t('onboarding.factoryGuideHint3') }}</li>
+          </ul>
+        </div>
+
+        <p v-if="availableFactoryLots.length === 0" class="empty-state-message">
+          {{ t('onboarding.noFactoryLots') }}
+        </p>
+        <OnboardingLotSelector
+          v-else
+          v-model:selected-lot-id="selectedFactoryLotId"
+          :lots="availableFactoryLots"
+          required-building-type="FACTORY"
+          :money-available="STARTING_CASH"
+          :recommended-lot-ids="recommendedFactoryLotIds"
+        />
+
+        <div class="step-actions">
+          <button class="btn btn-secondary" :disabled="auth.player?.onboardingCurrentStep === 'SHOP_SELECTION'" @click="prevStep">
+            <span class="btn-arrow">←</span>
+            {{ t('common.back') }}
+          </button>
+          <button class="btn btn-primary btn-lg" :disabled="!canProceedStep3 || loading" @click="startOnboardingCompany">
+            {{ loading ? t('common.loading') : t('onboarding.purchaseFactory') }}
+            <span v-if="!loading" class="btn-arrow">🏭</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="step === 4" class="step-content step-content-wide">
+        <div class="step-header">
+          <h2>{{ t('onboarding.step4Title') }}</h2>
+          <p class="step-desc">{{ t('onboarding.step4Desc') }}</p>
+        </div>
+
+        <div class="resume-banner" role="status">
+          <strong>{{ t('onboarding.factoryPurchasedTitle') }}</strong>
+          <span>
+            {{
+              t('onboarding.factoryPurchasedBody', {
+                lot: selectedFactoryLot?.name ?? '',
+                cash: '$' + formatCurrency(starterCash),
+              })
+            }}
+          </span>
+        </div>
+
+        <div class="budget-grid">
+          <article class="budget-card">
+            <span class="budget-label">{{ t('onboarding.availableCash') }}</span>
+            <strong>${{ formatCurrency(starterCash) }}</strong>
+          </article>
+          <article class="budget-card" :class="{ warning: !!selectedShopLot && starterCash < selectedShopLot.price }">
+            <span class="budget-label">{{ t('onboarding.cashAfterPurchase') }}</span>
+            <strong>${{ formatCurrency(Math.max(starterCash - (selectedShopLot?.price ?? 0), 0)) }}</strong>
+          </article>
+        </div>
+
+        <div class="guidance-panel">
+          <h3>{{ t('onboarding.shopGuideTitle') }}</h3>
+          <p>{{ t('onboarding.shopGuideBody') }}</p>
+        </div>
+
         <div class="form-group">
           <span class="form-section-title">{{ t('onboarding.selectProduct') }}</span>
           <p class="catalog-note">
-            {{
-              auth.isProSubscriber
-                ? t('onboarding.proCatalogUnlocked')
-                : t('onboarding.proCatalogNote')
-            }}
+            {{ auth.isProSubscriber ? t('onboarding.proCatalogUnlocked') : t('onboarding.proCatalogNote') }}
           </p>
           <div class="product-grid">
             <button
@@ -669,54 +967,65 @@ function formatTimeRemaining(expiresAtUtc: string): string {
               <span class="card-desc">{{ getProductDescription(prod) }}</span>
               <div class="product-recipe">
                 <span class="recipe-label">{{ t('onboarding.requires') }}:</span>
-                <span v-for="(r, i) in prod.recipes" :key="i" class="recipe-item">
-                  {{ getRecipeIngredientLabel(prod, i) }}
+                <span v-for="(recipe, index) in prod.recipes" :key="index" class="recipe-item">
+                  {{ getRecipeIngredientLabel(prod, index) }}
                 </span>
               </div>
             </button>
           </div>
         </div>
 
-        <div v-if="canShowSummary" class="summary">
+        <p v-if="availableShopLots.length === 0" class="empty-state-message">
+          {{ t('onboarding.noShopLots') }}
+        </p>
+        <OnboardingLotSelector
+          v-else
+          v-model:selected-lot-id="selectedShopLotId"
+          :lots="availableShopLots"
+          required-building-type="SALES_SHOP"
+          :money-available="starterCash"
+          :recommended-lot-ids="recommendedShopLotIds"
+        />
+
+        <div v-if="canShowStep4Summary" class="summary">
           <div class="summary-header">
             <span class="summary-icon">📋</span>
             <h3>{{ t('onboarding.summary') }}</h3>
           </div>
-          <p>{{ t('onboarding.summaryText', { company: companyName, city: selectedCity!.name, industry: formatIndustry(selectedIndustry) }) }}</p>
+          <p>
+            {{
+              t('onboarding.shopSummaryText', {
+                company: companyName,
+                city: selectedCity?.name ?? '',
+                product: selectedProduct ? getProductName(selectedProduct) : '',
+              })
+            }}
+          </p>
           <div class="summary-details">
             <div class="summary-item">
               <span class="summary-label">🏭</span>
-              <span>{{ companyName }} Factory</span>
+              <span>{{ selectedFactoryLot?.name }} — {{ t(`cityMap.districts.${selectedFactoryLot?.district}`) }}</span>
             </div>
             <div class="summary-item">
               <span class="summary-label">🏪</span>
-              <span>{{ companyName }} Shop</span>
+              <span>{{ selectedShopLot?.name }} — {{ t(`cityMap.districts.${selectedShopLot?.district}`) }}</span>
             </div>
             <div class="summary-item">
               <span class="summary-label">📦</span>
-              <span>{{ getProductName(selectedProduct!) }} — ${{ selectedProduct!.basePrice }}</span>
+              <span>{{ selectedProduct ? getProductName(selectedProduct) : '' }}</span>
             </div>
           </div>
         </div>
 
         <div class="step-actions">
-          <button class="btn btn-secondary" @click="prevStep">
-            <span class="btn-arrow">←</span>
-            {{ t('common.back') }}
-          </button>
-          <button
-            class="btn btn-primary btn-lg"
-            :disabled="!canProceedStep3 || loading"
-            @click="completeOnboarding"
-          >
-            {{ loading ? t('common.loading') : t('onboarding.startPlaying') }}
-            <span v-if="!loading" class="btn-arrow">🚀</span>
+          <button class="btn btn-primary btn-lg" :disabled="!canProceedStep4 || loading" @click="completeOnboarding">
+            {{ loading ? t('common.loading') : t('onboarding.purchaseShop') }}
+            <span v-if="!loading" class="btn-arrow">🏪</span>
           </button>
         </div>
       </div>
 
-      <!-- Step 4: Completion -->
-      <div v-if="step === 4 && completionResult" class="step-content completion-step">
+      <div v-if="step === 5 && completionResult" class="step-content completion-step">
         <div class="completion-hero">
           <h2 class="completion-title">{{ t('onboarding.completionTitle') }}</h2>
           <p class="completion-desc">{{ t('onboarding.completionDesc') }}</p>
@@ -753,33 +1062,19 @@ function formatTimeRemaining(expiresAtUtc: string): string {
           </div>
         </div>
 
-        <section
-          v-if="startupPackOffer"
-          class="startup-pack-panel"
-          aria-labelledby="startup-pack-title"
-        >
+        <section v-if="startupPackOffer" class="startup-pack-panel" aria-labelledby="startup-pack-title">
           <div class="startup-pack-header">
             <div>
               <span class="startup-pack-eyebrow">{{ t('startupPack.eyebrow') }}</span>
               <h3 id="startup-pack-title">{{ t('startupPack.title') }}</h3>
             </div>
-            <span
-              class="startup-pack-status"
-              :class="{
-                claimed: claimedStartupPackOffer,
-                expired: expiredStartupPackOffer,
-              }"
-            >
+            <span class="startup-pack-status" :class="{ claimed: claimedStartupPackOffer, expired: expiredStartupPackOffer }">
               {{ t(`startupPack.status.${startupPackOffer.status.toLowerCase()}`) }}
             </span>
           </div>
 
           <p class="startup-pack-subtitle">
-            {{
-              t('startupPack.subtitle', {
-                amount: formatCurrency(startupPackOffer.companyCashGrant),
-              })
-            }}
+            {{ t('startupPack.subtitle', { amount: formatCurrency(startupPackOffer.companyCashGrant) }) }}
           </p>
 
           <div v-if="activeStartupPackOffer" class="startup-pack-active">
@@ -817,11 +1112,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
             <p v-if="offerError" class="startup-pack-error" role="alert">{{ offerError }}</p>
 
             <div class="startup-pack-actions">
-              <button
-                class="btn btn-primary btn-lg"
-                :disabled="offerLoading"
-                @click="claimStartupPackOffer"
-              >
+              <button class="btn btn-primary btn-lg" :disabled="offerLoading" @click="claimStartupPackOffer">
                 {{ offerLoading ? t('common.loading') : t('startupPack.claim') }}
               </button>
               <button class="btn btn-secondary" :disabled="offerLoading" @click="dismissStartupPackOffer">
@@ -834,11 +1125,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
           <div v-else-if="claimedStartupPackOffer" class="startup-pack-state success">
             <strong>{{ t('startupPack.claimedTitle') }}</strong>
             <p v-if="auth.player?.proSubscriptionEndsAtUtc">
-              {{
-                t('startupPack.claimedBody', {
-                  date: formatDateTime(auth.player.proSubscriptionEndsAtUtc),
-                })
-              }}
+              {{ t('startupPack.claimedBody', { date: formatDateTime(auth.player.proSubscriptionEndsAtUtc) }) }}
             </p>
             <p v-else>{{ t('startupPack.claimedNoDate') }}</p>
             <p>
@@ -882,7 +1169,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
 }
 
 .onboarding-container {
-  max-width: 720px;
+  max-width: 1120px;
 }
 
 .onboarding-header {
@@ -984,8 +1271,14 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   padding: 2rem;
 }
 
+.step-content-wide {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
 .step-header {
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .step-header h2 {
@@ -1016,7 +1309,6 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 1rem;
-  margin-bottom: 1.5rem;
 }
 
 .industry-card,
@@ -1054,14 +1346,6 @@ function formatTimeRemaining(expiresAtUtc: string): string {
 .card-icon {
   font-size: 2.5rem;
   line-height: 1;
-}
-
-.product-image {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
 }
 
 .card-title {
@@ -1121,13 +1405,22 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   font-weight: 500;
 }
 
+.product-image {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
 .product-price {
   font-size: 1.125rem;
   font-weight: 700;
   color: var(--color-secondary);
 }
 
-.product-craft {
+.product-craft,
+.catalog-note {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
 }
@@ -1153,25 +1446,17 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  margin-bottom: 1.25rem;
 }
 
-.form-group label {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--color-text);
+.form-group.compact {
+  max-width: 420px;
 }
 
+.form-group label,
 .form-section-title {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-text);
-}
-
-.catalog-note {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: 0.875rem;
 }
 
 .form-group input {
@@ -1181,7 +1466,6 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   background: var(--color-bg);
   color: var(--color-text);
   font-size: 1rem;
-  transition: border-color 0.2s ease;
 }
 
 .form-group input:focus {
@@ -1190,16 +1474,61 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   box-shadow: 0 0 0 3px rgba(0, 71, 255, 0.15);
 }
 
-.form-group input::placeholder {
-  color: var(--color-text-secondary);
-}
-
+.guidance-panel,
+.resume-banner,
 .summary {
   background: var(--color-surface-raised);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 1.25rem;
-  margin-bottom: 1.5rem;
+  padding: 1rem 1.25rem;
+}
+
+.guidance-panel h3,
+.resume-banner strong,
+.summary h3 {
+  margin: 0 0 0.5rem;
+}
+
+.guidance-panel p,
+.guidance-panel ul,
+.resume-banner span,
+.summary p,
+.empty-state-message {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.guidance-panel ul {
+  padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.budget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.budget-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+}
+
+.budget-card.warning strong {
+  color: var(--color-tertiary);
+}
+
+.budget-label {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
 }
 
 .summary-header {
@@ -1213,21 +1542,11 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   font-size: 1.25rem;
 }
 
-.summary h3 {
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.summary p {
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
-  margin-bottom: 0.75rem;
-}
-
 .summary-details {
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
+  margin-top: 0.75rem;
 }
 
 .summary-item {
@@ -1248,7 +1567,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
-  margin-top: 1.5rem;
+  margin-top: 0.5rem;
 }
 
 .btn-lg {
@@ -1271,29 +1590,6 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   margin-bottom: 1rem;
 }
 
-@media (max-width: 640px) {
-  .industry-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .city-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .product-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .progress-label {
-    display: none;
-  }
-
-  .step-content {
-    padding: 1.25rem;
-  }
-}
-
-/* Completion Step */
 .completion-step {
   text-align: center;
   padding: 2rem;
@@ -1513,11 +1809,27 @@ function formatTimeRemaining(expiresAtUtc: string): string {
 }
 
 @media (max-width: 640px) {
-  .startup-pack-header {
+  .industry-grid,
+  .city-grid,
+  .product-grid,
+  .budget-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .progress-label {
+    display: none;
+  }
+
+  .step-content {
+    padding: 1.25rem;
+  }
+
+  .step-actions,
+  .startup-pack-actions {
     flex-direction: column;
   }
 
-  .startup-pack-actions {
+  .startup-pack-header {
     flex-direction: column;
   }
 }

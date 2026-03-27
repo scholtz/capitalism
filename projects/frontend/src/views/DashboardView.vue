@@ -60,6 +60,10 @@ onMounted(async () => {
 
   try {
     await auth.fetchMe()
+    if (auth.player && !auth.player.onboardingCompletedAtUtc) {
+      router.push('/onboarding')
+      return
+    }
     const data = await gqlRequest<{ myCompanies: Company[] }>(
       `{ myCompanies {
         id name cash foundedAtUtc

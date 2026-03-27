@@ -42,7 +42,11 @@ onMounted(async () => {
           <RouterLink v-if="!auth.isAuthenticated" to="/login" class="btn btn-primary">
             {{ t('home.getStarted') }}
           </RouterLink>
-          <RouterLink v-else-if="auth.player && auth.player.companies.length === 0" to="/onboarding" class="btn btn-primary">
+          <RouterLink
+            v-else-if="auth.player && !auth.player.onboardingCompletedAtUtc"
+            to="/onboarding"
+            class="btn btn-primary"
+          >
             {{ t('home.startOnboarding') }}
           </RouterLink>
           <RouterLink v-else to="/dashboard" class="btn btn-primary">

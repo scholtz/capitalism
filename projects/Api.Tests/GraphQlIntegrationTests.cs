@@ -132,6 +132,113 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         return (companyId, productId!, result);
     }
 
+    private async Task<string> GetCityIdByNameAsync(string cityName = "Bratislava")
+    {
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        return citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(city => city.GetProperty("name").GetString() == cityName)
+            .GetProperty("id")
+            .GetString()!;
+    }
+
+    private async Task<string> GetStarterProductIdAsync(string industry = "FURNITURE", string slug = "wooden-chair")
+    {
+        var productsResult = await ExecuteGraphQlAsync($"query {{ productTypes(industry: \"{industry}\") {{ id slug }} }}");
+        return productsResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .Single(product => product.GetProperty("slug").GetString() == slug)
+            .GetProperty("id")
+            .GetString()!;
+    }
+
+    private async Task<string> GetAvailableLotIdAsync(string cityId, string suitableType)
+    {
+        var lotsResult = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id suitableTypes ownerCompanyId }
+            }
+            """,
+            new { cityId });
+
+        return lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .First(lot => lot.GetProperty("suitableTypes").GetString()!.Contains(suitableType)
+                          && lot.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null)
+            .GetProperty("id")
+            .GetString()!;
+    }
+
+    private async Task<string> CreateTestLotAsync(
+        string cityId,
+        string suitableTypes,
+        string district,
+        decimal price = 75_000m,
+        string? name = null)
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync(candidate => candidate.Id == Guid.Parse(cityId));
+        var lot = new BuildingLot
+        {
+            Id = Guid.NewGuid(),
+            CityId = city.Id,
+            Name = name ?? $"Test Lot {Guid.NewGuid():N}".Substring(0, 17),
+            Description = "Test lot for onboarding flow coverage.",
+            District = district,
+            Latitude = city.Latitude + 0.01,
+            Longitude = city.Longitude + 0.01,
+            Price = price,
+            SuitableTypes = suitableTypes,
+            ConcurrencyToken = Guid.NewGuid()
+        };
+        db.BuildingLots.Add(lot);
+        await db.SaveChangesAsync();
+        return lot.Id.ToString();
+    }
+
+    private async Task<(string CompanyId, string FactoryLotId, string CityId, JsonElement Result)> StartOnboardingCompanyAsync(
+        string token,
+        string companyName = "Map Starter Co",
+        string? factoryLotId = null)
+    {
+        var cityId = await GetCityIdByNameAsync();
+        factoryLotId ??= await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id name cash }
+                factory { id name type latitude longitude }
+                factoryLot { id ownerCompanyId buildingId }
+              }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName, factoryLotId } },
+            token);
+
+        var companyId = result.GetProperty("data").GetProperty("startOnboardingCompany").GetProperty("company").GetProperty("id").GetString()!;
+        return (companyId, factoryLotId, cityId, result);
+    }
+
+    private async Task<JsonElement> FinishOnboardingAsync(string token, string productId, string shopLotId)
+    {
+        return await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) {
+                company { id name cash }
+                factory { id name type }
+                salesShop { id name type }
+                selectedProduct { id name industry }
+              }
+            }
+            """,
+            new { input = new { productTypeId = productId, shopLotId } },
+            token);
+    }
+
     #endregion
 
     #region Health & Info
@@ -1100,6 +1207,138 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var completedAt = meResult.GetProperty("data").GetProperty("me").GetProperty("onboardingCompletedAtUtc");
         Assert.Equal(JsonValueKind.String, completedAt.ValueKind);
         Assert.True(DateTime.TryParse(completedAt.GetString(), out _));
+    }
+
+    [Fact]
+    public async Task StartOnboardingCompany_PurchasesFactoryLot_AndStoresResumeMetadata()
+    {
+        var token = await RegisterAndGetTokenAsync($"onboard-map-start-{Guid.NewGuid()}@test.com", "Factory Founder");
+        var (_, factoryLotId, _, result) = await StartOnboardingCompanyAsync(token, "Factory Founder Co");
+
+        var data = result.GetProperty("data").GetProperty("startOnboardingCompany");
+        Assert.Equal("SHOP_SELECTION", data.GetProperty("nextStep").GetString());
+        Assert.Equal("FACTORY", data.GetProperty("factory").GetProperty("type").GetString());
+        Assert.Equal("Factory Founder Co", data.GetProperty("company").GetProperty("name").GetString());
+        Assert.True(data.GetProperty("company").GetProperty("cash").GetDecimal() < 500_000m);
+
+        var meResult = await ExecuteGraphQlAsync(
+            """
+            {
+              me {
+                onboardingCompletedAtUtc
+                onboardingCurrentStep
+                onboardingIndustry
+                onboardingCityId
+                onboardingCompanyId
+                onboardingFactoryLotId
+                companies { id name cash }
+              }
+            }
+            """,
+            token: token);
+
+        var me = meResult.GetProperty("data").GetProperty("me");
+        Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingCompletedAtUtc").ValueKind);
+        Assert.Equal("SHOP_SELECTION", me.GetProperty("onboardingCurrentStep").GetString());
+        Assert.Equal("FURNITURE", me.GetProperty("onboardingIndustry").GetString());
+        Assert.Equal(factoryLotId, me.GetProperty("onboardingFactoryLotId").GetString());
+        Assert.Equal(1, me.GetProperty("companies").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_UsesAuthoritativeLotValidation_AndCompletesFlow()
+    {
+        var token = await RegisterAndGetTokenAsync($"onboard-map-finish-{Guid.NewGuid()}@test.com", "Retail Founder");
+        var (companyId, _, cityId, startResult) = await StartOnboardingCompanyAsync(token, "Retail Founder Co");
+        var cashAfterFactory = startResult.GetProperty("data").GetProperty("startOnboardingCompany").GetProperty("company").GetProperty("cash").GetDecimal();
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 95_000m, "Test Shop Lot");
+
+        var result = await FinishOnboardingAsync(token, productId, shopLotId);
+        var data = result.GetProperty("data").GetProperty("finishOnboarding");
+
+        Assert.Equal(companyId, data.GetProperty("company").GetProperty("id").GetString());
+        Assert.Equal("SALES_SHOP", data.GetProperty("salesShop").GetProperty("type").GetString());
+        Assert.Equal("FURNITURE", data.GetProperty("selectedProduct").GetProperty("industry").GetString());
+        Assert.True(data.GetProperty("company").GetProperty("cash").GetDecimal() < cashAfterFactory);
+
+        var meResult = await ExecuteGraphQlAsync(
+            """
+            {
+              me {
+                onboardingCompletedAtUtc
+                onboardingCurrentStep
+                onboardingCompanyId
+                onboardingFactoryLotId
+              }
+            }
+            """,
+            token: token);
+
+        var me = meResult.GetProperty("data").GetProperty("me");
+        Assert.Equal(JsonValueKind.String, me.GetProperty("onboardingCompletedAtUtc").ValueKind);
+        Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingCurrentStep").ValueKind);
+        Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingCompanyId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingFactoryLotId").ValueKind);
+    }
+
+    [Fact]
+    public async Task StartOnboardingCompany_UnsuitableFactoryLot_Fails()
+    {
+        var token = await RegisterAndGetTokenAsync($"onboard-map-invalid-{Guid.NewGuid()}@test.com", "Wrong Plot");
+        var cityId = await GetCityIdByNameAsync();
+        var apartmentLotId = await CreateTestLotAsync(cityId, "APARTMENT", "Residential Quarter", 110_000m, "Unsuitable Apartment Lot");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Wrong Plot Co", factoryLotId = apartmentLotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Contains("not suitable", errors[0].GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_WhenShopLotBecomesUnavailable_PlayerCanResumeWithAnotherLot()
+    {
+        var token1 = await RegisterAndGetTokenAsync($"onboard-map-recover-a-{Guid.NewGuid()}@test.com", "Recover A");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token1, "Recover A Co");
+        var productId = await GetStarterProductIdAsync();
+        var sharedShopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Shared Shop Lot");
+
+        var token2 = await RegisterAndGetTokenAsync($"onboard-map-recover-b-{Guid.NewGuid()}@test.com", "Recover B");
+        var (companyId2, _, _) = await CompleteOnboardingAsync(token2, "Recover B Co");
+        await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { lot { id } }
+            }
+            """,
+            new { input = new { companyId = companyId2, lotId = sharedShopLotId, buildingType = "SALES_SHOP", buildingName = "Blocking Shop" } },
+            token2);
+
+        var failedResult = await FinishOnboardingAsync(token1, productId, sharedShopLotId);
+        Assert.True(failedResult.TryGetProperty("errors", out var errors));
+        Assert.Contains("already been purchased", errors[0].GetProperty("message").GetString());
+
+        var meResult = await ExecuteGraphQlAsync(
+            """
+            {
+              me {
+                onboardingCompletedAtUtc
+                onboardingCurrentStep
+              }
+            }
+            """,
+            token: token1);
+
+        var me = meResult.GetProperty("data").GetProperty("me");
+        Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingCompletedAtUtc").ValueKind);
+        Assert.Equal("SHOP_SELECTION", me.GetProperty("onboardingCurrentStep").GetString());
     }
 
     [Fact]

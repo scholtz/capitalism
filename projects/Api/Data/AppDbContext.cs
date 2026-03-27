@@ -76,6 +76,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(p => p.Email).HasMaxLength(256);
             e.Property(p => p.DisplayName).HasMaxLength(100);
             e.Property(p => p.Role).HasMaxLength(20);
+            e.Property(p => p.OnboardingCurrentStep).HasMaxLength(40);
+            e.Property(p => p.OnboardingIndustry).HasMaxLength(50);
         });
 
         // StartupPackOffer

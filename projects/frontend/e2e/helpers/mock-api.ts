@@ -19,6 +19,11 @@ export type MockPlayer = {
   role: 'PLAYER' | 'ADMIN'
   createdAtUtc: string
   onboardingCompletedAtUtc: string | null
+  onboardingCurrentStep: string | null
+  onboardingIndustry: string | null
+  onboardingCityId: string | null
+  onboardingCompanyId: string | null
+  onboardingFactoryLotId: string | null
   proSubscriptionEndsAtUtc: string | null
   startupPackOffer: MockStartupPackOffer | null
   companies: MockCompany[]
@@ -201,6 +206,8 @@ export type MockState = {
   gameState: { currentTick: number; tickIntervalSeconds: number; taxCycleTicks: number; taxRate: number }
 }
 
+const STARTING_CASH_FOR_ONBOARDING = 500000
+
 function cloneUnit(unit: MockBuildingUnit): MockBuildingUnit {
   return { ...unit }
 }
@@ -354,6 +361,11 @@ export function makePlayer(overrides?: Partial<MockPlayer>): MockPlayer {
     role: 'PLAYER',
     createdAtUtc: '2026-01-01T00:00:00Z',
     onboardingCompletedAtUtc: null,
+    onboardingCurrentStep: null,
+    onboardingIndustry: null,
+    onboardingCityId: null,
+    onboardingCompanyId: null,
+    onboardingFactoryLotId: null,
     proSubscriptionEndsAtUtc: null,
     startupPackOffer: null,
     companies: [],
@@ -626,6 +638,11 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         role: 'PLAYER',
         createdAtUtc: new Date().toISOString(),
         onboardingCompletedAtUtc: null,
+        onboardingCurrentStep: null,
+        onboardingIndustry: null,
+        onboardingCityId: null,
+        onboardingCompanyId: null,
+        onboardingFactoryLotId: null,
         proSubscriptionEndsAtUtc: null,
         startupPackOffer: null,
         companies: [],
@@ -671,6 +688,158 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('StartOnboardingCompany')) {
+      const input = body.variables?.input
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      if (!player) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }) })
+      }
+
+      const lot = state.buildingLots.find((candidate) => candidate.id === input?.factoryLotId)
+      if (!lot) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building lot not found.' }] }) })
+      }
+      if (lot.ownerCompanyId) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.' }] }) })
+      }
+      if (!lot.suitableTypes.split(',').map((type) => type.trim()).includes('FACTORY')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building type FACTORY is not suitable for this lot.' }] }) })
+      }
+      if (STARTING_CASH_FOR_ONBOARDING < lot.price) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: `Insufficient funds. This lot costs $${lot.price.toLocaleString()}.` }] }) })
+      }
+
+      const companyId = `company-${Date.now()}`
+      const factoryId = `building-factory-${Date.now()}`
+      const company: MockCompany = {
+        id: companyId,
+        playerId: player.id,
+        name: input.companyName,
+        cash: STARTING_CASH_FOR_ONBOARDING - lot.price,
+        foundedAtUtc: new Date().toISOString(),
+        buildings: [
+          {
+            id: factoryId,
+            companyId,
+            cityId: input.cityId,
+            type: 'FACTORY',
+            name: `${input.companyName} Factory`,
+            latitude: lot.latitude,
+            longitude: lot.longitude,
+            level: 1,
+            powerConsumption: 2,
+            isForSale: false,
+            builtAtUtc: new Date().toISOString(),
+            units: [],
+            pendingConfiguration: null,
+          },
+        ],
+      }
+
+      lot.ownerCompanyId = company.id
+      lot.buildingId = factoryId
+      lot.ownerCompany = { id: company.id, name: company.name }
+      lot.building = { id: factoryId, name: `${input.companyName} Factory`, type: 'FACTORY' }
+
+      player.companies.push(company)
+      player.onboardingCurrentStep = 'SHOP_SELECTION'
+      player.onboardingIndustry = input.industry
+      player.onboardingCityId = input.cityId
+      player.onboardingCompanyId = company.id
+      player.onboardingFactoryLotId = lot.id
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            startOnboardingCompany: {
+              nextStep: 'SHOP_SELECTION',
+              company: { id: company.id, name: company.name, cash: company.cash },
+              factory: company.buildings[0],
+              factoryLot: lot,
+            },
+          },
+        }),
+      })
+    }
+
+    if (query.includes('FinishOnboarding')) {
+      const input = body.variables?.input
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      if (!player || player.onboardingCurrentStep !== 'SHOP_SELECTION' || !player.onboardingCompanyId) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'No onboarding progress was found to resume.' }] }) })
+      }
+
+      const company = player.companies.find((candidate) => candidate.id === player.onboardingCompanyId)
+      const product = state.productTypes.find((candidate) => candidate.id === input?.productTypeId)
+      const shopLot = state.buildingLots.find((candidate) => candidate.id === input?.shopLotId)
+
+      if (!company || !product) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Product not found.' }] }) })
+      }
+      if (!shopLot) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building lot not found.' }] }) })
+      }
+      if (shopLot.ownerCompanyId) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.' }] }) })
+      }
+      if (!shopLot.suitableTypes.split(',').map((type) => type.trim()).includes('SALES_SHOP')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building type SALES_SHOP is not suitable for this lot.' }] }) })
+      }
+      if (company.cash < shopLot.price) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: `Insufficient funds. This lot costs $${shopLot.price.toLocaleString()}.` }] }) })
+      }
+
+      company.cash -= shopLot.price
+      const shopId = `building-shop-${Date.now()}`
+      const shopBuilding: MockBuilding = {
+        id: shopId,
+        companyId: company.id,
+        cityId: shopLot.cityId,
+        type: 'SALES_SHOP',
+        name: `${company.name} Shop`,
+        latitude: shopLot.latitude,
+        longitude: shopLot.longitude,
+        level: 1,
+        powerConsumption: 1,
+        isForSale: false,
+        builtAtUtc: new Date().toISOString(),
+        units: [],
+        pendingConfiguration: null,
+      }
+      company.buildings.push(shopBuilding)
+
+      shopLot.ownerCompanyId = company.id
+      shopLot.buildingId = shopBuilding.id
+      shopLot.ownerCompany = { id: company.id, name: company.name }
+      shopLot.building = { id: shopBuilding.id, name: shopBuilding.name, type: shopBuilding.type }
+
+      player.onboardingCompletedAtUtc = new Date().toISOString()
+      player.onboardingCurrentStep = null
+      player.onboardingIndustry = null
+      player.onboardingCityId = null
+      player.onboardingCompanyId = null
+      player.onboardingFactoryLotId = null
+      player.startupPackOffer = player.startupPackOffer ?? makeStartupPackOffer()
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            finishOnboarding: {
+              company: { id: company.id, name: company.name, cash: company.cash },
+              factory: company.buildings.find((candidate) => candidate.type === 'FACTORY'),
+              salesShop: shopBuilding,
+              selectedProduct: product,
+              startupPackOffer: player.startupPackOffer,
+            },
+          },
+        }),
+      })
+    }
+
     if (query.includes('CompleteOnboarding')) {
       const input = body.variables?.input
       const player = state.players.find((p) => p.id === state.currentUserId)
@@ -691,6 +860,11 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       }
       player.companies.push(company)
       player.onboardingCompletedAtUtc = new Date().toISOString()
+      player.onboardingCurrentStep = null
+      player.onboardingIndustry = null
+      player.onboardingCityId = null
+      player.onboardingCompanyId = null
+      player.onboardingFactoryLotId = null
       player.startupPackOffer = player.startupPackOffer ?? makeStartupPackOffer()
       return route.fulfill({
         status: 200,

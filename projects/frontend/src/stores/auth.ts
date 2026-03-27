@@ -49,7 +49,21 @@ export const useAuthStore = defineStore('auth', () => {
           register(input: $input) {
             token
             expiresAtUtc
-            player { id displayName email role createdAtUtc onboardingCompletedAtUtc proSubscriptionEndsAtUtc companies { id name cash } }
+            player {
+              id
+              displayName
+              email
+              role
+              createdAtUtc
+              onboardingCompletedAtUtc
+              onboardingCurrentStep
+              onboardingIndustry
+              onboardingCityId
+              onboardingCompanyId
+              onboardingFactoryLotId
+              proSubscriptionEndsAtUtc
+              companies { id name cash }
+            }
           }
         }`,
         { input: { email, displayName, password } },
@@ -72,7 +86,21 @@ export const useAuthStore = defineStore('auth', () => {
           login(input: $input) {
             token
             expiresAtUtc
-            player { id displayName email role createdAtUtc onboardingCompletedAtUtc proSubscriptionEndsAtUtc companies { id name cash } }
+            player {
+              id
+              displayName
+              email
+              role
+              createdAtUtc
+              onboardingCompletedAtUtc
+              onboardingCurrentStep
+              onboardingIndustry
+              onboardingCityId
+              onboardingCompanyId
+              onboardingFactoryLotId
+              proSubscriptionEndsAtUtc
+              companies { id name cash }
+            }
           }
         }`,
         { input: { email, password } },
@@ -92,7 +120,21 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const data = await gqlRequest<{ me: Player; startupPackOffer: StartupPackOffer | null }>(
         `{
-          me { id displayName email role createdAtUtc onboardingCompletedAtUtc proSubscriptionEndsAtUtc companies { id name cash } }
+          me {
+            id
+            displayName
+            email
+            role
+            createdAtUtc
+            onboardingCompletedAtUtc
+            onboardingCurrentStep
+            onboardingIndustry
+            onboardingCityId
+            onboardingCompanyId
+            onboardingFactoryLotId
+            proSubscriptionEndsAtUtc
+            companies { id name cash }
+          }
           startupPackOffer {
             id
             offerKey

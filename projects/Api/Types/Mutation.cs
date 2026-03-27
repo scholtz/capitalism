@@ -323,8 +323,256 @@ public sealed class Mutation
 
         // Mark onboarding as completed for this player
         player.OnboardingCompletedAtUtc = nowUtc;
+        ClearOnboardingProgress(player);
 
         await db.SaveChangesAsync();
+        var startupPackOffer = await StartupPackService.EnsureOfferForPlayerAsync(db, player, nowUtc);
+
+        return new OnboardingResult
+        {
+            Company = company,
+            Factory = factory,
+            SalesShop = shop,
+            SelectedProduct = product,
+            StartupPackOffer = startupPackOffer
+        };
+    }
+
+    /// <summary>
+    /// Starts the lot-based onboarding journey by creating the first company and purchasing its factory lot.
+    /// The player can later resume at the sales-shop step using the stored onboarding progress metadata.
+    /// </summary>
+    [Authorize]
+    public async Task<OnboardingStartResult> StartOnboardingCompany(
+        StartOnboardingCompanyInput input,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var nowUtc = DateTime.UtcNow;
+        var player = await db.Players.FindAsync(userId)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+
+        if (player.OnboardingCompletedAtUtc is not null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("You have already completed onboarding.")
+                    .SetCode("ONBOARDING_ALREADY_COMPLETED")
+                    .Build());
+        }
+
+        if (player.OnboardingCurrentStep is not null || player.OnboardingCompanyId is not null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Onboarding is already in progress.")
+                    .SetCode("ONBOARDING_ALREADY_IN_PROGRESS")
+                    .Build());
+        }
+
+        if (await db.Companies.AnyAsync(company => company.PlayerId == userId))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("You already have a company. Resume or finish onboarding instead.")
+                    .SetCode("ONBOARDING_ALREADY_IN_PROGRESS")
+                    .Build());
+        }
+
+        if (!Industry.StarterIndustries.Contains(input.Industry))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage($"Invalid starter industry: {input.Industry}")
+                    .SetCode("INVALID_INDUSTRY")
+                    .Build());
+        }
+
+        var city = await db.Cities.FindAsync(input.CityId);
+        if (city is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("City not found.")
+                    .SetCode("CITY_NOT_FOUND")
+                    .Build());
+        }
+
+        var company = new Company
+        {
+            Id = Guid.NewGuid(),
+            PlayerId = userId,
+            Name = input.CompanyName,
+            Cash = 500_000m,
+            FoundedAtUtc = nowUtc
+        };
+        db.Companies.Add(company);
+
+        var (factoryLot, factory) = await PrepareLotPurchaseAsync(
+            db,
+            company,
+            input.FactoryLotId,
+            BuildingType.Factory,
+            $"{input.CompanyName} Factory",
+            2m,
+            nowUtc,
+            input.CityId);
+
+        AddStarterFactoryShell(db, factory.Id);
+
+        player.OnboardingCurrentStep = OnboardingProgressStep.ShopSelection;
+        player.OnboardingIndustry = input.Industry;
+        player.OnboardingCityId = input.CityId;
+        player.OnboardingCompanyId = company.Id;
+        player.OnboardingFactoryLotId = factoryLot.Id;
+
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("This lot has already been purchased.")
+                    .SetCode("LOT_ALREADY_OWNED")
+                    .Build());
+        }
+
+        return new OnboardingStartResult
+        {
+            Company = company,
+            Factory = factory,
+            FactoryLot = factoryLot,
+            NextStep = OnboardingProgressStep.ShopSelection
+        };
+    }
+
+    /// <summary>
+    /// Finishes the lot-based onboarding journey by selecting the starter product, purchasing the first sales shop,
+    /// configuring both buildings, and marking onboarding complete.
+    /// </summary>
+    [Authorize]
+    public async Task<OnboardingResult> FinishOnboarding(
+        FinishOnboardingInput input,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var nowUtc = DateTime.UtcNow;
+        var player = await db.Players.FindAsync(userId)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+
+        if (!string.Equals(player.OnboardingCurrentStep, OnboardingProgressStep.ShopSelection, StringComparison.Ordinal)
+            || player.OnboardingCompanyId is null
+            || player.OnboardingIndustry is null
+            || player.OnboardingCityId is null
+            || player.OnboardingFactoryLotId is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("No onboarding progress was found to resume.")
+                    .SetCode("ONBOARDING_NOT_IN_PROGRESS")
+                    .Build());
+        }
+
+        var company = await db.Companies.FirstOrDefaultAsync(
+            candidate => candidate.Id == player.OnboardingCompanyId && candidate.PlayerId == userId)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Company not found or you don't own it.")
+                    .SetCode("COMPANY_NOT_FOUND")
+                    .Build());
+
+        var factoryLot = await db.BuildingLots.FirstOrDefaultAsync(lot => lot.Id == player.OnboardingFactoryLotId)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Factory lot not found.")
+                    .SetCode("LOT_NOT_FOUND")
+                    .Build());
+
+        var factory = await db.Buildings
+            .Include(building => building.Units)
+            .FirstOrDefaultAsync(building => building.Id == factoryLot.BuildingId && building.CompanyId == company.Id)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Factory not found.")
+                    .SetCode("BUILDING_NOT_FOUND")
+                    .Build());
+
+        var hasActiveProSubscription = ProductAccessService.HasActiveProSubscription(player, nowUtc);
+        var product = await db.ProductTypes
+            .Include(candidate => candidate.Recipes)
+            .ThenInclude(recipe => recipe.ResourceType)
+            .Include(candidate => candidate.Recipes)
+            .ThenInclude(recipe => recipe.InputProductType)
+            .FirstOrDefaultAsync(candidate => candidate.Id == input.ProductTypeId);
+
+        if (product is null || product.Industry != player.OnboardingIndustry || !IsStarterOnboardingProduct(product))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Product not found, doesn't belong to selected industry, or is not available for onboarding.")
+                    .SetCode("INVALID_PRODUCT")
+                    .Build());
+        }
+
+        if (!ProductAccessService.IsUnlockedForPlayer(product, hasActiveProSubscription))
+        {
+            throw ProductAccessService.CreateProAccessException(product.Name);
+        }
+
+        var starterResourceId = product.Recipes
+            .Where(recipe => recipe.InputProductTypeId is null && recipe.ResourceTypeId is not null)
+            .Select(recipe => recipe.ResourceTypeId)
+            .FirstOrDefault();
+        if (starterResourceId is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("The selected onboarding product is missing a starter raw-material recipe.")
+                    .SetCode("INVALID_PRODUCT")
+                    .Build());
+        }
+
+        var (_, shop) = await PrepareLotPurchaseAsync(
+            db,
+            company,
+            input.ShopLotId,
+            BuildingType.SalesShop,
+            $"{company.Name} Shop",
+            1m,
+            nowUtc,
+            player.OnboardingCityId);
+
+        ConfigureStarterFactory(db, factory, product, starterResourceId.Value);
+        AddStarterShop(db, shop.Id, product);
+
+        player.OnboardingCompletedAtUtc = nowUtc;
+        ClearOnboardingProgress(player);
+
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("This lot has already been purchased.")
+                    .SetCode("LOT_ALREADY_OWNED")
+                    .Build());
+        }
+
         var startupPackOffer = await StartupPackService.EnsureOfferForPlayerAsync(db, player, nowUtc);
 
         return new OnboardingResult
@@ -341,6 +589,137 @@ public sealed class Mutation
     {
         return StarterOnboardingProductByIndustry.TryGetValue(product.Industry, out var starterSlug)
             && string.Equals(product.Slug, starterSlug, StringComparison.Ordinal);
+    }
+
+    private static void ClearOnboardingProgress(Player player)
+    {
+        player.OnboardingCurrentStep = null;
+        player.OnboardingIndustry = null;
+        player.OnboardingCityId = null;
+        player.OnboardingCompanyId = null;
+        player.OnboardingFactoryLotId = null;
+    }
+
+    private static void AddStarterFactoryShell(AppDbContext db, Guid buildingId)
+    {
+        db.BuildingUnits.AddRange(
+            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = buildingId, UnitType = UnitType.Purchase, GridX = 0, GridY = 0, Level = 1, LinkRight = true, PurchaseSource = "LOCAL" },
+            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = buildingId, UnitType = UnitType.Manufacturing, GridX = 1, GridY = 0, Level = 1, LinkRight = true },
+            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = buildingId, UnitType = UnitType.Storage, GridX = 2, GridY = 0, Level = 1, LinkRight = true },
+            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = buildingId, UnitType = UnitType.B2BSales, GridX = 3, GridY = 0, Level = 1 }
+        );
+    }
+
+    private static void ConfigureStarterFactory(AppDbContext db, Building factory, ProductType product, Guid starterResourceId)
+    {
+        db.BuildingUnits.RemoveRange(factory.Units);
+        db.BuildingUnits.AddRange(
+            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Purchase, GridX = 0, GridY = 0, Level = 1, LinkRight = true, ResourceTypeId = starterResourceId, PurchaseSource = "LOCAL", MaxPrice = product.BasePrice },
+            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Manufacturing, GridX = 1, GridY = 0, Level = 1, LinkRight = true, ProductTypeId = product.Id },
+            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Storage, GridX = 2, GridY = 0, Level = 1, LinkRight = true },
+            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.B2BSales, GridX = 3, GridY = 0, Level = 1, ProductTypeId = product.Id, MinPrice = product.BasePrice }
+        );
+    }
+
+    private static void AddStarterShop(AppDbContext db, Guid buildingId, ProductType product)
+    {
+        db.BuildingUnits.AddRange(
+            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = buildingId, UnitType = UnitType.Purchase, GridX = 0, GridY = 0, Level = 1, LinkRight = true, ProductTypeId = product.Id, PurchaseSource = "LOCAL", MaxPrice = product.BasePrice },
+            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = buildingId, UnitType = UnitType.PublicSales, GridX = 1, GridY = 0, Level = 1, ProductTypeId = product.Id, MinPrice = product.BasePrice }
+        );
+    }
+
+    private static async Task<(BuildingLot Lot, Building Building)> PrepareLotPurchaseAsync(
+        AppDbContext db,
+        Company company,
+        Guid lotId,
+        string buildingType,
+        string buildingName,
+        decimal powerConsumption,
+        DateTime builtAtUtc,
+        Guid? expectedCityId = null)
+    {
+        var lot = await db.BuildingLots
+            .Include(candidate => candidate.City)
+            .FirstOrDefaultAsync(candidate => candidate.Id == lotId);
+
+        if (lot is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Building lot not found.")
+                    .SetCode("LOT_NOT_FOUND")
+                    .Build());
+        }
+
+        if (lot.OwnerCompanyId is not null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("This lot has already been purchased.")
+                    .SetCode("LOT_ALREADY_OWNED")
+                    .Build());
+        }
+
+        if (expectedCityId is not null && lot.CityId != expectedCityId.Value)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("This lot does not belong to the selected onboarding city.")
+                    .SetCode("LOT_CITY_MISMATCH")
+                    .Build());
+        }
+
+        if (!BuildingType.All.Contains(buildingType))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage($"Invalid building type: {buildingType}")
+                    .SetCode("INVALID_BUILDING_TYPE")
+                    .Build());
+        }
+
+        var suitableTypes = lot.SuitableTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (!suitableTypes.Contains(buildingType))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage($"Building type {buildingType} is not suitable for this lot. Suitable types: {lot.SuitableTypes}")
+                    .SetCode("UNSUITABLE_BUILDING_TYPE")
+                    .Build());
+        }
+
+        if (company.Cash < lot.Price)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage($"Insufficient funds. This lot costs ${lot.Price:N0} but you only have ${company.Cash:N0}.")
+                    .SetCode("INSUFFICIENT_FUNDS")
+                    .Build());
+        }
+
+        company.Cash -= lot.Price;
+
+        var building = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = lot.CityId,
+            Type = buildingType,
+            Name = buildingName,
+            Latitude = lot.Latitude,
+            Longitude = lot.Longitude,
+            Level = 1,
+            PowerConsumption = powerConsumption,
+            BuiltAtUtc = builtAtUtc
+        };
+
+        db.Buildings.Add(building);
+        lot.OwnerCompanyId = company.Id;
+        lot.BuildingId = building.Id;
+        lot.ConcurrencyToken = Guid.NewGuid();
+
+        return (lot, building);
     }
 
     private static async Task EnsureSubmittedProductsAreAccessibleAsync(
@@ -686,81 +1065,14 @@ public sealed class Mutation
                     .Build());
         }
 
-        var lot = await db.BuildingLots
-            .Include(l => l.City)
-            .FirstOrDefaultAsync(l => l.Id == input.LotId);
-
-        if (lot is null)
-        {
-            throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage("Building lot not found.")
-                    .SetCode("LOT_NOT_FOUND")
-                    .Build());
-        }
-
-        if (lot.OwnerCompanyId is not null)
-        {
-            throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage("This lot has already been purchased.")
-                    .SetCode("LOT_ALREADY_OWNED")
-                    .Build());
-        }
-
-        if (!BuildingType.All.Contains(input.BuildingType))
-        {
-            throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage($"Invalid building type: {input.BuildingType}")
-                    .SetCode("INVALID_BUILDING_TYPE")
-                    .Build());
-        }
-
-        var suitableTypes = lot.SuitableTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (!suitableTypes.Contains(input.BuildingType))
-        {
-            throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage($"Building type {input.BuildingType} is not suitable for this lot. Suitable types: {lot.SuitableTypes}")
-                    .SetCode("UNSUITABLE_BUILDING_TYPE")
-                    .Build());
-        }
-
-        if (company.Cash < lot.Price)
-        {
-            throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage($"Insufficient funds. This lot costs ${lot.Price:N0} but you only have ${company.Cash:N0}.")
-                    .SetCode("INSUFFICIENT_FUNDS")
-                    .Build());
-        }
-
-        // Deduct the price from company cash
-        company.Cash -= lot.Price;
-
-        // Create the building at the lot's coordinates
-        var building = new Building
-        {
-            Id = Guid.NewGuid(),
-            CompanyId = company.Id,
-            CityId = lot.CityId,
-            Type = input.BuildingType,
-            Name = input.BuildingName,
-            Latitude = lot.Latitude,
-            Longitude = lot.Longitude,
-            Level = 1,
-            PowerConsumption = 1m,
-            BuiltAtUtc = DateTime.UtcNow
-        };
-
-        db.Buildings.Add(building);
-
-        // Mark the lot as owned and stamp a new concurrency token so a
-        // concurrent save with the stale original token will fail.
-        lot.OwnerCompanyId = company.Id;
-        lot.BuildingId = building.Id;
-        lot.ConcurrencyToken = Guid.NewGuid();
+        var (lot, building) = await PrepareLotPurchaseAsync(
+            db,
+            company,
+            input.LotId,
+            input.BuildingType,
+            input.BuildingName,
+            1m,
+            DateTime.UtcNow);
 
         try
         {
@@ -840,6 +1152,22 @@ public sealed class OnboardingResult
 
     /// <summary>The player's startup-pack offer, if one is available after onboarding.</summary>
     public StartupPackOffer? StartupPackOffer { get; set; }
+}
+
+/// <summary>Result of purchasing the first factory during lot-based onboarding.</summary>
+public sealed class OnboardingStartResult
+{
+    /// <summary>The newly created company.</summary>
+    public Company Company { get; set; } = null!;
+
+    /// <summary>The first factory placed on the selected lot.</summary>
+    public Building Factory { get; set; } = null!;
+
+    /// <summary>The lot that now hosts the player's first factory.</summary>
+    public BuildingLot FactoryLot { get; set; } = null!;
+
+    /// <summary>The next onboarding step the client should guide the player to.</summary>
+    public string NextStep { get; set; } = string.Empty;
 }
 
 /// <summary>Claim result payload for the startup-pack offer.</summary>

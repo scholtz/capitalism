@@ -10,7 +10,12 @@ export interface Player {
   createdAtUtc: string
   lastLoginAtUtc: string | null
   onboardingCompletedAtUtc: string | null
-   proSubscriptionEndsAtUtc: string | null
+  onboardingCurrentStep: string | null
+  onboardingIndustry: string | null
+  onboardingCityId: string | null
+  onboardingCompanyId: string | null
+  onboardingFactoryLotId: string | null
+  proSubscriptionEndsAtUtc: string | null
   companies: Company[]
 }
 
@@ -294,6 +299,13 @@ export interface OnboardingResult {
   salesShop: Building
   selectedProduct: ProductType
   startupPackOffer: StartupPackOffer | null
+}
+
+export interface OnboardingStartResult {
+  company: Company
+  factory: Building
+  factoryLot: BuildingLot
+  nextStep: string
 }
 
 export interface StartupPackOffer {

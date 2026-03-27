@@ -77,6 +77,34 @@ public sealed class OnboardingInput
     public string CompanyName { get; set; } = string.Empty;
 }
 
+/// <summary>Input for starting lot-based onboarding by purchasing the first factory lot.</summary>
+public sealed class StartOnboardingCompanyInput
+{
+    /// <summary>Industry the player wants to start with: FURNITURE, FOOD_PROCESSING, HEALTHCARE.</summary>
+    [Required, MaxLength(50)]
+    public string Industry { get; set; } = string.Empty;
+
+    /// <summary>City where the player wants to start.</summary>
+    public Guid CityId { get; set; }
+
+    /// <summary>Name for the player's first company.</summary>
+    [Required, MaxLength(200)]
+    public string CompanyName { get; set; } = string.Empty;
+
+    /// <summary>Factory-capable lot chosen for the first building.</summary>
+    public Guid FactoryLotId { get; set; }
+}
+
+/// <summary>Input for finishing lot-based onboarding by choosing a starter product and first shop lot.</summary>
+public sealed class FinishOnboardingInput
+{
+    /// <summary>First product type to manufacture and sell.</summary>
+    public Guid ProductTypeId { get; set; }
+
+    /// <summary>Sales-shop-capable lot chosen for the first retail building.</summary>
+    public Guid ShopLotId { get; set; }
+}
+
 /// <summary>Input for claiming the post-onboarding startup pack.</summary>
 public sealed class ClaimStartupPackInput
 {

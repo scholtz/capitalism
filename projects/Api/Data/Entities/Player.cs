@@ -39,6 +39,21 @@ public sealed class Player
     /// <summary>UTC timestamp until which the player's Pro subscription remains active. Null when inactive.</summary>
     public DateTime? ProSubscriptionEndsAtUtc { get; set; }
 
+    /// <summary>Current resumable onboarding step. Null when onboarding has not started or is completed.</summary>
+    public string? OnboardingCurrentStep { get; set; }
+
+    /// <summary>Starter industry chosen for an in-progress onboarding journey.</summary>
+    public string? OnboardingIndustry { get; set; }
+
+    /// <summary>Selected city for an in-progress onboarding journey.</summary>
+    public Guid? OnboardingCityId { get; set; }
+
+    /// <summary>Company being created during a resumable onboarding journey.</summary>
+    public Guid? OnboardingCompanyId { get; set; }
+
+    /// <summary>Factory lot already acquired during an in-progress onboarding journey.</summary>
+    public Guid? OnboardingFactoryLotId { get; set; }
+
     /// <summary>Companies owned by this player.</summary>
     public ICollection<Company> Companies { get; set; } = [];
 }
@@ -48,4 +63,10 @@ public static class PlayerRole
 {
     public const string Player = "PLAYER";
     public const string Admin = "ADMIN";
+}
+
+/// <summary>Resumable onboarding step identifiers stored on the player profile.</summary>
+public static class OnboardingProgressStep
+{
+    public const string ShopSelection = "SHOP_SELECTION";
 }
