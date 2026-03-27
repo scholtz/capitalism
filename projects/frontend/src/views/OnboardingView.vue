@@ -157,6 +157,11 @@ function clearProgress() {
 }
 
 function restoreProgress() {
+  // Don't restore if onboarding was already completed
+  if (auth.player?.onboardingCompletedAtUtc) {
+    clearProgress()
+    return
+  }
   try {
     const raw = localStorage.getItem(PROGRESS_KEY)
     if (!raw) return
@@ -207,9 +212,14 @@ onMounted(async () => {
     // Restore saved progress (step, selections) after data is loaded
     restoreProgress()
 
-    // If we restored a step > 1 with an industry, reload products in background
+    // If we restored a step > 1 with an industry, reload products so the product list is ready
     if (step.value > 1 && selectedIndustry.value) {
-      await loadProducts()
+      const data = await gqlRequest<{ productTypes: ProductType[] }>(
+        PRODUCTS_QUERY,
+        { industry: selectedIndustry.value },
+      )
+      const allowedSlugs = starterProductSlugByIndustry[selectedIndustry.value] ?? []
+      products.value = data.productTypes.filter((product) => allowedSlugs.includes(product.slug))
     }
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to load data'
