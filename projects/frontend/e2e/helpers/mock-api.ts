@@ -791,7 +791,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           ...(building.units ?? []),
           ...(building.pendingConfiguration?.units ?? []),
         ].some((candidate) =>
-          candidate.gridX === unit.gridX
+          candidate.unitType === unit.unitType
+          && candidate.gridX === unit.gridX
           && candidate.gridY === unit.gridY
           && (candidate.productTypeId ?? null) === unit.productTypeId,
         )

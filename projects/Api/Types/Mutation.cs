@@ -378,7 +378,7 @@ public sealed class Mutation
 
             if (!product.IsProOnly
                 || hasActiveProSubscription
-                || IsRetainingExistingProProduct(building, unit.GridX, unit.GridY, productId))
+                || IsRetainingExistingProProduct(building, unit.UnitType, unit.GridX, unit.GridY, productId))
             {
                 continue;
             }
@@ -387,16 +387,18 @@ public sealed class Mutation
         }
     }
 
-    private static bool IsRetainingExistingProProduct(Building building, int gridX, int gridY, Guid productTypeId)
+    private static bool IsRetainingExistingProProduct(Building building, string unitType, int gridX, int gridY, Guid productTypeId)
     {
         return building.Units.Any(unit =>
-                   unit.GridX == gridX
+                   unit.UnitType == unitType
+                   && unit.GridX == gridX
                    && unit.GridY == gridY
                    && unit.ProductTypeId == productTypeId)
                || (building.PendingConfiguration?.Units.Any(unit =>
-                   unit.GridX == gridX
-                   && unit.GridY == gridY
-                   && unit.ProductTypeId == productTypeId) ?? false);
+                   unit.UnitType == unitType
+                    && unit.GridX == gridX
+                    && unit.GridY == gridY
+                    && unit.ProductTypeId == productTypeId) ?? false);
     }
 
     /// <summary>Queues a building configuration update that becomes active after the required ticks have passed.</summary>
