@@ -65,11 +65,31 @@ query {
 ```
 
 ### `rankings`
-Player leaderboard sorted by total wealth (cash across all companies).
+Player leaderboard sorted by total wealth across all owned companies.
+
+**Wealth formula (interim — evolves as the economy matures):**
+- `totalWealth = cashTotal + buildingValue + inventoryValue`
+- `cashTotal` — sum of `company.cash` for all companies owned by the player
+- `buildingValue` — sum of `buildingBaseValue[type] × level` for every building owned.
+  Base values by type: MINE $250k, FACTORY $200k, SALES_SHOP $150k, R&D $300k,
+  APARTMENT $400k, COMMERCIAL $350k, MEDIA_HOUSE $500k, BANK $600k,
+  EXCHANGE $450k, POWER_PLANT $350k
+- `inventoryValue` — sum of `quantity × item.basePrice` for all resources and
+  products stored in company buildings (quality/brand premium not yet included)
+
+Admin players are excluded from rankings.
 
 ```graphql
 {
-  rankings { playerId displayName totalWealth companyCount }
+  rankings {
+    playerId
+    displayName
+    totalWealth
+    cashTotal
+    buildingValue
+    inventoryValue
+    companyCount
+  }
 }
 ```
 

@@ -12,7 +12,7 @@ test.describe('Home page', () => {
   test('shows leaderboard heading', async ({ page }) => {
     setupMockApi(page)
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Leaderboard' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Top Players' })).toBeVisible()
   })
 
   test('shows game status cards when data loads', async ({ page }) => {

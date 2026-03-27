@@ -277,6 +277,9 @@ export interface PlayerRanking {
   playerId: string
   displayName: string
   totalWealth: number
+  cashTotal: number
+  buildingValue: number
+  inventoryValue: number
   companyCount: number
 }
 

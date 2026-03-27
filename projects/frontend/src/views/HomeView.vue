@@ -19,7 +19,7 @@ onMounted(async () => {
   }
   try {
     const [rankData, stateData] = await Promise.all([
-      gqlRequest<{ rankings: PlayerRanking[] }>('{ rankings { playerId displayName totalWealth companyCount } }'),
+      gqlRequest<{ rankings: PlayerRanking[] }>('{ rankings { playerId displayName totalWealth cashTotal buildingValue inventoryValue companyCount } }'),
       gqlRequest<{ gameState: GameState }>('{ gameState { currentTick tickIntervalSeconds taxRate } }'),
     ])
     rankings.value = rankData.rankings
@@ -70,7 +70,12 @@ onMounted(async () => {
     </section>
 
     <section class="leaderboard container">
-      <h2>{{ t('home.leaderboard') }}</h2>
+      <div class="leaderboard-header">
+        <h2>{{ t('home.leaderboard') }}</h2>
+        <RouterLink to="/leaderboard" class="btn btn-secondary leaderboard-link">
+          {{ t('home.viewFullLeaderboard') }}
+        </RouterLink>
+      </div>
       <div v-if="loading" class="loading">{{ t('common.loading') }}</div>
       <div v-else-if="rankings.length === 0" class="empty">{{ t('home.noPlayers') }}</div>
       <table v-else class="ranking-table">
@@ -83,7 +88,7 @@ onMounted(async () => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(rank, index) in rankings" :key="rank.playerId">
+          <tr v-for="(rank, index) in rankings.slice(0, 5)" :key="rank.playerId">
             <td class="rank-num">{{ index + 1 }}</td>
             <td>{{ rank.displayName }}</td>
             <td class="wealth">${{ rank.totalWealth.toLocaleString() }}</td>
@@ -162,9 +167,22 @@ onMounted(async () => {
   padding: 2rem 1rem 4rem;
 }
 
-.leaderboard h2 {
-  font-size: 1.5rem;
+.leaderboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 1rem;
+  gap: 1rem;
+}
+
+.leaderboard-header h2 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+.leaderboard-link {
+  font-size: 0.875rem;
+  white-space: nowrap;
 }
 
 .ranking-table {

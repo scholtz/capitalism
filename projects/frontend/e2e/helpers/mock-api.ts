@@ -864,12 +864,39 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     if (query.includes('rankings')) {
       const rankings = state.players
         .filter((p) => p.role !== 'ADMIN')
-        .map((p) => ({
-          playerId: p.id,
-          displayName: p.displayName,
-          totalWealth: p.companies.reduce((sum, c) => sum + c.cash, 0),
-          companyCount: p.companies.length,
-        }))
+        .map((p) => {
+          const cashTotal = p.companies.reduce((sum, c) => sum + c.cash, 0)
+          const buildingValue = p.companies.reduce(
+            (sum, c) =>
+              sum +
+              c.buildings.reduce((bSum, b) => {
+                const baseValues: Record<string, number> = {
+                  MINE: 250000,
+                  FACTORY: 200000,
+                  SALES_SHOP: 150000,
+                  RESEARCH_DEVELOPMENT: 300000,
+                  APARTMENT: 400000,
+                  COMMERCIAL: 350000,
+                  MEDIA_HOUSE: 500000,
+                  BANK: 600000,
+                  EXCHANGE: 450000,
+                  POWER_PLANT: 350000,
+                }
+                return bSum + (baseValues[b.type] ?? 0) * b.level
+              }, 0),
+            0,
+          )
+          const inventoryValue = 0 // inventory not tracked in mock state
+          return {
+            playerId: p.id,
+            displayName: p.displayName,
+            cashTotal,
+            buildingValue,
+            inventoryValue,
+            totalWealth: cashTotal + buildingValue + inventoryValue,
+            companyCount: p.companies.length,
+          }
+        })
         .sort((a, b) => b.totalWealth - a.totalWealth)
       return route.fulfill({
         status: 200,

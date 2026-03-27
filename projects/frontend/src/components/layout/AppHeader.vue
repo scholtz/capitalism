@@ -17,6 +17,7 @@ const auth = useAuthStore()
       <nav class="nav-links">
         <RouterLink to="/">{{ t('nav.home') }}</RouterLink>
         <RouterLink v-if="auth.isAuthenticated" to="/dashboard">{{ t('nav.dashboard') }}</RouterLink>
+        <RouterLink to="/leaderboard">{{ t('nav.leaderboard') }}</RouterLink>
         <RouterLink to="/encyclopedia">{{ t('nav.encyclopedia') }}</RouterLink>
       </nav>
       <div class="header-actions">

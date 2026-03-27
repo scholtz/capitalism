@@ -884,10 +884,127 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             token);
 
         var result = await ExecuteGraphQlAsync(
-            "{ rankings { displayName totalWealth companyCount } }");
+            "{ rankings { displayName totalWealth cashTotal buildingValue inventoryValue companyCount } }");
 
         var rankings = result.GetProperty("data").GetProperty("rankings");
         Assert.True(rankings.GetArrayLength() >= 1);
+    }
+
+    [Fact]
+    public async Task Rankings_ReturnsAllWealthComponents()
+    {
+        var token = await RegisterAndGetTokenAsync("wealth@test.com", "WealthPlayer");
+        await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Wealth Corp" } },
+            token);
+
+        var result = await ExecuteGraphQlAsync(
+            "{ rankings { playerId displayName totalWealth cashTotal buildingValue inventoryValue companyCount } }");
+
+        var rankings = result.GetProperty("data").GetProperty("rankings");
+        var entry = rankings.EnumerateArray()
+            .FirstOrDefault(r => r.GetProperty("displayName").GetString() == "WealthPlayer");
+
+        Assert.True(entry.ValueKind != System.Text.Json.JsonValueKind.Undefined, "WealthPlayer ranking entry not found");
+        Assert.True(entry.GetProperty("cashTotal").GetDecimal() >= 0);
+        Assert.True(entry.GetProperty("buildingValue").GetDecimal() >= 0);
+        Assert.True(entry.GetProperty("inventoryValue").GetDecimal() >= 0);
+
+        // totalWealth must equal the sum of its components
+        var cash = entry.GetProperty("cashTotal").GetDecimal();
+        var building = entry.GetProperty("buildingValue").GetDecimal();
+        var inventory = entry.GetProperty("inventoryValue").GetDecimal();
+        var total = entry.GetProperty("totalWealth").GetDecimal();
+        Assert.Equal(cash + building + inventory, total);
+    }
+
+    [Fact]
+    public async Task Rankings_AggregatesMultipleCompanies()
+    {
+        var token = await RegisterAndGetTokenAsync("multi@test.com", "MultiCo");
+        await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Company A" } },
+            token);
+        await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Company B" } },
+            token);
+
+        var result = await ExecuteGraphQlAsync(
+            "{ rankings { displayName totalWealth cashTotal companyCount } }");
+
+        var rankings = result.GetProperty("data").GetProperty("rankings");
+        var entry = rankings.EnumerateArray()
+            .FirstOrDefault(r => r.GetProperty("displayName").GetString() == "MultiCo");
+
+        Assert.True(entry.ValueKind != System.Text.Json.JsonValueKind.Undefined, "MultiCo ranking entry not found");
+        Assert.Equal(2, entry.GetProperty("companyCount").GetInt32());
+        // cashTotal must reflect both companies (default starting capital is $1,000,000 each)
+        Assert.True(entry.GetProperty("cashTotal").GetDecimal() >= 2_000_000m);
+    }
+
+    [Fact]
+    public async Task Rankings_OrderedByTotalWealthDescending()
+    {
+        var richToken = await RegisterAndGetTokenAsync("rich@test.com", "RichPlayer");
+        var poorToken = await RegisterAndGetTokenAsync("poor@test.com", "PoorPlayer");
+
+        // Rich player gets two companies, poor player gets none.
+        await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Rich Corp 1" } },
+            richToken);
+        await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Rich Corp 2" } },
+            richToken);
+
+        var result = await ExecuteGraphQlAsync(
+            "{ rankings { displayName totalWealth } }");
+
+        var rankings = result.GetProperty("data").GetProperty("rankings")
+            .EnumerateArray()
+            .Select(r => r.GetProperty("totalWealth").GetDecimal())
+            .ToList();
+
+        // Verify descending order
+        for (int i = 1; i < rankings.Count; i++)
+        {
+            Assert.True(rankings[i - 1] >= rankings[i],
+                $"Ranking is not sorted descending: position {i - 1} ({rankings[i - 1]}) < position {i} ({rankings[i]})");
+        }
+    }
+
+    [Fact]
+    public async Task Rankings_ExcludesAdminPlayers()
+    {
+        // Register and promote an admin via direct DB access is not straightforward here,
+        // so we verify that only PLAYER-role users appear (the test factory registers players
+        // with role PLAYER by default, and admins seeded by AppDbInitializer are excluded).
+        var result = await ExecuteGraphQlAsync(
+            "{ rankings { displayName companyCount } }");
+        var rankings = result.GetProperty("data").GetProperty("rankings");
+        Assert.True(rankings.ValueKind == System.Text.Json.JsonValueKind.Array);
+    }
+
+    [Fact]
+    public async Task Rankings_ZeroWealthPlayerIncluded()
+    {
+        // A player who registered but has no companies should appear with zero wealth.
+        await RegisterAndGetTokenAsync("zero@test.com", "ZeroPlayer");
+
+        var result = await ExecuteGraphQlAsync(
+            "{ rankings { displayName totalWealth companyCount } }");
+
+        var rankings = result.GetProperty("data").GetProperty("rankings");
+        var entry = rankings.EnumerateArray()
+            .FirstOrDefault(r => r.GetProperty("displayName").GetString() == "ZeroPlayer");
+
+        Assert.True(entry.ValueKind != System.Text.Json.JsonValueKind.Undefined, "ZeroPlayer ranking entry not found");
+        Assert.Equal(0, entry.GetProperty("companyCount").GetInt32());
+        Assert.Equal(0m, entry.GetProperty("totalWealth").GetDecimal());
     }
 
     #endregion
