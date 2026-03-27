@@ -4,6 +4,7 @@ using System.Text.Json;
 using Api.Data;
 using Api.Tests.Infrastructure;
 using Api.Utilities;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Api.Tests;
@@ -89,7 +90,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         await db.SaveChangesAsync();
     }
 
-    private async Task<(string CompanyId, JsonElement Result)> CompleteOnboardingAsync(
+    private async Task<(string CompanyId, string ProductId, JsonElement Result)> CompleteOnboardingAsync(
         string token,
         string companyName = "My First Co")
     {
@@ -127,7 +128,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             token);
 
         var companyId = result.GetProperty("data").GetProperty("completeOnboarding").GetProperty("company").GetProperty("id").GetString()!;
-        return (companyId, result);
+        return (companyId, productId!, result);
     }
 
     #endregion
@@ -812,7 +813,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     public async Task CompleteOnboarding_CreatesCompanyFactoryAndShop()
     {
         var token = await RegisterAndGetTokenAsync("onboard@test.com", "Onboarder");
-        var (_, result) = await CompleteOnboardingAsync(token);
+        var (_, productId, result) = await CompleteOnboardingAsync(token);
 
         var data = result.GetProperty("data").GetProperty("completeOnboarding");
         Assert.Equal("My First Co", data.GetProperty("company").GetProperty("name").GetString());
@@ -869,7 +870,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     {
         var token = await RegisterAndGetTokenAsync("startup-pack@test.com", "StartupPacker");
 
-        var (_, result) = await CompleteOnboardingAsync(token, "Offer Corp");
+        var (_, _, result) = await CompleteOnboardingAsync(token, "Offer Corp");
 
         var offer = result.GetProperty("data").GetProperty("completeOnboarding").GetProperty("startupPackOffer");
         Assert.Equal("ELIGIBLE", offer.GetProperty("status").GetString());
@@ -908,6 +909,18 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal("ELIGIBLE", offer.GetProperty("status").GetString());
         Assert.Equal(250000m, offer.GetProperty("companyCashGrant").GetDecimal());
         Assert.Equal(90, offer.GetProperty("proDurationDays").GetInt32());
+    }
+
+    [Fact]
+    public async Task StartupPackOffer_BeforeOnboarding_ReturnsNull()
+    {
+        var token = await RegisterAndGetTokenAsync("startup-pack-none@test.com", "NoOfferYet");
+
+        var result = await ExecuteGraphQlAsync(
+            "{ startupPackOffer { status } }",
+            token: token);
+
+        Assert.Equal(JsonValueKind.Null, result.GetProperty("data").GetProperty("startupPackOffer").ValueKind);
     }
 
     [Fact]
@@ -955,7 +968,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     public async Task ClaimStartupPack_IsIdempotentAndGrantsEntitlementsOnce()
     {
         var token = await RegisterAndGetTokenAsync("startup-pack-claim@test.com", "ClaimPlayer");
-        var (companyId, _) = await CompleteOnboardingAsync(token, "Claim Corp");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Claim Corp");
 
         var firstClaim = await ExecuteGraphQlAsync(
             """
@@ -1003,7 +1016,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     public async Task StartupPackOffer_ExpiresAndRejectsClaims()
     {
         var token = await RegisterAndGetTokenAsync("startup-pack-expired@test.com", "ExpiredPlayer");
-        var (companyId, _) = await CompleteOnboardingAsync(token, "Expired Corp");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Expired Corp");
 
         await using (var scope = _factory.Services.CreateAsyncScope())
         {

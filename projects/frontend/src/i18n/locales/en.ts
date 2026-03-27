@@ -164,7 +164,9 @@ export default {
   encyclopedia: {
     eyebrow: 'Manufacturing Knowledge Base',
     title: 'Manufacturing Encyclopedia',
+    subtitle: 'Browse raw materials, intermediate goods, and finished products for supply-chain planning.',
     loadFailed: 'Failed to load encyclopedia data',
+    resourcesCount: 'resources',
     productsCount: 'products',
     rawMaterials: 'Raw Materials',
     rawMaterialsHelp: 'Each mined resource includes a realistic trade unit, weight, and visual card.',

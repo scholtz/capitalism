@@ -189,6 +189,16 @@ dotnet run           # API server
 dotnet test ../Api.Tests  # Run integration tests
 ```
 
+## Validation requirements before reporting completion
+- For backend changes, do not stop at Debug-only targeted tests. Always run the workflow-equivalent Release pipeline locally:
+  - `cd projects/Api && dotnet restore Api.slnx && dotnet build Api.slnx --configuration Release --no-restore && dotnet test Api.slnx --configuration Release --no-build`
+- For frontend changes that affect shipped UI, also run the workflow-equivalent frontend checks:
+  - `cd projects/frontend && npm ci && npm run lint && npm run build`
+- For Playwright changes or UI flows covered by Playwright, install browsers if needed and run the relevant spec exactly as CI expects:
+  - `cd projects/frontend && npx playwright install --with-deps chromium`
+  - `cd projects/frontend && npx playwright test --project=chromium e2e/<relevant-spec>.ts`
+- If you discover pre-existing failing tests outside the changed area, call them out explicitly in progress/final reporting instead of assuming the repository is green.
+
 ## HotChocolate v15 notes
 - Non-nullable input fields must be explicitly provided in GraphQL variables even if the C# class has a default.
 - Enum values use SCREAMING_SNAKE_CASE strings (e.g., `"FURNITURE"`, `"IN_PERSON"`).
