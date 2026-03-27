@@ -182,7 +182,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         {
             Id = Guid.NewGuid(),
             CityId = city.Id,
-            Name = name ?? $"Test Lot {Guid.NewGuid():N}".Substring(0, 17),
+            Name = name ?? $"Test Lot {Guid.NewGuid():N}"[..17],
             Description = "Test lot for onboarding flow coverage.",
             District = district,
             Latitude = city.Latitude + 0.01,
