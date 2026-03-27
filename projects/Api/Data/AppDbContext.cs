@@ -83,6 +83,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(offer => offer.OfferKey).HasMaxLength(50);
             e.Property(offer => offer.Status).HasMaxLength(20);
             e.Property(offer => offer.CompanyCashGrant).HasPrecision(18, 2);
+            e.Property(offer => offer.ConcurrencyToken).IsConcurrencyToken();
             e.HasOne(offer => offer.Player)
                 .WithOne()
                 .HasForeignKey<StartupPackOffer>(offer => offer.PlayerId)

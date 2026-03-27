@@ -47,6 +47,12 @@ public sealed class StartupPackOffer
 
     /// <summary>Company that received the cash grant, if claimed.</summary>
     public Guid? GrantedCompanyId { get; set; }
+
+    /// <summary>
+    /// Application-managed concurrency token that makes claim settlement atomic.
+    /// Only one request may persist a transition into the claimed state.
+    /// </summary>
+    public Guid ConcurrencyToken { get; set; } = Guid.NewGuid();
 }
 
 /// <summary>Stable identifiers for startup-pack definitions.</summary>

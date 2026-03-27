@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Api.Data;
+using Api.Data.Entities;
 using Api.Tests.Infrastructure;
 using Api.Utilities;
 using Microsoft.EntityFrameworkCore;
@@ -1010,6 +1011,64 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             "{ me { proSubscriptionEndsAtUtc } }",
             token: token);
         Assert.Equal(firstProEndsAt, meResult.GetProperty("data").GetProperty("me").GetProperty("proSubscriptionEndsAtUtc").GetString());
+    }
+
+    [Fact]
+    public async Task ClaimStartupPack_ConcurrentRequests_SettleEconomyAndPremiumOnce()
+    {
+        var token = await RegisterAndGetTokenAsync("startup-pack-concurrent@test.com", "ConcurrentPlayer");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Concurrent Corp");
+
+        const string claimMutation = """
+            mutation ClaimStartupPack($input: ClaimStartupPackInput!) {
+              claimStartupPack(input: $input) {
+                offer { status claimedAtUtc grantedCompanyId }
+                company { id cash }
+                proSubscriptionEndsAtUtc
+              }
+            }
+            """;
+
+        // Monetization integrity matters here: duplicate network submits or two tabs racing
+        // must converge on a single durable grant so premium time and company cash never double-credit.
+        var claimTasks = Enumerable.Range(0, 8)
+            .Select(_ => ExecuteGraphQlAsync(claimMutation, new { input = new { companyId } }, token))
+            .ToArray();
+
+        var claimResults = await Task.WhenAll(claimTasks);
+
+        var claimPayloads = claimResults
+            .Select(result => result.GetProperty("data").GetProperty("claimStartupPack"))
+            .ToList();
+
+        Assert.All(claimPayloads, payload =>
+        {
+            Assert.Equal("CLAIMED", payload.GetProperty("offer").GetProperty("status").GetString());
+            Assert.Equal(companyId, payload.GetProperty("offer").GetProperty("grantedCompanyId").GetString());
+            Assert.Equal(500_000m + StartupPackService.CompanyCashGrant, payload.GetProperty("company").GetProperty("cash").GetDecimal());
+        });
+
+        var distinctProEndTimes = claimPayloads
+            .Select(payload => payload.GetProperty("proSubscriptionEndsAtUtc").GetString())
+            .Distinct()
+            .ToList();
+        Assert.Single(distinctProEndTimes);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var player = await db.Players.SingleAsync(candidate => candidate.Email == "startup-pack-concurrent@test.com");
+        var offer = await db.StartupPackOffers.SingleAsync(candidate => candidate.PlayerId == player.Id);
+        var company = await db.Companies.SingleAsync(candidate => candidate.Id == Guid.Parse(companyId));
+
+        Assert.Equal(StartupPackOfferStatus.Claimed, offer.Status);
+        Assert.NotNull(offer.ClaimedAtUtc);
+        Assert.Equal(Guid.Parse(companyId), offer.GrantedCompanyId);
+        Assert.Equal(500_000m + StartupPackService.CompanyCashGrant, company.Cash);
+        Assert.NotNull(player.ProSubscriptionEndsAtUtc);
+        var returnedProEndsAtUtc = DateTime.Parse(distinctProEndTimes[0]!).ToUniversalTime();
+        Assert.True(
+            Math.Abs((player.ProSubscriptionEndsAtUtc!.Value.ToUniversalTime() - returnedProEndsAtUtc).TotalMilliseconds) < 5,
+            "Concurrent claims should converge to the same durable Pro end timestamp within sub-millisecond serialization precision.");
     }
 
     [Fact]

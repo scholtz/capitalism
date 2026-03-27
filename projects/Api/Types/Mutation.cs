@@ -453,79 +453,115 @@ public sealed class Mutation
         [Service] IHttpContextAccessor httpContextAccessor)
     {
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
-        var nowUtc = DateTime.UtcNow;
-
-        var player = await db.Players
-            .Include(candidate => candidate.Companies)
-            .FirstOrDefaultAsync(candidate => candidate.Id == userId)
-            ?? throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage("Player not found.")
-                    .SetCode("PLAYER_NOT_FOUND")
-                    .Build());
-
-        var offer = await StartupPackService.EnsureOfferForPlayerAsync(db, player, nowUtc)
-            ?? throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage("Startup pack is not available for this player.")
-                    .SetCode("STARTUP_PACK_NOT_AVAILABLE")
-                    .Build());
-
-        if (StartupPackService.TryExpireOffer(offer, nowUtc))
+        for (var attempt = 0; attempt < StartupPackService.MaxClaimRetryAttempts; attempt++)
         {
-            await db.SaveChangesAsync();
+            try
+            {
+                var nowUtc = DateTime.UtcNow;
+                var player = await db.Players
+                    .Include(candidate => candidate.Companies)
+                    .FirstOrDefaultAsync(candidate => candidate.Id == userId)
+                    ?? throw new GraphQLException(
+                        ErrorBuilder.New()
+                            .SetMessage("Player not found.")
+                            .SetCode("PLAYER_NOT_FOUND")
+                            .Build());
+
+                var offer = await StartupPackService.EnsureOfferForPlayerAsync(db, player, nowUtc)
+                    ?? throw new GraphQLException(
+                        ErrorBuilder.New()
+                            .SetMessage("Startup pack is not available for this player.")
+                            .SetCode("STARTUP_PACK_NOT_AVAILABLE")
+                            .Build());
+
+                if (StartupPackService.TryExpireOffer(offer, nowUtc))
+                {
+                    await db.SaveChangesAsync();
+                }
+
+                if (offer.Status == StartupPackOfferStatus.Expired)
+                {
+                    throw new GraphQLException(
+                        ErrorBuilder.New()
+                            .SetMessage("Startup pack offer has expired.")
+                            .SetCode("STARTUP_PACK_EXPIRED")
+                            .Build());
+                }
+
+                if (offer.Status == StartupPackOfferStatus.Claimed && offer.GrantedCompanyId is null)
+                {
+                    throw new GraphQLException(
+                        ErrorBuilder.New()
+                            .SetMessage("Startup pack claim state is incomplete.")
+                            .SetCode("STARTUP_PACK_CLAIM_INTEGRITY")
+                            .Build());
+                }
+
+                Company? company;
+                if (offer.Status == StartupPackOfferStatus.Claimed && offer.GrantedCompanyId is not null)
+                {
+                    company = player.Companies.FirstOrDefault(candidate => candidate.Id == offer.GrantedCompanyId);
+                }
+                else
+                {
+                    company = player.Companies.FirstOrDefault(candidate => candidate.Id == input.CompanyId);
+                }
+
+                if (company is null)
+                {
+                    throw new GraphQLException(
+                        ErrorBuilder.New()
+                            .SetMessage("Company not found or you don't own it.")
+                            .SetCode("COMPANY_NOT_FOUND")
+                            .Build());
+                }
+
+                if (offer.Status != StartupPackOfferStatus.Claimed)
+                {
+                    StartupPackService.MarkShown(offer, nowUtc);
+                    company.Cash += offer.CompanyCashGrant;
+                    // If the player already has active Pro time from another source, extend from that
+                    // future end-date instead of overwriting it or restarting from "now".
+                    var subscriptionStart = player.ProSubscriptionEndsAtUtc is { } endsAt && endsAt > nowUtc
+                        ? endsAt
+                        : nowUtc;
+                    player.ProSubscriptionEndsAtUtc = subscriptionStart.AddDays(offer.ProDurationDays);
+                    StartupPackService.MarkClaimed(offer, company.Id, nowUtc);
+
+                    // The startup-pack offer carries the concurrency token for the atomic settlement.
+                    // If another request claims first, this SaveChanges rolls back the entire grant
+                    // and the retry path below re-reads the already-claimed durable state.
+                    await db.SaveChangesAsync();
+                }
+
+                var companySnapshot = await db.Companies
+                    .AsNoTracking()
+                    .FirstAsync(candidate =>
+                        candidate.Id == offer.GrantedCompanyId
+                        && candidate.PlayerId == player.Id);
+                var playerSnapshot = await db.Players
+                    .AsNoTracking()
+                    .FirstAsync(candidate => candidate.Id == player.Id);
+
+                return new StartupPackClaimResult
+                {
+                    Offer = offer,
+                    Company = companySnapshot,
+                    ProSubscriptionEndsAtUtc = playerSnapshot.ProSubscriptionEndsAtUtc ?? nowUtc
+                };
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < StartupPackService.MaxClaimRetryAttempts - 1)
+            {
+                db.ChangeTracker.Clear();
+                await Task.Delay(StartupPackService.ClaimRetryBaseDelayMs * (attempt + 1));
+            }
         }
 
-        if (offer.Status == StartupPackOfferStatus.Expired)
-        {
-            throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage("Startup pack offer has expired.")
-                    .SetCode("STARTUP_PACK_EXPIRED")
-                    .Build());
-        }
-
-        Company? company;
-        if (offer.Status == StartupPackOfferStatus.Claimed && offer.GrantedCompanyId is not null)
-        {
-            company = player.Companies.FirstOrDefault(candidate => candidate.Id == offer.GrantedCompanyId);
-        }
-        else
-        {
-            company = player.Companies.FirstOrDefault(candidate => candidate.Id == input.CompanyId);
-        }
-
-        if (company is null)
-        {
-            throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage("Company not found or you don't own it.")
-                    .SetCode("COMPANY_NOT_FOUND")
-                    .Build());
-        }
-
-        if (offer.Status != StartupPackOfferStatus.Claimed)
-        {
-            StartupPackService.MarkShown(offer, nowUtc);
-            company.Cash += offer.CompanyCashGrant;
-            // If the player already has active Pro time from another source, extend from that
-            // future end-date instead of overwriting it or restarting from "now".
-            var subscriptionStart = player.ProSubscriptionEndsAtUtc is { } endsAt && endsAt > nowUtc
-                ? endsAt
-                : nowUtc;
-            player.ProSubscriptionEndsAtUtc = subscriptionStart.AddDays(offer.ProDurationDays);
-            offer.Status = StartupPackOfferStatus.Claimed;
-            offer.ClaimedAtUtc = nowUtc;
-            offer.GrantedCompanyId = company.Id;
-            await db.SaveChangesAsync();
-        }
-
-        return new StartupPackClaimResult
-        {
-            Offer = offer,
-            Company = company,
-            ProSubscriptionEndsAtUtc = player.ProSubscriptionEndsAtUtc ?? nowUtc
-        };
+        throw new GraphQLException(
+            ErrorBuilder.New()
+                .SetMessage("Startup pack claim could not be completed safely. Please try again.")
+                .SetCode("STARTUP_PACK_CLAIM_RETRY")
+                .Build());
     }
 
     /// <summary>Sets or clears the for-sale status and asking price of a building.</summary>

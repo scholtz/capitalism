@@ -1,5 +1,6 @@
 using Api.Data;
 using Api.Data.Entities;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api.Utilities;
@@ -11,8 +12,17 @@ public static class StartupPackService
 {
     public const decimal CompanyCashGrant = 250_000m;
     public const int ProDurationDays = 90;
+    public const int MaxClaimRetryAttempts = 3;
+    public const int ClaimRetryBaseDelayMs = 25;
 
     private static readonly TimeSpan OfferAvailabilityWindow = TimeSpan.FromHours(72);
+    private const int SqliteConstraintErrorCode = 19;
+
+    /// <summary>Bumps the concurrency token so EF enforces optimistic concurrency on the next save.</summary>
+    private static void BumpConcurrencyToken(StartupPackOffer offer)
+    {
+        offer.ConcurrencyToken = Guid.NewGuid();
+    }
 
     /// <summary>
     /// Ensures an eligible player has a durable startup-pack record.
@@ -45,8 +55,18 @@ public static class StartupPackService
             };
 
             db.StartupPackOffers.Add(offer);
-            await db.SaveChangesAsync();
-            return offer;
+            try
+            {
+                await db.SaveChangesAsync();
+                return offer;
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is SqliteException { SqliteErrorCode: SqliteConstraintErrorCode })
+            {
+                // The test and deployed environments both use SQLite right now, so a duplicate
+                // PlayerId insert surfaces as SQLITE_CONSTRAINT and we can re-read the winner's row.
+                db.Entry(offer).State = EntityState.Detached;
+                return await db.StartupPackOffers.FirstAsync(candidate => candidate.PlayerId == player.Id);
+            }
         }
 
         if (TryExpireOffer(offer, nowUtc))
@@ -73,12 +93,14 @@ public static class StartupPackService
         if (offer.ShownAtUtc is null)
         {
             offer.ShownAtUtc = nowUtc;
+            BumpConcurrencyToken(offer);
             changed = true;
         }
 
         if (offer.Status == StartupPackOfferStatus.Eligible)
         {
             offer.Status = StartupPackOfferStatus.Shown;
+            BumpConcurrencyToken(offer);
             changed = true;
         }
 
@@ -102,12 +124,14 @@ public static class StartupPackService
         if (offer.Status != StartupPackOfferStatus.Dismissed)
         {
             offer.Status = StartupPackOfferStatus.Dismissed;
+            BumpConcurrencyToken(offer);
             changed = true;
         }
 
         if (offer.DismissedAtUtc is null)
         {
             offer.DismissedAtUtc = nowUtc;
+            BumpConcurrencyToken(offer);
             changed = true;
         }
 
@@ -128,6 +152,19 @@ public static class StartupPackService
         }
 
         offer.Status = StartupPackOfferStatus.Expired;
+        BumpConcurrencyToken(offer);
         return true;
+    }
+
+    /// <summary>
+    /// Finalizes the offer as claimed. The caller must persist this in the same SaveChanges call
+    /// as the company cash and player Pro updates so the economy/premium grant settles exactly once.
+    /// </summary>
+    public static void MarkClaimed(StartupPackOffer offer, Guid companyId, DateTime nowUtc)
+    {
+        offer.Status = StartupPackOfferStatus.Claimed;
+        offer.ClaimedAtUtc = nowUtc;
+        offer.GrantedCompanyId = companyId;
+        BumpConcurrencyToken(offer);
     }
 }

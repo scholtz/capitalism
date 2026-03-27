@@ -1,16 +1,16 @@
-using Api.Data;
+using System.IO;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Api.Tests.Infrastructure;
 
 public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly string _databaseName = $"capitalism-tests-{Guid.NewGuid()}";
+    // Use a unique relational test database per factory instance so optimistic-concurrency behavior
+    // is exercised realistically. Cleanup happens on disposal; abrupt test termination may leave
+    // temp files behind, but the GUID-based file names avoid cross-test contamination.
+    private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"capitalism-tests-{Guid.NewGuid():N}.db");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -20,19 +20,31 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>
         {
             configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:EventsCatalog"] = "Data Source=events-tests.db",
+                ["ConnectionStrings:EventsCatalog"] = $"Data Source={_databasePath}",
                 ["SeedData:AdminEmail"] = "admin@capitalism.local",
                 ["SeedData:AdminDisplayName"] = "Platform Admin",
                 ["SeedData:AdminPassword"] = "ChangeMe123!"
             });
         });
+    }
 
-        builder.ConfigureServices(services =>
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        TryDeleteDatabase();
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        TryDeleteDatabase();
+    }
+
+    private void TryDeleteDatabase()
+    {
+        if (File.Exists(_databasePath))
         {
-            services.RemoveAll<DbContextOptions<AppDbContext>>();
-            services.RemoveAll<AppDbContext>();
-            services.AddDbContext<AppDbContext>(options =>
-                options.UseInMemoryDatabase(_databaseName));
-        });
+            File.Delete(_databasePath);
+        }
     }
 }

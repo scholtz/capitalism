@@ -81,7 +81,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    if (builder.Environment.IsEnvironment("Testing") || builder.Environment.IsDevelopment())
+    if (builder.Environment.IsDevelopment())
     {
         options.UseInMemoryDatabase("events-tests");
     }
