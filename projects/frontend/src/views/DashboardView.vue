@@ -63,7 +63,7 @@ onMounted(async () => {
     const data = await gqlRequest<{ myCompanies: Company[] }>(
       `{ myCompanies {
         id name cash foundedAtUtc
-        buildings { id name type level units { id unitType gridX gridY level } }
+        buildings { id name type level cityId units { id unitType gridX gridY level } }
       } }`,
     )
     companies.value = data.myCompanies
@@ -378,6 +378,13 @@ function formatTimeRemaining(expiresAtUtc: string): string {
           </div>
           <RouterLink :to="`/buy-building/${company.id}`" class="btn btn-primary">
             {{ t('dashboard.buyBuilding') }}
+          </RouterLink>
+          <RouterLink
+            v-if="company.buildings.length > 0 && company.buildings[0]"
+            :to="`/city/${company.buildings[0]!.cityId}`"
+            class="btn btn-secondary"
+          >
+            🗺️ {{ t('nav.cityMap') }}
           </RouterLink>
         </div>
 

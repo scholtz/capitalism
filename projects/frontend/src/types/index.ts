@@ -334,3 +334,27 @@ export interface GameState {
   taxCycleTicks: number
   taxRate: number
 }
+
+/** Matches backend BuildingLot entity */
+export interface BuildingLot {
+  id: string
+  cityId: string
+  name: string
+  description: string
+  district: string
+  latitude: number
+  longitude: number
+  price: number
+  suitableTypes: string
+  ownerCompanyId: string | null
+  buildingId: string | null
+  ownerCompany: { id: string; name: string } | null
+  building: { id: string; name: string; type: string } | null
+}
+
+/** Result of purchasing a building lot */
+export interface PurchaseLotResult {
+  lot: BuildingLot
+  building: Building
+  company: Company
+}

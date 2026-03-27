@@ -12,6 +12,7 @@ const router = createRouter({
     { path: '/encyclopedia', name: 'encyclopedia', component: () => import('@/views/ManufacturingEncyclopediaView.vue') },
     { path: '/buy-building/:companyId', name: 'buy-building', component: () => import('@/views/BuyBuildingView.vue') },
     { path: '/building/:id', name: 'building-detail', component: () => import('@/views/BuildingDetailView.vue') },
+    { path: '/city/:id', name: 'city-map', component: () => import('@/views/CityMapView.vue') },
   ],
   scrollBehavior() {
     return { top: 0 }
