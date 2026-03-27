@@ -323,6 +323,7 @@ public sealed class Mutation
 
         // Mark onboarding as completed for this player
         player.OnboardingCompletedAtUtc = nowUtc;
+        player.OnboardingShopBuildingId = shop.Id;
         ClearOnboardingProgress(player);
 
         await db.SaveChangesAsync();
@@ -558,6 +559,7 @@ public sealed class Mutation
         AddStarterShop(db, shop.Id, product);
 
         player.OnboardingCompletedAtUtc = nowUtc;
+        player.OnboardingShopBuildingId = shop.Id;
         ClearOnboardingProgress(player);
 
         try
@@ -1097,7 +1099,9 @@ public sealed class Mutation
 
     /// <summary>
     /// Marks the first-sale onboarding milestone as completed for the current player.
-    /// Idempotent: calling it multiple times only records the first completion timestamp.
+    /// Validates backend-authoritative conditions: the player must have a sales shop
+    /// created during onboarding with at least one configured PUBLIC_SALES unit.
+    /// Idempotent once the milestone has been granted.
     /// </summary>
     [Authorize]
     public async Task<Player> CompleteFirstSaleMilestone(
@@ -1114,11 +1118,65 @@ public sealed class Mutation
                     .SetCode("PLAYER_NOT_FOUND")
                     .Build());
 
-        if (player.OnboardingFirstSaleCompletedAtUtc is null)
+        // Idempotent: already completed
+        if (player.OnboardingFirstSaleCompletedAtUtc is not null)
         {
-            player.OnboardingFirstSaleCompletedAtUtc = DateTime.UtcNow;
-            await db.SaveChangesAsync();
+            return player;
         }
+
+        if (player.OnboardingShopBuildingId is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("No sales shop was found for this onboarding milestone. Please complete the onboarding setup first.")
+                    .SetCode("SHOP_NOT_FOUND")
+                    .Build());
+        }
+
+        // Verify the shop belongs to this player and has a configured public-sales unit
+        var shopBuilding = await db.Buildings
+            .Include(b => b.Units)
+            .FirstOrDefaultAsync(b => b.Id == player.OnboardingShopBuildingId);
+
+        if (shopBuilding is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Sales shop building not found.")
+                    .SetCode("SHOP_NOT_FOUND")
+                    .Build());
+        }
+
+        // Verify ownership via the company chain
+        var ownsShop = await db.Companies
+            .AnyAsync(c => c.Id == shopBuilding.CompanyId && c.PlayerId == userId);
+
+        if (!ownsShop)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("You do not own this sales shop.")
+                    .SetCode("SHOP_NOT_FOUND")
+                    .Build());
+        }
+
+        // Check backend-authoritative condition: shop must have a PUBLIC_SALES unit with a price set
+        var hasSalesUnit = shopBuilding.Units.Any(u =>
+            string.Equals(u.UnitType, UnitType.PublicSales, StringComparison.Ordinal)
+            && u.MinPrice > 0);
+
+        if (!hasSalesUnit)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Your sales shop is not yet configured. Please set up a public sales unit with a selling price and return here to complete the milestone.")
+                    .SetCode("SHOP_NOT_CONFIGURED")
+                    .Build());
+        }
+
+        player.OnboardingFirstSaleCompletedAtUtc = DateTime.UtcNow;
+        player.OnboardingShopBuildingId = null;
+        await db.SaveChangesAsync();
 
         return player;
     }

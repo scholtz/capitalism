@@ -15,6 +15,7 @@ export interface Player {
   onboardingCityId: string | null
   onboardingCompanyId: string | null
   onboardingFactoryLotId: string | null
+  onboardingShopBuildingId: string | null
   onboardingFirstSaleCompletedAtUtc: string | null
   proSubscriptionEndsAtUtc: string | null
   companies: Company[]

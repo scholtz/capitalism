@@ -24,6 +24,7 @@ export type MockPlayer = {
   onboardingCityId: string | null
   onboardingCompanyId: string | null
   onboardingFactoryLotId: string | null
+  onboardingShopBuildingId: string | null
   onboardingFirstSaleCompletedAtUtc: string | null
   proSubscriptionEndsAtUtc: string | null
   startupPackOffer: MockStartupPackOffer | null
@@ -367,6 +368,7 @@ export function makePlayer(overrides?: Partial<MockPlayer>): MockPlayer {
     onboardingCityId: null,
     onboardingCompanyId: null,
     onboardingFactoryLotId: null,
+    onboardingShopBuildingId: null,
     onboardingFirstSaleCompletedAtUtc: null,
     proSubscriptionEndsAtUtc: null,
     startupPackOffer: null,
@@ -645,6 +647,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         onboardingCityId: null,
         onboardingCompanyId: null,
         onboardingFactoryLotId: null,
+        onboardingShopBuildingId: null,
         onboardingFirstSaleCompletedAtUtc: null,
         proSubscriptionEndsAtUtc: null,
         startupPackOffer: null,
@@ -819,6 +822,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       shopLot.building = { id: shopBuilding.id, name: shopBuilding.name, type: shopBuilding.type }
 
       player.onboardingCompletedAtUtc = new Date().toISOString()
+      player.onboardingShopBuildingId = shopBuilding.id
       player.onboardingCurrentStep = null
       player.onboardingIndustry = null
       player.onboardingCityId = null
@@ -863,6 +867,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       }
       player.companies.push(company)
       player.onboardingCompletedAtUtc = new Date().toISOString()
+      player.onboardingShopBuildingId = company.buildings[1].id
       player.onboardingCurrentStep = null
       player.onboardingIndustry = null
       player.onboardingCityId = null
@@ -1321,9 +1326,35 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }) })
       }
 
-      if (!player.onboardingFirstSaleCompletedAtUtc) {
-        player.onboardingFirstSaleCompletedAtUtc = new Date().toISOString()
+      // Already completed — idempotent
+      if (player.onboardingFirstSaleCompletedAtUtc) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: { completeFirstSaleMilestone: { ...player, password: undefined } } }),
+        })
       }
+
+      // Validate backend-authoritative condition: shop building must be tracked
+      if (!player.onboardingShopBuildingId) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'No sales shop was found for this onboarding milestone.', extensions: { code: 'SHOP_NOT_FOUND' } }] }) })
+      }
+
+      // Find the shop building and check it has a public-sales unit with a price
+      const shopBuilding = player.companies
+        .flatMap((c) => c.buildings)
+        .find((b) => b.id === player.onboardingShopBuildingId)
+
+      const hasSalesUnit = shopBuilding?.units.some(
+        (u) => u.unitType === 'PUBLIC_SALES' && (u.minPrice ?? 0) > 0,
+      )
+
+      if (!hasSalesUnit) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Your sales shop is not yet configured. Please set up a public sales unit with a selling price and return here to complete the milestone.', extensions: { code: 'SHOP_NOT_CONFIGURED' } }] }) })
+      }
+
+      player.onboardingFirstSaleCompletedAtUtc = new Date().toISOString()
+      player.onboardingShopBuildingId = null
 
       return route.fulfill({
         status: 200,

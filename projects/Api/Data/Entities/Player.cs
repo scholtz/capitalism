@@ -54,6 +54,13 @@ public sealed class Player
     /// <summary>Factory lot already acquired during an in-progress onboarding journey.</summary>
     public Guid? OnboardingFactoryLotId { get; set; }
 
+    /// <summary>
+    /// Sales shop building created at the end of the onboarding journey.
+    /// Used to resume the post-completion first-sale guidance step after a refresh.
+    /// Cleared when <see cref="OnboardingFirstSaleCompletedAtUtc"/> is set.
+    /// </summary>
+    public Guid? OnboardingShopBuildingId { get; set; }
+
     /// <summary>UTC timestamp when the player completed the first-sale/first-profit onboarding milestone. Null when not yet achieved.</summary>
     public DateTime? OnboardingFirstSaleCompletedAtUtc { get; set; }
 

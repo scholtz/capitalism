@@ -1270,6 +1270,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                 onboardingCurrentStep
                 onboardingCompanyId
                 onboardingFactoryLotId
+                onboardingShopBuildingId
               }
             }
             """,
@@ -1280,6 +1281,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingCurrentStep").ValueKind);
         Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingCompanyId").ValueKind);
         Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingFactoryLotId").ValueKind);
+        // Shop building ID should be persisted for the post-completion configure-guide step
+        Assert.Equal(JsonValueKind.String, me.GetProperty("onboardingShopBuildingId").ValueKind);
     }
 
     [Fact]
@@ -2092,11 +2095,11 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     #region First-sale milestone
 
     [Fact]
-    public async Task CompleteFirstSaleMilestone_SetsTimestampOnPlayer()
+    public async Task CompleteFirstSaleMilestone_WithoutOnboarding_ReturnsShopNotFound()
     {
-        var token = await RegisterAndGetTokenAsync($"first-sale-{Guid.NewGuid()}@test.com", "First Seller");
+        // A player who has not completed onboarding has no OnboardingShopBuildingId
+        var token = await RegisterAndGetTokenAsync($"first-sale-noboard-{Guid.NewGuid()}@test.com", "No Onboard");
 
-        // Call the mutation
         var result = await ExecuteGraphQlAsync(
             """
             mutation {
@@ -2107,14 +2110,80 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             """,
             token: token);
 
-        var milestone = result.GetProperty("data").GetProperty("completeFirstSaleMilestone");
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Contains("SHOP_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CompleteFirstSaleMilestone_AfterFinishOnboarding_SetsTimestampAndClearsShopId()
+    {
+        // First, complete full onboarding so OnboardingShopBuildingId is set
+        var token = await RegisterAndGetTokenAsync($"first-sale-full-{Guid.NewGuid()}@test.com", "Full Seller");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Full Seller Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Full Seller Shop Lot");
+
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopBuildingId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString();
+
+        // Verify onboardingShopBuildingId is set on player
+        var meBeforeResult = await ExecuteGraphQlAsync(
+            """
+            {
+              me {
+                onboardingShopBuildingId
+                onboardingFirstSaleCompletedAtUtc
+              }
+            }
+            """,
+            token: token);
+
+        var meBefore = meBeforeResult.GetProperty("data").GetProperty("me");
+        Assert.Equal(shopBuildingId, meBefore.GetProperty("onboardingShopBuildingId").GetString());
+        Assert.Equal(JsonValueKind.Null, meBefore.GetProperty("onboardingFirstSaleCompletedAtUtc").ValueKind);
+
+        // Call the milestone mutation
+        var milestoneResult = await ExecuteGraphQlAsync(
+            """
+            mutation {
+              completeFirstSaleMilestone {
+                onboardingFirstSaleCompletedAtUtc
+                onboardingShopBuildingId
+              }
+            }
+            """,
+            token: token);
+
+        var milestone = milestoneResult.GetProperty("data").GetProperty("completeFirstSaleMilestone");
         Assert.Equal(JsonValueKind.String, milestone.GetProperty("onboardingFirstSaleCompletedAtUtc").ValueKind);
+        // onboardingShopBuildingId should be cleared after milestone
+        Assert.Equal(JsonValueKind.Null, milestone.GetProperty("onboardingShopBuildingId").ValueKind);
+
+        // Verify via me query
+        var meAfterResult = await ExecuteGraphQlAsync(
+            """
+            {
+              me {
+                onboardingShopBuildingId
+                onboardingFirstSaleCompletedAtUtc
+              }
+            }
+            """,
+            token: token);
+
+        var meAfter = meAfterResult.GetProperty("data").GetProperty("me");
+        Assert.Equal(JsonValueKind.String, meAfter.GetProperty("onboardingFirstSaleCompletedAtUtc").ValueKind);
+        Assert.Equal(JsonValueKind.Null, meAfter.GetProperty("onboardingShopBuildingId").ValueKind);
     }
 
     [Fact]
     public async Task CompleteFirstSaleMilestone_IsIdempotent_SecondCallPreservesOriginalTimestamp()
     {
         var token = await RegisterAndGetTokenAsync($"first-sale-idempotent-{Guid.NewGuid()}@test.com", "Idempotent Seller");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Idempotent Seller Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Idempotent Shop Lot");
+        await FinishOnboardingAsync(token, productId, shopLotId);
 
         var firstResult = await ExecuteGraphQlAsync(
             """
@@ -2156,9 +2225,40 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task FinishOnboarding_SetsOnboardingShopBuildingId()
+    {
+        var token = await RegisterAndGetTokenAsync($"shop-building-id-{Guid.NewGuid()}@test.com", "Shop Id Player");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Shop Id Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Shop Id Lot");
+
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopBuildingId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString();
+
+        var meResult = await ExecuteGraphQlAsync(
+            """
+            {
+              me {
+                onboardingShopBuildingId
+                onboardingCompletedAtUtc
+              }
+            }
+            """,
+            token: token);
+
+        var me = meResult.GetProperty("data").GetProperty("me");
+        Assert.Equal(JsonValueKind.String, me.GetProperty("onboardingCompletedAtUtc").ValueKind);
+        Assert.Equal(shopBuildingId, me.GetProperty("onboardingShopBuildingId").GetString());
+    }
+
+    [Fact]
     public async Task CompleteFirstSaleMilestone_ExposedInMeQuery()
     {
         var token = await RegisterAndGetTokenAsync($"first-sale-me-{Guid.NewGuid()}@test.com", "Me Seller");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Me Seller Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Me Seller Shop Lot");
+        await FinishOnboardingAsync(token, productId, shopLotId);
 
         // Before milestone — field should be null
         var beforeResult = await ExecuteGraphQlAsync(

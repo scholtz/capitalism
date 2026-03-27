@@ -687,4 +687,227 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
   })
+
+  test('configure-guide resumes at step 5 after page refresh when onboarding is completed but first-sale milestone is not', async ({
+    page,
+  }) => {
+    // Simulate a player who already completed the lot flow (has onboardingCompletedAtUtc
+    // and onboardingShopBuildingId) but has not yet called completeFirstSaleMilestone
+    const shopBuildingId = 'building-shop-resume-test'
+    const player = makePlayer({
+      onboardingCompletedAtUtc: new Date().toISOString(),
+      onboardingShopBuildingId: shopBuildingId,
+      onboardingFirstSaleCompletedAtUtc: null,
+      companies: [
+        {
+          id: 'comp-resume',
+          playerId: 'player-1',
+          name: 'Resume Corp',
+          cash: 350000,
+          foundedAtUtc: new Date().toISOString(),
+          buildings: [
+            {
+              id: shopBuildingId,
+              companyId: 'comp-resume',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Resume Corp Shop',
+              latitude: 48.145,
+              longitude: 17.107,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              units: [
+                {
+                  id: 'unit-ps-1',
+                  buildingId: shopBuildingId,
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkDown: false,
+                  linkDiagonal: false,
+                  minPrice: 45,
+                },
+              ],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    // Navigate to /onboarding — should resume at step 5, not redirect to /dashboard
+    await page.goto('/onboarding')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Configure Your First Business' })).toBeVisible()
+
+    // Shop CTA should link to the correct building
+    const shopCta = page.getByRole('link', { name: 'Configure My Sales Shop' })
+    await expect(shopCta).toBeVisible()
+    const href = await shopCta.getAttribute('href')
+    expect(href).toContain(shopBuildingId)
+
+    // "My Shop is Ready" button should be present
+    await expect(page.getByRole('button', { name: /My Shop is Ready/i })).toBeVisible()
+  })
+
+  test('milestone "My Shop is Ready" button calls completeFirstSaleMilestone and redirects to dashboard', async ({
+    page,
+  }) => {
+    const shopBuildingId = 'building-shop-milestone-test'
+    const player = makePlayer({
+      onboardingCompletedAtUtc: new Date().toISOString(),
+      onboardingShopBuildingId: shopBuildingId,
+      onboardingFirstSaleCompletedAtUtc: null,
+      companies: [
+        {
+          id: 'comp-milestone',
+          playerId: 'player-1',
+          name: 'Milestone Corp',
+          cash: 300000,
+          foundedAtUtc: new Date().toISOString(),
+          buildings: [
+            {
+              id: shopBuildingId,
+              companyId: 'comp-milestone',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Milestone Corp Shop',
+              latitude: 48.145,
+              longitude: 17.107,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              units: [
+                {
+                  id: 'unit-ms-ps-1',
+                  buildingId: shopBuildingId,
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkDown: false,
+                  linkDiagonal: false,
+                  minPrice: 45,
+                },
+              ],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // Click the milestone button
+    await page.getByRole('button', { name: /My Shop is Ready/i }).click()
+
+    // Should redirect to dashboard
+    await page.waitForURL('/dashboard')
+    await expect(page).toHaveURL('/dashboard')
+  })
+
+  test('delayed-result: milestone shows error when shop has no configured sales unit', async ({
+    page,
+  }) => {
+    const shopBuildingId = 'building-shop-not-configured'
+    const player = makePlayer({
+      onboardingCompletedAtUtc: new Date().toISOString(),
+      onboardingShopBuildingId: shopBuildingId,
+      onboardingFirstSaleCompletedAtUtc: null,
+      companies: [
+        {
+          id: 'comp-not-configured',
+          playerId: 'player-1',
+          name: 'Not Ready Corp',
+          cash: 300000,
+          foundedAtUtc: new Date().toISOString(),
+          buildings: [
+            {
+              id: shopBuildingId,
+              companyId: 'comp-not-configured',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Not Ready Corp Shop',
+              latitude: 48.145,
+              longitude: 17.107,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              // No units — shop is not configured
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Configure Your First Business' })).toBeVisible()
+
+    // Click the milestone button before configuring the shop
+    await page.getByRole('button', { name: /My Shop is Ready/i }).click()
+
+    // Should stay on onboarding and show the error
+    await expect(page.locator('.milestone-error')).toBeVisible()
+    await expect(page.locator('.milestone-error')).toContainText(/configure/i)
+
+    // Should NOT navigate away
+    await expect(page).toHaveURL('/onboarding')
+  })
+
+  test('already-fully-onboarded player visiting /onboarding is redirected to dashboard immediately', async ({
+    page,
+  }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T12:00:00Z',
+      onboardingShopBuildingId: null,
+      onboardingFirstSaleCompletedAtUtc: '2026-01-01T13:00:00Z',
+      companies: [
+        {
+          id: 'comp-done',
+          playerId: 'player-1',
+          name: 'Done Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await page.waitForURL('/dashboard')
+    await expect(page).toHaveURL('/dashboard')
+  })
 })
