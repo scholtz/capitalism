@@ -471,19 +471,19 @@ test.describe('Onboarding resume and progress persistence', () => {
     await page.getByRole('button', { name: /High Street Retail Space/i }).click()
 
     const shopLot = state.buildingLots.find((lot) => lot.name === 'High Street Retail Space')
-    if (!shopLot) throw new Error('Expected shop lot fixture to exist')
-    shopLot.ownerCompanyId = 'other-company'
-    shopLot.ownerCompany = { id: 'other-company', name: 'Other Corp' }
-    shopLot.buildingId = 'other-shop'
-    shopLot.building = { id: 'other-shop', name: 'Other Shop', type: 'SALES_SHOP' }
+    expect(shopLot).toBeTruthy()
+    shopLot!.ownerCompanyId = 'other-company'
+    shopLot!.ownerCompany = { id: 'other-company', name: 'Other Corp' }
+    shopLot!.buildingId = 'other-shop'
+    shopLot!.building = { id: 'other-shop', name: 'Other Shop', type: 'SALES_SHOP' }
 
     await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
     await expect(page.getByRole('alert')).toContainText('already been purchased')
 
     await page.getByRole('button', { name: 'List View' }).click()
     const backupLot = state.buildingLots.find((lot) => lot.id === 'lot-business-1')
-    if (!backupLot) throw new Error('Expected backup lot fixture to exist')
-    backupLot.suitableTypes = 'SALES_SHOP,COMMERCIAL'
+    expect(backupLot).toBeTruthy()
+    backupLot!.suitableTypes = 'SALES_SHOP,COMMERCIAL'
     await page.reload()
     await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
     await page.getByRole('button', { name: 'List View' }).click()
