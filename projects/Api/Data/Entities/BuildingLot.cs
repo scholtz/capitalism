@@ -55,4 +55,10 @@ public sealed class BuildingLot
 
     /// <summary>Navigation property to the building on this lot.</summary>
     public Building? Building { get; set; }
+
+    /// <summary>
+    /// Application-managed concurrency token that makes lot purchase atomic.
+    /// Only one request may persist a transition from available to owned.
+    /// </summary>
+    public Guid ConcurrencyToken { get; set; } = Guid.NewGuid();
 }

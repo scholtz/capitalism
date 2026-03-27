@@ -756,11 +756,24 @@ public sealed class Mutation
 
         db.Buildings.Add(building);
 
-        // Mark the lot as owned
+        // Mark the lot as owned and stamp a new concurrency token so a
+        // concurrent save with the stale original token will fail.
         lot.OwnerCompanyId = company.Id;
         lot.BuildingId = building.Id;
+        lot.ConcurrencyToken = Guid.NewGuid();
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("This lot has already been purchased.")
+                    .SetCode("LOT_ALREADY_OWNED")
+                    .Build());
+        }
 
         return new PurchaseLotResult
         {

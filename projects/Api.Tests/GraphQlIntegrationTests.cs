@@ -1769,5 +1769,84 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.False(string.IsNullOrEmpty(lot.GetProperty("district").GetString()));
     }
 
+    [Fact]
+    public async Task PurchaseLot_ConcurrentBuyers_OnlyOneSucceeds()
+    {
+        // Register two independent buyers, each with their own company
+        var token1 = await RegisterAndGetTokenAsync($"lot-race-a-{Guid.NewGuid()}@test.com");
+        var (companyId1, _, _) = await CompleteOnboardingAsync(token1, "Race A Co");
+
+        var token2 = await RegisterAndGetTokenAsync($"lot-race-b-{Guid.NewGuid()}@test.com");
+        var (companyId2, _, _) = await CompleteOnboardingAsync(token2, "Race B Co");
+
+        // Find an available factory lot
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var lotsResult = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id suitableTypes ownerCompanyId }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var targetLot = lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .First(l => l.GetProperty("suitableTypes").GetString()!.Contains("FACTORY")
+                     && l.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null);
+        var lotId = targetLot.GetProperty("id").GetString();
+
+        const string mutation = """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) {
+                lot { id ownerCompanyId }
+                building { id }
+                company { id cash }
+              }
+            }
+            """;
+
+        // Fire both purchases concurrently against the same lot
+        var task1 = ExecuteGraphQlAsync(mutation,
+            new { input = new { companyId = companyId1, lotId, buildingType = "FACTORY", buildingName = "Race A Factory" } },
+            token1);
+        var task2 = ExecuteGraphQlAsync(mutation,
+            new { input = new { companyId = companyId2, lotId, buildingType = "FACTORY", buildingName = "Race B Factory" } },
+            token2);
+
+        var results = await Task.WhenAll(task1, task2);
+
+        // Exactly one should succeed, the other should fail with LOT_ALREADY_OWNED
+        var successes = results.Count(r => r.TryGetProperty("data", out var d)
+            && d.ValueKind == JsonValueKind.Object
+            && d.TryGetProperty("purchaseLot", out var pl)
+            && pl.ValueKind == JsonValueKind.Object);
+        var failures = results.Count(r => r.TryGetProperty("errors", out _));
+
+        Assert.Equal(1, successes);
+        Assert.Equal(1, failures);
+
+        var failedResult = results.First(r => r.TryGetProperty("errors", out _));
+        Assert.Contains("already been purchased", failedResult.GetProperty("errors")[0].GetProperty("message").GetString());
+
+        // Verify only one building was created for this lot
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var purchasedLot = await db.BuildingLots.FirstAsync(l => l.Id == Guid.Parse(lotId!));
+        Assert.NotNull(purchasedLot.OwnerCompanyId);
+        Assert.NotNull(purchasedLot.BuildingId);
+
+        var buildingsOnLot = await db.Buildings.CountAsync(b => b.Id == purchasedLot.BuildingId);
+        Assert.Equal(1, buildingsOnLot);
+
+        // Verify only the winning company was charged
+        var company1 = await db.Companies.FirstAsync(c => c.Id == Guid.Parse(companyId1));
+        var company2 = await db.Companies.FirstAsync(c => c.Id == Guid.Parse(companyId2));
+        var chargedCount = (company1.Cash < 500_000m ? 1 : 0) + (company2.Cash < 500_000m ? 1 : 0);
+        Assert.Equal(1, chargedCount);
+    }
+
     #endregion
 }
