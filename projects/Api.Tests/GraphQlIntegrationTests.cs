@@ -2088,4 +2088,135 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     #endregion
+
+    #region First-sale milestone
+
+    [Fact]
+    public async Task CompleteFirstSaleMilestone_SetsTimestampOnPlayer()
+    {
+        var token = await RegisterAndGetTokenAsync($"first-sale-{Guid.NewGuid()}@test.com", "First Seller");
+
+        // Call the mutation
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation {
+              completeFirstSaleMilestone {
+                onboardingFirstSaleCompletedAtUtc
+              }
+            }
+            """,
+            token: token);
+
+        var milestone = result.GetProperty("data").GetProperty("completeFirstSaleMilestone");
+        Assert.Equal(JsonValueKind.String, milestone.GetProperty("onboardingFirstSaleCompletedAtUtc").ValueKind);
+    }
+
+    [Fact]
+    public async Task CompleteFirstSaleMilestone_IsIdempotent_SecondCallPreservesOriginalTimestamp()
+    {
+        var token = await RegisterAndGetTokenAsync($"first-sale-idempotent-{Guid.NewGuid()}@test.com", "Idempotent Seller");
+
+        var firstResult = await ExecuteGraphQlAsync(
+            """
+            mutation {
+              completeFirstSaleMilestone {
+                onboardingFirstSaleCompletedAtUtc
+              }
+            }
+            """,
+            token: token);
+
+        var firstTimestamp = firstResult
+            .GetProperty("data")
+            .GetProperty("completeFirstSaleMilestone")
+            .GetProperty("onboardingFirstSaleCompletedAtUtc")
+            .GetString();
+
+        // Wait a tiny bit to ensure any re-write would produce a different timestamp
+        await Task.Delay(10);
+
+        var secondResult = await ExecuteGraphQlAsync(
+            """
+            mutation {
+              completeFirstSaleMilestone {
+                onboardingFirstSaleCompletedAtUtc
+              }
+            }
+            """,
+            token: token);
+
+        var secondTimestamp = secondResult
+            .GetProperty("data")
+            .GetProperty("completeFirstSaleMilestone")
+            .GetProperty("onboardingFirstSaleCompletedAtUtc")
+            .GetString();
+
+        // The timestamp must not change on subsequent calls
+        Assert.Equal(firstTimestamp, secondTimestamp);
+    }
+
+    [Fact]
+    public async Task CompleteFirstSaleMilestone_ExposedInMeQuery()
+    {
+        var token = await RegisterAndGetTokenAsync($"first-sale-me-{Guid.NewGuid()}@test.com", "Me Seller");
+
+        // Before milestone — field should be null
+        var beforeResult = await ExecuteGraphQlAsync(
+            """
+            {
+              me {
+                onboardingFirstSaleCompletedAtUtc
+              }
+            }
+            """,
+            token: token);
+
+        Assert.Equal(
+            JsonValueKind.Null,
+            beforeResult.GetProperty("data").GetProperty("me").GetProperty("onboardingFirstSaleCompletedAtUtc").ValueKind);
+
+        // Complete the milestone
+        await ExecuteGraphQlAsync(
+            """
+            mutation {
+              completeFirstSaleMilestone {
+                onboardingFirstSaleCompletedAtUtc
+              }
+            }
+            """,
+            token: token);
+
+        // After milestone — field should be a string (ISO timestamp)
+        var afterResult = await ExecuteGraphQlAsync(
+            """
+            {
+              me {
+                onboardingFirstSaleCompletedAtUtc
+              }
+            }
+            """,
+            token: token);
+
+        Assert.Equal(
+            JsonValueKind.String,
+            afterResult.GetProperty("data").GetProperty("me").GetProperty("onboardingFirstSaleCompletedAtUtc").ValueKind);
+    }
+
+    [Fact]
+    public async Task CompleteFirstSaleMilestone_Unauthenticated_ReturnsError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation {
+              completeFirstSaleMilestone {
+                onboardingFirstSaleCompletedAtUtc
+              }
+            }
+            """);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.NotEmpty(errors.EnumerateArray().ToList());
+    }
+
+    #endregion
 }

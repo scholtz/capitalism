@@ -1095,6 +1095,34 @@ public sealed class Mutation
         };
     }
 
+    /// <summary>
+    /// Marks the first-sale onboarding milestone as completed for the current player.
+    /// Idempotent: calling it multiple times only records the first completion timestamp.
+    /// </summary>
+    [Authorize]
+    public async Task<Player> CompleteFirstSaleMilestone(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var player = await db.Players
+            .Include(p => p.Companies)
+            .FirstOrDefaultAsync(p => p.Id == userId)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+
+        if (player.OnboardingFirstSaleCompletedAtUtc is null)
+        {
+            player.OnboardingFirstSaleCompletedAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        return player;
+    }
+
     private static AuthenticatedSession GenerateToken(Player player, JwtOptions options)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.SigningKey));

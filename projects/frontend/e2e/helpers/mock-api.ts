@@ -24,6 +24,7 @@ export type MockPlayer = {
   onboardingCityId: string | null
   onboardingCompanyId: string | null
   onboardingFactoryLotId: string | null
+  onboardingFirstSaleCompletedAtUtc: string | null
   proSubscriptionEndsAtUtc: string | null
   startupPackOffer: MockStartupPackOffer | null
   companies: MockCompany[]
@@ -203,7 +204,7 @@ export type MockState = {
   productTypes: MockProductType[]
   currentUserId: string | null
   currentToken: string | null
-  gameState: { currentTick: number; tickIntervalSeconds: number; taxCycleTicks: number; taxRate: number }
+  gameState: { currentTick: number; lastTickAtUtc: string; tickIntervalSeconds: number; taxCycleTicks: number; taxRate: number }
 }
 
 const STARTING_CASH_FOR_ONBOARDING = 500000
@@ -366,6 +367,7 @@ export function makePlayer(overrides?: Partial<MockPlayer>): MockPlayer {
     onboardingCityId: null,
     onboardingCompanyId: null,
     onboardingFactoryLotId: null,
+    onboardingFirstSaleCompletedAtUtc: null,
     proSubscriptionEndsAtUtc: null,
     startupPackOffer: null,
     companies: [],
@@ -609,7 +611,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     productTypes: makeDefaultProducts(),
     currentUserId: null,
     currentToken: null,
-    gameState: { currentTick: 42, tickIntervalSeconds: 60, taxCycleTicks: 1440, taxRate: 15 },
+    gameState: { currentTick: 42, lastTickAtUtc: new Date(Date.now() - 30000).toISOString(), tickIntervalSeconds: 60, taxCycleTicks: 1440, taxRate: 15 },
     ...initial,
   }
 
@@ -643,6 +645,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         onboardingCityId: null,
         onboardingCompanyId: null,
         onboardingFactoryLotId: null,
+        onboardingFirstSaleCompletedAtUtc: null,
         proSubscriptionEndsAtUtc: null,
         startupPackOffer: null,
         companies: [],
@@ -1309,6 +1312,23 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
             },
           },
         }),
+      })
+    }
+
+    if (query.includes('CompleteFirstSaleMilestone') || query.includes('completeFirstSaleMilestone')) {
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      if (!player) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }) })
+      }
+
+      if (!player.onboardingFirstSaleCompletedAtUtc) {
+        player.onboardingFirstSaleCompletedAtUtc = new Date().toISOString()
+      }
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { completeFirstSaleMilestone: { ...player, password: undefined } } }),
       })
     }
 

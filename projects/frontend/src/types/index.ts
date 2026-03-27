@@ -15,6 +15,7 @@ export interface Player {
   onboardingCityId: string | null
   onboardingCompanyId: string | null
   onboardingFactoryLotId: string | null
+  onboardingFirstSaleCompletedAtUtc: string | null
   proSubscriptionEndsAtUtc: string | null
   companies: Company[]
 }
@@ -342,6 +343,7 @@ export interface PlayerRanking {
 /** Matches backend GameState entity */
 export interface GameState {
   currentTick: number
+  lastTickAtUtc: string
   tickIntervalSeconds: number
   taxCycleTicks: number
   taxRate: number

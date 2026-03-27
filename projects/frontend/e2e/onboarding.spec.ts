@@ -600,3 +600,91 @@ test.describe('Onboarding resume and progress persistence', () => {
     await expect(page.getByText('Startup pack expired')).toBeVisible()
   })
 })
+
+test.describe('Guided first-profit onboarding (post-completion)', () => {
+  test('completion screen shows configure-guide panel with all four steps', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboarding(page, 'Guide Corp')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The configure-guide panel must be present
+    await expect(page.getByRole('heading', { name: 'Configure Your First Business' })).toBeVisible()
+
+    // All four guidance steps should be visible
+    await expect(page.getByText('Review your cash')).toBeVisible()
+    await expect(page.getByText('Set a selling price')).toBeVisible()
+    await expect(page.getByText('Enable public sales')).toBeVisible()
+    await expect(page.getByText('Wait for the next tick')).toBeVisible()
+  })
+
+  test('completion screen shows Configure My Sales Shop CTA linking to shop building', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboarding(page, 'Shop Link Corp')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The CTA should be a link pointing to /building/<shopId>
+    const shopCta = page.getByRole('link', { name: 'Configure My Sales Shop' })
+    await expect(shopCta).toBeVisible()
+    const href = await shopCta.getAttribute('href')
+    expect(href).toMatch(/\/building\/building-shop-/)
+  })
+
+  test('completion screen shows tick countdown', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    // Set a lastTickAtUtc in the past so the countdown shows remaining seconds
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 10000).toISOString()
+    state.gameState.tickIntervalSeconds = 60
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboarding(page, 'Tick Corp')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The tick countdown should be visible somewhere in the configure-guide
+    const countdownEl = page.locator('.tick-countdown')
+    await expect(countdownEl).toBeVisible()
+    const text = await countdownEl.textContent()
+    expect(text).toMatch(/tick/i)
+  })
+
+  test('Go to Dashboard CTA is available as secondary action on completion screen', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboarding(page, 'Dashboard Corp')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
+  })
+})
