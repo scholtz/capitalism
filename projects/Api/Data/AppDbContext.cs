@@ -60,6 +60,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     /// <summary>Player-specific startup-pack offer lifecycle records.</summary>
     public DbSet<StartupPackOffer> StartupPackOffers => Set<StartupPackOffer>();
 
+    /// <summary>Purchasable building lots within cities.</summary>
+    public DbSet<BuildingLot> BuildingLots => Set<BuildingLot>();
+
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -183,6 +186,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(c => c.Name).HasMaxLength(200);
             e.Property(c => c.CountryCode).HasMaxLength(2);
             e.Property(c => c.AverageRentPerSqm).HasPrecision(18, 2);
+        });
+
+        // BuildingLot
+        modelBuilder.Entity<BuildingLot>(e =>
+        {
+            e.HasKey(lot => lot.Id);
+            e.Property(lot => lot.Name).HasMaxLength(200);
+            e.Property(lot => lot.Description).HasMaxLength(500);
+            e.Property(lot => lot.District).HasMaxLength(100);
+            e.Property(lot => lot.Price).HasPrecision(18, 2);
+            e.Property(lot => lot.SuitableTypes).HasMaxLength(200);
+            e.HasOne(lot => lot.City).WithMany(c => c.Lots).HasForeignKey(lot => lot.CityId);
+            e.HasOne(lot => lot.OwnerCompany).WithMany().HasForeignKey(lot => lot.OwnerCompanyId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(lot => lot.Building).WithMany().HasForeignKey(lot => lot.BuildingId).OnDelete(DeleteBehavior.SetNull);
         });
 
         // CityResource

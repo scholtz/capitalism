@@ -1518,4 +1518,256 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     #endregion
+
+    #region BuildingLots
+
+    [Fact]
+    public async Task CityLots_ReturnsSeedLotsForBratislava()
+    {
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislava = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava");
+        var cityId = bratislava.GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) {
+                id name description district latitude longitude price suitableTypes
+                ownerCompanyId buildingId
+              }
+            }
+            """,
+            new { cityId });
+
+        var lots = result.GetProperty("data").GetProperty("cityLots");
+        Assert.True(lots.GetArrayLength() > 0, "Expected seeded lots for Bratislava");
+
+        var firstLot = lots[0];
+        Assert.False(string.IsNullOrEmpty(firstLot.GetProperty("name").GetString()));
+        Assert.False(string.IsNullOrEmpty(firstLot.GetProperty("district").GetString()));
+        Assert.True(firstLot.GetProperty("price").GetDecimal() > 0);
+        Assert.False(string.IsNullOrEmpty(firstLot.GetProperty("suitableTypes").GetString()));
+    }
+
+    [Fact]
+    public async Task PurchaseLot_ValidInput_CreatesBuilding()
+    {
+        var token = await RegisterAndGetTokenAsync($"lot-buyer-{Guid.NewGuid()}@test.com");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Lot Buyer Co");
+
+        // Get a factory-suitable lot
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var lotsResult = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id name suitableTypes price ownerCompanyId }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var availableLot = lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .First(l => l.GetProperty("suitableTypes").GetString()!.Contains("FACTORY")
+                     && l.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null);
+        var lotId = availableLot.GetProperty("id").GetString();
+        var lotPrice = availableLot.GetProperty("price").GetDecimal();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) {
+                lot { id ownerCompanyId buildingId }
+                building { id name type latitude longitude }
+                company { id cash }
+              }
+            }
+            """,
+            new { input = new { companyId, lotId, buildingType = "FACTORY", buildingName = "My Lot Factory" } },
+            token);
+
+        var data = result.GetProperty("data").GetProperty("purchaseLot");
+        var purchasedLot = data.GetProperty("lot");
+        var building = data.GetProperty("building");
+        var company = data.GetProperty("company");
+
+        Assert.Equal(companyId, purchasedLot.GetProperty("ownerCompanyId").GetString());
+        Assert.NotNull(purchasedLot.GetProperty("buildingId").GetString());
+        Assert.Equal("My Lot Factory", building.GetProperty("name").GetString());
+        Assert.Equal("FACTORY", building.GetProperty("type").GetString());
+        // Company cash should be reduced by lot price
+        Assert.True(company.GetProperty("cash").GetDecimal() < 500_000m);
+    }
+
+    [Fact]
+    public async Task PurchaseLot_AlreadyOwned_Fails()
+    {
+        // First buyer
+        var token1 = await RegisterAndGetTokenAsync($"lot-first-{Guid.NewGuid()}@test.com");
+        var (companyId1, _, _) = await CompleteOnboardingAsync(token1, "First Co");
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var lotsResult = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id suitableTypes ownerCompanyId }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var lot = lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .First(l => l.GetProperty("suitableTypes").GetString()!.Contains("SALES_SHOP")
+                     && l.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null);
+        var lotId = lot.GetProperty("id").GetString();
+
+        // First purchase succeeds
+        await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { lot { id } }
+            }
+            """,
+            new { input = new { companyId = companyId1, lotId, buildingType = "SALES_SHOP", buildingName = "Shop 1" } },
+            token1);
+
+        // Second buyer tries to purchase the same lot
+        var token2 = await RegisterAndGetTokenAsync($"lot-second-{Guid.NewGuid()}@test.com");
+        var (companyId2, _, _) = await CompleteOnboardingAsync(token2, "Second Co");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { lot { id } }
+            }
+            """,
+            new { input = new { companyId = companyId2, lotId, buildingType = "SALES_SHOP", buildingName = "Shop 2" } },
+            token2);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Contains("already been purchased", errors[0].GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task PurchaseLot_UnsuitableBuildingType_Fails()
+    {
+        var token = await RegisterAndGetTokenAsync($"lot-unsuit-{Guid.NewGuid()}@test.com");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Wrong Type Co");
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var lotsResult = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id suitableTypes ownerCompanyId }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        // Pick a lot that is only suitable for APARTMENT
+        var lot = lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .First(l => l.GetProperty("suitableTypes").GetString() == "APARTMENT"
+                     && l.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null);
+        var lotId = lot.GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { lot { id } }
+            }
+            """,
+            new { input = new { companyId, lotId, buildingType = "FACTORY", buildingName = "Wrong Factory" } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Contains("not suitable", errors[0].GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task PurchaseLot_InsufficientFunds_Fails()
+    {
+        var token = await RegisterAndGetTokenAsync($"lot-broke-{Guid.NewGuid()}@test.com");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Broke Co");
+
+        // Drain the company's cash
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var company = await db.Companies.FirstAsync(c => c.Id == Guid.Parse(companyId));
+            company.Cash = 0;
+            await db.SaveChangesAsync();
+        }
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var lotsResult = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id suitableTypes price ownerCompanyId }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var lot = lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .First(l => l.GetProperty("suitableTypes").GetString()!.Contains("FACTORY")
+                     && l.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null);
+        var lotId = lot.GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { lot { id } }
+            }
+            """,
+            new { input = new { companyId, lotId, buildingType = "FACTORY", buildingName = "No Money Factory" } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Contains("Insufficient funds", errors[0].GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task GetLot_ReturnsSingleLot()
+    {
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var lotsResult = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var lotId = lotsResult.GetProperty("data").GetProperty("cityLots")[0].GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetLot($id: UUID!) {
+              lot(id: $id) { id name district price suitableTypes }
+            }
+            """,
+            new { id = lotId });
+
+        var lot = result.GetProperty("data").GetProperty("lot");
+        Assert.False(string.IsNullOrEmpty(lot.GetProperty("name").GetString()));
+        Assert.False(string.IsNullOrEmpty(lot.GetProperty("district").GetString()));
+    }
+
+    #endregion
 }

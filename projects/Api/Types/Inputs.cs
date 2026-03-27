@@ -108,6 +108,24 @@ public sealed class SetBuildingForSaleInput
     public decimal? AskingPrice { get; set; }
 }
 
+/// <summary>Input for purchasing a building lot and placing a building on it.</summary>
+public sealed class PurchaseLotInput
+{
+    /// <summary>Company that will purchase the lot and own the building.</summary>
+    public Guid CompanyId { get; set; }
+
+    /// <summary>Building lot to purchase.</summary>
+    public Guid LotId { get; set; }
+
+    /// <summary>Building type to place on the lot (must be one of the lot's suitable types).</summary>
+    [Required, MaxLength(30)]
+    public string BuildingType { get; set; } = string.Empty;
+
+    /// <summary>Display name for the new building.</summary>
+    [Required, MaxLength(200)]
+    public string BuildingName { get; set; } = string.Empty;
+}
+
 /// <summary>User-editable portion of a building unit configuration.</summary>
 public sealed class BuildingConfigurationUnitInput
 {

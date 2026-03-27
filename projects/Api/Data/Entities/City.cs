@@ -34,6 +34,9 @@ public sealed class City
     /// <summary>Buildings located in this city.</summary>
     public ICollection<Building> Buildings { get; set; } = [];
 
+    /// <summary>Purchasable building lots in this city.</summary>
+    public ICollection<BuildingLot> Lots { get; set; } = [];
+
     /// <summary>Resources available for mining near this city.</summary>
     public ICollection<CityResource> Resources { get; set; } = [];
 }

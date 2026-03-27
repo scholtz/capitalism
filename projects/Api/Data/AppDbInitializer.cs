@@ -71,6 +71,12 @@ public sealed class AppDbInitializer(
             await SeedRecipesAsync();
             await dbContext.SaveChangesAsync();
         }
+
+        if (!await dbContext.BuildingLots.AnyAsync())
+        {
+            await SeedBuildingLotsAsync();
+            await dbContext.SaveChangesAsync();
+        }
     }
 
     private void SeedResources()
@@ -421,6 +427,165 @@ public sealed class AppDbInitializer(
         }
 
         return "#4B5563";
+    }
+
+    private async Task SeedBuildingLotsAsync()
+    {
+        var bratislava = await dbContext.Cities.FirstAsync(c => c.Name == "Bratislava");
+
+        // Bratislava building lots across different districts.
+        // Coordinates are spread around the city center (48.1486, 17.1077).
+        dbContext.BuildingLots.AddRange(
+            // ── Industrial Zone (eastern outskirts) ──
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-industrial-1"),
+                CityId = bratislava.Id,
+                Name = "Industrial Plot A1",
+                Description = "Large industrial plot near the eastern logistics corridor. Excellent for manufacturing operations.",
+                District = "Industrial Zone",
+                Latitude = 48.1520, Longitude = 17.1250,
+                Price = 80_000m,
+                SuitableTypes = "FACTORY,MINE"
+            },
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-industrial-2"),
+                CityId = bratislava.Id,
+                Name = "Industrial Plot A2",
+                Description = "Adjacent to major rail freight terminal. Ideal for heavy industry and raw material processing.",
+                District = "Industrial Zone",
+                Latitude = 48.1540, Longitude = 17.1280,
+                Price = 75_000m,
+                SuitableTypes = "FACTORY,MINE"
+            },
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-industrial-3"),
+                CityId = bratislava.Id,
+                Name = "Factory Site B1",
+                Description = "Modern industrial park with good power grid access. Suitable for energy-intensive production.",
+                District = "Industrial Zone",
+                Latitude = 48.1500, Longitude = 17.1300,
+                Price = 90_000m,
+                SuitableTypes = "FACTORY,POWER_PLANT"
+            },
+            // ── Commercial District (city center) ──
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-commercial-1"),
+                CityId = bratislava.Id,
+                Name = "High Street Retail Space",
+                Description = "Prime storefront on the main pedestrian avenue. High foot traffic and visibility.",
+                District = "Commercial District",
+                Latitude = 48.1450, Longitude = 17.1070,
+                Price = 120_000m,
+                SuitableTypes = "SALES_SHOP,COMMERCIAL"
+            },
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-commercial-2"),
+                CityId = bratislava.Id,
+                Name = "Market Square Shop",
+                Description = "Corner lot facing the historic market square. Excellent for retail with tourist exposure.",
+                District = "Commercial District",
+                Latitude = 48.1440, Longitude = 17.1090,
+                Price = 150_000m,
+                SuitableTypes = "SALES_SHOP,COMMERCIAL"
+            },
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-commercial-3"),
+                CityId = bratislava.Id,
+                Name = "Shopping Boulevard Unit",
+                Description = "Mid-range retail space on a busy commercial boulevard with steady local traffic.",
+                District = "Commercial District",
+                Latitude = 48.1460, Longitude = 17.1050,
+                Price = 100_000m,
+                SuitableTypes = "SALES_SHOP"
+            },
+            // ── Business Park (northern area) ──
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-business-1"),
+                CityId = bratislava.Id,
+                Name = "Innovation Campus Office",
+                Description = "Modern office complex in the technology business park. Perfect for R&D operations.",
+                District = "Business Park",
+                Latitude = 48.1560, Longitude = 17.1100,
+                Price = 130_000m,
+                SuitableTypes = "RESEARCH_DEVELOPMENT,BANK"
+            },
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-business-2"),
+                CityId = bratislava.Id,
+                Name = "Financial Center Suite",
+                Description = "Premium office space in the financial district. Ideal for banking and exchange operations.",
+                District = "Business Park",
+                Latitude = 48.1570, Longitude = 17.1060,
+                Price = 200_000m,
+                SuitableTypes = "BANK,EXCHANGE"
+            },
+            // ── Residential Quarter (western area) ──
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-residential-1"),
+                CityId = bratislava.Id,
+                Name = "Riverside Apartment Block",
+                Description = "Scenic residential plot overlooking the Danube. Strong rental demand from young professionals.",
+                District = "Residential Quarter",
+                Latitude = 48.1400, Longitude = 17.1000,
+                Price = 110_000m,
+                SuitableTypes = "APARTMENT"
+            },
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-residential-2"),
+                CityId = bratislava.Id,
+                Name = "Suburban Housing Site",
+                Description = "Affordable residential lot in a growing suburban neighborhood. Good long-term rental potential.",
+                District = "Residential Quarter",
+                Latitude = 48.1380, Longitude = 17.0950,
+                Price = 70_000m,
+                SuitableTypes = "APARTMENT"
+            },
+            // ── Media & Cultural District (south-central) ──
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-media-1"),
+                CityId = bratislava.Id,
+                Name = "Broadcast Tower Complex",
+                Description = "Purpose-built media complex near the cultural center. Ideal for newspaper, radio, or TV operations.",
+                District = "Media District",
+                Latitude = 48.1420, Longitude = 17.1120,
+                Price = 140_000m,
+                SuitableTypes = "MEDIA_HOUSE"
+            },
+            // ── Energy Zone (south-eastern outskirts) ──
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-energy-1"),
+                CityId = bratislava.Id,
+                Name = "Power Generation Site",
+                Description = "Large plot with grid connection capacity for power generation. Zoned for energy infrastructure.",
+                District = "Energy Zone",
+                Latitude = 48.1350, Longitude = 17.1200,
+                Price = 160_000m,
+                SuitableTypes = "POWER_PLANT"
+            },
+            new BuildingLot
+            {
+                Id = CreateDeterministicGuid("lot:ba-energy-2"),
+                CityId = bratislava.Id,
+                Name = "Utility Substation Plot",
+                Description = "Secondary energy plot suitable for smaller power plants or supplementary generation.",
+                District = "Energy Zone",
+                Latitude = 48.1360, Longitude = 17.1230,
+                Price = 100_000m,
+                SuitableTypes = "POWER_PLANT,FACTORY"
+            }
+        );
     }
 
     private static Guid CreateDeterministicGuid(string key)

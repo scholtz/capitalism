@@ -665,6 +665,111 @@ public sealed class Mutation
         return building;
     }
 
+    /// <summary>Purchases a building lot and places a building on it.</summary>
+    [Authorize]
+    public async Task<PurchaseLotResult> PurchaseLot(
+        PurchaseLotInput input,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var company = await db.Companies.FirstOrDefaultAsync(
+            c => c.Id == input.CompanyId && c.PlayerId == userId);
+
+        if (company is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Company not found or you don't own it.")
+                    .SetCode("COMPANY_NOT_FOUND")
+                    .Build());
+        }
+
+        var lot = await db.BuildingLots
+            .Include(l => l.City)
+            .FirstOrDefaultAsync(l => l.Id == input.LotId);
+
+        if (lot is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Building lot not found.")
+                    .SetCode("LOT_NOT_FOUND")
+                    .Build());
+        }
+
+        if (lot.OwnerCompanyId is not null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("This lot has already been purchased.")
+                    .SetCode("LOT_ALREADY_OWNED")
+                    .Build());
+        }
+
+        if (!BuildingType.All.Contains(input.BuildingType))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage($"Invalid building type: {input.BuildingType}")
+                    .SetCode("INVALID_BUILDING_TYPE")
+                    .Build());
+        }
+
+        var suitableTypes = lot.SuitableTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (!suitableTypes.Contains(input.BuildingType))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage($"Building type {input.BuildingType} is not suitable for this lot. Suitable types: {lot.SuitableTypes}")
+                    .SetCode("UNSUITABLE_BUILDING_TYPE")
+                    .Build());
+        }
+
+        if (company.Cash < lot.Price)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage($"Insufficient funds. This lot costs ${lot.Price:N0} but you only have ${company.Cash:N0}.")
+                    .SetCode("INSUFFICIENT_FUNDS")
+                    .Build());
+        }
+
+        // Deduct the price from company cash
+        company.Cash -= lot.Price;
+
+        // Create the building at the lot's coordinates
+        var building = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = lot.CityId,
+            Type = input.BuildingType,
+            Name = input.BuildingName,
+            Latitude = lot.Latitude,
+            Longitude = lot.Longitude,
+            Level = 1,
+            PowerConsumption = 1m,
+            BuiltAtUtc = DateTime.UtcNow
+        };
+
+        db.Buildings.Add(building);
+
+        // Mark the lot as owned
+        lot.OwnerCompanyId = company.Id;
+        lot.BuildingId = building.Id;
+
+        await db.SaveChangesAsync();
+
+        return new PurchaseLotResult
+        {
+            Lot = lot,
+            Building = building,
+            Company = company
+        };
+    }
+
     private static AuthenticatedSession GenerateToken(Player player, JwtOptions options)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.SigningKey));
@@ -735,4 +840,17 @@ public sealed class StartupPackClaimResult
 
     /// <summary>UTC timestamp until which the player now has Pro access.</summary>
     public DateTime ProSubscriptionEndsAtUtc { get; set; }
+}
+
+/// <summary>Result of purchasing a building lot.</summary>
+public sealed class PurchaseLotResult
+{
+    /// <summary>The purchased lot with updated ownership.</summary>
+    public BuildingLot Lot { get; set; } = null!;
+
+    /// <summary>The building placed on the lot.</summary>
+    public Building Building { get; set; } = null!;
+
+    /// <summary>The company with updated cash balance.</summary>
+    public Company Company { get; set; } = null!;
 }

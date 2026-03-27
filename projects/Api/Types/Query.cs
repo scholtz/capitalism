@@ -233,6 +233,27 @@ public sealed class Query
             Industries = Industry.StarterIndustries.ToList()
         };
     }
+
+    /// <summary>Lists building lots for a city, including ownership and availability state.</summary>
+    public async Task<List<BuildingLot>> GetCityLots(Guid cityId, [Service] AppDbContext db)
+    {
+        return await db.BuildingLots
+            .Include(lot => lot.OwnerCompany)
+            .Include(lot => lot.Building)
+            .Where(lot => lot.CityId == cityId)
+            .OrderBy(lot => lot.District)
+            .ThenBy(lot => lot.Name)
+            .ToListAsync();
+    }
+
+    /// <summary>Gets a single building lot by ID.</summary>
+    public async Task<BuildingLot?> GetLot(Guid id, [Service] AppDbContext db)
+    {
+        return await db.BuildingLots
+            .Include(lot => lot.OwnerCompany)
+            .Include(lot => lot.Building)
+            .FirstOrDefaultAsync(lot => lot.Id == id);
+    }
 }
 
 /// <summary>Payload for player ranking.</summary>
