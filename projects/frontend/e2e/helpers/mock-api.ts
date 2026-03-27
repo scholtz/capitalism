@@ -139,6 +139,22 @@ export type MockCity = {
   resources: { resourceType: { id: string; name: string; slug: string; category: string }; abundance: number }[]
 }
 
+export type MockBuildingLot = {
+  id: string
+  cityId: string
+  name: string
+  description: string
+  district: string
+  latitude: number
+  longitude: number
+  price: number
+  suitableTypes: string
+  ownerCompanyId: string | null
+  buildingId: string | null
+  ownerCompany: { id: string; name: string } | null
+  building: { id: string; name: string; type: string } | null
+}
+
 export type MockResourceType = {
   id: string
   name: string
@@ -177,6 +193,7 @@ export type MockProductType = {
 export type MockState = {
   players: MockPlayer[]
   cities: MockCity[]
+  buildingLots: MockBuildingLot[]
   resourceTypes: MockResourceType[]
   productTypes: MockProductType[]
   currentUserId: string | null
@@ -450,6 +467,71 @@ export function makeDefaultCities(): MockCity[] {
   ]
 }
 
+export function makeDefaultBuildingLots(): MockBuildingLot[] {
+  return [
+    {
+      id: 'lot-industrial-1',
+      cityId: 'city-ba',
+      name: 'Industrial Plot A1',
+      description: 'Large industrial plot near the eastern logistics corridor.',
+      district: 'Industrial Zone',
+      latitude: 48.152,
+      longitude: 17.125,
+      price: 80000,
+      suitableTypes: 'FACTORY,MINE',
+      ownerCompanyId: null,
+      buildingId: null,
+      ownerCompany: null,
+      building: null,
+    },
+    {
+      id: 'lot-commercial-1',
+      cityId: 'city-ba',
+      name: 'High Street Retail Space',
+      description: 'Prime storefront on the main pedestrian avenue.',
+      district: 'Commercial District',
+      latitude: 48.145,
+      longitude: 17.107,
+      price: 120000,
+      suitableTypes: 'SALES_SHOP,COMMERCIAL',
+      ownerCompanyId: null,
+      buildingId: null,
+      ownerCompany: null,
+      building: null,
+    },
+    {
+      id: 'lot-residential-1',
+      cityId: 'city-ba',
+      name: 'Riverside Apartment Block',
+      description: 'Scenic residential plot overlooking the Danube.',
+      district: 'Residential Quarter',
+      latitude: 48.14,
+      longitude: 17.1,
+      price: 110000,
+      suitableTypes: 'APARTMENT',
+      ownerCompanyId: null,
+      buildingId: null,
+      ownerCompany: null,
+      building: null,
+    },
+    {
+      id: 'lot-business-1',
+      cityId: 'city-ba',
+      name: 'Innovation Campus Office',
+      description: 'Modern office complex in the technology business park.',
+      district: 'Business Park',
+      latitude: 48.156,
+      longitude: 17.11,
+      price: 130000,
+      suitableTypes: 'RESEARCH_DEVELOPMENT,BANK',
+      ownerCompanyId: null,
+      buildingId: null,
+      ownerCompany: null,
+      building: null,
+    },
+  ]
+}
+
 export function makeChairProduct(): MockProductType {
   return {
     id: 'prod-chair',
@@ -510,6 +592,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
   const state: MockState = {
     players: [],
     cities: makeDefaultCities(),
+    buildingLots: makeDefaultBuildingLots(),
     resourceTypes: makeDefaultResources(),
     productTypes: makeDefaultProducts(),
     currentUserId: null,
@@ -993,6 +1076,68 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('PurchaseLot') || query.includes('purchaseLot')) {
+      const input = body.variables?.input
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      if (!player) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }) })
+      }
+      const company = player.companies.find((c) => c.id === input?.companyId)
+      if (!company) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Company not found' }] }) })
+      }
+      const lot = state.buildingLots.find((l) => l.id === input?.lotId)
+      if (!lot) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building lot not found.' }] }) })
+      }
+      if (lot.ownerCompanyId) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.' }] }) })
+      }
+      const suitableTypes = lot.suitableTypes.split(',').map((s) => s.trim())
+      if (!suitableTypes.includes(input.buildingType)) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: `Building type ${input.buildingType} is not suitable for this lot.` }] }) })
+      }
+      if (company.cash < lot.price) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: `Insufficient funds. This lot costs $${lot.price.toLocaleString()} but you only have $${company.cash.toLocaleString()}.` }] }) })
+      }
+
+      company.cash -= lot.price
+      const newBuilding: MockBuilding = {
+        id: `building-lot-${Date.now()}`,
+        companyId: company.id,
+        cityId: lot.cityId,
+        type: input.buildingType,
+        name: input.buildingName,
+        latitude: lot.latitude,
+        longitude: lot.longitude,
+        level: 1,
+        powerConsumption: 1,
+        isForSale: false,
+        builtAtUtc: new Date().toISOString(),
+        units: [],
+        pendingConfiguration: null,
+      }
+      company.buildings.push(newBuilding)
+      lot.ownerCompanyId = company.id
+      lot.buildingId = newBuilding.id
+      lot.ownerCompany = { id: company.id, name: company.name }
+      lot.building = { id: newBuilding.id, name: newBuilding.name, type: newBuilding.type }
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            purchaseLot: {
+              lot,
+              building: newBuilding,
+              company: { id: company.id, name: company.name, cash: company.cash },
+            },
+          },
+        }),
+      })
+    }
+
     // Queries - order specific handlers before generic ones
     if (query.includes('starterIndustries')) {
       return route.fulfill({
@@ -1084,6 +1229,36 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { gameState: state.gameState } }),
+      })
+    }
+
+    if (query.includes('cityLots')) {
+      const cityId = body.variables?.cityId
+      const cityLots = state.buildingLots.filter((lot) => lot.cityId === cityId)
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { cityLots } }),
+      })
+    }
+
+    if (query.includes('GetLot') || (query.includes('lot(') && !query.includes('cityLots'))) {
+      const id = body.variables?.id
+      const lot = state.buildingLots.find((l) => l.id === id)
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { lot: lot ?? null } }),
+      })
+    }
+
+    if (query.includes('GetCity') || (query.includes('city(') && !query.includes('cities'))) {
+      const id = body.variables?.id
+      const city = state.cities.find((c) => c.id === id)
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { city: city ?? null } }),
       })
     }
 
