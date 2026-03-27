@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Api.Data;
 using Api.Tests.Infrastructure;
+using Api.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Api.Tests;
@@ -971,7 +972,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         var firstClaimData = firstClaim.GetProperty("data").GetProperty("claimStartupPack");
         Assert.Equal("CLAIMED", firstClaimData.GetProperty("offer").GetProperty("status").GetString());
-        Assert.Equal(750000m, firstClaimData.GetProperty("company").GetProperty("cash").GetDecimal());
+        Assert.Equal(500_000m + StartupPackService.CompanyCashGrant, firstClaimData.GetProperty("company").GetProperty("cash").GetDecimal());
         var firstProEndsAt = firstClaimData.GetProperty("proSubscriptionEndsAtUtc").GetString();
 
         var secondClaim = await ExecuteGraphQlAsync(
@@ -989,7 +990,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         var secondClaimData = secondClaim.GetProperty("data").GetProperty("claimStartupPack");
         Assert.Equal("CLAIMED", secondClaimData.GetProperty("offer").GetProperty("status").GetString());
-        Assert.Equal(750000m, secondClaimData.GetProperty("company").GetProperty("cash").GetDecimal());
+        Assert.Equal(500_000m + StartupPackService.CompanyCashGrant, secondClaimData.GetProperty("company").GetProperty("cash").GetDecimal());
         Assert.Equal(firstProEndsAt, secondClaimData.GetProperty("proSubscriptionEndsAtUtc").GetString());
 
         var meResult = await ExecuteGraphQlAsync(

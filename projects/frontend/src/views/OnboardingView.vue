@@ -320,7 +320,7 @@ async function completeOnboarding() {
     auth.setStartupPackOffer(result.completeOnboarding.startupPackOffer)
     clearProgress()
     await auth.fetchMe()
-    startupPackOffer.value = startupPackOffer.value ?? auth.startupPackOffer
+    startupPackOffer.value = auth.startupPackOffer ?? startupPackOffer.value
     if (startupPackOffer.value?.status === 'ELIGIBLE') {
       await markStartupPackOfferShown()
     } else if (startupPackOffer.value) {
@@ -824,13 +824,14 @@ function formatTimeRemaining(expiresAtUtc: string): string {
 
           <div v-else-if="claimedStartupPackOffer" class="startup-pack-state success">
             <strong>{{ t('startupPack.claimedTitle') }}</strong>
-            <p>
+            <p v-if="auth.player?.proSubscriptionEndsAtUtc">
               {{
                 t('startupPack.claimedBody', {
-                  date: formatDateTime(auth.player?.proSubscriptionEndsAtUtc ?? new Date().toISOString()),
+                  date: formatDateTime(auth.player.proSubscriptionEndsAtUtc),
                 })
               }}
             </p>
+            <p v-else>{{ t('startupPack.claimedNoDate') }}</p>
             <p>
               {{
                 t('startupPack.cashBenefitBody', {

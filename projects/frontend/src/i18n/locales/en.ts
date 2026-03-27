@@ -111,6 +111,7 @@ export default {
     dismissedBody: 'The offer has been saved to your dashboard until it expires.',
     claimedTitle: 'Startup pack activated',
     claimedBody: 'Your Pro access is active until {date}.',
+    claimedNoDate: 'Your startup pack was activated successfully.',
     expiredTitle: 'Startup pack expired',
     expiredBody: 'This introductory offer is no longer available, but you can keep building your empire for free.',
     claimFailed: 'We could not activate the startup pack. Please try again.',

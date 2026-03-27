@@ -15,8 +15,9 @@ public static class StartupPackService
     private static readonly TimeSpan OfferAvailabilityWindow = TimeSpan.FromHours(72);
 
     /// <summary>
-    /// Ensures an eligible player has a durable startup-pack record, including a backfill
-    /// for players who completed onboarding before the feature shipped.
+    /// Ensures an eligible player has a durable startup-pack record.
+    /// Players who completed onboarding before this feature existed are automatically
+    /// backfilled the first time the system checks their offer state and finds no record.
     /// </summary>
     public static async Task<StartupPackOffer?> EnsureOfferForPlayerAsync(
         AppDbContext db,
@@ -59,10 +60,15 @@ public static class StartupPackService
     /// <summary>Updates the stored lifecycle state when a valid offer is displayed.</summary>
     public static bool MarkShown(StartupPackOffer offer, DateTime nowUtc)
     {
-        var changed = TryExpireOffer(offer, nowUtc);
-        if (changed || offer.Status == StartupPackOfferStatus.Claimed)
+        if (offer.Status == StartupPackOfferStatus.Claimed)
         {
-            return changed;
+            return false;
+        }
+
+        var changed = TryExpireOffer(offer, nowUtc);
+        if (changed)
+        {
+            return true;
         }
         if (offer.ShownAtUtc is null)
         {
@@ -82,10 +88,15 @@ public static class StartupPackService
     /// <summary>Stores an explicit dismissal without blocking free progression.</summary>
     public static bool Dismiss(StartupPackOffer offer, DateTime nowUtc)
     {
-        var changed = TryExpireOffer(offer, nowUtc);
-        if (changed || offer.Status == StartupPackOfferStatus.Claimed)
+        if (offer.Status == StartupPackOfferStatus.Claimed)
         {
-            return changed;
+            return false;
+        }
+
+        var changed = TryExpireOffer(offer, nowUtc);
+        if (changed)
+        {
+            return true;
         }
         changed = MarkShown(offer, nowUtc) || changed;
         if (offer.Status != StartupPackOfferStatus.Dismissed)

@@ -111,6 +111,7 @@ export default {
     dismissedBody: 'Ponuka bola uložená na váš dashboard až do vypršania.',
     claimedTitle: 'Štartovací balík je aktívny',
     claimedBody: 'Váš Pro prístup je aktívny do {date}.',
+    claimedNoDate: 'Váš štartovací balík bol úspešne aktivovaný.',
     expiredTitle: 'Štartovací balík vypršal',
     expiredBody: 'Táto uvádzacia ponuka už nie je dostupná, ale svoje impérium môžete budovať ďalej zadarmo.',
     claimFailed: 'Štartovací balík sa nepodarilo aktivovať. Skúste to znova.',

@@ -338,13 +338,14 @@ function formatTimeRemaining(expiresAtUtc: string): string {
 
         <div v-else-if="claimedStartupPackOffer" class="startup-pack-state success">
           <strong>{{ t('startupPack.claimedTitle') }}</strong>
-          <p>
+          <p v-if="auth.player?.proSubscriptionEndsAtUtc">
             {{
               t('startupPack.claimedBody', {
-                date: formatDateTime(auth.player?.proSubscriptionEndsAtUtc ?? new Date().toISOString()),
+                date: formatDateTime(auth.player.proSubscriptionEndsAtUtc),
               })
             }}
           </p>
+          <p v-else>{{ t('startupPack.claimedNoDate') }}</p>
         </div>
 
         <div v-else class="startup-pack-state muted">

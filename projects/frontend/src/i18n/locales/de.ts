@@ -111,6 +111,7 @@ export default {
     dismissedBody: 'Das Angebot bleibt bis zum Ablauf in Ihrem Dashboard gespeichert.',
     claimedTitle: 'Startup-Paket aktiviert',
     claimedBody: 'Ihr Pro-Zugang ist bis {date} aktiv.',
+    claimedNoDate: 'Ihr Startup-Paket wurde erfolgreich aktiviert.',
     expiredTitle: 'Startup-Paket abgelaufen',
     expiredBody: 'Dieses Einführungsangebot ist nicht mehr verfügbar, aber Sie können Ihr Imperium kostenlos weiter ausbauen.',
     claimFailed: 'Das Startup-Paket konnte nicht aktiviert werden. Bitte versuchen Sie es erneut.',

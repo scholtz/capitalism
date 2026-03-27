@@ -681,6 +681,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       if (player.startupPackOffer.status !== 'CLAIMED') {
         company.cash += player.startupPackOffer.companyCashGrant
         const now = new Date()
+        // Keep this stacking rule aligned with projects/Api/Types/Mutation.cs so
+        // the mock mirrors the backend-authoritative entitlement behavior.
         const baseDate = player.proSubscriptionEndsAtUtc && new Date(player.proSubscriptionEndsAtUtc) > now
           ? new Date(player.proSubscriptionEndsAtUtc)
           : now

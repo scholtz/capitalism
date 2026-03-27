@@ -25,7 +25,7 @@ public sealed class StartupPackOffer
     public string Status { get; set; } = StartupPackOfferStatus.Eligible;
 
     /// <summary>When the offer record was created for the player.</summary>
-    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAtUtc { get; set; }
 
     /// <summary>When the offer stops being claimable.</summary>
     public DateTime ExpiresAtUtc { get; set; }

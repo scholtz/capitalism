@@ -508,6 +508,8 @@ public sealed class Mutation
         {
             StartupPackService.MarkShown(offer, nowUtc);
             company.Cash += offer.CompanyCashGrant;
+            // If the player already has active Pro time from another source, extend from that
+            // future end-date instead of overwriting it or restarting from "now".
             var subscriptionStart = player.ProSubscriptionEndsAtUtc is { } endsAt && endsAt > nowUtc
                 ? endsAt
                 : nowUtc;
