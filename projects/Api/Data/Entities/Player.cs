@@ -36,6 +36,9 @@ public sealed class Player
     /// <summary>UTC timestamp when the player completed the onboarding journey. Null if not yet completed.</summary>
     public DateTime? OnboardingCompletedAtUtc { get; set; }
 
+    /// <summary>UTC timestamp until which the player's Pro subscription remains active. Null when inactive.</summary>
+    public DateTime? ProSubscriptionEndsAtUtc { get; set; }
+
     /// <summary>Companies owned by this player.</summary>
     public ICollection<Company> Companies { get; set; } = [];
 }

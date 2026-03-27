@@ -200,6 +200,7 @@ public sealed class Mutation
         [Service] IHttpContextAccessor httpContextAccessor)
     {
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var nowUtc = DateTime.UtcNow;
 
         // Validate industry
         if (!Industry.StarterIndustries.Contains(input.Industry))
@@ -258,7 +259,7 @@ public sealed class Mutation
             PlayerId = userId,
             Name = input.CompanyName,
             Cash = 500_000m,
-            FoundedAtUtc = DateTime.UtcNow
+            FoundedAtUtc = nowUtc
         };
         db.Companies.Add(company);
 
@@ -274,7 +275,7 @@ public sealed class Mutation
             Longitude = city.Longitude + 0.001,
             Level = 1,
             PowerConsumption = 2m,
-            BuiltAtUtc = DateTime.UtcNow
+            BuiltAtUtc = nowUtc
         };
         db.Buildings.Add(factory);
 
@@ -298,7 +299,7 @@ public sealed class Mutation
             Longitude = city.Longitude + 0.002,
             Level = 1,
             PowerConsumption = 1m,
-            BuiltAtUtc = DateTime.UtcNow
+            BuiltAtUtc = nowUtc
         };
         db.Buildings.Add(shop);
 
@@ -312,17 +313,21 @@ public sealed class Mutation
         var player = await db.Players.FindAsync(userId);
         if (player is not null)
         {
-            player.OnboardingCompletedAtUtc = DateTime.UtcNow;
+            player.OnboardingCompletedAtUtc = nowUtc;
         }
 
         await db.SaveChangesAsync();
+        var startupPackOffer = player is null
+            ? null
+            : await StartupPackService.EnsureOfferForPlayerAsync(db, player, nowUtc);
 
         return new OnboardingResult
         {
             Company = company,
             Factory = factory,
             SalesShop = shop,
-            SelectedProduct = product
+            SelectedProduct = product,
+            StartupPackOffer = startupPackOffer
         };
     }
 
@@ -384,6 +389,141 @@ public sealed class Mutation
             .Include(candidate => candidate.Units)
             .Include(candidate => candidate.Removals)
             .FirstAsync(candidate => candidate.Id == plan.Id);
+    }
+
+    /// <summary>Marks the player's startup-pack offer as shown when the UI presents it.</summary>
+    [Authorize]
+    public async Task<StartupPackOffer?> MarkStartupPackOfferShown(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var player = await db.Players.FirstOrDefaultAsync(candidate => candidate.Id == userId);
+        if (player is null)
+        {
+            return null;
+        }
+
+        var offer = await StartupPackService.EnsureOfferForPlayerAsync(db, player, DateTime.UtcNow);
+        if (offer is null)
+        {
+            return null;
+        }
+
+        if (StartupPackService.MarkShown(offer, DateTime.UtcNow))
+        {
+            await db.SaveChangesAsync();
+        }
+
+        return offer;
+    }
+
+    /// <summary>Stores a player dismissal while keeping the offer revisit-able until expiry.</summary>
+    [Authorize]
+    public async Task<StartupPackOffer?> DismissStartupPackOffer(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var player = await db.Players.FirstOrDefaultAsync(candidate => candidate.Id == userId);
+        if (player is null)
+        {
+            return null;
+        }
+
+        var offer = await StartupPackService.EnsureOfferForPlayerAsync(db, player, DateTime.UtcNow);
+        if (offer is null)
+        {
+            return null;
+        }
+
+        if (StartupPackService.Dismiss(offer, DateTime.UtcNow))
+        {
+            await db.SaveChangesAsync();
+        }
+
+        return offer;
+    }
+
+    /// <summary>Claims the startup pack and grants both Pro time and expansion capital exactly once.</summary>
+    [Authorize]
+    public async Task<StartupPackClaimResult> ClaimStartupPack(
+        ClaimStartupPackInput input,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var nowUtc = DateTime.UtcNow;
+
+        var player = await db.Players
+            .Include(candidate => candidate.Companies)
+            .FirstOrDefaultAsync(candidate => candidate.Id == userId)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+
+        var offer = await StartupPackService.EnsureOfferForPlayerAsync(db, player, nowUtc)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Startup pack is not available for this player.")
+                    .SetCode("STARTUP_PACK_NOT_AVAILABLE")
+                    .Build());
+
+        if (StartupPackService.TryExpireOffer(offer, nowUtc))
+        {
+            await db.SaveChangesAsync();
+        }
+
+        if (offer.Status == StartupPackOfferStatus.Expired)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Startup pack offer has expired.")
+                    .SetCode("STARTUP_PACK_EXPIRED")
+                    .Build());
+        }
+
+        Company? company;
+        if (offer.Status == StartupPackOfferStatus.Claimed && offer.GrantedCompanyId is not null)
+        {
+            company = player.Companies.FirstOrDefault(candidate => candidate.Id == offer.GrantedCompanyId);
+        }
+        else
+        {
+            company = player.Companies.FirstOrDefault(candidate => candidate.Id == input.CompanyId);
+        }
+
+        if (company is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Company not found or you don't own it.")
+                    .SetCode("COMPANY_NOT_FOUND")
+                    .Build());
+        }
+
+        if (offer.Status != StartupPackOfferStatus.Claimed)
+        {
+            StartupPackService.MarkShown(offer, nowUtc);
+            company.Cash += offer.CompanyCashGrant;
+            var subscriptionStart = player.ProSubscriptionEndsAtUtc is { } endsAt && endsAt > nowUtc
+                ? endsAt
+                : nowUtc;
+            player.ProSubscriptionEndsAtUtc = subscriptionStart.AddDays(offer.ProDurationDays);
+            offer.Status = StartupPackOfferStatus.Claimed;
+            offer.ClaimedAtUtc = nowUtc;
+            offer.GrantedCompanyId = company.Id;
+            await db.SaveChangesAsync();
+        }
+
+        return new StartupPackClaimResult
+        {
+            Offer = offer,
+            Company = company,
+            ProSubscriptionEndsAtUtc = player.ProSubscriptionEndsAtUtc ?? nowUtc
+        };
     }
 
     /// <summary>Sets or clears the for-sale status and asking price of a building.</summary>
@@ -470,4 +610,20 @@ public sealed class OnboardingResult
 
     /// <summary>The product selected for manufacturing.</summary>
     public ProductType SelectedProduct { get; set; } = null!;
+
+    /// <summary>The player's startup-pack offer, if one is available after onboarding.</summary>
+    public StartupPackOffer? StartupPackOffer { get; set; }
+}
+
+/// <summary>Claim result payload for the startup-pack offer.</summary>
+public sealed class StartupPackClaimResult
+{
+    /// <summary>Updated lifecycle state for the startup-pack offer.</summary>
+    public StartupPackOffer Offer { get; set; } = null!;
+
+    /// <summary>Company that received the startup capital grant.</summary>
+    public Company Company { get; set; } = null!;
+
+    /// <summary>UTC timestamp until which the player now has Pro access.</summary>
+    public DateTime ProSubscriptionEndsAtUtc { get; set; }
 }

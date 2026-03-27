@@ -3,7 +3,7 @@
  * Covers: registration, login, onboarding wizard, and dashboard verification.
  */
 import { test, expect } from '@playwright/test'
-import { setupMockApi, makePlayer } from './helpers/mock-api'
+import { setupMockApi, makePlayer, makeStartupPackOffer } from './helpers/mock-api'
 
 test.describe('Authentication', () => {
   test('register new account and redirect to home', async ({ page }) => {
@@ -109,6 +109,9 @@ test.describe('Onboarding wizard', () => {
 
     // Step 4: Completion screen
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'Scale faster while your first business is taking off' }),
+    ).toBeVisible()
     await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'View Leaderboard' })).toBeVisible()
 
@@ -475,8 +478,13 @@ test.describe('Onboarding resume and progress persistence', () => {
 
     // Verify completion step UI
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'Scale faster while your first business is taking off' }),
+    ).toBeVisible()
     await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'View Leaderboard' })).toBeVisible()
+    await expect(page.getByText('3 months of Pro', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
 
     // Should show achievement items (factory and shop names)
     await expect(page.locator('.achievement-item')).toHaveCount(4)
@@ -487,11 +495,76 @@ test.describe('Onboarding resume and progress persistence', () => {
     await expect(page).toHaveURL('/leaderboard')
   })
 
+  test('player can claim the startup pack after onboarding and see claimed entitlement state', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Claim Pack Corp')
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'Start Playing' }).click()
+
+    await page.getByRole('button', { name: 'Claim startup pack' }).click()
+
+    await expect(page.getByText('Startup pack activated')).toBeVisible()
+    await expect(page.getByText('$750,000', { exact: true })).toBeVisible()
+
+    await page.getByRole('link', { name: 'Go to Dashboard' }).click()
+    await page.waitForURL('/dashboard')
+    await expect(page.getByText('Startup pack activated')).toBeVisible()
+  })
+
+  test('player can dismiss the startup pack and revisit it from the dashboard', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Maybe Later Corp')
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'Start Playing' }).click()
+
+    await page.getByRole('button', { name: 'Maybe later' }).click()
+    await expect(page.getByText('The offer has been saved to your dashboard until it expires.')).toBeVisible()
+
+    await page.getByRole('link', { name: 'Go to Dashboard' }).click()
+    await page.waitForURL('/dashboard')
+    await expect(page.getByRole('heading', { name: 'Your startup pack is still available' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+  })
+
   test('already-onboarded player visiting /onboarding is redirected to dashboard', async ({
     page,
   }) => {
     const player = makePlayer({
       onboardingCompletedAtUtc: '2026-01-01T12:00:00Z',
+      startupPackOffer: makeStartupPackOffer({
+        status: 'EXPIRED',
+        expiresAtUtc: '2026-01-02T12:00:00Z',
+      }),
       companies: [
         {
           id: 'comp-existing',
@@ -515,5 +588,6 @@ test.describe('Onboarding resume and progress persistence', () => {
     await page.goto('/onboarding')
     await page.waitForURL('/dashboard')
     await expect(page).toHaveURL('/dashboard')
+    await expect(page.getByText('Startup pack expired')).toBeVisible()
   })
 })

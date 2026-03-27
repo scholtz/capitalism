@@ -19,7 +19,23 @@ export type MockPlayer = {
   role: 'PLAYER' | 'ADMIN'
   createdAtUtc: string
   onboardingCompletedAtUtc: string | null
+  proSubscriptionEndsAtUtc: string | null
+  startupPackOffer: MockStartupPackOffer | null
   companies: MockCompany[]
+}
+
+export type MockStartupPackOffer = {
+  id: string
+  offerKey: string
+  status: 'ELIGIBLE' | 'SHOWN' | 'DISMISSED' | 'CLAIMED' | 'EXPIRED'
+  createdAtUtc: string
+  expiresAtUtc: string
+  shownAtUtc: string | null
+  dismissedAtUtc: string | null
+  claimedAtUtc: string | null
+  companyCashGrant: number
+  proDurationDays: number
+  grantedCompanyId: string | null
 }
 
 export type MockCompany = {
@@ -320,7 +336,27 @@ export function makePlayer(overrides?: Partial<MockPlayer>): MockPlayer {
     role: 'PLAYER',
     createdAtUtc: '2026-01-01T00:00:00Z',
     onboardingCompletedAtUtc: null,
+    proSubscriptionEndsAtUtc: null,
+    startupPackOffer: null,
     companies: [],
+    ...overrides,
+  }
+}
+
+export function makeStartupPackOffer(overrides?: Partial<MockStartupPackOffer>): MockStartupPackOffer {
+  const now = Date.now()
+  return {
+    id: `startup-pack-${now}`,
+    offerKey: 'STARTUP_PACK_V1',
+    status: 'ELIGIBLE',
+    createdAtUtc: new Date(now).toISOString(),
+    expiresAtUtc: new Date(now + 72 * 60 * 60 * 1000).toISOString(),
+    shownAtUtc: null,
+    dismissedAtUtc: null,
+    claimedAtUtc: null,
+    companyCashGrant: 250000,
+    proDurationDays: 90,
+    grantedCompanyId: null,
     ...overrides,
   }
 }
@@ -506,6 +542,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         role: 'PLAYER',
         createdAtUtc: new Date().toISOString(),
         onboardingCompletedAtUtc: null,
+        proSubscriptionEndsAtUtc: null,
+        startupPackOffer: null,
         companies: [],
       }
       state.players.push(newPlayer)
@@ -569,6 +607,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       }
       player.companies.push(company)
       player.onboardingCompletedAtUtc = new Date().toISOString()
+      player.startupPackOffer = player.startupPackOffer ?? makeStartupPackOffer()
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -579,6 +618,89 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
               factory: company.buildings[0],
               salesShop: company.buildings[1],
               selectedProduct: product ?? state.productTypes[0],
+              startupPackOffer: player.startupPackOffer,
+            },
+          },
+        }),
+      })
+    }
+
+    if (query.includes('markStartupPackOfferShown')) {
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      if (!player?.startupPackOffer) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { markStartupPackOfferShown: null } }) })
+      }
+
+      if (player.startupPackOffer.status === 'ELIGIBLE') {
+        player.startupPackOffer.status = 'SHOWN'
+      }
+      player.startupPackOffer.shownAtUtc ??= new Date().toISOString()
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { markStartupPackOfferShown: player.startupPackOffer } }),
+      })
+    }
+
+    if (query.includes('dismissStartupPackOffer')) {
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      if (!player?.startupPackOffer) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { dismissStartupPackOffer: null } }) })
+      }
+
+      if (new Date(player.startupPackOffer.expiresAtUtc).getTime() <= Date.now()) {
+        player.startupPackOffer.status = 'EXPIRED'
+      } else if (player.startupPackOffer.status !== 'CLAIMED') {
+        player.startupPackOffer.status = 'DISMISSED'
+        player.startupPackOffer.shownAtUtc ??= new Date().toISOString()
+        player.startupPackOffer.dismissedAtUtc ??= new Date().toISOString()
+      }
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { dismissStartupPackOffer: player.startupPackOffer } }),
+      })
+    }
+
+    if (query.includes('ClaimStartupPack')) {
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      const companyId = body.variables?.input?.companyId
+      const company = player?.companies.find((candidate) => candidate.id === companyId)
+
+      if (!player?.startupPackOffer || !company) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Company not found or you do not own it.' }] }) })
+      }
+
+      if (new Date(player.startupPackOffer.expiresAtUtc).getTime() <= Date.now() && player.startupPackOffer.status !== 'CLAIMED') {
+        player.startupPackOffer.status = 'EXPIRED'
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Startup pack offer has expired.', extensions: { code: 'STARTUP_PACK_EXPIRED' } }] }) })
+      }
+
+      if (player.startupPackOffer.status !== 'CLAIMED') {
+        company.cash += player.startupPackOffer.companyCashGrant
+        const now = new Date()
+        const baseDate = player.proSubscriptionEndsAtUtc && new Date(player.proSubscriptionEndsAtUtc) > now
+          ? new Date(player.proSubscriptionEndsAtUtc)
+          : now
+        baseDate.setUTCDate(baseDate.getUTCDate() + player.startupPackOffer.proDurationDays)
+        player.proSubscriptionEndsAtUtc = baseDate.toISOString()
+        player.startupPackOffer.status = 'CLAIMED'
+        player.startupPackOffer.claimedAtUtc = now.toISOString()
+        player.startupPackOffer.shownAtUtc ??= now.toISOString()
+        player.startupPackOffer.grantedCompanyId = company.id
+      }
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            claimStartupPack: {
+              offer: player.startupPackOffer,
+              company,
+              proSubscriptionEndsAtUtc: player.proSubscriptionEndsAtUtc,
             },
           },
         }),
@@ -934,6 +1056,36 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('startupPackOffer')) {
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      if (!player) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }) })
+      }
+
+      if (player.startupPackOffer && new Date(player.startupPackOffer.expiresAtUtc).getTime() <= Date.now() && player.startupPackOffer.status !== 'CLAIMED') {
+        player.startupPackOffer.status = 'EXPIRED'
+      }
+
+      if (query.includes('me')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: {
+              me: { ...player, password: undefined },
+              startupPackOffer: player.startupPackOffer,
+            },
+          }),
+        })
+      }
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { startupPackOffer: player.startupPackOffer } }),
+      })
+    }
+
     if (query.includes('me')) {
       const player = state.players.find((p) => p.id === state.currentUserId)
       if (!player) {
@@ -942,7 +1094,12 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ data: { me: { ...player, password: undefined } } }),
+        body: JSON.stringify({
+          data: {
+            me: { ...player, password: undefined },
+            startupPackOffer: player.startupPackOffer,
+          },
+        }),
       })
     }
 

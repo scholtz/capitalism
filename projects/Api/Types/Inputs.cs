@@ -77,6 +77,13 @@ public sealed class OnboardingInput
     public string CompanyName { get; set; } = string.Empty;
 }
 
+/// <summary>Input for claiming the post-onboarding startup pack.</summary>
+public sealed class ClaimStartupPackInput
+{
+    /// <summary>Company that should receive the startup capital grant.</summary>
+    public Guid CompanyId { get; set; }
+}
+
 /// <summary>Input for storing a queued building configuration update.</summary>
 public sealed class StoreBuildingConfigurationInput
 {

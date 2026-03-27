@@ -25,6 +25,22 @@ public sealed class Query
             .FirstOrDefaultAsync(p => p.Id == userId);
     }
 
+    /// <summary>Returns the current player's startup-pack offer if they are eligible.</summary>
+    [Authorize]
+    public async Task<StartupPackOffer?> GetStartupPackOffer(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var player = await db.Players.FirstOrDefaultAsync(candidate => candidate.Id == userId);
+        if (player is null)
+        {
+            return null;
+        }
+
+        return await StartupPackService.EnsureOfferForPlayerAsync(db, player, DateTime.UtcNow);
+    }
+
     /// <summary>Lists all cities available on the game map.</summary>
     public async Task<List<City>> GetCities([Service] AppDbContext db)
     {

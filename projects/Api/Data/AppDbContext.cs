@@ -57,6 +57,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     /// <summary>Exchange buy/sell orders.</summary>
     public DbSet<ExchangeOrder> ExchangeOrders => Set<ExchangeOrder>();
 
+    /// <summary>Player-specific startup-pack offer lifecycle records.</summary>
+    public DbSet<StartupPackOffer> StartupPackOffers => Set<StartupPackOffer>();
+
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -70,6 +73,24 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(p => p.Email).HasMaxLength(256);
             e.Property(p => p.DisplayName).HasMaxLength(100);
             e.Property(p => p.Role).HasMaxLength(20);
+        });
+
+        // StartupPackOffer
+        modelBuilder.Entity<StartupPackOffer>(e =>
+        {
+            e.HasKey(offer => offer.Id);
+            e.HasIndex(offer => offer.PlayerId).IsUnique();
+            e.Property(offer => offer.OfferKey).HasMaxLength(50);
+            e.Property(offer => offer.Status).HasMaxLength(20);
+            e.Property(offer => offer.CompanyCashGrant).HasPrecision(18, 2);
+            e.HasOne(offer => offer.Player)
+                .WithOne()
+                .HasForeignKey<StartupPackOffer>(offer => offer.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Company>()
+                .WithMany()
+                .HasForeignKey(offer => offer.GrantedCompanyId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // Company

@@ -1,18 +1,35 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
-import type { Company } from '@/types'
+import { trackStartupPackEvent } from '@/lib/startupPackAnalytics'
+import type { Company, StartupPackOffer } from '@/types'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 
 const companies = ref<Company[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+const offerLoading = ref(false)
+const offerError = ref<string | null>(null)
+const offerMessage = ref<string | null>(null)
+
+const activeStartupPackOffer = computed(() =>
+  auth.startupPackOffer && ['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(auth.startupPackOffer.status)
+    ? auth.startupPackOffer
+    : null,
+)
+const claimedStartupPackOffer = computed(() =>
+  auth.startupPackOffer?.status === 'CLAIMED' ? auth.startupPackOffer : null,
+)
+const expiredStartupPackOffer = computed(() =>
+  auth.startupPackOffer?.status === 'EXPIRED' ? auth.startupPackOffer : null,
+)
+const targetCompany = computed(() => companies.value[0] ?? null)
 
 const buildingTypeIcons: Record<string, string> = {
   MINE: '⛏️',
@@ -42,6 +59,7 @@ onMounted(async () => {
   }
 
   try {
+    await auth.fetchMe()
     const data = await gqlRequest<{ myCompanies: Company[] }>(
       `{ myCompanies {
         id name cash foundedAtUtc
@@ -49,12 +67,175 @@ onMounted(async () => {
       } }`,
     )
     companies.value = data.myCompanies
+    if (auth.startupPackOffer?.status === 'ELIGIBLE') {
+      await markStartupPackOfferShown()
+    } else if (auth.startupPackOffer) {
+      trackStartupPackEvent('view', { context: 'dashboard', status: auth.startupPackOffer.status })
+    }
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to load dashboard'
   } finally {
     loading.value = false
   }
 })
+
+async function markStartupPackOfferShown() {
+  if (!auth.startupPackOffer || auth.startupPackOffer.status !== 'ELIGIBLE') {
+    return
+  }
+
+  const data = await gqlRequest<{ markStartupPackOfferShown: StartupPackOffer | null }>(
+    `mutation {
+      markStartupPackOfferShown {
+        id
+        offerKey
+        status
+        createdAtUtc
+        expiresAtUtc
+        shownAtUtc
+        dismissedAtUtc
+        claimedAtUtc
+        companyCashGrant
+        proDurationDays
+        grantedCompanyId
+      }
+    }`,
+  )
+
+  auth.setStartupPackOffer(data.markStartupPackOfferShown)
+  if (data.markStartupPackOfferShown) {
+    trackStartupPackEvent('view', { context: 'dashboard', status: data.markStartupPackOfferShown.status })
+  }
+}
+
+async function dismissStartupPackOffer() {
+  offerLoading.value = true
+  offerError.value = null
+  offerMessage.value = null
+
+  try {
+    const data = await gqlRequest<{ dismissStartupPackOffer: StartupPackOffer | null }>(
+      `mutation {
+        dismissStartupPackOffer {
+          id
+          offerKey
+          status
+          createdAtUtc
+          expiresAtUtc
+          shownAtUtc
+          dismissedAtUtc
+          claimedAtUtc
+          companyCashGrant
+          proDurationDays
+          grantedCompanyId
+        }
+      }`,
+    )
+    auth.setStartupPackOffer(data.dismissStartupPackOffer)
+    offerMessage.value = t('startupPack.dismissedBody')
+    trackStartupPackEvent('dismiss', { context: 'dashboard' })
+  } catch (e: unknown) {
+    offerError.value = e instanceof Error ? e.message : t('startupPack.claimFailed')
+  } finally {
+    offerLoading.value = false
+  }
+}
+
+async function claimStartupPackOffer() {
+  if (!targetCompany.value) {
+    return
+  }
+
+  offerLoading.value = true
+  offerError.value = null
+  offerMessage.value = null
+  trackStartupPackEvent('claim_click', { context: 'dashboard' })
+
+  try {
+    const data = await gqlRequest<{
+      claimStartupPack: {
+        offer: StartupPackOffer
+        company: Company
+        proSubscriptionEndsAtUtc: string
+      }
+    }>(
+      `mutation ClaimStartupPack($input: ClaimStartupPackInput!) {
+        claimStartupPack(input: $input) {
+          offer {
+            id
+            offerKey
+            status
+            createdAtUtc
+            expiresAtUtc
+            shownAtUtc
+            dismissedAtUtc
+            claimedAtUtc
+            companyCashGrant
+            proDurationDays
+            grantedCompanyId
+          }
+          company {
+            id
+            name
+            cash
+            foundedAtUtc
+            buildings { id name type level units { id unitType gridX gridY level } }
+          }
+          proSubscriptionEndsAtUtc
+        }
+      }`,
+      { input: { companyId: targetCompany.value.id } },
+    )
+
+    auth.setStartupPackOffer(data.claimStartupPack.offer)
+    companies.value = companies.value.map((company) =>
+      company.id === data.claimStartupPack.company.id ? data.claimStartupPack.company : company,
+    )
+    await auth.fetchMe()
+    offerMessage.value = t('startupPack.claimedBody', {
+      date: formatDateTime(data.claimStartupPack.proSubscriptionEndsAtUtc),
+    })
+    trackStartupPackEvent('claim_success', { context: 'dashboard' })
+  } catch (e: unknown) {
+    offerError.value = e instanceof Error ? e.message : t('startupPack.claimFailed')
+    trackStartupPackEvent('claim_error', { context: 'dashboard' })
+  } finally {
+    offerLoading.value = false
+  }
+}
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString(locale.value)
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
+}
+
+function formatTimeRemaining(expiresAtUtc: string): string {
+  const diffMs = new Date(expiresAtUtc).getTime() - Date.now()
+  if (diffMs <= 0) {
+    return t('startupPack.expiredNow')
+  }
+
+  const totalMinutes = Math.max(Math.ceil(diffMs / 60000), 1)
+  const days = Math.floor(totalMinutes / (60 * 24))
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60)
+  const minutes = totalMinutes % 60
+
+  if (days > 0) {
+    return t('startupPack.timeRemainingDaysHours', { days, hours })
+  }
+
+  if (hours > 0) {
+    return t('startupPack.timeRemainingHoursMinutes', { hours, minutes })
+  }
+
+  return t('startupPack.timeRemainingMinutes', { minutes })
+}
 </script>
 
 <template>
@@ -76,14 +257,110 @@ onMounted(async () => {
       <button class="btn btn-secondary" @click="router.go(0)">{{ t('common.tryAgain') }}</button>
     </div>
 
-    <div v-else-if="companies.length === 0" class="empty-state">
-      <div class="empty-icon">🏗️</div>
-      <p>{{ t('dashboard.noCompanies') }}</p>
-      <RouterLink to="/onboarding" class="btn btn-primary btn-lg">{{ t('dashboard.startOnboarding') }}</RouterLink>
-    </div>
+    <template v-else>
+      <section
+        v-if="auth.startupPackOffer"
+        class="startup-pack-panel"
+        aria-labelledby="dashboard-startup-pack-title"
+      >
+        <div class="startup-pack-header">
+          <div>
+            <span class="startup-pack-eyebrow">{{ t('startupPack.eyebrow') }}</span>
+            <h2 id="dashboard-startup-pack-title">{{ t('startupPack.revisitTitle') }}</h2>
+          </div>
+          <span
+            class="startup-pack-status"
+            :class="{
+              claimed: claimedStartupPackOffer,
+              expired: expiredStartupPackOffer,
+            }"
+          >
+            {{ t(`startupPack.status.${auth.startupPackOffer.status.toLowerCase()}`) }}
+          </span>
+        </div>
 
-    <div v-else class="companies-section">
-      <div v-for="company in companies" :key="company.id" class="company-card">
+        <p class="startup-pack-subtitle">
+          {{
+            t('startupPack.subtitle', {
+              amount: formatCurrency(auth.startupPackOffer.companyCashGrant),
+            })
+          }}
+        </p>
+
+        <div v-if="activeStartupPackOffer" class="startup-pack-active">
+          <div class="startup-pack-benefits">
+            <article class="startup-pack-benefit">
+              <span class="benefit-icon">👑</span>
+              <div>
+                <strong>{{ t('startupPack.proBenefitTitle') }}</strong>
+                <p>{{ t('startupPack.proBenefitBody', { days: activeStartupPackOffer.proDurationDays }) }}</p>
+              </div>
+            </article>
+            <article class="startup-pack-benefit">
+              <span class="benefit-icon">💵</span>
+              <div>
+                <strong>{{ t('startupPack.cashBenefitTitle') }}</strong>
+                <p>
+                  {{
+                    t('startupPack.cashBenefitBody', {
+                      amount: formatCurrency(activeStartupPackOffer.companyCashGrant),
+                      company: targetCompany?.name ?? t('dashboard.title'),
+                    })
+                  }}
+                </p>
+              </div>
+            </article>
+          </div>
+
+          <div class="startup-pack-deadline">
+            <strong>{{ t('startupPack.deadlineLabel') }}</strong>
+            <span>{{ formatTimeRemaining(activeStartupPackOffer.expiresAtUtc) }}</span>
+            <span>{{ t('startupPack.deadlineExact', { date: formatDateTime(activeStartupPackOffer.expiresAtUtc) }) }}</span>
+          </div>
+
+          <p v-if="offerMessage" class="startup-pack-message" role="status">{{ offerMessage }}</p>
+          <p v-if="offerError" class="startup-pack-error" role="alert">{{ offerError }}</p>
+
+          <div class="startup-pack-actions">
+            <button
+              class="btn btn-primary"
+              :disabled="offerLoading || !targetCompany"
+              @click="claimStartupPackOffer"
+            >
+              {{ offerLoading ? t('common.loading') : t('startupPack.claim') }}
+            </button>
+            <button class="btn btn-secondary" :disabled="offerLoading" @click="dismissStartupPackOffer">
+              {{ t('startupPack.maybeLater') }}
+            </button>
+          </div>
+          <p class="startup-pack-free-path">{{ t('startupPack.freePath') }}</p>
+        </div>
+
+        <div v-else-if="claimedStartupPackOffer" class="startup-pack-state success">
+          <strong>{{ t('startupPack.claimedTitle') }}</strong>
+          <p>
+            {{
+              t('startupPack.claimedBody', {
+                date: formatDateTime(auth.player?.proSubscriptionEndsAtUtc ?? new Date().toISOString()),
+              })
+            }}
+          </p>
+        </div>
+
+        <div v-else class="startup-pack-state muted">
+          <strong>{{ t('startupPack.expiredTitle') }}</strong>
+          <p>{{ t('startupPack.expiredBody') }}</p>
+        </div>
+      </section>
+
+      <div v-if="companies.length === 0" class="empty-state">
+        <div class="empty-icon">🏗️</div>
+        <p>{{ t('dashboard.noCompanies') }}</p>
+        <RouterLink to="/onboarding" class="btn btn-primary btn-lg">{{ t('dashboard.startOnboarding') }}</RouterLink>
+      </div>
+
+      <div v-else class="companies-section">
+        <div v-for="company in companies" :key="company.id" class="company-card">
         <div class="company-header">
           <div>
             <h2>{{ company.name }}</h2>
@@ -126,7 +403,8 @@ onMounted(async () => {
           </RouterLink>
         </div>
       </div>
-    </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -177,6 +455,141 @@ onMounted(async () => {
   margin-bottom: 1.5rem;
   color: var(--color-text-secondary);
   font-size: 1.125rem;
+}
+
+.startup-pack-panel {
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(255, 109, 0, 0.35);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(255, 109, 0, 0.12), rgba(0, 71, 255, 0.1));
+}
+
+.startup-pack-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.startup-pack-eyebrow {
+  display: inline-block;
+  margin-bottom: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-tertiary);
+}
+
+.startup-pack-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.startup-pack-status {
+  padding: 0.375rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.startup-pack-status.claimed {
+  background: rgba(0, 200, 83, 0.18);
+  color: var(--color-secondary);
+}
+
+.startup-pack-status.expired {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--color-danger);
+}
+
+.startup-pack-subtitle {
+  margin: 0.75rem 0 1.25rem;
+  color: var(--color-text-secondary);
+}
+
+.startup-pack-benefits {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.startup-pack-benefit {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(13, 17, 23, 0.32);
+  border: 1px solid rgba(48, 54, 61, 0.8);
+}
+
+.benefit-icon {
+  font-size: 1.5rem;
+}
+
+.startup-pack-benefit p,
+.startup-pack-state p {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-secondary);
+}
+
+.startup-pack-deadline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(13, 17, 23, 0.32);
+  border: 1px solid rgba(48, 54, 61, 0.8);
+}
+
+.startup-pack-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.startup-pack-message,
+.startup-pack-error {
+  margin: 1rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+}
+
+.startup-pack-message {
+  background: rgba(0, 200, 83, 0.12);
+  color: var(--color-secondary);
+}
+
+.startup-pack-error {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--color-danger);
+}
+
+.startup-pack-free-path {
+  margin-top: 0.875rem;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.startup-pack-state {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+}
+
+.startup-pack-state.success {
+  background: rgba(0, 200, 83, 0.12);
+}
+
+.startup-pack-state.muted {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .btn-lg {
@@ -327,6 +740,14 @@ onMounted(async () => {
 }
 
 @media (max-width: 640px) {
+  .startup-pack-header {
+    flex-direction: column;
+  }
+
+  .startup-pack-actions {
+    flex-direction: column;
+  }
+
   .company-header {
     flex-direction: column;
     gap: 1rem;

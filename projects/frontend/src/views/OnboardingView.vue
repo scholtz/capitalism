@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { gqlRequest } from '@/lib/graphql'
+import { trackStartupPackEvent } from '@/lib/startupPackAnalytics'
 import {
   getLocalizedProductDescription,
   getLocalizedProductName,
@@ -11,7 +12,13 @@ import {
   getProductImageUrl,
 } from '@/lib/catalogPresentation'
 import { useAuthStore } from '@/stores/auth'
-import type { City, ProductType, OnboardingResult } from '@/types'
+import type {
+  City,
+  ProductType,
+  OnboardingResult,
+  StartupPackClaimResult,
+  StartupPackOffer,
+} from '@/types'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -96,6 +103,9 @@ const starterProductSlugByIndustry: Record<string, string[]> = {
 const step = ref(1)
 const loading = ref(false)
 const error = ref<string | null>(null)
+const offerLoading = ref(false)
+const offerError = ref<string | null>(null)
+const offerMessage = ref<string | null>(null)
 
 // Data
 const industries = ref<string[]>([])
@@ -110,6 +120,7 @@ const companyName = ref('')
 
 // Completion result (for step 4)
 const completionResult = ref<OnboardingResult | null>(null)
+const startupPackOffer = ref<StartupPackOffer | null>(null)
 
 const selectedCity = computed(() => cities.value.find((c) => c.id === selectedCityId.value))
 const selectedProduct = computed(() => products.value.find((p) => p.id === selectedProductId.value))
@@ -118,6 +129,18 @@ const canShowSummary = computed(() => !!selectedCity.value && !!companyName.valu
 const canProceedStep1 = computed(() => !!selectedIndustry.value)
 const canProceedStep2 = computed(() => !!selectedCityId.value)
 const canProceedStep3 = computed(() => !!selectedProductId.value && !!companyName.value)
+const activeStartupPackOffer = computed(() =>
+  startupPackOffer.value
+  && ['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(startupPackOffer.value.status)
+    ? startupPackOffer.value
+    : null,
+)
+const claimedStartupPackOffer = computed(() =>
+  startupPackOffer.value?.status === 'CLAIMED' ? startupPackOffer.value : null,
+)
+const expiredStartupPackOffer = computed(() =>
+  startupPackOffer.value?.status === 'EXPIRED' ? startupPackOffer.value : null,
+)
 
 const industryIcons: Record<string, string> = {
   FURNITURE: '🪑',
@@ -268,6 +291,19 @@ async function completeOnboarding() {
           factory { id name type }
           salesShop { id name type }
           selectedProduct { name industry }
+          startupPackOffer {
+            id
+            offerKey
+            status
+            createdAtUtc
+            expiresAtUtc
+            shownAtUtc
+            dismissedAtUtc
+            claimedAtUtc
+            companyCashGrant
+            proDurationDays
+            grantedCompanyId
+          }
         }
       }`,
       {
@@ -280,13 +316,148 @@ async function completeOnboarding() {
       },
     )
     completionResult.value = result.completeOnboarding
+    startupPackOffer.value = result.completeOnboarding.startupPackOffer
+    auth.setStartupPackOffer(result.completeOnboarding.startupPackOffer)
     clearProgress()
     await auth.fetchMe()
+    startupPackOffer.value = startupPackOffer.value ?? auth.startupPackOffer
+    if (startupPackOffer.value?.status === 'ELIGIBLE') {
+      await markStartupPackOfferShown()
+    } else if (startupPackOffer.value) {
+      trackStartupPackEvent('view', { context: 'onboarding', status: startupPackOffer.value.status })
+    }
     step.value = 4
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Onboarding failed'
   } finally {
     loading.value = false
+  }
+}
+
+async function markStartupPackOfferShown() {
+  if (!startupPackOffer.value || startupPackOffer.value.status !== 'ELIGIBLE') {
+    return
+  }
+
+  const data = await gqlRequest<{ markStartupPackOfferShown: StartupPackOffer | null }>(
+    `mutation {
+      markStartupPackOfferShown {
+        id
+        offerKey
+        status
+        createdAtUtc
+        expiresAtUtc
+        shownAtUtc
+        dismissedAtUtc
+        claimedAtUtc
+        companyCashGrant
+        proDurationDays
+        grantedCompanyId
+      }
+    }`,
+  )
+
+  startupPackOffer.value = data.markStartupPackOfferShown
+  auth.setStartupPackOffer(data.markStartupPackOfferShown)
+  if (data.markStartupPackOfferShown) {
+    trackStartupPackEvent('view', {
+      context: 'onboarding',
+      status: data.markStartupPackOfferShown.status,
+    })
+  }
+}
+
+async function dismissStartupPackOffer() {
+  offerLoading.value = true
+  offerError.value = null
+  offerMessage.value = null
+
+  try {
+    const data = await gqlRequest<{ dismissStartupPackOffer: StartupPackOffer | null }>(
+      `mutation {
+        dismissStartupPackOffer {
+          id
+          offerKey
+          status
+          createdAtUtc
+          expiresAtUtc
+          shownAtUtc
+          dismissedAtUtc
+          claimedAtUtc
+          companyCashGrant
+          proDurationDays
+          grantedCompanyId
+        }
+      }`,
+    )
+
+    startupPackOffer.value = data.dismissStartupPackOffer
+    auth.setStartupPackOffer(data.dismissStartupPackOffer)
+    offerMessage.value = t('startupPack.dismissedBody')
+    trackStartupPackEvent('dismiss', { context: 'onboarding' })
+  } catch (e: unknown) {
+    offerError.value = e instanceof Error ? e.message : t('startupPack.claimFailed')
+  } finally {
+    offerLoading.value = false
+  }
+}
+
+async function claimStartupPackOffer() {
+  const targetCompanyId = completionResult.value?.company.id
+  if (!targetCompanyId) {
+    return
+  }
+
+  offerLoading.value = true
+  offerError.value = null
+  offerMessage.value = null
+  trackStartupPackEvent('claim_click', { context: 'onboarding' })
+
+  try {
+    const data = await gqlRequest<{ claimStartupPack: StartupPackClaimResult }>(
+      `mutation ClaimStartupPack($input: ClaimStartupPackInput!) {
+        claimStartupPack(input: $input) {
+          offer {
+            id
+            offerKey
+            status
+            createdAtUtc
+            expiresAtUtc
+            shownAtUtc
+            dismissedAtUtc
+            claimedAtUtc
+            companyCashGrant
+            proDurationDays
+            grantedCompanyId
+          }
+          company { id name cash }
+          proSubscriptionEndsAtUtc
+        }
+      }`,
+      { input: { companyId: targetCompanyId } },
+    )
+
+    startupPackOffer.value = data.claimStartupPack.offer
+    auth.setStartupPackOffer(data.claimStartupPack.offer)
+    if (completionResult.value) {
+      completionResult.value = {
+        ...completionResult.value,
+        company: {
+          ...completionResult.value.company,
+          cash: data.claimStartupPack.company.cash,
+        },
+      }
+    }
+    await auth.fetchMe()
+    offerMessage.value = t('startupPack.claimedBody', {
+      date: formatDateTime(data.claimStartupPack.proSubscriptionEndsAtUtc),
+    })
+    trackStartupPackEvent('claim_success', { context: 'onboarding' })
+  } catch (e: unknown) {
+    offerError.value = e instanceof Error ? e.message : t('startupPack.claimFailed')
+    trackStartupPackEvent('claim_error', { context: 'onboarding' })
+  } finally {
+    offerLoading.value = false
   }
 }
 
@@ -315,6 +486,39 @@ function getRecipeIngredientLabel(product: ProductType, index: number): string {
 function getCityResourceName(city: City, index: number): string {
   const resource = city.resources[index]?.resourceType
   return resource ? getLocalizedResourceName(resource, locale.value) : ''
+}
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString(locale.value)
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
+}
+
+function formatTimeRemaining(expiresAtUtc: string): string {
+  const diffMs = new Date(expiresAtUtc).getTime() - Date.now()
+  if (diffMs <= 0) {
+    return t('startupPack.expiredNow')
+  }
+
+  const totalMinutes = Math.max(Math.ceil(diffMs / 60000), 1)
+  const days = Math.floor(totalMinutes / (60 * 24))
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60)
+  const minutes = totalMinutes % 60
+
+  if (days > 0) {
+    return t('startupPack.timeRemainingDaysHours', { days, hours })
+  }
+
+  if (hours > 0) {
+    return t('startupPack.timeRemainingHoursMinutes', { hours, minutes })
+  }
+
+  return t('startupPack.timeRemainingMinutes', { minutes })
 }
 </script>
 
@@ -539,6 +743,109 @@ function getCityResourceName(city: City, index: number): string {
             </div>
           </div>
         </div>
+
+        <section
+          v-if="startupPackOffer"
+          class="startup-pack-panel"
+          aria-labelledby="startup-pack-title"
+        >
+          <div class="startup-pack-header">
+            <div>
+              <span class="startup-pack-eyebrow">{{ t('startupPack.eyebrow') }}</span>
+              <h3 id="startup-pack-title">{{ t('startupPack.title') }}</h3>
+            </div>
+            <span
+              class="startup-pack-status"
+              :class="{
+                claimed: claimedStartupPackOffer,
+                expired: expiredStartupPackOffer,
+              }"
+            >
+              {{ t(`startupPack.status.${startupPackOffer.status.toLowerCase()}`) }}
+            </span>
+          </div>
+
+          <p class="startup-pack-subtitle">
+            {{
+              t('startupPack.subtitle', {
+                amount: formatCurrency(startupPackOffer.companyCashGrant),
+              })
+            }}
+          </p>
+
+          <div v-if="activeStartupPackOffer" class="startup-pack-active">
+            <div class="startup-pack-benefits">
+              <article class="startup-pack-benefit">
+                <span class="benefit-icon">👑</span>
+                <div>
+                  <strong>{{ t('startupPack.proBenefitTitle') }}</strong>
+                  <p>{{ t('startupPack.proBenefitBody', { days: activeStartupPackOffer.proDurationDays }) }}</p>
+                </div>
+              </article>
+              <article class="startup-pack-benefit">
+                <span class="benefit-icon">💵</span>
+                <div>
+                  <strong>{{ t('startupPack.cashBenefitTitle') }}</strong>
+                  <p>
+                    {{
+                      t('startupPack.cashBenefitBody', {
+                        amount: formatCurrency(activeStartupPackOffer.companyCashGrant),
+                        company: completionResult.company.name,
+                      })
+                    }}
+                  </p>
+                </div>
+              </article>
+            </div>
+
+            <div class="startup-pack-deadline">
+              <strong>{{ t('startupPack.deadlineLabel') }}</strong>
+              <span>{{ formatTimeRemaining(activeStartupPackOffer.expiresAtUtc) }}</span>
+              <span>{{ t('startupPack.deadlineExact', { date: formatDateTime(activeStartupPackOffer.expiresAtUtc) }) }}</span>
+            </div>
+
+            <p v-if="offerMessage" class="startup-pack-message" role="status">{{ offerMessage }}</p>
+            <p v-if="offerError" class="startup-pack-error" role="alert">{{ offerError }}</p>
+
+            <div class="startup-pack-actions">
+              <button
+                class="btn btn-primary btn-lg"
+                :disabled="offerLoading"
+                @click="claimStartupPackOffer"
+              >
+                {{ offerLoading ? t('common.loading') : t('startupPack.claim') }}
+              </button>
+              <button class="btn btn-secondary" :disabled="offerLoading" @click="dismissStartupPackOffer">
+                {{ t('startupPack.maybeLater') }}
+              </button>
+            </div>
+            <p class="startup-pack-free-path">{{ t('startupPack.freePath') }}</p>
+          </div>
+
+          <div v-else-if="claimedStartupPackOffer" class="startup-pack-state success">
+            <strong>{{ t('startupPack.claimedTitle') }}</strong>
+            <p>
+              {{
+                t('startupPack.claimedBody', {
+                  date: formatDateTime(auth.player?.proSubscriptionEndsAtUtc ?? new Date().toISOString()),
+                })
+              }}
+            </p>
+            <p>
+              {{
+                t('startupPack.cashBenefitBody', {
+                  amount: formatCurrency(claimedStartupPackOffer.companyCashGrant),
+                  company: completionResult.company.name,
+                })
+              }}
+            </p>
+          </div>
+
+          <div v-else class="startup-pack-state muted">
+            <strong>{{ t('startupPack.expiredTitle') }}</strong>
+            <p>{{ t('startupPack.expiredBody') }}</p>
+          </div>
+        </section>
 
         <div class="completion-next">
           <h3>{{ t('onboarding.completionNextSteps') }}</h3>
@@ -1036,6 +1343,142 @@ function getCityResourceName(city: City, index: number): string {
   font-size: 0.8rem;
 }
 
+.startup-pack-panel {
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(255, 109, 0, 0.35);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(255, 109, 0, 0.12), rgba(0, 71, 255, 0.1));
+  text-align: left;
+}
+
+.startup-pack-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.startup-pack-eyebrow {
+  display: inline-block;
+  margin-bottom: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-tertiary);
+}
+
+.startup-pack-header h3 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.startup-pack-status {
+  padding: 0.375rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.startup-pack-status.claimed {
+  background: rgba(0, 200, 83, 0.18);
+  color: var(--color-secondary);
+}
+
+.startup-pack-status.expired {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--color-danger);
+}
+
+.startup-pack-subtitle {
+  margin: 0.75rem 0 1.25rem;
+  color: var(--color-text-secondary);
+}
+
+.startup-pack-benefits {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.startup-pack-benefit {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(13, 17, 23, 0.32);
+  border: 1px solid rgba(48, 54, 61, 0.8);
+}
+
+.benefit-icon {
+  font-size: 1.5rem;
+}
+
+.startup-pack-benefit p,
+.startup-pack-state p {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-secondary);
+}
+
+.startup-pack-deadline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(13, 17, 23, 0.32);
+  border: 1px solid rgba(48, 54, 61, 0.8);
+}
+
+.startup-pack-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.startup-pack-message,
+.startup-pack-error {
+  margin: 1rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+}
+
+.startup-pack-message {
+  background: rgba(0, 200, 83, 0.12);
+  color: var(--color-secondary);
+}
+
+.startup-pack-error {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--color-danger);
+}
+
+.startup-pack-free-path {
+  margin-top: 0.875rem;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.startup-pack-state {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+}
+
+.startup-pack-state.success {
+  background: rgba(0, 200, 83, 0.12);
+}
+
+.startup-pack-state.muted {
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .completion-next {
   margin-top: 1.5rem;
 }
@@ -1051,5 +1494,15 @@ function getCityResourceName(city: City, index: number): string {
   gap: 1rem;
   justify-content: center;
   flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .startup-pack-header {
+    flex-direction: column;
+  }
+
+  .startup-pack-actions {
+    flex-direction: column;
+  }
 }
 </style>

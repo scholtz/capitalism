@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { gqlRequest } from '@/lib/graphql'
-import type { Player, AuthPayload } from '@/types'
+import type { Player, AuthPayload, StartupPackOffer } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
   const player = ref<Player | null>(null)
+  const startupPackOffer = ref<StartupPackOffer | null>(null)
   const token = ref<string | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -26,8 +27,13 @@ export const useAuthStore = defineStore('auth', () => {
   function setSession(auth: AuthPayload) {
     token.value = auth.token
     player.value = auth.player
+    startupPackOffer.value = null
     localStorage.setItem('auth_token', auth.token)
     localStorage.setItem('auth_expires', auth.expiresAtUtc)
+  }
+
+  function setStartupPackOffer(offer: StartupPackOffer | null) {
+    startupPackOffer.value = offer
   }
 
   async function register(email: string, displayName: string, password: string) {
@@ -39,7 +45,7 @@ export const useAuthStore = defineStore('auth', () => {
           register(input: $input) {
             token
             expiresAtUtc
-            player { id displayName email role createdAtUtc onboardingCompletedAtUtc companies { id name cash } }
+            player { id displayName email role createdAtUtc onboardingCompletedAtUtc proSubscriptionEndsAtUtc companies { id name cash } }
           }
         }`,
         { input: { email, displayName, password } },
@@ -62,7 +68,7 @@ export const useAuthStore = defineStore('auth', () => {
           login(input: $input) {
             token
             expiresAtUtc
-            player { id displayName email role createdAtUtc onboardingCompletedAtUtc companies { id name cash } }
+            player { id displayName email role createdAtUtc onboardingCompletedAtUtc proSubscriptionEndsAtUtc companies { id name cash } }
           }
         }`,
         { input: { email, password } },
@@ -80,10 +86,26 @@ export const useAuthStore = defineStore('auth', () => {
     if (!token.value) return
     loading.value = true
     try {
-      const data = await gqlRequest<{ me: Player }>(
-        `{ me { id displayName email role createdAtUtc onboardingCompletedAtUtc companies { id name cash } } }`,
+      const data = await gqlRequest<{ me: Player; startupPackOffer: StartupPackOffer | null }>(
+        `{
+          me { id displayName email role createdAtUtc onboardingCompletedAtUtc proSubscriptionEndsAtUtc companies { id name cash } }
+          startupPackOffer {
+            id
+            offerKey
+            status
+            createdAtUtc
+            expiresAtUtc
+            shownAtUtc
+            dismissedAtUtc
+            claimedAtUtc
+            companyCashGrant
+            proDurationDays
+            grantedCompanyId
+          }
+        }`,
       )
       player.value = data.me
+      startupPackOffer.value = data.startupPackOffer
     } catch {
       logout()
     } finally {
@@ -94,18 +116,21 @@ export const useAuthStore = defineStore('auth', () => {
   function logout() {
     token.value = null
     player.value = null
+    startupPackOffer.value = null
     localStorage.removeItem('auth_token')
     localStorage.removeItem('auth_expires')
   }
 
   return {
     player,
+    startupPackOffer,
     token,
     loading,
     error,
     isAuthenticated,
     isAdmin,
     initFromStorage,
+    setStartupPackOffer,
     register,
     login,
     fetchMe,
