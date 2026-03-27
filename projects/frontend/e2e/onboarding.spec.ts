@@ -106,6 +106,14 @@ test.describe('Onboarding wizard', () => {
 
     // Complete onboarding
     await page.getByRole('button', { name: 'Start Playing' }).click()
+
+    // Step 4: Completion screen
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'View Leaderboard' })).toBeVisible()
+
+    // Navigate to dashboard
+    await page.getByRole('link', { name: 'Go to Dashboard' }).click()
     await page.waitForURL('/dashboard')
     await expect(page).toHaveURL('/dashboard')
   })
@@ -195,6 +203,8 @@ test.describe('Onboarding wizard', () => {
     await page.getByLabel('Company Name').fill('Mixed Recipe Corp')
     await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
     await page.getByRole('button', { name: 'Start Playing' }).click()
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await page.getByRole('link', { name: 'Go to Dashboard' }).click()
     await page.waitForURL('/dashboard')
     await expect(page).toHaveURL('/dashboard')
     expect(pageErrors).toEqual([])
@@ -366,10 +376,144 @@ test.describe('Full onboarding journey', () => {
 
     // Complete
     await page.getByRole('button', { name: 'Start Playing' }).click()
+
+    // Step 4: Completion screen
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
+
+    // Go to dashboard
+    await page.getByRole('link', { name: 'Go to Dashboard' }).click()
     await page.waitForURL('/dashboard')
 
     // Verify dashboard has company
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
     await expect(page.locator('.company-card').first().getByRole('heading', { name: 'Journey Corp' })).toBeVisible()
+  })
+})
+
+test.describe('Onboarding resume and progress persistence', () => {
+  test('resumes at correct step after page refresh mid-onboarding', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+
+    // Select industry and proceed to step 2
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+
+    // Simulate a page refresh
+    await page.reload()
+
+    // Should resume on step 2 (Choose Your City) with industry already selected
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+  })
+
+  test('resumes on step 3 with company name and product preserved after refresh', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+
+    // Complete steps 1 and 2
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await expect(page.getByRole('heading', { name: 'Name Your Company & Pick a Product' })).toBeVisible()
+
+    // Fill in company name and select product
+    await page.getByLabel('Company Name').fill('Resume Corp')
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+
+    // Simulate a page refresh
+    await page.reload()
+
+    // Should resume on step 3 with previously entered data
+    await expect(page.getByRole('heading', { name: 'Name Your Company & Pick a Product' })).toBeVisible()
+    await expect(page.getByLabel('Company Name')).toHaveValue('Resume Corp')
+  })
+
+  test('completion state shows achievement details and links to dashboard and leaderboard', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+
+    // Complete all 3 steps
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Celebration Corp')
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'Start Playing' }).click()
+
+    // Verify completion step UI
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'View Leaderboard' })).toBeVisible()
+
+    // Should show achievement items (factory and shop names)
+    await expect(page.locator('.achievement-item')).toHaveCount(4)
+
+    // Click leaderboard link
+    await page.getByRole('link', { name: 'View Leaderboard' }).click()
+    await page.waitForURL('/leaderboard')
+    await expect(page).toHaveURL('/leaderboard')
+  })
+
+  test('already-onboarded player visiting /onboarding is redirected to dashboard', async ({
+    page,
+  }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T12:00:00Z',
+      companies: [
+        {
+          id: 'comp-existing',
+          playerId: 'player-1',
+          name: 'Existing Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await page.waitForURL('/dashboard')
+    await expect(page).toHaveURL('/dashboard')
   })
 })

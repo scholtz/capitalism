@@ -308,6 +308,13 @@ public sealed class Mutation
             new BuildingUnit { Id = Guid.NewGuid(), BuildingId = shop.Id, UnitType = UnitType.PublicSales, GridX = 1, GridY = 0, Level = 1, ProductTypeId = product.Id, MinPrice = product.BasePrice }
         );
 
+        // Mark onboarding as completed for this player
+        var player = await db.Players.FindAsync(userId);
+        if (player is not null)
+        {
+            player.OnboardingCompletedAtUtc = DateTime.UtcNow;
+        }
+
         await db.SaveChangesAsync();
 
         return new OnboardingResult

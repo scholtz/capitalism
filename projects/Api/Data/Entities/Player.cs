@@ -33,6 +33,9 @@ public sealed class Player
     /// <summary>UTC timestamp of the player's last login.</summary>
     public DateTime? LastLoginAtUtc { get; set; }
 
+    /// <summary>UTC timestamp when the player completed the onboarding journey. Null if not yet completed.</summary>
+    public DateTime? OnboardingCompletedAtUtc { get; set; }
+
     /// <summary>Companies owned by this player.</summary>
     public ICollection<Company> Companies { get; set; } = [];
 }

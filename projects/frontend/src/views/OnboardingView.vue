@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { gqlRequest } from '@/lib/graphql'
@@ -16,6 +16,8 @@ import type { City, ProductType, OnboardingResult } from '@/types'
 const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
+
+const PROGRESS_KEY = 'onboarding_progress'
 
 const CITIES_QUERY = `
   {
@@ -106,6 +108,9 @@ const selectedCityId = ref('')
 const selectedProductId = ref('')
 const companyName = ref('')
 
+// Completion result (for step 4)
+const completionResult = ref<OnboardingResult | null>(null)
+
 const selectedCity = computed(() => cities.value.find((c) => c.id === selectedCityId.value))
 const selectedProduct = computed(() => products.value.find((p) => p.id === selectedProductId.value))
 const canShowSummary = computed(() => !!selectedCity.value && !!companyName.value && !!selectedProduct.value)
@@ -126,11 +131,68 @@ const industryDescriptions: Record<string, string> = {
   HEALTHCARE: 'Manufacture medicines from chemical minerals.',
 }
 
+function saveProgress() {
+  try {
+    localStorage.setItem(
+      PROGRESS_KEY,
+      JSON.stringify({
+        step: step.value,
+        industry: selectedIndustry.value,
+        cityId: selectedCityId.value,
+        productId: selectedProductId.value,
+        companyName: companyName.value,
+      }),
+    )
+  } catch {
+    // localStorage unavailable — ignore
+  }
+}
+
+function clearProgress() {
+  try {
+    localStorage.removeItem(PROGRESS_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+function restoreProgress() {
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY)
+    if (!raw) return
+    const saved = JSON.parse(raw)
+    if (saved.step && saved.step >= 1 && saved.step <= 3) {
+      step.value = saved.step
+    }
+    if (saved.industry) selectedIndustry.value = saved.industry
+    if (saved.cityId) selectedCityId.value = saved.cityId
+    if (saved.productId) selectedProductId.value = saved.productId
+    if (saved.companyName) companyName.value = saved.companyName
+  } catch {
+    // corrupted data — ignore
+  }
+}
+
+// Persist progress whenever selections change
+watch([step, selectedIndustry, selectedCityId, selectedProductId, companyName], saveProgress)
+
 onMounted(async () => {
   if (!auth.isAuthenticated) {
     router.push('/login')
     return
   }
+
+  // Ensure player data is loaded (may be null if only token was restored from storage)
+  if (!auth.player) {
+    await auth.fetchMe()
+  }
+
+  // If the player already completed onboarding and has companies, redirect to dashboard
+  if (auth.player?.onboardingCompletedAtUtc && auth.player.companies.length > 0) {
+    router.push('/dashboard')
+    return
+  }
+
   try {
     loading.value = true
     const [industriesData, citiesData] = await Promise.all([
@@ -141,6 +203,14 @@ onMounted(async () => {
     ])
     industries.value = industriesData.starterIndustries.industries
     cities.value = citiesData.cities
+
+    // Restore saved progress (step, selections) after data is loaded
+    restoreProgress()
+
+    // If we restored a step > 1 with an industry, reload products in background
+    if (step.value > 1 && selectedIndustry.value) {
+      await loadProducts()
+    }
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to load data'
   } finally {
@@ -181,7 +251,7 @@ async function completeOnboarding() {
   loading.value = true
   error.value = null
   try {
-    await gqlRequest<{ completeOnboarding: OnboardingResult }>(
+    const result = await gqlRequest<{ completeOnboarding: OnboardingResult }>(
       `mutation CompleteOnboarding($input: OnboardingInput!) {
         completeOnboarding(input: $input) {
           company { id name cash }
@@ -199,8 +269,10 @@ async function completeOnboarding() {
         },
       },
     )
+    completionResult.value = result.completeOnboarding
+    clearProgress()
     await auth.fetchMe()
-    router.push('/dashboard')
+    step.value = 4
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Onboarding failed'
   } finally {
@@ -239,12 +311,12 @@ function getCityResourceName(city: City, index: number): string {
 <template>
   <div class="onboarding-view">
     <div class="onboarding-container container">
-      <div class="onboarding-header">
+      <div v-if="step < 4" class="onboarding-header">
         <h1>{{ t('onboarding.title') }}</h1>
         <p class="subtitle">{{ t('onboarding.subtitle') }}</p>
       </div>
 
-      <div class="progress-bar">
+      <div v-if="step < 4" class="progress-bar">
         <div class="progress-segment" :class="{ active: step >= 1, done: step > 1 }">
           <div class="progress-step">
             <span v-if="step > 1" class="check-icon">✓</span>
@@ -417,6 +489,58 @@ function getCityResourceName(city: City, index: number): string {
             {{ loading ? t('common.loading') : t('onboarding.startPlaying') }}
             <span v-if="!loading" class="btn-arrow">🚀</span>
           </button>
+        </div>
+      </div>
+
+      <!-- Step 4: Completion -->
+      <div v-if="step === 4 && completionResult" class="step-content completion-step">
+        <div class="completion-hero">
+          <h2 class="completion-title">{{ t('onboarding.completionTitle') }}</h2>
+          <p class="completion-desc">{{ t('onboarding.completionDesc') }}</p>
+        </div>
+
+        <div class="completion-achievements">
+          <div class="achievement-item">
+            <span class="achievement-icon">🏭</span>
+            <div class="achievement-text">
+              <strong>{{ completionResult.factory.name }}</strong>
+              <span>{{ t('onboarding.completionFactory') }}</span>
+            </div>
+          </div>
+          <div class="achievement-item">
+            <span class="achievement-icon">🏪</span>
+            <div class="achievement-text">
+              <strong>{{ completionResult.salesShop.name }}</strong>
+              <span>{{ t('onboarding.completionShop') }}</span>
+            </div>
+          </div>
+          <div class="achievement-item">
+            <span class="achievement-icon">📦</span>
+            <div class="achievement-text">
+              <strong>{{ completionResult.selectedProduct.name }}</strong>
+              <span>{{ t('onboarding.completionProduct', { product: completionResult.selectedProduct.name }) }}</span>
+            </div>
+          </div>
+          <div class="achievement-item">
+            <span class="achievement-icon">💰</span>
+            <div class="achievement-text">
+              <strong>${{ completionResult.company.cash.toLocaleString() }}</strong>
+              <span>{{ t('onboarding.completionCapital', { amount: completionResult.company.cash.toLocaleString() }) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="completion-next">
+          <h3>{{ t('onboarding.completionNextSteps') }}</h3>
+          <div class="completion-actions">
+            <RouterLink to="/dashboard" class="btn btn-primary btn-lg">
+              {{ t('onboarding.completionGoDashboard') }}
+              <span class="btn-arrow">→</span>
+            </RouterLink>
+            <RouterLink to="/leaderboard" class="btn btn-secondary">
+              {{ t('onboarding.completionViewLeaderboard') }}
+            </RouterLink>
+          </div>
         </div>
       </div>
     </div>
@@ -834,5 +958,88 @@ function getCityResourceName(city: City, index: number): string {
   .step-content {
     padding: 1.25rem;
   }
+}
+
+/* Completion Step */
+.completion-step {
+  text-align: center;
+  padding: 2rem;
+}
+
+.completion-hero {
+  margin-bottom: 2rem;
+}
+
+.completion-title {
+  font-size: 1.75rem;
+  background: linear-gradient(135deg, var(--color-secondary), var(--color-primary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.75rem;
+}
+
+.completion-desc {
+  color: var(--color-text-secondary);
+  font-size: 1rem;
+  max-width: 480px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.completion-achievements {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+  text-align: left;
+}
+
+.achievement-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.achievement-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.achievement-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.achievement-text strong {
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+}
+
+.achievement-text span {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+}
+
+.completion-next {
+  margin-top: 1.5rem;
+}
+
+.completion-next h3 {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+  color: var(--color-text-secondary);
+}
+
+.completion-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 </style>

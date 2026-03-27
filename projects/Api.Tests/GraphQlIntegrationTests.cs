@@ -833,6 +833,42 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task CompleteOnboarding_SetsOnboardingCompletedAtUtc()
+    {
+        var token = await RegisterAndGetTokenAsync("onboard_complete@test.com", "CompletionTester");
+        await ResetGameStateAsync();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var productsResult = await ExecuteGraphQlAsync(
+            "query { productTypes(industry: \"FURNITURE\") { id slug } }");
+        var productId = productsResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .Single(product => product.GetProperty("slug").GetString() == "wooden-chair")
+            .GetProperty("id")
+            .GetString();
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation CompleteOnboarding($input: OnboardingInput!) {
+              completeOnboarding(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, productTypeId = productId, companyName = "Done Corp" } },
+            token);
+
+        // Verify me query returns onboardingCompletedAtUtc
+        var meResult = await ExecuteGraphQlAsync(
+            "{ me { onboardingCompletedAtUtc } }",
+            token: token);
+
+        var completedAt = meResult.GetProperty("data").GetProperty("me").GetProperty("onboardingCompletedAtUtc");
+        Assert.Equal(JsonValueKind.String, completedAt.ValueKind);
+        Assert.True(DateTime.TryParse(completedAt.GetString(), out _));
+    }
+
+    [Fact]
     public async Task CompleteOnboarding_InvalidIndustry_ReturnsError()
     {
         var token = await RegisterAndGetTokenAsync("badindustry@test.com", "BadInd");

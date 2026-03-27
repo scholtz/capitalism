@@ -18,6 +18,7 @@ export type MockPlayer = {
   displayName: string
   role: 'PLAYER' | 'ADMIN'
   createdAtUtc: string
+  onboardingCompletedAtUtc: string | null
   companies: MockCompany[]
 }
 
@@ -318,6 +319,7 @@ export function makePlayer(overrides?: Partial<MockPlayer>): MockPlayer {
     displayName: 'Test Player',
     role: 'PLAYER',
     createdAtUtc: '2026-01-01T00:00:00Z',
+    onboardingCompletedAtUtc: null,
     companies: [],
     ...overrides,
   }
@@ -503,6 +505,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         displayName: input.displayName,
         role: 'PLAYER',
         createdAtUtc: new Date().toISOString(),
+        onboardingCompletedAtUtc: null,
         companies: [],
       }
       state.players.push(newPlayer)
@@ -565,6 +568,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         ],
       }
       player.companies.push(company)
+      player.onboardingCompletedAtUtc = new Date().toISOString()
       return route.fulfill({
         status: 200,
         contentType: 'application/json',

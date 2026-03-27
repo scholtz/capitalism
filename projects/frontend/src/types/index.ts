@@ -9,6 +9,7 @@ export interface Player {
   role: PlayerRole
   createdAtUtc: string
   lastLoginAtUtc: string | null
+  onboardingCompletedAtUtc: string | null
   companies: Company[]
 }
 
