@@ -1903,6 +1903,136 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task CityLots_ReturnsValidCoordinatesForAllSeedLots()
+    {
+        // Seed lots must have real Bratislava coordinates so the map renders correctly.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id name latitude longitude }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var lots = result.GetProperty("data").GetProperty("cityLots");
+        Assert.True(lots.GetArrayLength() > 0);
+
+        foreach (var lot in lots.EnumerateArray())
+        {
+            var lat = lot.GetProperty("latitude").GetDouble();
+            var lon = lot.GetProperty("longitude").GetDouble();
+            var name = lot.GetProperty("name").GetString();
+
+            // Bratislava is roughly 47.9–48.3°N, 16.9–17.4°E
+            Assert.True(lat is > 47.8 and < 48.4, $"Lot '{name}' latitude {lat} is outside expected Bratislava range");
+            Assert.True(lon is > 16.8 and < 17.5, $"Lot '{name}' longitude {lon} is outside expected Bratislava range");
+        }
+    }
+
+    [Fact]
+    public async Task CityLots_IsAccessibleWithoutAuthentication()
+    {
+        // City lots should be publicly readable – no token required – so
+        // unauthenticated visitors can browse the map before logging in.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        // Execute without a token
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id name price }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        Assert.False(result.TryGetProperty("errors", out _), "cityLots should be accessible without authentication");
+        var lots = result.GetProperty("data").GetProperty("cityLots");
+        Assert.True(lots.GetArrayLength() > 0);
+    }
+
+    [Fact]
+    public async Task PurchaseLot_BuildingInheritsLotCoordinates()
+    {
+        // The building placed on a lot must carry the lot's GPS coordinates
+        // so the city map can render it at the correct position.
+        var token = await RegisterAndGetTokenAsync($"lot-coords-{Guid.NewGuid()}@test.com");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Coord Check Co");
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        // Get a factory lot with its coordinates
+        var lotsResult = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id latitude longitude suitableTypes ownerCompanyId }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var sourceLot = lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .First(l => l.GetProperty("suitableTypes").GetString()!.Contains("FACTORY")
+                     && l.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null);
+
+        var lotId = sourceLot.GetProperty("id").GetString();
+        var lotLat = sourceLot.GetProperty("latitude").GetDouble();
+        var lotLon = sourceLot.GetProperty("longitude").GetDouble();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) {
+                building { id latitude longitude }
+              }
+            }
+            """,
+            new { input = new { companyId, lotId, buildingType = "FACTORY", buildingName = "Coord Factory" } },
+            token);
+
+        var building = result.GetProperty("data").GetProperty("purchaseLot").GetProperty("building");
+        Assert.Equal(lotLat, building.GetProperty("latitude").GetDouble());
+        Assert.Equal(lotLon, building.GetProperty("longitude").GetDouble());
+    }
+
+    [Fact]
+    public async Task GetLot_ReturnsCoordinates()
+    {
+        // The lot(id) query must expose latitude/longitude for direct look-ups.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var lotsResult = await ExecuteGraphQlAsync(
+            "query CityLots($cityId: UUID!) { cityLots(cityId: $cityId) { id } }",
+            new { cityId = bratislavaId });
+        var lotId = lotsResult.GetProperty("data").GetProperty("cityLots")[0].GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetLot($id: UUID!) {
+              lot(id: $id) { id latitude longitude district }
+            }
+            """,
+            new { id = lotId });
+
+        var lot = result.GetProperty("data").GetProperty("lot");
+        Assert.NotEqual(0.0, lot.GetProperty("latitude").GetDouble());
+        Assert.NotEqual(0.0, lot.GetProperty("longitude").GetDouble());
+        Assert.False(string.IsNullOrEmpty(lot.GetProperty("district").GetString()));
+    }
+
+    [Fact]
     public async Task PurchaseLot_ValidInput_CreatesBuilding()
     {
         var token = await RegisterAndGetTokenAsync($"lot-buyer-{Guid.NewGuid()}@test.com");
