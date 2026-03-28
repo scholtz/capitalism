@@ -212,3 +212,17 @@ dotnet test ../Api.Tests  # Run integration tests
 - **URL assertions must account for router query params.** If the component sets a `?step=...` query param on mount (e.g., via `router.replace({ query: { step: 'complete' } })`), assertions like `toHaveURL('/onboarding')` will fail because the actual URL is `/onboarding?step=complete`. Check the component's routing logic and assert the full URL including query params, or use a regex: `await expect(page).toHaveURL(/\/onboarding/)`.
 - **Always run the full `npm run test:e2e` suite before reporting completion for any change that touches OnboardingView, auth routing, or the mock-api helper.** Targeted single-spec runs can miss cross-spec regressions.
 - **Root-cause failures before bypassing them.** If a test is failing because the implementation behaves unexpectedly, fix the implementation or the test — do not change the assertion to match a broken behavior.
+
+## Startup pack and monetization conventions
+- StartupPackOffer entity is in `projects/Api/Data/Entities/StartupPackOffer.cs` with states: `PENDING` (pre-onboarding), `ELIGIBLE` (offer active), `SHOWN`, `DISMISSED`, `CLAIMED`, `EXPIRED`.
+- StartupPackService is in `projects/Api/Utilities/StartupPackService.cs`. It handles activation (idempotent), expiry calculation, and claim with cash grant + pro entitlement.
+- The offer is activated in `completeOnboarding` and `finishOnboarding` mutations when `OnboardingCompletedAtUtc` is set.
+- Backend GraphQL exposes `startupPackOffer` query on the authenticated player and mutations `markStartupPackOfferShown`, `dismissStartupPackOffer`, `claimStartupPack`.
+- Frontend analytics hooks are in `src/lib/startupPackAnalytics.ts`. Always call these when displaying, dismissing, or claiming the offer.
+- The frontend timer is derived from `expiresAtUtc` (authoritative backend timestamp) – never use `setTimeout` alone for expiry display.
+- Offer banner appears in `DashboardView.vue` for ELIGIBLE/SHOWN/DISMISSED states; offer UI also appears in `OnboardingView.vue` completion step.
+
+## Definition of done for WIP PRs
+- A PR titled `[WIP]` must not be left in that state. Drive every PR to a production-ready, fully-tested state before reporting complete.
+- Always confirm CI would pass by running the full local validation pipeline (backend Release build + tests, frontend lint + build, full Playwright suite) before reporting completion.
+- Remove `[WIP]` from the PR title when all acceptance criteria are met, all tests pass, and the code has been reviewed.
