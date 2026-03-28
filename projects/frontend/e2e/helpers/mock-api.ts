@@ -45,6 +45,48 @@ export type MockStartupPackOffer = {
   grantedCompanyId: string | null
 }
 
+export type MockLedgerSummary = {
+  companyId: string
+  companyName: string
+  currentCash: number
+  totalRevenue: number
+  totalPurchasingCosts: number
+  totalMarketingCosts: number
+  totalTaxPaid: number
+  totalOtherCosts: number
+  netIncome: number
+  buildingValue: number
+  inventoryValue: number
+  totalAssets: number
+  totalPropertyPurchases: number
+  cashFromOperations: number
+  cashFromInvestments: number
+  firstRecordedTick: number
+  lastRecordedTick: number
+  buildingSummaries: Array<{
+    buildingId: string
+    buildingName: string
+    buildingType: string
+    revenue: number
+    costs: number
+  }>
+}
+
+export type MockLedgerEntry = {
+  id: string
+  category: string
+  description: string
+  amount: number
+  recordedAtTick: number
+  buildingId: string | null
+  buildingName: string | null
+  buildingUnitId: string | null
+  productTypeId: string | null
+  productName: string | null
+  resourceTypeId: string | null
+  resourceName: string | null
+}
+
 export type MockCompany = {
   id: string
   playerId: string
@@ -208,6 +250,8 @@ export type MockState = {
   currentUserId: string | null
   currentToken: string | null
   gameState: { currentTick: number; lastTickAtUtc: string; tickIntervalSeconds: number; taxCycleTicks: number; taxRate: number }
+  ledgerData: Record<string, MockLedgerSummary>
+  drillDownData: Record<string, MockLedgerEntry[]>
 }
 
 const STARTING_CASH_FOR_ONBOARDING = 500000
@@ -679,6 +723,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     currentUserId: null,
     currentToken: null,
     gameState: { currentTick: 42, lastTickAtUtc: new Date(Date.now() - 30000).toISOString(), tickIntervalSeconds: 60, taxCycleTicks: 1440, taxRate: 15 },
+    ledgerData: {},
+    drillDownData: {},
     ...initial,
   }
 
@@ -1698,7 +1744,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
-    if (query.includes('me')) {
+    if (query.includes('me') && !query.includes('companyLedger') && !query.includes('ledgerDrillDown')) {
       const player = state.players.find((p) => p.id === state.currentUserId)
       if (!player) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }) })
@@ -1712,6 +1758,79 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
             startupPackOffer: player.startupPackOffer,
           },
         }),
+      })
+    }
+
+    if (query.includes('companyLedger')) {
+      const companyId = body.variables?.companyId
+      const summary = state.ledgerData[companyId]
+      if (!summary) {
+        const player = state.players.find((p) => p.id === state.currentUserId)
+        const company = player?.companies.find((c) => c.id === companyId)
+        if (!company) {
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ data: { companyLedger: null } }),
+          })
+        }
+        const baseValues: Record<string, number> = {
+          MINE: 250000,
+          FACTORY: 200000,
+          SALES_SHOP: 150000,
+          RESEARCH_DEVELOPMENT: 300000,
+          APARTMENT: 400000,
+          COMMERCIAL: 350000,
+          MEDIA_HOUSE: 500000,
+          BANK: 600000,
+          EXCHANGE: 450000,
+          POWER_PLANT: 350000,
+        }
+        const buildingValue = company.buildings.reduce(
+          (sum, b) => sum + (baseValues[b.type] ?? 0) * b.level,
+          0,
+        )
+        const auto: MockLedgerSummary = {
+          companyId: company.id,
+          companyName: company.name,
+          currentCash: company.cash,
+          totalRevenue: 0,
+          totalPurchasingCosts: 0,
+          totalMarketingCosts: 0,
+          totalTaxPaid: 0,
+          totalOtherCosts: 0,
+          netIncome: 0,
+          buildingValue,
+          inventoryValue: 0,
+          totalAssets: company.cash + buildingValue,
+          totalPropertyPurchases: 0,
+          cashFromOperations: 0,
+          cashFromInvestments: 0,
+          firstRecordedTick: 0,
+          lastRecordedTick: 0,
+          buildingSummaries: [],
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: { companyLedger: auto } }),
+        })
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { companyLedger: summary } }),
+      })
+    }
+
+    if (query.includes('ledgerDrillDown')) {
+      const companyId = body.variables?.companyId
+      const category = body.variables?.category
+      const entries = state.drillDownData[`${companyId}:${category}`] ?? []
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { ledgerDrillDown: entries } }),
       })
     }
 

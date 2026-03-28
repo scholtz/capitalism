@@ -1,0 +1,546 @@
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { gqlRequest } from '@/lib/graphql'
+import type { CompanyLedgerSummary, LedgerEntryResult } from '@/types'
+
+const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+
+const companyId = computed(() => route.params.companyId as string)
+const ledger = ref<CompanyLedgerSummary | null>(null)
+const loading = ref(true)
+const error = ref<string | null>(null)
+const drillCategory = ref<string | null>(null)
+const drillEntries = ref<LedgerEntryResult[]>([])
+const drillLoading = ref(false)
+
+const LEDGER_QUERY = `
+  query GetCompanyLedger($companyId: UUID!) {
+    companyLedger(companyId: $companyId) {
+      companyId companyName currentCash
+      totalRevenue totalPurchasingCosts totalMarketingCosts totalTaxPaid totalOtherCosts netIncome
+      buildingValue inventoryValue totalAssets totalPropertyPurchases
+      cashFromOperations cashFromInvestments firstRecordedTick lastRecordedTick
+      buildingSummaries { buildingId buildingName buildingType revenue costs }
+    }
+  }
+`
+
+const DRILL_QUERY = `
+  query GetLedgerDrillDown($companyId: UUID!, $category: String!) {
+    ledgerDrillDown(companyId: $companyId, category: $category) {
+      id category description amount recordedAtTick
+      buildingId buildingName buildingUnitId
+      productTypeId productName resourceTypeId resourceName
+    }
+  }
+`
+
+async function fetchLedger() {
+  loading.value = true
+  error.value = null
+  try {
+    const data = await gqlRequest<{ companyLedger: CompanyLedgerSummary | null }>(LEDGER_QUERY, {
+      companyId: companyId.value,
+    })
+    if (!data.companyLedger) {
+      error.value = t('ledger.notFound')
+      return
+    }
+    ledger.value = data.companyLedger
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : t('ledger.loadFailed')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function toggleDrill(category: string) {
+  if (drillCategory.value === category) {
+    drillCategory.value = null
+    drillEntries.value = []
+    return
+  }
+  drillCategory.value = category
+  drillEntries.value = []
+  drillLoading.value = true
+  try {
+    const data = await gqlRequest<{ ledgerDrillDown: LedgerEntryResult[] }>(DRILL_QUERY, {
+      companyId: companyId.value,
+      category,
+    })
+    drillEntries.value = data.ledgerDrillDown
+  } catch {
+    drillEntries.value = []
+  } finally {
+    drillLoading.value = false
+  }
+}
+
+function formatAmount(amount: number): string {
+  return `${amount < 0 ? '-' : ''}$${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function amountClass(amount: number): string {
+  return amount >= 0 ? 'amount-positive' : 'amount-negative'
+}
+
+onMounted(fetchLedger)
+</script>
+
+<template>
+  <div class="ledger-view">
+    <div class="ledger-header">
+      <button class="btn btn-ghost" @click="router.push('/dashboard')">← {{ t('common.back') }}</button>
+      <div>
+        <p class="ledger-eyebrow">{{ t('ledger.eyebrow') }}</p>
+        <h1 class="ledger-title">{{ ledger?.companyName ?? t('ledger.title') }}</h1>
+      </div>
+    </div>
+
+    <div v-if="loading" class="state-box">
+      <span class="state-icon">⏳</span>
+      <p>{{ t('common.loading') }}</p>
+    </div>
+
+    <div v-else-if="error" class="state-box state-error">
+      <span class="state-icon">⚠️</span>
+      <p>{{ error }}</p>
+      <button class="btn btn-secondary" @click="fetchLedger">{{ t('common.tryAgain') }}</button>
+    </div>
+
+    <div v-else-if="ledger" class="ledger-content">
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <span class="kpi-label">{{ t('ledger.cash') }}</span>
+          <span class="kpi-value" :class="amountClass(ledger.currentCash)">{{
+            formatAmount(ledger.currentCash)
+          }}</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">{{ t('ledger.netIncome') }}</span>
+          <span class="kpi-value" :class="amountClass(ledger.netIncome)">{{
+            formatAmount(ledger.netIncome)
+          }}</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">{{ t('ledger.totalAssets') }}</span>
+          <span class="kpi-value">{{ formatAmount(ledger.totalAssets) }}</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">{{ t('ledger.totalRevenue') }}</span>
+          <span class="kpi-value amount-positive">{{ formatAmount(ledger.totalRevenue) }}</span>
+        </div>
+      </div>
+
+      <div v-if="ledger.lastRecordedTick === 0" class="info-banner">
+        <span>📊</span>
+        <span>{{ t('ledger.noHistoryYet') }}</span>
+      </div>
+      <p v-else class="tick-range-note">
+        {{ t('ledger.dataRange', { from: ledger.firstRecordedTick, to: ledger.lastRecordedTick }) }}
+      </p>
+
+      <div class="statements-grid">
+        <div class="statement-card">
+          <h2 class="statement-title">📈 {{ t('ledger.incomeStatement') }}</h2>
+          <div class="statement-rows">
+            <div class="statement-row">
+              <span class="row-label">{{ t('ledger.revenue') }}</span>
+              <span class="amount-positive">{{ formatAmount(ledger.totalRevenue) }}</span>
+              <button
+                class="drill-btn"
+                :class="{ active: drillCategory === 'REVENUE' }"
+                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.revenue')"
+                @click="toggleDrill('REVENUE')"
+              >
+                {{ drillCategory === 'REVENUE' ? '▲' : '▼' }}
+              </button>
+            </div>
+            <div class="statement-row cost-row">
+              <span class="row-label">{{ t('ledger.purchasingCosts') }}</span>
+              <span class="amount-negative">{{ formatAmount(-ledger.totalPurchasingCosts) }}</span>
+              <button
+                class="drill-btn"
+                :class="{ active: drillCategory === 'PURCHASING_COST' }"
+                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.purchasingCosts')"
+                @click="toggleDrill('PURCHASING_COST')"
+              >
+                {{ drillCategory === 'PURCHASING_COST' ? '▲' : '▼' }}
+              </button>
+            </div>
+            <div v-if="ledger.totalMarketingCosts > 0" class="statement-row cost-row">
+              <span class="row-label">{{ t('ledger.marketingCosts') }}</span>
+              <span class="amount-negative">{{ formatAmount(-ledger.totalMarketingCosts) }}</span>
+              <button
+                class="drill-btn"
+                :class="{ active: drillCategory === 'MARKETING' }"
+                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.marketingCosts')"
+                @click="toggleDrill('MARKETING')"
+              >
+                {{ drillCategory === 'MARKETING' ? '▲' : '▼' }}
+              </button>
+            </div>
+            <div v-if="ledger.totalTaxPaid > 0" class="statement-row cost-row">
+              <span class="row-label">{{ t('ledger.taxPaid') }}</span>
+              <span class="amount-negative">{{ formatAmount(-ledger.totalTaxPaid) }}</span>
+              <button
+                class="drill-btn"
+                :class="{ active: drillCategory === 'TAX' }"
+                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.taxPaid')"
+                @click="toggleDrill('TAX')"
+              >
+                {{ drillCategory === 'TAX' ? '▲' : '▼' }}
+              </button>
+            </div>
+            <div class="statement-row total-row">
+              <span class="row-label">{{ t('ledger.netIncome') }}</span>
+              <span :class="amountClass(ledger.netIncome)">{{ formatAmount(ledger.netIncome) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="statement-card">
+          <h2 class="statement-title">📊 {{ t('ledger.balanceSheet') }}</h2>
+          <div class="statement-rows">
+            <div class="statement-row">
+              <span class="row-label">{{ t('ledger.cash') }}</span>
+              <span>{{ formatAmount(ledger.currentCash) }}</span>
+            </div>
+            <div class="statement-row">
+              <span class="row-label">{{ t('ledger.buildingValue') }}</span>
+              <span>{{ formatAmount(ledger.buildingValue) }}</span>
+              <button
+                class="drill-btn"
+                :class="{ active: drillCategory === 'PROPERTY_PURCHASE' }"
+                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.buildingValue')"
+                @click="toggleDrill('PROPERTY_PURCHASE')"
+              >
+                {{ drillCategory === 'PROPERTY_PURCHASE' ? '▲' : '▼' }}
+              </button>
+            </div>
+            <div class="statement-row">
+              <span class="row-label">{{ t('ledger.inventoryValue') }}</span>
+              <span>{{ formatAmount(ledger.inventoryValue) }}</span>
+            </div>
+            <div class="statement-row total-row">
+              <span class="row-label">{{ t('ledger.totalAssets') }}</span>
+              <span>{{ formatAmount(ledger.totalAssets) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="statement-card">
+          <h2 class="statement-title">💵 {{ t('ledger.cashFlow') }}</h2>
+          <div class="statement-rows">
+            <div class="statement-row">
+              <span class="row-label">{{ t('ledger.cashFromOperations') }}</span>
+              <span :class="amountClass(ledger.cashFromOperations)">{{
+                formatAmount(ledger.cashFromOperations)
+              }}</span>
+            </div>
+            <div class="statement-row">
+              <span class="row-label">{{ t('ledger.cashFromInvestments') }}</span>
+              <span :class="amountClass(ledger.cashFromInvestments)">{{
+                formatAmount(ledger.cashFromInvestments)
+              }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="drillCategory" class="drill-panel">
+        <div class="drill-header">
+          <h3>{{ t('ledger.drillDown') }}: {{ t(`ledger.category.${drillCategory}`) }}</h3>
+          <button
+            class="btn btn-ghost btn-sm"
+            @click="drillCategory = null; drillEntries = []"
+          >
+            ✕ {{ t('common.close') }}
+          </button>
+        </div>
+        <div v-if="drillLoading" class="state-box-sm">{{ t('common.loading') }}</div>
+        <div v-else-if="drillEntries.length === 0" class="state-box-sm">
+          {{ t('ledger.noEntries') }}
+        </div>
+        <div v-else class="drill-table-wrapper">
+          <table class="drill-table">
+            <thead>
+              <tr>
+                <th>{{ t('ledger.description') }}</th>
+                <th>{{ t('ledger.amount') }}</th>
+                <th>{{ t('ledger.tick') }}</th>
+                <th>{{ t('ledger.building') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="entry in drillEntries" :key="entry.id">
+                <td>{{ entry.productName ?? entry.resourceName ?? entry.description }}</td>
+                <td :class="amountClass(entry.amount)">{{ formatAmount(entry.amount) }}</td>
+                <td>{{ entry.recordedAtTick }}</td>
+                <td>
+                  <RouterLink
+                    v-if="entry.buildingId"
+                    :to="`/building/${entry.buildingId}`"
+                    class="link-btn"
+                  >
+                    {{ entry.buildingName ?? t('ledger.viewBuilding') }}
+                  </RouterLink>
+                  <span v-else>—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div v-if="ledger.buildingSummaries.length > 0" class="buildings-card">
+        <h2 class="statement-title">🏭 {{ t('ledger.buildingsPerformance') }}</h2>
+        <div class="buildings-table-wrapper">
+          <table class="buildings-table">
+            <thead>
+              <tr>
+                <th>{{ t('ledger.buildingName') }}</th>
+                <th>{{ t('ledger.buildingType') }}</th>
+                <th>{{ t('ledger.revenue') }}</th>
+                <th>{{ t('ledger.costs') }}</th>
+                <th>{{ t('ledger.profit') }}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="b in ledger.buildingSummaries" :key="b.buildingId">
+                <td>{{ b.buildingName }}</td>
+                <td>{{ b.buildingType }}</td>
+                <td class="amount-positive">{{ formatAmount(b.revenue) }}</td>
+                <td class="amount-negative">{{ formatAmount(-b.costs) }}</td>
+                <td :class="amountClass(b.revenue - b.costs)">
+                  {{ formatAmount(b.revenue - b.costs) }}
+                </td>
+                <td>
+                  <RouterLink :to="`/building/${b.buildingId}`" class="btn btn-ghost btn-sm">
+                    {{ t('ledger.manage') }}
+                  </RouterLink>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.ledger-view {
+  padding: 2rem 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.ledger-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.ledger-eyebrow {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin: 0 0 0.25rem;
+}
+.ledger-title {
+  font-size: 1.75rem;
+  margin: 0;
+}
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.kpi-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.kpi-label {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+.kpi-value {
+  font-size: 1.375rem;
+  font-weight: 700;
+}
+.info-banner {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  color: var(--color-text-secondary);
+}
+.tick-range-note {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 1rem;
+}
+.statements-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.statement-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+}
+.statement-title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+.statement-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.statement-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+.cost-row {
+  color: var(--color-text-secondary);
+}
+.total-row {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.5rem;
+  margin-top: 0.25rem;
+  font-weight: 600;
+}
+.row-label {
+  flex: 1;
+  font-size: 0.9375rem;
+}
+.drill-btn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  padding: 0 0.375rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  transition: all 0.15s;
+  margin-left: auto;
+}
+.drill-btn:hover,
+.drill-btn.active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+.amount-positive {
+  color: var(--color-success, #22c55e);
+}
+.amount-negative {
+  color: var(--color-danger, #ef4444);
+}
+.drill-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.drill-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.drill-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+.state-box-sm {
+  text-align: center;
+  color: var(--color-text-secondary);
+  padding: 1rem;
+}
+.drill-table-wrapper,
+.buildings-table-wrapper {
+  overflow-x: auto;
+}
+.drill-table,
+.buildings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.drill-table th,
+.drill-table td,
+.buildings-table th,
+.buildings-table td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.drill-table th,
+.buildings-table th {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  font-size: 0.8125rem;
+}
+.buildings-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.link-btn {
+  color: var(--color-accent);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+.link-btn:hover {
+  text-decoration: underline;
+}
+.btn-sm {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+}
+.state-box {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+.state-error {
+  color: var(--color-danger, #ef4444);
+}
+.state-icon {
+  font-size: 2.5rem;
+}
+</style>

@@ -434,6 +434,9 @@ function formatTimeRemaining(expiresAtUtc: string): string {
           >
             🗺️ {{ t('nav.cityMap') }}
           </RouterLink>
+          <RouterLink :to="`/ledger/${company.id}`" class="btn btn-ghost">
+            📒 {{ t('dashboard.viewLedger') }}
+          </RouterLink>
         </div>
 
         <div v-if="company.buildings.length === 0" class="no-buildings">

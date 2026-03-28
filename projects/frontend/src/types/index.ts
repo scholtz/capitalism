@@ -410,3 +410,81 @@ export interface ScheduledActionSummary {
   ticksRemaining: number
   totalTicksRequired: number
 }
+
+/** Company financial ledger summary */
+export interface CompanyLedgerSummary {
+  companyId: string
+  companyName: string
+  currentCash: number
+  totalRevenue: number
+  totalPurchasingCosts: number
+  totalMarketingCosts: number
+  totalTaxPaid: number
+  totalOtherCosts: number
+  netIncome: number
+  buildingValue: number
+  inventoryValue: number
+  totalAssets: number
+  totalPropertyPurchases: number
+  cashFromOperations: number
+  cashFromInvestments: number
+  firstRecordedTick: number
+  lastRecordedTick: number
+  buildingSummaries: BuildingLedgerSummary[]
+}
+
+export interface BuildingLedgerSummary {
+  buildingId: string
+  buildingName: string
+  buildingType: string
+  revenue: number
+  costs: number
+}
+
+export interface LedgerEntryResult {
+  id: string
+  category: string
+  description: string
+  amount: number
+  recordedAtTick: number
+  buildingId: string | null
+  buildingName: string | null
+  buildingUnitId: string | null
+  productTypeId: string | null
+  productName: string | null
+  resourceTypeId: string | null
+  resourceName: string | null
+}
+
+export interface PublicSalesAnalytics {
+  buildingUnitId: string
+  buildingId: string
+  buildingName: string
+  cityName: string
+  totalRevenue: number
+  totalQuantitySold: number
+  averagePricePerUnit: number
+  currentSalesCapacity: number
+  dataFromTick: number
+  dataToTick: number
+  revenueHistory: SalesTickSnapshot[]
+  marketShare: MarketShareEntry[]
+  priceHistory: PriceTickSnapshot[]
+}
+
+export interface SalesTickSnapshot {
+  tick: number
+  revenue: number
+  quantitySold: number
+}
+
+export interface PriceTickSnapshot {
+  tick: number
+  pricePerUnit: number
+}
+
+export interface MarketShareEntry {
+  label: string
+  companyId: string | null
+  share: number
+}
