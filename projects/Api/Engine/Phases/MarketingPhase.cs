@@ -67,6 +67,20 @@ public sealed class MarketingPhase : ITickPhase
         if (productIds.Count == 0) return;
 
         company.Cash -= budget;
+
+        context.Db.LedgerEntries.Add(new LedgerEntry
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            BuildingId = building.Id,
+            BuildingUnitId = unit.Id,
+            Category = LedgerCategory.Marketing,
+            Description = "Marketing spend",
+            Amount = -budget,
+            RecordedAtTick = context.CurrentTick,
+            RecordedAtUtc = DateTime.UtcNow,
+        });
+
         var budgetPerProduct = budget / productIds.Count;
 
         foreach (var productId in productIds)
