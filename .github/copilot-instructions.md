@@ -205,3 +205,10 @@ dotnet test ../Api.Tests  # Run integration tests
 - Non-nullable input fields must be explicitly provided in GraphQL variables even if the C# class has a default.
 - Enum values use SCREAMING_SNAKE_CASE strings (e.g., `"FURNITURE"`, `"IN_PERSON"`).
 - JWT authentication is configured via `[Authorize]` attribute on mutations.
+
+## Playwright E2E test quality requirements
+- **Never push code with known failing tests.** If tests fail locally, fix them before pushing. Do not assume CI will behave differently. If there is a legitimate build-cache discrepancy, document it and investigate before pushing.
+- **Strict mode: always scope `getByText` when text may appear in multiple elements.** Use `{ exact: true }` when matching a heading/label string that also appears as a substring in another element (e.g., inside paragraph hints). Alternatively use `page.locator('.step-card').getByText(...)` to scope the locator.
+- **URL assertions must account for router query params.** If the component sets a `?step=...` query param on mount (e.g., via `router.replace({ query: { step: 'complete' } })`), assertions like `toHaveURL('/onboarding')` will fail because the actual URL is `/onboarding?step=complete`. Check the component's routing logic and assert the full URL including query params, or use a regex: `await expect(page).toHaveURL(/\/onboarding/)`.
+- **Always run the full `npm run test:e2e` suite before reporting completion for any change that touches OnboardingView, auth routing, or the mock-api helper.** Targeted single-spec runs can miss cross-spec regressions.
+- **Root-cause failures before bypassing them.** If a test is failing because the implementation behaves unexpectedly, fix the implementation or the test — do not change the assertion to match a broken behavior.

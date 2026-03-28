@@ -620,7 +620,7 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
 
     // All four guidance steps should be visible
     await expect(page.getByText('Review your cash')).toBeVisible()
-    await expect(page.getByText('Set a selling price')).toBeVisible()
+    await expect(page.getByText('Set a selling price', { exact: true })).toBeVisible()
     await expect(page.getByText('Enable public sales')).toBeVisible()
     await expect(page.getByText('Wait for the next tick')).toBeVisible()
   })
@@ -878,8 +878,8 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     await expect(page.locator('.milestone-error')).toBeVisible()
     await expect(page.locator('.milestone-error')).toContainText(/configure/i)
 
-    // Should NOT navigate away
-    await expect(page).toHaveURL('/onboarding')
+    // Should NOT navigate away — URL stays on onboarding (with step=complete query param from resume)
+    await expect(page).toHaveURL('/onboarding?step=complete')
   })
 
   test('already-fully-onboarded player visiting /onboarding is redirected to dashboard immediately', async ({
