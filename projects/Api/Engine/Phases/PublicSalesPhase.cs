@@ -61,10 +61,12 @@ public sealed class PublicSalesPhase : ITickPhase
 
             decimal basePrice;
             string? industry = null;
+            string? productName = null;
             if (inv.ProductTypeId.HasValue && context.ProductTypesById.TryGetValue(inv.ProductTypeId.Value, out var pt))
             {
                 basePrice = pt.BasePrice;
                 industry = pt.Industry;
+                productName = pt.Name;
             }
             else if (inv.ResourceTypeId.HasValue && context.ResourceTypesById.TryGetValue(inv.ResourceTypeId.Value, out var rt))
             {
@@ -94,6 +96,41 @@ public sealed class PublicSalesPhase : ITickPhase
             sold = Math.Max(0m, Math.Floor(sold * 10000m) / 10000m); // round down to 4 dp
 
             if (sold <= 0m) continue;
+
+            // Record ledger entry for revenue
+            context.Db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = company.Id,
+                BuildingId = building.Id,
+                BuildingUnitId = unit.Id,
+                Category = LedgerCategory.Revenue,
+                Description = productName is not null ? $"Public sales: {productName}" : "Public sales",
+                Amount = sold * price,
+                RecordedAtTick = context.CurrentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+                ProductTypeId = inv.ProductTypeId,
+                ResourceTypeId = inv.ResourceTypeId,
+            });
+
+            // Record sales snapshot
+            context.Db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(),
+                BuildingUnitId = unit.Id,
+                BuildingId = building.Id,
+                CompanyId = company.Id,
+                CityId = building.CityId,
+                ProductTypeId = inv.ProductTypeId,
+                ResourceTypeId = inv.ResourceTypeId,
+                Tick = context.CurrentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+                QuantitySold = sold,
+                PricePerUnit = price,
+                Revenue = sold * price,
+                Demand = demand,
+                SalesCapacity = salesCapacity,
+            });
 
             inv.Quantity -= sold;
             company.Cash += sold * price;

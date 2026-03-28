@@ -93,6 +93,21 @@ public sealed class PurchasingPhase : ITickPhase
 
             company.Cash -= cost;
 
+            context.Db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = company.Id,
+                BuildingId = building.Id,
+                BuildingUnitId = unit.Id,
+                Category = LedgerCategory.PurchasingCost,
+                Description = resourceId.HasValue ? "Purchase: raw material" : "Purchase: product",
+                Amount = -cost,
+                RecordedAtTick = context.CurrentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+                ResourceTypeId = resourceId,
+                ProductTypeId = productId,
+            });
+
             // Credit selling company.
             if (context.CompaniesById.TryGetValue(order.CompanyId, out var seller))
                 seller.Cash += cost;

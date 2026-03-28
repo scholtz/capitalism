@@ -1,3 +1,5 @@
+using Api.Data.Entities;
+
 namespace Api.Engine.Phases;
 
 /// <summary>
@@ -23,6 +25,17 @@ public sealed class TaxPhase : ITickPhase
             if (company.Cash <= 0m) continue;
             var tax = company.Cash * rate;
             company.Cash = Math.Max(0m, company.Cash - tax);
+
+            context.Db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = company.Id,
+                Category = LedgerCategory.Tax,
+                Description = $"Tax ({gs.TaxRate}% rate)",
+                Amount = -tax,
+                RecordedAtTick = context.CurrentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+            });
         }
 
         return Task.CompletedTask;

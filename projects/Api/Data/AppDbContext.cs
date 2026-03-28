@@ -63,6 +63,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     /// <summary>Purchasable building lots within cities.</summary>
     public DbSet<BuildingLot> BuildingLots => Set<BuildingLot>();
 
+    /// <summary>Financial event records for company ledger.</summary>
+    public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
+
+    /// <summary>Per-tick public sales snapshots for analytics.</summary>
+    public DbSet<PublicSalesRecord> PublicSalesRecords => Set<PublicSalesRecord>();
+
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -297,6 +303,40 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(o => o.MinQuality).HasPrecision(5, 4);
             e.HasOne(o => o.ExchangeBuilding).WithMany().HasForeignKey(o => o.ExchangeBuildingId);
             e.HasOne(o => o.Company).WithMany().HasForeignKey(o => o.CompanyId);
+        });
+
+        // LedgerEntry
+        modelBuilder.Entity<LedgerEntry>(e =>
+        {
+            e.HasKey(l => l.Id);
+            e.Property(l => l.Category).HasMaxLength(40);
+            e.Property(l => l.Description).HasMaxLength(500);
+            e.Property(l => l.Amount).HasPrecision(18, 4);
+            e.HasOne(l => l.Company).WithMany().HasForeignKey(l => l.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(l => l.Building).WithMany().HasForeignKey(l => l.BuildingId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(l => l.BuildingUnit).WithMany().HasForeignKey(l => l.BuildingUnitId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(l => l.ProductType).WithMany().HasForeignKey(l => l.ProductTypeId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(l => l.ResourceType).WithMany().HasForeignKey(l => l.ResourceTypeId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(l => new { l.CompanyId, l.RecordedAtTick });
+        });
+
+        // PublicSalesRecord
+        modelBuilder.Entity<PublicSalesRecord>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.Property(r => r.QuantitySold).HasPrecision(18, 4);
+            e.Property(r => r.PricePerUnit).HasPrecision(18, 4);
+            e.Property(r => r.Revenue).HasPrecision(18, 4);
+            e.Property(r => r.Demand).HasPrecision(18, 4);
+            e.Property(r => r.SalesCapacity).HasPrecision(18, 4);
+            e.HasOne(r => r.BuildingUnit).WithMany().HasForeignKey(r => r.BuildingUnitId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(r => r.Building).WithMany().HasForeignKey(r => r.BuildingId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(r => r.Company).WithMany().HasForeignKey(r => r.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(r => r.City).WithMany().HasForeignKey(r => r.CityId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(r => r.ProductType).WithMany().HasForeignKey(r => r.ProductTypeId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(r => r.ResourceType).WithMany().HasForeignKey(r => r.ResourceTypeId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(r => new { r.BuildingUnitId, r.Tick });
+            e.HasIndex(r => new { r.CompanyId, r.Tick });
         });
     }
 }

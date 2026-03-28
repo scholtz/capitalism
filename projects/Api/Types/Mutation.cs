@@ -721,6 +721,19 @@ public sealed class Mutation
         lot.BuildingId = building.Id;
         lot.ConcurrencyToken = Guid.NewGuid();
 
+        var currentTick = (await db.GameStates.AsNoTracking().FirstOrDefaultAsync())?.CurrentTick ?? 0;
+        db.LedgerEntries.Add(new LedgerEntry
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            BuildingId = building.Id,
+            Category = LedgerCategory.PropertyPurchase,
+            Description = $"Purchased lot: {lot.Name}",
+            Amount = -lot.Price,
+            RecordedAtTick = currentTick,
+            RecordedAtUtc = builtAtUtc,
+        });
+
         return (lot, building);
     }
 

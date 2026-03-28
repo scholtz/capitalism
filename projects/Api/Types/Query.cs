@@ -431,6 +431,215 @@ public sealed class Query
             _ => 0m
         };
     }
+
+    /// <summary>Returns a financial ledger summary for a company (requires auth — must own company).</summary>
+    [Authorize]
+    public async Task<CompanyLedgerSummary?> GetCompanyLedger(
+        Guid companyId,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var company = await db.Companies
+            .Include(c => c.Buildings)
+            .FirstOrDefaultAsync(c => c.Id == companyId && c.PlayerId == userId);
+
+        if (company is null) return null;
+
+        var entries = await db.LedgerEntries
+            .Where(e => e.CompanyId == companyId)
+            .ToListAsync();
+
+        var totalRevenue = entries.Where(e => e.Category == LedgerCategory.Revenue).Sum(e => e.Amount);
+        var totalPurchasingCosts = Math.Abs(entries.Where(e => e.Category == LedgerCategory.PurchasingCost).Sum(e => e.Amount));
+        var totalMarketingCosts = Math.Abs(entries.Where(e => e.Category == LedgerCategory.Marketing).Sum(e => e.Amount));
+        var totalTaxPaid = Math.Abs(entries.Where(e => e.Category == LedgerCategory.Tax).Sum(e => e.Amount));
+        var totalOtherCosts = Math.Abs(entries.Where(e => e.Category == LedgerCategory.Other && e.Amount < 0).Sum(e => e.Amount));
+        var totalPropertyPurchases = Math.Abs(entries.Where(e => e.Category == LedgerCategory.PropertyPurchase).Sum(e => e.Amount));
+
+        var buildingValue = company.Buildings.Sum(b => WealthCalculator.GetBuildingValue(b));
+
+        var buildingIds = company.Buildings.Select(b => b.Id).ToList();
+        var inventories = await db.Inventories
+            .Where(i => buildingIds.Contains(i.BuildingId))
+            .Include(i => i.ResourceType)
+            .Include(i => i.ProductType)
+            .ToListAsync();
+        var inventoryValue = inventories.Sum(i => i.Quantity * WealthCalculator.GetItemBasePrice(i));
+
+        var buildingSummaries = entries
+            .Where(e => e.BuildingId.HasValue)
+            .GroupBy(e => e.BuildingId!.Value)
+            .Select(g =>
+            {
+                var b = company.Buildings.FirstOrDefault(bld => bld.Id == g.Key);
+                return new BuildingLedgerSummary
+                {
+                    BuildingId = g.Key,
+                    BuildingName = b?.Name ?? string.Empty,
+                    BuildingType = b?.Type ?? string.Empty,
+                    Revenue = g.Where(e => e.Amount > 0).Sum(e => e.Amount),
+                    Costs = Math.Abs(g.Where(e => e.Amount < 0).Sum(e => e.Amount)),
+                };
+            })
+            .ToList();
+
+        return new CompanyLedgerSummary
+        {
+            CompanyId = company.Id,
+            CompanyName = company.Name,
+            CurrentCash = company.Cash,
+            TotalRevenue = totalRevenue,
+            TotalPurchasingCosts = totalPurchasingCosts,
+            TotalMarketingCosts = totalMarketingCosts,
+            TotalTaxPaid = totalTaxPaid,
+            TotalOtherCosts = totalOtherCosts,
+            TotalPropertyPurchases = totalPropertyPurchases,
+            NetIncome = totalRevenue - totalPurchasingCosts - totalMarketingCosts - totalTaxPaid - totalOtherCosts,
+            BuildingValue = buildingValue,
+            InventoryValue = inventoryValue,
+            TotalAssets = company.Cash + buildingValue + inventoryValue,
+            CashFromOperations = totalRevenue - totalPurchasingCosts - totalMarketingCosts,
+            CashFromInvestments = -totalPropertyPurchases,
+            FirstRecordedTick = entries.Count > 0 ? entries.Min(e => e.RecordedAtTick) : 0,
+            LastRecordedTick = entries.Count > 0 ? entries.Max(e => e.RecordedAtTick) : 0,
+            BuildingSummaries = buildingSummaries,
+        };
+    }
+
+    /// <summary>Returns drill-down entries for a specific ledger category.</summary>
+    [Authorize]
+    public async Task<List<LedgerEntryResult>> GetLedgerDrillDown(
+        Guid companyId,
+        string category,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var ownsCompany = await db.Companies
+            .AnyAsync(c => c.Id == companyId && c.PlayerId == userId);
+
+        if (!ownsCompany) return [];
+
+        var entries = await db.LedgerEntries
+            .Where(e => e.CompanyId == companyId && e.Category == category)
+            .OrderByDescending(e => e.RecordedAtTick)
+            .Take(200)
+            .Include(e => e.Building)
+            .Include(e => e.ProductType)
+            .Include(e => e.ResourceType)
+            .ToListAsync();
+
+        return entries.Select(e => new LedgerEntryResult
+        {
+            Id = e.Id,
+            Category = e.Category,
+            Description = e.Description,
+            Amount = e.Amount,
+            RecordedAtTick = e.RecordedAtTick,
+            RecordedAtUtc = e.RecordedAtUtc,
+            BuildingId = e.BuildingId,
+            BuildingName = e.Building?.Name,
+            BuildingUnitId = e.BuildingUnitId,
+            ProductTypeId = e.ProductTypeId,
+            ProductName = e.ProductType?.Name,
+            ResourceTypeId = e.ResourceTypeId,
+            ResourceName = e.ResourceType?.Name,
+        }).ToList();
+    }
+
+    /// <summary>Returns analytics for a PUBLIC_SALES building unit.</summary>
+    [Authorize]
+    public async Task<PublicSalesAnalytics?> GetPublicSalesAnalytics(
+        Guid unitId,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building)
+            .ThenInclude(b => b.Company)
+            .FirstOrDefaultAsync(u => u.Id == unitId);
+
+        if (unit is null || unit.Building.Company.PlayerId != userId) return null;
+
+        var building = unit.Building;
+        var city = await db.Cities.FindAsync(building.CityId);
+
+        var records = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == unitId)
+            .OrderByDescending(r => r.Tick)
+            .Take(100)
+            .ToListAsync();
+
+        var totalRevenue = records.Sum(r => r.Revenue);
+        var totalQuantity = records.Sum(r => r.QuantitySold);
+        var averagePrice = totalQuantity > 0 ? totalRevenue / totalQuantity : 0m;
+        var dataFromTick = records.Count > 0 ? records.Min(r => r.Tick) : 0L;
+        var dataToTick = records.Count > 0 ? records.Max(r => r.Tick) : 0L;
+
+        var revenueHistory = records
+            .OrderBy(r => r.Tick)
+            .Select(r => new SalesTickSnapshot { Tick = r.Tick, Revenue = r.Revenue, QuantitySold = r.QuantitySold })
+            .ToList();
+
+        var priceHistory = records
+            .OrderBy(r => r.Tick)
+            .Select(r => new PriceTickSnapshot { Tick = r.Tick, PricePerUnit = r.PricePerUnit })
+            .ToList();
+
+        // Market share: look at the most recent tick's data for same product + city
+        List<MarketShareEntry> marketShare = [];
+        var mostRecentTick = records.Count > 0 ? records.Max(r => r.Tick) : -1L;
+        if (mostRecentTick >= 0)
+        {
+            var productTypeId = unit.ProductTypeId ?? records.FirstOrDefault()?.ProductTypeId;
+            if (productTypeId.HasValue)
+            {
+                var cityRecords = await db.PublicSalesRecords
+                    .Where(r => r.CityId == building.CityId
+                                && r.ProductTypeId == productTypeId
+                                && r.Tick == mostRecentTick)
+                    .Include(r => r.Company)
+                    .ToListAsync();
+
+                var totalCitySales = cityRecords.Sum(r => r.QuantitySold);
+                if (totalCitySales > 0)
+                {
+                    marketShare = cityRecords
+                        .GroupBy(r => r.CompanyId)
+                        .Select(g => new MarketShareEntry
+                        {
+                            Label = g.First().Company.Name,
+                            CompanyId = g.Key,
+                            Share = g.Sum(r => r.QuantitySold) / totalCitySales,
+                        })
+                        .OrderByDescending(e => e.Share)
+                        .ToList();
+                }
+            }
+        }
+
+        return new PublicSalesAnalytics
+        {
+            BuildingUnitId = unit.Id,
+            BuildingId = building.Id,
+            BuildingName = building.Name,
+            CityName = city?.Name ?? string.Empty,
+            TotalRevenue = totalRevenue,
+            TotalQuantitySold = totalQuantity,
+            AveragePricePerUnit = averagePrice,
+            CurrentSalesCapacity = GameConstants.SalesCapacity(unit.Level),
+            DataFromTick = dataFromTick,
+            DataToTick = dataToTick,
+            RevenueHistory = revenueHistory,
+            MarketShare = marketShare,
+            PriceHistory = priceHistory,
+        };
+    }
 }
 
 /// <summary>Payload for player ranking.</summary>
