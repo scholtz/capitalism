@@ -194,12 +194,24 @@ dotnet test ../Api.Tests  # Run integration tests
 - For backend changes, do not stop at Debug-only targeted tests. Always run the workflow-equivalent Release pipeline locally:
   - `cd projects/Api && dotnet restore Api.slnx && dotnet build Api.slnx --configuration Release --no-restore && dotnet test Api.slnx --configuration Release --no-build`
 - For frontend changes that affect shipped UI, also run the workflow-equivalent frontend checks:
-  - `cd projects/frontend && npm ci && npm run lint && npm run build`
+  - `cd projects/frontend && npm ci && npm run lint && npm run test:unit && npm run build`
+  - **Lint must exit 0 (no errors) before pushing.** Run `npm run lint` explicitly after every frontend code change, not just at the very end. Common lint errors include unused destructured variables (e.g., `const { a, unusedB } = composable()`) and unreachable imports.
 - For Playwright changes or UI flows covered by Playwright, install browsers if needed and run the relevant spec exactly as CI expects:
   - `cd projects/frontend && npx playwright install --with-deps chromium`
   - `cd projects/frontend && npx playwright test --project=chromium e2e/<relevant-spec>.ts`
 - For onboarding/auth/routing changes, do not stop at a single happy-path spec. Run the broader Playwright surface that CI depends on (`npm run test:e2e`) or, if you are narrowing scope, explicitly include both onboarding and home/dashboard coverage so CTA and redirect regressions are caught before pushing.
 - If you discover pre-existing failing tests outside the changed area, call them out explicitly in progress/final reporting instead of assuming the repository is green.
+
+## Lint quality gate
+- **Always run `npm run lint` immediately after finishing code edits** and before `report_progress`. Do not defer lint to "final validation" — catch unused variables, missing imports, and type narrowing issues while edits are fresh.
+- When destructuring a composable (e.g., `const { a, b, c } = useComposable()`), only destructure values you actually reference in the template or script. Unused destructured bindings produce ESLint `@typescript-eslint/no-unused-vars` errors that fail CI.
+- When a composable handles its own cleanup internally via `onUnmounted`, callers do not need to destructure `stop*` / `cleanup*` functions unless they need to invoke cleanup manually before unmount.
+
+## Unit test coverage requirements
+- **All composables with pure business logic must have unit tests.** Extract pure functions (time formatting, cost calculations, string transformations) from composables so they can be tested without Vue or i18n context.
+- Place composable unit tests in `src/composables/__tests__/`. Tests use Vitest with `environment: 'node'` — no browser APIs available.
+- When you add a composable, also add a `__tests__/<composableName>.test.ts` covering: happy path, edge cases (zero, negative, empty), and format/boundary cases.
+- The full unit test command is `cd projects/frontend && npm run test:unit`.
 
 ## HotChocolate v15 notes
 - Non-nullable input fields must be explicitly provided in GraphQL variables even if the C# class has a default.
@@ -222,7 +234,15 @@ dotnet test ../Api.Tests  # Run integration tests
 - The frontend timer is derived from `expiresAtUtc` (authoritative backend timestamp) – never use `setTimeout` alone for expiry display.
 - Offer banner appears in `DashboardView.vue` for ELIGIBLE/SHOWN/DISMISSED states; offer UI also appears in `OnboardingView.vue` completion step.
 
+## Tick countdown and pending actions conventions
+- `useTickCountdown` composable (`src/composables/useTickCountdown.ts`) is the single source of truth for next-tick countdown display. Do not inline countdown logic in views.
+- `computeCountdownTimeStr(remainingMs)` is an exported pure helper from `useTickCountdown.ts` — use it when you need the raw time string, and test it in `src/composables/__tests__/useTickCountdown.test.ts`.
+- `PendingActionsTimeline` component (`src/components/dashboard/PendingActionsTimeline.vue`) renders the player's scheduled building upgrades. It accepts `pendingActions: ScheduledActionSummary[]` and `loading: boolean` props.
+- `DashboardView` fetches `gameState` and `myPendingActions` in parallel on mount. The tick clock widget and timeline are both driven by these responses.
+- Backend `myPendingActions` query (authenticated) returns `ScheduledActionSummary[]` ordered by `appliesAtTick` asc. Fields: `id`, `actionType`, `buildingId`, `buildingName`, `buildingType`, `submittedAtUtc`, `submittedAtTick`, `appliesAtTick`, `ticksRemaining`, `totalTicksRequired`.
+- When testing `myPendingActions` in E2E, set `state.pendingActions` in the mock-api helper before `page.goto()`.
+
 ## Definition of done for WIP PRs
 - A PR titled `[WIP]` must not be left in that state. Drive every PR to a production-ready, fully-tested state before reporting complete.
-- Always confirm CI would pass by running the full local validation pipeline (backend Release build + tests, frontend lint + build, full Playwright suite) before reporting completion.
+- Always confirm CI would pass by running the full local validation pipeline (backend Release build + tests, frontend lint + unit tests + build, full Playwright suite) before reporting completion.
 - Remove `[WIP]` from the PR title when all acceptance criteria are met, all tests pass, and the code has been reviewed.

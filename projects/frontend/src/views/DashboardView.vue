@@ -23,7 +23,7 @@ const gameState = ref<GameState | null>(null)
 const pendingActions = ref<ScheduledActionSummary[]>([])
 const pendingActionsLoading = ref(false)
 
-const { tickCountdown, startTickCountdown, stopTickCountdown } = useTickCountdown(gameState)
+const { tickCountdown, startTickCountdown } = useTickCountdown(gameState)
 
 const activeStartupPackOffer = computed(() =>
   auth.startupPackOffer && ['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(auth.startupPackOffer.status)
