@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { gqlRequest } from '@/lib/graphql'
 import { isProductLocked } from '@/lib/productAccess'
 import {
@@ -21,6 +22,7 @@ import type { ProductType, ResourceType } from '@/types'
 
 const { t, locale } = useI18n()
 const auth = useAuthStore()
+const router = useRouter()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -176,6 +178,10 @@ function getIngredientImage(recipe: ProductType['recipes'][number]) {
 
   return null
 }
+
+function navigateToResource(resource: ResourceType) {
+  router.push({ name: 'resource-detail', params: { slug: resource.slug } })
+}
 </script>
 
 <template>
@@ -207,7 +213,17 @@ function getIngredientImage(recipe: ProductType['recipes'][number]) {
           <p>{{ t('encyclopedia.rawMaterialsHelp') }}</p>
         </div>
         <div class="resource-grid">
-          <article v-for="resource in resources" :key="resource.id" class="resource-card">
+          <article
+            v-for="resource in resources"
+            :key="resource.id"
+            class="resource-card resource-card--link"
+            role="button"
+            tabindex="0"
+            :aria-label="t('encyclopedia.viewDetail') + ': ' + getResourceCardName(resource)"
+            @click="navigateToResource(resource)"
+            @keydown.enter="navigateToResource(resource)"
+            @keydown.space.prevent="navigateToResource(resource)"
+          >
             <img v-if="getResourceCardImage(resource)" :src="getResourceCardImage(resource) ?? undefined" :alt="getResourceCardName(resource)" class="resource-image" />
             <div class="resource-body">
               <div class="resource-heading">
@@ -220,6 +236,7 @@ function getIngredientImage(recipe: ProductType['recipes'][number]) {
                 <span>{{ t('encyclopedia.weight') }}: {{ resource.weightPerUnit }} kg/{{ resource.unitSymbol }}</span>
                 <span>{{ getCategoryLabel(resource.category) }}</span>
               </div>
+              <span class="resource-view-detail">{{ t('encyclopedia.viewDetail') }} →</span>
             </div>
           </article>
         </div>
@@ -575,6 +592,25 @@ function getIngredientImage(recipe: ProductType['recipes'][number]) {
 .recipe-line {
   margin: 0;
 }
+
+.resource-card--link {
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.resource-card--link:hover,
+.resource-card--link:focus-visible {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+  outline: none;
+}
+
+.resource-view-detail {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
 
 @media (max-width: 720px) {
   .hero {

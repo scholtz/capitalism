@@ -1,58 +1,59 @@
 import { expect, test } from '@playwright/test'
 import { makePlayer, makeStartupPackOffer, setupMockApi } from './helpers/mock-api'
 
+const woodResource = {
+  id: 'res-wood',
+  name: 'Wood',
+  slug: 'wood',
+  category: 'ORGANIC',
+  basePrice: 10,
+  weightPerUnit: 5,
+  unitName: 'Ton',
+  unitSymbol: 't',
+  imageUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="brown"/></svg>',
+  description: 'Timber for furniture.',
+}
+
+const electronicTableProduct = {
+  id: 'prod-electronic-table',
+  name: 'Electronic Table',
+  slug: 'electronic-table',
+  industry: 'FURNITURE',
+  basePrice: 520,
+  baseCraftTicks: 6,
+  outputQuantity: 1,
+  energyConsumptionMwh: 2,
+  unitName: 'Piece',
+  unitSymbol: 'pcs',
+  isProOnly: false,
+  description: 'Smart table.',
+  recipes: [
+    { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', unitName: 'Ton', unitSymbol: 't' }, inputProductType: null, quantity: 1 },
+    { resourceType: null, inputProductType: { id: 'prod-components', name: 'Electronic Components', slug: 'electronic-components', unitName: 'Pack', unitSymbol: 'packs' }, quantity: 10 },
+  ],
+}
+
+const electronicComponents = {
+  id: 'prod-components',
+  name: 'Electronic Components',
+  slug: 'electronic-components',
+  industry: 'ELECTRONICS',
+  basePrice: 50,
+  baseCraftTicks: 3,
+  outputQuantity: 16,
+  energyConsumptionMwh: 1.2,
+  unitName: 'Pack',
+  unitSymbol: 'packs',
+  isProOnly: false,
+  description: 'Intermediate electronics input.',
+  recipes: [],
+}
+
 test.describe('Manufacturing encyclopedia', () => {
   test('shows raw material cards and product recipes', async ({ page }) => {
     setupMockApi(page, {
-      resourceTypes: [
-        {
-          id: 'res-wood',
-          name: 'Wood',
-          slug: 'wood',
-          category: 'ORGANIC',
-          basePrice: 10,
-          weightPerUnit: 5,
-          unitName: 'Ton',
-          unitSymbol: 't',
-          imageUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="brown"/></svg>',
-          description: 'Timber for furniture.',
-        },
-      ],
-      productTypes: [
-        {
-          id: 'prod-components',
-          name: 'Electronic Components',
-          slug: 'electronic-components',
-          industry: 'ELECTRONICS',
-          basePrice: 50,
-          baseCraftTicks: 3,
-          outputQuantity: 16,
-          energyConsumptionMwh: 1.2,
-          unitName: 'Pack',
-          unitSymbol: 'packs',
-          isProOnly: false,
-          description: 'Intermediate electronics input.',
-          recipes: [],
-        },
-        {
-          id: 'prod-electronic-table',
-          name: 'Electronic Table',
-          slug: 'electronic-table',
-          industry: 'FURNITURE',
-          basePrice: 520,
-          baseCraftTicks: 6,
-          outputQuantity: 1,
-          energyConsumptionMwh: 2,
-          unitName: 'Piece',
-          unitSymbol: 'pcs',
-          isProOnly: false,
-          description: 'Smart table.',
-          recipes: [
-            { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', unitName: 'Ton', unitSymbol: 't' }, inputProductType: null, quantity: 1 },
-            { resourceType: null, inputProductType: { id: 'prod-components', name: 'Electronic Components', slug: 'electronic-components', unitName: 'Pack', unitSymbol: 'packs' }, quantity: 10 },
-          ],
-        },
-      ],
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
     })
 
     await page.goto('/encyclopedia')
@@ -186,5 +187,145 @@ test.describe('Manufacturing encyclopedia', () => {
     await expect(page.getByRole('button', { name: /Premium Desk/ })).toContainText('Pro unlocked')
     await page.getByRole('button', { name: /Premium Desk/ }).click()
     await expect(page.locator('.selected-product')).toContainText('Your active Pro access unlocks this product immediately.')
+  })
+})
+
+test.describe('Resource detail page', () => {
+  test('navigates to resource detail when clicking a resource card', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia')
+    await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
+
+    const woodCard = page.locator('.resource-card').filter({ hasText: 'Wood' })
+    await expect(woodCard).toBeVisible()
+    await woodCard.click()
+
+    await expect(page).toHaveURL('/encyclopedia/resources/wood')
+    await expect(page.getByRole('heading', { name: 'Wood', level: 1 })).toBeVisible()
+  })
+
+  test('resource detail page shows resource metadata', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia/resources/wood')
+
+    await expect(page.getByRole('heading', { name: 'Wood', level: 1 })).toBeVisible()
+    await expect(page.locator('.resource-description')).toContainText('Timber for furniture.')
+    await expect(page.locator('.badge--category')).toBeVisible()
+    await expect(page.locator('.resource-meta')).toContainText('$10')
+    await expect(page.locator('.resource-meta')).toContainText('5 kg/t')
+  })
+
+  test('resource detail page lists products that use the resource', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia/resources/wood')
+
+    await expect(page.getByRole('heading', { name: 'Used in Products' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Electronic Table' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Electronic Components' })).not.toBeVisible()
+  })
+
+  test('resource detail page shows ingredient quantity and recipe for each product', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia/resources/wood')
+
+    const productCard = page.locator('.product-card').filter({ hasText: 'Electronic Table' })
+    await expect(productCard).toBeVisible()
+    await expect(productCard.locator('.ingredient-highlight')).toContainText('1')
+    await expect(productCard.locator('.ingredient-highlight')).toContainText('t')
+    await expect(productCard.locator('.ingredient-chips')).toContainText('Electronic Components')
+  })
+
+  test('resource detail page shows empty state when no products use the resource', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents],
+    })
+
+    await page.goto('/encyclopedia/resources/wood')
+
+    await expect(page.getByRole('heading', { name: 'Used in Products' })).toBeVisible()
+    await expect(page.locator('.empty-state')).toContainText('No products currently use this resource.')
+  })
+
+  test('resource detail page shows not-found state for unknown slug', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [],
+    })
+
+    await page.goto('/encyclopedia/resources/nonexistent-resource')
+
+    await expect(page.locator('.not-found')).toBeVisible()
+    await expect(page.locator('.not-found')).toContainText('Resource not found')
+  })
+
+  test('back to encyclopedia navigation works', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia/resources/wood')
+    await expect(page.getByRole('heading', { name: 'Wood', level: 1 })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Back to Encyclopedia' }).click()
+
+    await expect(page).toHaveURL('/encyclopedia')
+    await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
+  })
+
+  test('resource detail is deep-linkable (refresh-safe)', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia/resources/wood')
+
+    await expect(page.getByRole('heading', { name: 'Wood', level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Used in Products' })).toBeVisible()
+  })
+
+  test('resource detail localizes when language changes', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [
+        {
+          ...woodResource,
+          imageUrl: null,
+        },
+      ],
+      productTypes: [
+        {
+          ...electronicTableProduct,
+          recipes: [
+            { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC', basePrice: 10, weightPerUnit: 5, unitName: 'Ton', unitSymbol: 't', imageUrl: null, description: 'Wood' }, inputProductType: null, quantity: 1 },
+          ],
+        },
+      ],
+    })
+
+    await page.goto('/encyclopedia/resources/wood')
+    await expect(page.getByRole('heading', { name: 'Wood', level: 1 })).toBeVisible()
+
+    await page.getByLabel('Language').selectOption('sk')
+
+    await expect(page.getByRole('heading', { name: 'Drevo', level: 1 })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Späť na encyklopédiu' })).toBeVisible()
   })
 })

@@ -10,6 +10,7 @@ const router = createRouter({
     { path: '/dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue') },
     { path: '/leaderboard', name: 'leaderboard', component: () => import('@/views/LeaderboardView.vue') },
     { path: '/encyclopedia', name: 'encyclopedia', component: () => import('@/views/ManufacturingEncyclopediaView.vue') },
+    { path: '/encyclopedia/resources/:slug', name: 'resource-detail', component: () => import('@/views/ResourceDetailView.vue') },
     { path: '/buy-building/:companyId', name: 'buy-building', component: () => import('@/views/BuyBuildingView.vue') },
     { path: '/building/:id', name: 'building-detail', component: () => import('@/views/BuildingDetailView.vue') },
     { path: '/city/:id', name: 'city-map', component: () => import('@/views/CityMapView.vue') },
