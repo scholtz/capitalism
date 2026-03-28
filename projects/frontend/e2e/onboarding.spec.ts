@@ -599,6 +599,75 @@ test.describe('Onboarding resume and progress persistence', () => {
     await expect(page).toHaveURL('/dashboard')
     await expect(page.getByText('Startup pack expired')).toBeVisible()
   })
+
+  test('startup pack offer remains visible after page reload when in SHOWN state', async ({
+    page,
+  }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T12:00:00Z',
+      startupPackOffer: makeStartupPackOffer({
+        status: 'SHOWN',
+        shownAtUtc: '2026-01-01T13:00:00Z',
+        expiresAtUtc: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      }),
+      companies: [
+        {
+          id: 'comp-shown',
+          playerId: 'player-1',
+          name: 'Reload Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.getByRole('heading', { name: 'Your startup pack is still available' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+
+    // Reload the page — offer must still be visible (state persisted in backend)
+    await page.reload()
+
+    await expect(page.getByRole('heading', { name: 'Your startup pack is still available' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+  })
+
+  test('expired offer on dashboard shows expired message without claim button', async ({
+    page,
+  }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T12:00:00Z',
+      startupPackOffer: makeStartupPackOffer({
+        status: 'EXPIRED',
+        expiresAtUtc: '2026-01-01T12:00:00Z',
+      }),
+      companies: [
+        {
+          id: 'comp-expired',
+          playerId: 'player-1',
+          name: 'Expired Offer Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.getByText('Startup pack expired')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeHidden()
+  })
 })
 
 test.describe('Guided first-profit onboarding (post-completion)', () => {

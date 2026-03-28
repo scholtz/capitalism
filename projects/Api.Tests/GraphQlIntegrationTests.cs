@@ -1585,6 +1585,116 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task FinishOnboarding_ReturnsEligibleStartupPackOffer()
+    {
+        var token = await RegisterAndGetTokenAsync($"finish-onboard-offer-{Guid.NewGuid()}@test.com", "FinishOfferPlayer");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Finish Offer Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 95_000m, "Finish Offer Shop");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) {
+                company { id }
+                startupPackOffer {
+                  status
+                  companyCashGrant
+                  proDurationDays
+                  expiresAtUtc
+                }
+              }
+            }
+            """,
+            new { input = new { productTypeId = productId, shopLotId } },
+            token);
+
+        var offer = result.GetProperty("data").GetProperty("finishOnboarding").GetProperty("startupPackOffer");
+        Assert.Equal("ELIGIBLE", offer.GetProperty("status").GetString());
+        Assert.Equal(250_000m, offer.GetProperty("companyCashGrant").GetDecimal());
+        Assert.Equal(90, offer.GetProperty("proDurationDays").GetInt32());
+        Assert.True(DateTime.TryParse(offer.GetProperty("expiresAtUtc").GetString(), out _));
+    }
+
+    [Fact]
+    public async Task StartupPackOffer_MarkShown_IsIdempotent()
+    {
+        var token = await RegisterAndGetTokenAsync("startup-pack-shown-idempotent@test.com", "IdempotentShown");
+        await CompleteOnboardingAsync(token, "Idempotent Shown Corp");
+
+        var first = await ExecuteGraphQlAsync(
+            "mutation { markStartupPackOfferShown { status shownAtUtc } }",
+            token: token);
+        var firstOffer = first.GetProperty("data").GetProperty("markStartupPackOfferShown");
+        Assert.Equal("SHOWN", firstOffer.GetProperty("status").GetString());
+        var firstShownAt = firstOffer.GetProperty("shownAtUtc").GetString();
+
+        var second = await ExecuteGraphQlAsync(
+            "mutation { markStartupPackOfferShown { status shownAtUtc } }",
+            token: token);
+        var secondOffer = second.GetProperty("data").GetProperty("markStartupPackOfferShown");
+        Assert.Equal("SHOWN", secondOffer.GetProperty("status").GetString());
+        // shownAtUtc must not be overwritten on subsequent calls
+        Assert.Equal(firstShownAt, secondOffer.GetProperty("shownAtUtc").GetString());
+    }
+
+    [Fact]
+    public async Task ClaimStartupPack_GrantsProSubscriptionThatUnlocksProProducts()
+    {
+        var token = await RegisterAndGetTokenAsync($"startup-pro-unlock-{Guid.NewGuid()}@test.com", "ProUnlockPlayer");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Pro Unlock Corp");
+
+        // Before claiming: electronics products should be pro-locked
+        var beforeResult = await ExecuteGraphQlAsync(
+            """
+            {
+              productTypes(industry: "ELECTRONICS") {
+                slug
+                isProOnly
+                isUnlockedForCurrentPlayer
+              }
+            }
+            """,
+            token: token);
+        var electronicsBefore = beforeResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .First(p => p.GetProperty("slug").GetString() == "electronic-components");
+        Assert.True(electronicsBefore.GetProperty("isProOnly").GetBoolean());
+        Assert.False(electronicsBefore.GetProperty("isUnlockedForCurrentPlayer").GetBoolean());
+
+        // Claim the startup pack
+        await ExecuteGraphQlAsync(
+            """
+            mutation ClaimStartupPack($input: ClaimStartupPackInput!) {
+              claimStartupPack(input: $input) {
+                offer { status }
+                proSubscriptionEndsAtUtc
+              }
+            }
+            """,
+            new { input = new { companyId } },
+            token);
+
+        // After claiming: electronics products should now be unlocked
+        var afterResult = await ExecuteGraphQlAsync(
+            """
+            {
+              productTypes(industry: "ELECTRONICS") {
+                slug
+                isProOnly
+                isUnlockedForCurrentPlayer
+              }
+            }
+            """,
+            token: token);
+        var electronicsAfter = afterResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .First(p => p.GetProperty("slug").GetString() == "electronic-components");
+        Assert.True(electronicsAfter.GetProperty("isProOnly").GetBoolean());
+        Assert.True(electronicsAfter.GetProperty("isUnlockedForCurrentPlayer").GetBoolean());
+    }
+
+    [Fact]
     public async Task CompleteOnboarding_InvalidIndustry_ReturnsError()
     {
         var token = await RegisterAndGetTokenAsync("badindustry@test.com", "BadInd");
