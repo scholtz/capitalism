@@ -1350,6 +1350,62 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('CancelBuildingConfiguration')) {
+      applyDueBuildingUpgrades(state)
+
+      const input = body.variables?.input
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      const building = player?.companies.flatMap((company) => company.buildings).find((candidate) => candidate.id === input?.buildingId)
+
+      if (!building) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building not found', extensions: { code: 'BUILDING_NOT_FOUND' } }] }) })
+      }
+
+      if (!building.pendingConfiguration) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This building does not have a pending configuration plan to cancel.', extensions: { code: 'NO_PENDING_CONFIGURATION' } }] }) })
+      }
+
+      // Cancel by submitting the current active layout - creates reverting removals for pending units
+      const nextRemovals: MockBuildingConfigurationPlanRemoval[] = []
+      for (const pendingUnit of building.pendingConfiguration.units) {
+        if (pendingUnit.isChanged) {
+          const ticksRequired = Math.max(Math.ceil(pendingUnit.ticksRequired * 0.1), 1)
+          nextRemovals.push({
+            id: `cancel-removal-${pendingUnit.gridX}-${pendingUnit.gridY}-${Date.now()}`,
+            gridX: pendingUnit.gridX,
+            gridY: pendingUnit.gridY,
+            startedAtTick: state.gameState.currentTick,
+            appliesAtTick: state.gameState.currentTick + ticksRequired,
+            ticksRequired,
+            isReverting: true,
+          })
+        }
+      }
+      for (const removal of building.pendingConfiguration.removals) {
+        if (!removal.isReverting) {
+          nextRemovals.push({ ...removal })
+        }
+      }
+
+      const planId = building.pendingConfiguration.id
+      building.pendingConfiguration = buildPlanSummary({
+        id: planId,
+        buildingId: building.id,
+        submittedAtUtc: new Date().toISOString(),
+        submittedAtTick: state.gameState.currentTick,
+        appliesAtTick: state.gameState.currentTick,
+        totalTicksRequired: 0,
+        units: [],
+        removals: nextRemovals,
+      }, state.gameState.currentTick)
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { cancelBuildingConfiguration: building.pendingConfiguration } }),
+      })
+    }
+
     if (query.includes('SetBuildingForSale') || query.includes('setBuildingForSale')) {
       const input = body.variables?.input
       const player = state.players.find((p) => p.id === state.currentUserId)

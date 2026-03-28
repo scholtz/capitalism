@@ -856,6 +856,90 @@ public sealed class Mutation
             .FirstAsync(candidate => candidate.Id == plan.Id);
     }
 
+    /// <summary>Cancels a queued building configuration plan, reverting in-progress unit additions using roadmap-aligned rollback timing (10% of the original wait).</summary>
+    [Authorize]
+    public async Task<BuildingConfigurationPlan> CancelBuildingConfiguration(
+        CancelBuildingConfigurationInput input,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var gameState = await db.GameStates.FirstOrDefaultAsync()
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Game state is not initialized.")
+                    .SetCode("GAME_STATE_NOT_FOUND")
+                    .Build());
+
+        await BuildingConfigurationService.ApplyDuePlansAsync(db, gameState.CurrentTick);
+
+        var building = await db.Buildings
+            .Include(candidate => candidate.Company)
+            .Include(candidate => candidate.Units)
+            .Include(candidate => candidate.PendingConfiguration)
+            .ThenInclude(plan => plan!.Units)
+            .Include(candidate => candidate.PendingConfiguration)
+            .ThenInclude(plan => plan!.Removals)
+            .FirstOrDefaultAsync(candidate => candidate.Id == input.BuildingId);
+
+        if (building is null || building.Company.PlayerId != userId)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Building not found or you don't own it.")
+                    .SetCode("BUILDING_NOT_FOUND")
+                    .Build());
+        }
+
+        if (building.PendingConfiguration is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("This building does not have a pending configuration plan to cancel.")
+                    .SetCode("NO_PENDING_CONFIGURATION")
+                    .Build());
+        }
+
+        // Cancel by submitting the current active layout, which causes the service to schedule
+        // rollback of any in-progress unit additions with 10% of the original wait time.
+        var activeUnitInputs = building.Units
+            .Select(unit => new BuildingConfigurationUnitInput
+            {
+                UnitType = unit.UnitType,
+                GridX = unit.GridX,
+                GridY = unit.GridY,
+                LinkUp = unit.LinkUp,
+                LinkDown = unit.LinkDown,
+                LinkLeft = unit.LinkLeft,
+                LinkRight = unit.LinkRight,
+                LinkUpLeft = unit.LinkUpLeft,
+                LinkUpRight = unit.LinkUpRight,
+                LinkDownLeft = unit.LinkDownLeft,
+                LinkDownRight = unit.LinkDownRight,
+                ResourceTypeId = unit.ResourceTypeId,
+                ProductTypeId = unit.ProductTypeId,
+                MinPrice = unit.MinPrice,
+                MaxPrice = unit.MaxPrice,
+                PurchaseSource = unit.PurchaseSource,
+                SaleVisibility = unit.SaleVisibility,
+                Budget = unit.Budget,
+                MediaHouseBuildingId = unit.MediaHouseBuildingId,
+                MinQuality = unit.MinQuality,
+                BrandScope = unit.BrandScope,
+                VendorLockCompanyId = unit.VendorLockCompanyId,
+            })
+            .ToList();
+
+        var plan = await BuildingConfigurationService.StoreConfigurationAsync(db, building, activeUnitInputs, gameState.CurrentTick);
+        await db.SaveChangesAsync();
+
+        return await db.BuildingConfigurationPlans
+            .Include(candidate => candidate.Units)
+            .Include(candidate => candidate.Removals)
+            .FirstAsync(candidate => candidate.Id == plan.Id);
+    }
+
     /// <summary>Marks the player's startup-pack offer as shown when the UI presents it.</summary>
     [Authorize]
     public async Task<StartupPackOffer?> MarkStartupPackOfferShown(

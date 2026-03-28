@@ -62,6 +62,7 @@ type EditableGridUnit = {
   minQuality: number | null
   brandScope: string | null
   vendorLockCompanyId: string | null
+  isReverting?: boolean
 }
 
 const LINK_CHANGE_TICKS = 1
@@ -92,6 +93,8 @@ const exchangeOffersLoading = ref(false)
 const showSaleDialog = ref(false)
 const salePrice = ref<number | null>(null)
 const savingSale = ref(false)
+const cancellingPlan = ref(false)
+const cancelPlanError = ref<string | null>(null)
 const layoutName = ref('')
 const showLayoutDialog = ref(false)
 
@@ -251,6 +254,7 @@ function cloneUnit(unit: GridUnit): EditableGridUnit {
     minQuality: ('minQuality' in unit ? unit.minQuality : null) ?? null,
     brandScope: ('brandScope' in unit ? unit.brandScope : null) ?? null,
     vendorLockCompanyId: ('vendorLockCompanyId' in unit ? unit.vendorLockCompanyId : null) ?? null,
+    isReverting: ('isReverting' in unit ? unit.isReverting : undefined) ?? undefined,
   }
 }
 
@@ -657,6 +661,37 @@ function storeConfiguration() {
     })
     .finally(() => {
       saving.value = false
+    })
+}
+
+function cancelPlan() {
+  if (!building.value || cancellingPlan.value || !pendingConfiguration.value) return
+
+  cancellingPlan.value = true
+  cancelPlanError.value = null
+
+  gqlRequest<{
+    cancelBuildingConfiguration: {
+      id: string
+      totalTicksRequired: number
+    }
+  }>(
+    `mutation CancelBuildingConfiguration($input: CancelBuildingConfigurationInput!) {
+      cancelBuildingConfiguration(input: $input) {
+        id
+        totalTicksRequired
+      }
+    }`,
+    { input: { buildingId: building.value.id } },
+  )
+    .then(() => {
+      return loadBuilding()
+    })
+    .catch((reason: unknown) => {
+      cancelPlanError.value = reason instanceof Error ? reason.message : t('buildingDetail.cancelPlanFailed')
+    })
+    .finally(() => {
+      cancellingPlan.value = false
     })
 }
 
@@ -1505,10 +1540,22 @@ watch(
           <strong>{{ t('buildingDetail.upgradeQueuedTitle') }}</strong>
           <p>{{ t('buildingDetail.upgradeQueuedBody', { ticks: remainingUpgradeTicks }) }}</p>
         </div>
-        <div class="upgrade-pill">
-          {{ t('buildingDetail.upgradeAppliesAt', { tick: pendingConfiguration!.appliesAtTick }) }}
+        <div class="upgrade-banner-actions">
+          <div class="upgrade-pill">
+            {{ t('buildingDetail.upgradeAppliesAt', { tick: pendingConfiguration!.appliesAtTick }) }}
+          </div>
+          <button
+            v-if="!isEditing"
+            class="btn btn-danger btn-sm"
+            :disabled="cancellingPlan"
+            :aria-label="t('buildingDetail.cancelPlanAriaLabel')"
+            @click="cancelPlan"
+          >
+            {{ cancellingPlan ? t('common.loading') : t('buildingDetail.cancelPlan') }}
+          </button>
         </div>
       </div>
+      <div v-if="cancelPlanError" class="error-banner" role="alert">{{ cancelPlanError }}</div>
 
       <div v-if="lockedConfiguredProducts.length > 0" class="pro-access-banner" role="status">
         <strong>{{ t('catalog.proLockedTitle') }}</strong>
@@ -1646,6 +1693,7 @@ watch(
                         occupied: !!getUnitAtFrom(plannedUnits, x, y),
                         selected: selectedCell?.x === x && selectedCell?.y === y,
                         changed: !!getUnitAtFrom(plannedUnits, x, y) && getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) > 0,
+                        reverting: !!getUnitAtFrom(plannedUnits, x, y) && !!getUnitAtFrom(plannedUnits, x, y)!.isReverting,
                       }"
                       :style="getUnitAtFrom(plannedUnits, x, y)
                         ? { borderColor: getUnitColor(getUnitAtFrom(plannedUnits, x, y)!.unitType), background: getUnitColor(getUnitAtFrom(plannedUnits, x, y)!.unitType) + '18' }
@@ -1677,6 +1725,11 @@ watch(
                         <span v-if="getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) > 0" class="cell-pending">
                           {{ t('buildingDetail.unitUnavailableFor', { ticks: getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) }) }}
                         </span>
+                        <span
+                          v-if="getUnitAtFrom(plannedUnits, x, y)!.isReverting"
+                          class="cell-reverting"
+                          :aria-label="t('buildingDetail.revertingAriaLabel')"
+                        >{{ t('buildingDetail.reverting') }}</span>
                       </template>
                       <template v-else>
                         <span class="cell-empty">+</span>
@@ -2384,6 +2437,23 @@ watch(
   background: linear-gradient(135deg, rgba(19, 127, 236, 0.09), rgba(0, 200, 83, 0.08));
 }
 
+.upgrade-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.error-banner {
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  border-radius: var(--radius-lg);
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+  font-size: 0.875rem;
+}
+
 .pro-access-banner {
   margin-bottom: 1.5rem;
   padding: 1rem 1.25rem;
@@ -2504,13 +2574,25 @@ watch(
 }
 
 .cell-level,
-.cell-pending {
+.cell-pending,
+.cell-reverting {
   font-size: 0.625rem;
 }
 
 .cell-pending {
   color: #b45309;
   text-align: center;
+}
+
+.cell-reverting {
+  color: #7c3aed;
+  text-align: center;
+  font-style: italic;
+}
+
+.grid-cell.reverting {
+  border-style: dashed !important;
+  opacity: 0.85;
 }
 
 .cell-empty {

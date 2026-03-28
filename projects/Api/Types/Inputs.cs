@@ -123,6 +123,13 @@ public sealed class StoreBuildingConfigurationInput
     public List<BuildingConfigurationUnitInput> Units { get; set; } = [];
 }
 
+/// <summary>Input for cancelling a queued building configuration plan with rollback timing.</summary>
+public sealed class CancelBuildingConfigurationInput
+{
+    /// <summary>Building whose pending configuration should be cancelled.</summary>
+    public Guid BuildingId { get; set; }
+}
+
 /// <summary>Input for setting a building's for-sale status.</summary>
 public sealed class SetBuildingForSaleInput
 {

@@ -1028,4 +1028,254 @@ test.describe('Building detail upgrades', () => {
 
     await expect(page.getByRole('button', { name: /Premium Chair/ })).toBeEnabled()
   })
+
+  test('shows cancel plan button in upgrade banner and cancels pending plan', async ({ page }) => {
+    const player = makePlayer()
+    const currentTick = 10
+    player.companies.push({
+      id: 'company-cancel',
+      playerId: player.id,
+      name: 'Cancel Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-cancel',
+          companyId: 'company-cancel',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Cancel Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          units: [],
+          pendingConfiguration: {
+            id: 'plan-cancel',
+            buildingId: 'building-cancel',
+            submittedAtUtc: new Date().toISOString(),
+            submittedAtTick: currentTick,
+            appliesAtTick: currentTick + 3,
+            totalTicksRequired: 3,
+            units: [
+              {
+                id: 'pu-cancel-1',
+                buildingId: 'building-cancel',
+                unitType: 'PURCHASE',
+                gridX: 0,
+                gridY: 0,
+                level: 1,
+                linkUp: false,
+                linkDown: false,
+                linkLeft: false,
+                linkRight: false,
+                linkUpLeft: false,
+                linkUpRight: false,
+                linkDownLeft: false,
+                linkDownRight: false,
+                startedAtTick: currentTick,
+                appliesAtTick: currentTick + 3,
+                ticksRequired: 3,
+                isChanged: true,
+                isReverting: false,
+              },
+            ],
+            removals: [],
+          },
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = currentTick
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-cancel')
+
+    // Cancel plan button is visible in upgrade banner
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+    const cancelBtn = page.getByRole('button', { name: 'Cancel Plan' })
+    await expect(cancelBtn).toBeVisible()
+    await expect(cancelBtn).toBeEnabled()
+
+    // Click cancel - should call cancelBuildingConfiguration and reload
+    await cancelBtn.click()
+
+    // After cancel, the plan is in reverting state (1 tick rollback)
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+    // The cancel plan button should still be visible (reverting plan is still pending)
+    await expect(page.getByRole('button', { name: 'Cancel Plan' })).toBeVisible()
+  })
+
+  test('hides cancel plan button when editing', async ({ page }) => {
+    const player = makePlayer()
+    const currentTick = 5
+    player.companies.push({
+      id: 'company-hide-cancel',
+      playerId: player.id,
+      name: 'Hide Cancel Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-hide-cancel',
+          companyId: 'company-hide-cancel',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Hide Cancel Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          units: [],
+          pendingConfiguration: {
+            id: 'plan-hide',
+            buildingId: 'building-hide-cancel',
+            submittedAtUtc: new Date().toISOString(),
+            submittedAtTick: currentTick,
+            appliesAtTick: currentTick + 3,
+            totalTicksRequired: 3,
+            units: [
+              {
+                id: 'pu-hide-1',
+                buildingId: 'building-hide-cancel',
+                unitType: 'MANUFACTURING',
+                gridX: 0,
+                gridY: 0,
+                level: 1,
+                linkUp: false,
+                linkDown: false,
+                linkLeft: false,
+                linkRight: false,
+                linkUpLeft: false,
+                linkUpRight: false,
+                linkDownLeft: false,
+                linkDownRight: false,
+                startedAtTick: currentTick,
+                appliesAtTick: currentTick + 3,
+                ticksRequired: 3,
+                isChanged: true,
+                isReverting: false,
+              },
+            ],
+            removals: [],
+          },
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = currentTick
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-hide-cancel')
+
+    // Cancel button visible before editing
+    await expect(page.getByRole('button', { name: 'Cancel Plan' })).toBeVisible()
+
+    // Enter edit mode - cancel button should be hidden
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    await expect(page.getByRole('button', { name: 'Cancel Plan' })).toHaveCount(0)
+
+    // Leave edit mode - cancel button should reappear
+    await page.getByRole('button', { name: 'Cancel Editing' }).click()
+    await expect(page.getByRole('button', { name: 'Cancel Plan' })).toBeVisible()
+  })
+
+  test('shows reverting label on plan units with isReverting flag', async ({ page }) => {
+    const player = makePlayer()
+    const currentTick = 7
+    player.companies.push({
+      id: 'company-revert',
+      playerId: player.id,
+      name: 'Revert Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-revert',
+          companyId: 'company-revert',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Revert Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          units: [],
+          pendingConfiguration: {
+            id: 'plan-revert',
+            buildingId: 'building-revert',
+            submittedAtUtc: new Date().toISOString(),
+            submittedAtTick: currentTick,
+            appliesAtTick: currentTick + 1,
+            totalTicksRequired: 1,
+            units: [
+              {
+                id: 'pu-revert-1',
+                buildingId: 'building-revert',
+                unitType: 'STORAGE',
+                gridX: 0,
+                gridY: 0,
+                level: 1,
+                linkUp: false,
+                linkDown: false,
+                linkLeft: false,
+                linkRight: false,
+                linkUpLeft: false,
+                linkUpRight: false,
+                linkDownLeft: false,
+                linkDownRight: false,
+                startedAtTick: currentTick,
+                appliesAtTick: currentTick + 1,
+                ticksRequired: 1,
+                isChanged: true,
+                isReverting: true,
+              },
+            ],
+            removals: [],
+          },
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = currentTick
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-revert')
+
+    // Enter edit mode to see the queued upgrade grid
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const queuedSection = getGridSection(page, 'Queued Upgrade')
+    const topLeftCell = getGridCell(queuedSection, 0, 0)
+
+    // The reverting cell should have the Reverting label
+    await expect(topLeftCell).toContainText('Reverting')
+    await expect(topLeftCell).toContainText('Storage')
+  })
 })

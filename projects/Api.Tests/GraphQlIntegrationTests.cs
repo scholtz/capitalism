@@ -1388,6 +1388,239 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                 Assert.Equal(JsonValueKind.Null, building.GetProperty("pendingConfiguration").ValueKind);
             }
 
+    #region CancelBuildingConfiguration
+
+    [Fact]
+    public async Task CancelBuildingConfiguration_PendingAddition_ReturnsRevertingPlanWithFastRollback()
+    {
+        var token = await RegisterAndGetTokenAsync("cancel-mut@test.com", "CancelMut");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "CancelMut Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "CancelMut Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // Queue a unit addition
+        await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        // Cancel the pending plan
+        var cancelResult = await ExecuteGraphQlAsync(
+            """
+            mutation CancelBuildingConfiguration($input: CancelBuildingConfigurationInput!) {
+                cancelBuildingConfiguration(input: $input) {
+                    totalTicksRequired
+                    removals { gridX gridY ticksRequired isReverting }
+                    units { isChanged isReverting }
+                }
+            }
+            """,
+            new { input = new { buildingId } },
+            token);
+
+        if (cancelResult.TryGetProperty("errors", out var cancelErrors))
+        {
+            throw new Exception(cancelErrors[0].GetProperty("message").GetString());
+        }
+
+        var plan = cancelResult.GetProperty("data").GetProperty("cancelBuildingConfiguration");
+        // 10% of 3 ticks = 1 tick rollback
+        Assert.Equal(1, plan.GetProperty("totalTicksRequired").GetInt32());
+        var removal = Assert.Single(plan.GetProperty("removals").EnumerateArray());
+        Assert.Equal(0, removal.GetProperty("gridX").GetInt32());
+        Assert.Equal(0, removal.GetProperty("gridY").GetInt32());
+        Assert.Equal(1, removal.GetProperty("ticksRequired").GetInt32());
+        Assert.True(removal.GetProperty("isReverting").GetBoolean());
+        Assert.Empty(plan.GetProperty("units").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task CancelBuildingConfiguration_NoPendingPlan_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync("cancel-noop@test.com", "CancelNoop");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "CancelNoop Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "NoOp Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var cancelResult = await ExecuteGraphQlAsync(
+            """
+            mutation CancelBuildingConfiguration($input: CancelBuildingConfigurationInput!) {
+                cancelBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new { input = new { buildingId } },
+            token);
+
+        Assert.True(cancelResult.TryGetProperty("errors", out var errors));
+        Assert.Equal("NO_PENDING_CONFIGURATION", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CancelBuildingConfiguration_AfterRollback_BuildingHasNoUnits()
+    {
+        var token = await RegisterAndGetTokenAsync("cancel-apply@test.com", "CancelApply");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "CancelApply Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "CancelApply Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "MANUFACTURING", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation CancelBuildingConfiguration($input: CancelBuildingConfigurationInput!) {
+                cancelBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new { input = new { buildingId } },
+            token);
+
+        // Advance 1 tick so the rollback removal resolves
+        await AdvanceGameTicksAsync(1);
+
+        var companiesResult = await ExecuteGraphQlAsync(
+            """
+            {
+                myCompanies {
+                    buildings {
+                        id
+                        units { id }
+                        pendingConfiguration { id }
+                    }
+                }
+            }
+            """,
+            token: token);
+
+        var building = companiesResult.GetProperty("data").GetProperty("myCompanies")[0].GetProperty("buildings")
+            .EnumerateArray().Single(candidate => candidate.GetProperty("id").GetString() == buildingId);
+
+        Assert.Equal(0, building.GetProperty("units").GetArrayLength());
+        Assert.Equal(JsonValueKind.Null, building.GetProperty("pendingConfiguration").ValueKind);
+    }
+
+    [Fact]
+    public async Task CancelBuildingConfiguration_WrongOwner_ReturnsError()
+    {
+        var token1 = await RegisterAndGetTokenAsync("cancel-owner1@test.com", "Owner1");
+        var token2 = await RegisterAndGetTokenAsync("cancel-owner2@test.com", "Owner2");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Owner1 Corp" } },
+            token1);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Owner1 Factory" } },
+            token1);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token1);
+
+        // Try to cancel with a different user's token
+        var cancelResult = await ExecuteGraphQlAsync(
+            """
+            mutation CancelBuildingConfiguration($input: CancelBuildingConfigurationInput!) {
+                cancelBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new { input = new { buildingId } },
+            token2);
+
+        Assert.True(cancelResult.TryGetProperty("errors", out var errors));
+        Assert.Equal("BUILDING_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    #endregion
+
     #endregion
 
     #region Onboarding
