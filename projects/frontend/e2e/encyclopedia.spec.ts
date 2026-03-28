@@ -233,7 +233,7 @@ test.describe('Resource detail page', () => {
 
     await expect(page.getByRole('heading', { name: 'Used in Products' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Electronic Table' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Electronic Components' })).not.toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Electronic Components' })).toBeHidden()
   })
 
   test('resource detail page shows ingredient quantity and recipe for each product', async ({ page }) => {
