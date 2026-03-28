@@ -555,6 +555,11 @@ function getCancelTicks(baseTicks: number): number {
   return Math.max(Math.ceil(baseTicks * 0.1), 1)
 }
 
+function isUnitReverting(unit: GridUnit | undefined): boolean {
+  if (!unit) return false
+  return 'isReverting' in unit ? !!(unit as BuildingConfigurationPlanUnit | EditableGridUnit).isReverting : false
+}
+
 type UnitComparisonKeys = 'unitType' | 'gridX' | 'gridY' | 'linkUp' | 'linkDown' | 'linkLeft' | 'linkRight' | 'linkUpLeft' | 'linkUpRight' | 'linkDownLeft' | 'linkDownRight' | 'resourceTypeId' | 'productTypeId' | 'minPrice' | 'maxPrice' | 'purchaseSource' | 'saleVisibility' | 'budget' | 'mediaHouseBuildingId' | 'minQuality' | 'brandScope' | 'vendorLockCompanyId'
 
 function areUnitsEquivalent(
@@ -1548,7 +1553,6 @@ watch(
             v-if="!isEditing"
             class="btn btn-danger btn-sm"
             :disabled="cancellingPlan"
-            :aria-label="t('buildingDetail.cancelPlanAriaLabel')"
             @click="cancelPlan"
           >
             {{ cancellingPlan ? t('common.loading') : t('buildingDetail.cancelPlan') }}
@@ -1693,7 +1697,7 @@ watch(
                         occupied: !!getUnitAtFrom(plannedUnits, x, y),
                         selected: selectedCell?.x === x && selectedCell?.y === y,
                         changed: !!getUnitAtFrom(plannedUnits, x, y) && getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) > 0,
-                        reverting: !!getUnitAtFrom(plannedUnits, x, y) && !!getUnitAtFrom(plannedUnits, x, y)!.isReverting,
+                        reverting: isUnitReverting(getUnitAtFrom(plannedUnits, x, y)),
                       }"
                       :style="getUnitAtFrom(plannedUnits, x, y)
                         ? { borderColor: getUnitColor(getUnitAtFrom(plannedUnits, x, y)!.unitType), background: getUnitColor(getUnitAtFrom(plannedUnits, x, y)!.unitType) + '18' }
@@ -1726,7 +1730,7 @@ watch(
                           {{ t('buildingDetail.unitUnavailableFor', { ticks: getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) }) }}
                         </span>
                         <span
-                          v-if="getUnitAtFrom(plannedUnits, x, y)!.isReverting"
+                          v-if="isUnitReverting(getUnitAtFrom(plannedUnits, x, y))"
                           class="cell-reverting"
                           :aria-label="t('buildingDetail.revertingAriaLabel')"
                         >{{ t('buildingDetail.reverting') }}</span>
