@@ -91,7 +91,7 @@ The game is seeded with:
 ### Structure
 - Tests live in `projects/frontend/e2e/`.
 - Shared API mock helpers are in `e2e/helpers/mock-api.ts`.
-- Active test files: `home.spec.ts` (home page + header nav), `onboarding.spec.ts` (auth, onboarding wizard, dashboard, full journey), `building-detail.spec.ts` (queued building upgrades and unit-link behavior).
+- Active test files: `home.spec.ts` (home page + header nav), `onboarding.spec.ts` (auth, onboarding wizard, dashboard, full journey), `building-detail.spec.ts` (queued building upgrades and unit-link behavior), `city-map.spec.ts` (city map rendering, lot selection, purchase flow, dashboard→map navigation).
 - Old events-specific spec files (`auth.spec.ts`, `category.spec.ts`, etc.) contain `test.skip` placeholders.
 
 ### Always use the shared mock helper
@@ -242,7 +242,31 @@ dotnet test ../Api.Tests  # Run integration tests
 - Backend `myPendingActions` query (authenticated) returns `ScheduledActionSummary[]` ordered by `appliesAtTick` asc. Fields: `id`, `actionType`, `buildingId`, `buildingName`, `buildingType`, `submittedAtUtc`, `submittedAtTick`, `appliesAtTick`, `ticksRemaining`, `totalTicksRequired`.
 - When testing `myPendingActions` in E2E, set `state.pendingActions` in the mock-api helper before `page.goto()`.
 
-## Definition of done for WIP PRs
+## City map conventions
+- `CityMapView.vue` lives at route `/city/:id`. It uses the `leaflet` package with OpenStreetMap tiles and `L.divIcon` for color-coded lot markers (green = available, blue = yours, gray = other owner).
+- `BuildingLot` entity (`projects/Api/Data/Entities/BuildingLot.cs`) stores purchasable locations with `Latitude`, `Longitude`, `District`, `Price`, and comma-separated `SuitableTypes`. 14 lots are seeded for Bratislava in `AppDbInitializer.cs`.
+- GraphQL: `cityLots(cityId)` is a **public query** (no auth required) so unauthenticated visitors can browse. `lot(id)` is also public. `purchaseLot` mutation requires auth and uses optimistic concurrency via `ConcurrencyToken`.
+- A building placed via `purchaseLot` inherits the lot's `Latitude`/`Longitude` exactly.
+- All city map UI strings use the `cityMap.*` i18n namespace, with district names under `cityMap.districts.*`. All three locales (en/sk/de) must have these keys.
+- `makeDefaultBuildingLots()` factory in `e2e/helpers/mock-api.ts` provides 4 mock lots (2 factory, 1 commercial, 1 residential) for E2E tests. Use `state.buildingLots` to customize lot ownership in tests.
+- When adding new city map E2E tests, always include `city-map.spec.ts` in the run; it is the canonical spec for the `/city/:id` route.
+- Bratislava coordinates (for validation): lat 47.8–48.4°N, lon 16.8–17.5°E.
 - A PR titled `[WIP]` must not be left in that state. Drive every PR to a production-ready, fully-tested state before reporting complete.
 - Always confirm CI would pass by running the full local validation pipeline (backend Release build + tests, frontend lint + unit tests + build, full Playwright suite) before reporting completion.
 - Remove `[WIP]` from the PR title when all acceptance criteria are met, all tests pass, and the code has been reviewed.
+
+## PR description accuracy — preventing feature-claim / diff-only mismatch
+
+**Before writing a PR description, always run `git diff FETCH_HEAD..HEAD --stat` (or `git diff origin/main..HEAD --stat` if that ref is available) to confirm what files are actually changed by this branch.** Write the PR description based only on what the diff shows, not on what is present in the repository as a whole (files that were already on main before the branch was cut must NOT be listed as "delivered" by this PR).
+
+Root-cause of a past quality failure (March 2026, PR #24):
+- The branch was cut from a main commit that already contained the full city-map implementation (CityMapView.vue, BuildingLot.cs, purchaseLot mutation, etc.) delivered in a previous session.
+- The agent wrote a PR description claiming full feature delivery without verifying the actual diff vs main.
+- The real diff only contained test additions; the PR description was misleading.
+
+To prevent this from repeating:
+1. Run `git diff FETCH_HEAD..HEAD --stat` at the start of every session to see what this branch actually contributes vs main.
+2. If the diff is smaller than expected (e.g., implementation files are absent), investigate whether they were already merged to main in a previous PR.
+3. Only claim features in the PR description that appear as **additions** in the diff.
+4. If the implementation is already on main and the branch only adds tests or follow-up work, say so explicitly in the PR description.
+5. Never let the presence of files in the working tree mislead you — files can already be on main.

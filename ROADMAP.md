@@ -1,6 +1,6 @@
 # Capitalism Roadmap
 
-Create a fun game on style of the capitalism II game. 
+Create a fun game on style of the capitalism II game. This game is economic simulation where players can experience price elasticity, resource scarcity, resource oversupply, different competition types, marketing, product quality, and other base economic factors.
 
 It will use real world map. The game will start in single city and later other cities will be added.
 
@@ -71,6 +71,24 @@ Marketing unit - allows to set budget for the linked products. The money is paid
 
 Public sales unit - allows to sell products directly to general public. The sales capacity can be increased by upgrading the unit. The player can set the minimum price for the products sold in this unit. The sales can be limited to specific company or open to all players. Unit holds max storage capacity of the resource.
 
+Product quality - Allows to select a product which will increment the company's internal knowledge how to produce the product. When doing reserarch into the products the the manufacturing quality will be improved in time.
+
+Marketing brand quality - Select what type of marketing to research - The global company branding, industry type of branding or product specific branding. When industry type is selected player also select which industry products brand he wants to improve. When product specific is selected player selects the specific product. This does not increase the brand quality directly, but increases the efficiency on how marketing unit is increasing the brand efficiency.
+
+## Unit display and design
+
+When unit has configured resource, make sure to display this resource in the grid at the unit. Also show visually the capacity how much much resource is stored in the unit.
+
+Show the most important details in the grid - for example the price to sell the product.
+
+Links between units are directional. Make sure to show the arrow between the units if they are active.
+
+When configuring the building and buying the new unit make sure to show user the price how much the unit costs and substract the costs when the building configuration is applied at the backend.
+
+## Ledger
+
+Accounting ledger allows to see the income statement, cash flow statment and balance sheet. Items in the statement can be opened and exact details on each item is visible. For example when the long-term tangible assets from balance sheet is opened, the list of all buildings is visible. When income is clicked the each sales item from each unit is visible and person can access the building. When costs are clicked every costs such as the property purchase, units upgrades, purchasing unit purchases, marketing costs or others are clickable to get to the source. 
+
 ## Timing
 
 Each change - new building, change of the building unit plan, or upgrade of the unit takes specific number of ticks to be executed.
@@ -88,6 +106,7 @@ Tick base system handles mainly
 - Handling upgrade of the units and changes in the unit links
 - New building availability 
 - Ranking recalculation
+- Taxes
 
 Frontend integration to tick resolution must be seamless. User should see next tick calculation visible on the website and should see estimate in real time when he is waiting for some action for example the wait for the building.
 
@@ -119,17 +138,29 @@ At specific tick rounds the taxes are calculated.
 
 All combination of products are visible in the manufacturing encyclopedy which serves as in game documentation.
 
+When user clicks on the resource he can see at the same screen without scrolling all manufacturable resources associated with it.
+
+Make resource detail a separate view from the encyclopedia entry. 
+
+Encyclopedy entry is the list of all resources with the search field. 
+
+The resource detail consists of resource description, picture, list of all resources it is used in input or output and the manufacturing details.
+
+Every resource must have unique picture.
+
 ## Chat
 
 In game chat will be possible if user links his account with the discord.
 
 ## Monetization
 
-Startup pack will be available after user finish with the onboarding. There will be time limited time offer.
+Startup pack will be available after user finish with the onboarding. There will be time limited time offer. Startup pack will cost $20 in real money.
 
 Startup pack will include - 3 months of pro subscription and in game currency.  
 
 In pro subscription the players will have more products to manufacture and sell.
+
+Pro subscription will cost $10/month.
 
 # Technical implementation
 
