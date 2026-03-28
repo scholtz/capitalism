@@ -1134,6 +1134,14 @@ function formatUnitQuantity(value: number): string {
   return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
+function getPurchaseUnitResourceTypeId(unit: GridUnit | undefined): string | null {
+  return unit && 'resourceTypeId' in unit ? unit.resourceTypeId : null
+}
+
+function getPurchaseUnitSource(unit: GridUnit | undefined): string | null {
+  return unit && 'purchaseSource' in unit ? unit.purchaseSource : null
+}
+
 function updateSelectedUnitConfig(field: string, value: unknown) {
   if (!selectedCell.value || !isEditing.value) return
   const unit = getDraftUnitAt(selectedCell.value.x, selectedCell.value.y)
@@ -1169,8 +1177,8 @@ async function loadUnitInventorySummaries() {
 
 async function loadGlobalExchangeOffers() {
   const unit = selectedPurchaseUnit.value
-  const resourceTypeId = ('resourceTypeId' in (unit ?? {}) ? unit?.resourceTypeId : null) ?? null
-  const purchaseSource = ('purchaseSource' in (unit ?? {}) ? unit?.purchaseSource : null) ?? null
+  const resourceTypeId = getPurchaseUnitResourceTypeId(unit)
+  const purchaseSource = getPurchaseUnitSource(unit)
 
   if (!building.value?.cityId || !resourceTypeId || !['EXCHANGE', 'OPTIMAL'].includes(purchaseSource ?? '')) {
     exchangeOffers.value = []
@@ -1396,8 +1404,8 @@ watch(
     building.value?.cityId ?? null,
     selectedCell.value?.x ?? null,
     selectedCell.value?.y ?? null,
-    selectedPurchaseUnit.value && 'resourceTypeId' in selectedPurchaseUnit.value ? selectedPurchaseUnit.value.resourceTypeId : null,
-    selectedPurchaseUnit.value && 'purchaseSource' in selectedPurchaseUnit.value ? selectedPurchaseUnit.value.purchaseSource : null,
+    getPurchaseUnitResourceTypeId(selectedPurchaseUnit.value),
+    getPurchaseUnitSource(selectedPurchaseUnit.value),
     isEditing.value,
   ],
   () => {
