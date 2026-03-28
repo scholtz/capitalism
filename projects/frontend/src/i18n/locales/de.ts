@@ -469,4 +469,18 @@ export default {
       'Energy Zone': 'Energiezone',
     },
   },
+  tickClock: {
+    sectionTitle: 'Weltzeit',
+    nextTick: 'Nächster Tick in {time}',
+    tickSoon: 'Nächster Tick wird bald verarbeitet…',
+    currentTick: 'Tick #{tick}',
+  },
+  pendingActions: {
+    title: 'Geplante Aktionen',
+    empty: 'Keine geplanten Aktionen. Ihre Gebäude laufen mit dem aktuellen Layout.',
+    buildingUpgrade: 'Layout-Upgrade',
+    ticksRemaining: 'Noch {ticks} Ticks',
+    appliesAtTick: 'Aktiviert sich bei Tick {tick}',
+    viewBuilding: 'Gebäude anzeigen',
+  },
 }

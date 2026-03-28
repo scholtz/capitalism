@@ -1457,6 +1457,40 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('myPendingActions')) {
+      if (!state.currentUserId) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }),
+        })
+      }
+      applyDueBuildingUpgrades(state)
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      const currentTick = state.gameState.currentTick
+      const pendingActions = (player?.companies ?? []).flatMap((company) =>
+        company.buildings
+          .filter((building) => building.pendingConfiguration !== null && building.pendingConfiguration.appliesAtTick > currentTick)
+          .map((building) => ({
+            id: building.pendingConfiguration!.id,
+            actionType: 'BUILDING_UPGRADE',
+            buildingId: building.id,
+            buildingName: building.name,
+            buildingType: building.type,
+            submittedAtUtc: building.pendingConfiguration!.submittedAtUtc,
+            submittedAtTick: building.pendingConfiguration!.submittedAtTick,
+            appliesAtTick: building.pendingConfiguration!.appliesAtTick,
+            ticksRemaining: building.pendingConfiguration!.appliesAtTick - currentTick,
+            totalTicksRequired: building.pendingConfiguration!.totalTicksRequired,
+          })),
+      ).sort((a, b) => a.appliesAtTick - b.appliesAtTick)
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { myPendingActions: pendingActions } }),
+      })
+    }
+
     if (query.includes('cityLots')) {
       const cityId = body.variables?.cityId
       const cityLots = state.buildingLots.filter((lot) => lot.cityId === cityId)

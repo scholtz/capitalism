@@ -470,4 +470,18 @@ export default {
       'Energy Zone': 'Energy Zone',
     },
   },
+  tickClock: {
+    sectionTitle: 'World Clock',
+    nextTick: 'Next tick in {time}',
+    tickSoon: 'Next tick processing soon…',
+    currentTick: 'Tick #{tick}',
+  },
+  pendingActions: {
+    title: 'Scheduled Actions',
+    empty: 'No scheduled actions. Your buildings are running on the live layout.',
+    buildingUpgrade: 'Layout upgrade',
+    ticksRemaining: '{ticks} ticks remaining',
+    appliesAtTick: 'Applies at tick {tick}',
+    viewBuilding: 'View building',
+  },
 }

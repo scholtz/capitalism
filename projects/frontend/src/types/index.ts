@@ -373,3 +373,17 @@ export interface PurchaseLotResult {
   building: Building
   company: Company
 }
+
+/** Matches backend ScheduledActionSummary — a pending player action waiting for tick resolution. */
+export interface ScheduledActionSummary {
+  id: string
+  actionType: string
+  buildingId: string
+  buildingName: string
+  buildingType: string
+  submittedAtUtc: string
+  submittedAtTick: number
+  appliesAtTick: number
+  ticksRemaining: number
+  totalTicksRequired: number
+}

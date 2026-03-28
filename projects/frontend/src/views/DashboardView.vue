@@ -5,7 +5,9 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
 import { trackStartupPackEvent } from '@/lib/startupPackAnalytics'
-import type { Company, StartupPackOffer } from '@/types'
+import { useTickCountdown } from '@/composables/useTickCountdown'
+import PendingActionsTimeline from '@/components/dashboard/PendingActionsTimeline.vue'
+import type { Company, GameState, ScheduledActionSummary, StartupPackOffer } from '@/types'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -17,6 +19,11 @@ const error = ref<string | null>(null)
 const offerLoading = ref(false)
 const offerError = ref<string | null>(null)
 const offerMessage = ref<string | null>(null)
+const gameState = ref<GameState | null>(null)
+const pendingActions = ref<ScheduledActionSummary[]>([])
+const pendingActionsLoading = ref(false)
+
+const { tickCountdown, startTickCountdown, stopTickCountdown } = useTickCountdown(gameState)
 
 const activeStartupPackOffer = computed(() =>
   auth.startupPackOffer && ['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(auth.startupPackOffer.status)
@@ -64,24 +71,51 @@ onMounted(async () => {
       router.push('/onboarding')
       return
     }
-    const data = await gqlRequest<{ myCompanies: Company[] }>(
-      `{ myCompanies {
-        id name cash foundedAtUtc
-        buildings { id name type level cityId units { id unitType gridX gridY level } }
-      } }`,
-    )
-    companies.value = data.myCompanies
+    const [companiesData, gameStateData] = await Promise.all([
+      gqlRequest<{ myCompanies: Company[] }>(
+        `{ myCompanies {
+          id name cash foundedAtUtc
+          buildings { id name type level cityId units { id unitType gridX gridY level } }
+        } }`,
+      ),
+      gqlRequest<{ gameState: GameState }>(
+        '{ gameState { currentTick lastTickAtUtc tickIntervalSeconds taxCycleTicks taxRate } }',
+      ),
+    ])
+    companies.value = companiesData.myCompanies
+    gameState.value = gameStateData.gameState
+    startTickCountdown()
+
     if (auth.startupPackOffer?.status === 'ELIGIBLE') {
       await markStartupPackOfferShown()
     } else if (auth.startupPackOffer) {
       trackStartupPackEvent('view', { context: 'dashboard', status: auth.startupPackOffer.status })
     }
+
+    await loadPendingActions()
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to load dashboard'
   } finally {
     loading.value = false
   }
 })
+
+async function loadPendingActions() {
+  pendingActionsLoading.value = true
+  try {
+    const data = await gqlRequest<{ myPendingActions: ScheduledActionSummary[] }>(
+      `{ myPendingActions {
+        id actionType buildingId buildingName buildingType
+        submittedAtUtc submittedAtTick appliesAtTick ticksRemaining totalTicksRequired
+      } }`,
+    )
+    pendingActions.value = data.myPendingActions
+  } catch {
+    // best-effort — pending actions list is non-critical
+  } finally {
+    pendingActionsLoading.value = false
+  }
+}
 
 async function markStartupPackOfferShown() {
   if (!auth.startupPackOffer || auth.startupPackOffer.status !== 'ELIGIBLE') {
@@ -252,6 +286,10 @@ function formatTimeRemaining(expiresAtUtc: string): string {
           <span class="player-email">{{ auth.player.email }}</span>
         </div>
       </div>
+      <div v-if="gameState" class="tick-clock-widget" :aria-label="t('tickClock.sectionTitle')">
+        <span class="tick-clock-label">{{ t('tickClock.currentTick', { tick: gameState.currentTick }) }}</span>
+        <span v-if="tickCountdown" class="tick-clock-countdown" role="timer">{{ tickCountdown }}</span>
+      </div>
     </div>
 
     <div v-if="loading" class="loading">{{ t('common.loading') }}</div>
@@ -358,6 +396,12 @@ function formatTimeRemaining(expiresAtUtc: string): string {
         </div>
       </section>
 
+      <PendingActionsTimeline
+        :actions="pendingActions"
+        :loading="pendingActionsLoading"
+        :current-tick="gameState?.currentTick ?? null"
+      />
+
       <div v-if="companies.length === 0" class="empty-state">
         <div class="empty-icon">🏗️</div>
         <p>{{ t('dashboard.noCompanies') }}</p>
@@ -451,6 +495,33 @@ function formatTimeRemaining(expiresAtUtc: string): string {
 .player-email {
   color: var(--color-text-secondary);
   font-size: 0.8125rem;
+}
+
+.tick-clock-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  padding: 0.625rem 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--color-border);
+  min-width: 9rem;
+  text-align: right;
+}
+
+.tick-clock-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+.tick-clock-countdown {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .empty-state {

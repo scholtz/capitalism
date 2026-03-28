@@ -13,6 +13,7 @@ import {
 } from '@/lib/catalogPresentation'
 import OnboardingLotSelector from '@/components/onboarding/OnboardingLotSelector.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useTickCountdown } from '@/composables/useTickCountdown'
 import type {
   BuildingLot,
   City,
@@ -153,8 +154,8 @@ const companyName = ref('')
 const completionResult = ref<OnboardingResult | null>(null)
 const startupPackOffer = ref<StartupPackOffer | null>(null)
 const gameState = ref<GameState | null>(null)
-const tickCountdown = ref<string | null>(null)
-let tickCountdownInterval: number | null = null
+
+const { tickCountdown, startTickCountdown, stopTickCountdown } = useTickCountdown(gameState)
 
 const selectedCity = computed(() => cities.value.find((city) => city.id === selectedCityId.value) ?? null)
 const selectedProduct = computed(() => products.value.find((product) => product.id === selectedProductId.value) ?? null)
@@ -827,42 +828,6 @@ async function loadGameState() {
   } catch {
     // ignore — tick countdown is best-effort
   }
-}
-
-function startTickCountdown() {
-  stopTickCountdown()
-  updateTickCountdown()
-  tickCountdownInterval = setInterval(updateTickCountdown, 1000)
-}
-
-function stopTickCountdown() {
-  if (tickCountdownInterval !== null) {
-    clearInterval(tickCountdownInterval)
-    tickCountdownInterval = null
-  }
-}
-
-function updateTickCountdown() {
-  if (!gameState.value) {
-    tickCountdown.value = null
-    return
-  }
-
-  const lastTickMs = new Date(gameState.value.lastTickAtUtc).getTime()
-  const nextTickMs = lastTickMs + gameState.value.tickIntervalSeconds * 1000
-  const remainingMs = nextTickMs - Date.now()
-
-  if (remainingMs <= 0) {
-    tickCountdown.value = t('onboarding.configureStepTickSoon')
-    return
-  }
-
-  const totalSeconds = Math.ceil(remainingMs / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  const paddedSeconds = String(seconds).padStart(2, '0')
-  const timeStr = minutes > 0 ? minutes + 'm ' + paddedSeconds + 's' : seconds + 's'
-  tickCountdown.value = t('onboarding.configureStepTickNext', { time: timeStr })
 }
 
 onUnmounted(() => {

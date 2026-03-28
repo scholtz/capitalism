@@ -469,4 +469,18 @@ export default {
       'Energy Zone': 'Energetická zóna',
     },
   },
+  tickClock: {
+    sectionTitle: 'Svetové hodiny',
+    nextTick: 'Ďalší tick za {time}',
+    tickSoon: 'Ďalší tick sa čoskoro spracuje…',
+    currentTick: 'Tick #{tick}',
+  },
+  pendingActions: {
+    title: 'Naplánované akcie',
+    empty: 'Žiadne naplánované akcie. Vaše budovy sú v prevádzke s aktuálnym rozložením.',
+    buildingUpgrade: 'Upgrade rozloženia',
+    ticksRemaining: 'Zostáva {ticks} tickov',
+    appliesAtTick: 'Aktivuje sa na ticku {tick}',
+    viewBuilding: 'Zobraziť budovu',
+  },
 }

@@ -254,6 +254,45 @@ public sealed class Query
             .Include(lot => lot.Building)
             .FirstOrDefaultAsync(lot => lot.Id == id);
     }
+
+    /// <summary>
+    /// Returns all pending scheduled actions for the authenticated player.
+    /// Currently covers building configuration upgrades (layout changes) that have not yet applied.
+    /// </summary>
+    [Authorize]
+    public async Task<List<ScheduledActionSummary>> GetMyPendingActions(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var gameState = await db.GameStates.FirstOrDefaultAsync();
+        var currentTick = gameState?.CurrentTick ?? 0L;
+
+        var plans = await db.BuildingConfigurationPlans
+            .Include(plan => plan.Building)
+            .ThenInclude(building => building.Company)
+            .Where(plan => plan.Building.Company.PlayerId == userId
+                           && plan.AppliesAtTick > currentTick)
+            .OrderBy(plan => plan.AppliesAtTick)
+            .ToListAsync();
+
+        return plans
+            .Select(plan => new ScheduledActionSummary
+            {
+                Id = plan.Id,
+                ActionType = ScheduledActionType.BuildingUpgrade,
+                BuildingId = plan.BuildingId,
+                BuildingName = plan.Building.Name,
+                BuildingType = plan.Building.Type,
+                SubmittedAtUtc = plan.SubmittedAtUtc,
+                SubmittedAtTick = plan.SubmittedAtTick,
+                AppliesAtTick = plan.AppliesAtTick,
+                TicksRemaining = plan.AppliesAtTick - currentTick,
+                TotalTicksRequired = plan.TotalTicksRequired,
+            })
+            .ToList();
+    }
 }
 
 /// <summary>Payload for player ranking.</summary>
@@ -295,4 +334,45 @@ public sealed class StarterIndustriesPayload
 {
     /// <summary>Available starter industry values.</summary>
     public List<string> Industries { get; set; } = [];
+}
+
+/// <summary>Type values for scheduled actions visible to the player.</summary>
+public static class ScheduledActionType
+{
+    /// <summary>A queued building configuration upgrade (layout/unit change).</summary>
+    public const string BuildingUpgrade = "BUILDING_UPGRADE";
+}
+
+/// <summary>Summary of a single pending scheduled action for the player.</summary>
+public sealed class ScheduledActionSummary
+{
+    /// <summary>Unique identifier (matches the underlying plan or entity).</summary>
+    public Guid Id { get; set; }
+
+    /// <summary>Category of the scheduled action. See <see cref="ScheduledActionType"/>.</summary>
+    public string ActionType { get; set; } = string.Empty;
+
+    /// <summary>Building the action belongs to.</summary>
+    public Guid BuildingId { get; set; }
+
+    /// <summary>Human-readable building name for display in the UI.</summary>
+    public string BuildingName { get; set; } = string.Empty;
+
+    /// <summary>Building type string (e.g. FACTORY, SALES_SHOP).</summary>
+    public string BuildingType { get; set; } = string.Empty;
+
+    /// <summary>UTC timestamp when the action was submitted.</summary>
+    public DateTime SubmittedAtUtc { get; set; }
+
+    /// <summary>Game tick when the action was submitted.</summary>
+    public long SubmittedAtTick { get; set; }
+
+    /// <summary>Game tick when the action is scheduled to apply.</summary>
+    public long AppliesAtTick { get; set; }
+
+    /// <summary>Number of ticks remaining until the action applies.</summary>
+    public long TicksRemaining { get; set; }
+
+    /// <summary>Total ticks this action required from submission to application.</summary>
+    public int TotalTicksRequired { get; set; }
 }

@@ -2430,3 +2430,359 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
     #endregion
 }
+
+/// <summary>
+/// Integration tests for the tick visibility and scheduled action surfaces.
+/// These cover gameState timing data and the myPendingActions query.
+/// </summary>
+public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicationFactory>
+{
+    private readonly HttpClient _client;
+    private readonly ApiWebApplicationFactory _factory;
+
+    public TickAndScheduledActionsTests(ApiWebApplicationFactory factory)
+    {
+        _factory = factory;
+        _client = factory.CreateClient();
+    }
+
+    private async Task<JsonElement> ExecuteGraphQlAsync(string query, object? variables = null, string? token = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/graphql");
+        request.Content = new System.Net.Http.StringContent(
+            System.Text.Json.JsonSerializer.Serialize(new { query, variables }),
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        if (token is not null)
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        }
+
+        var response = await _client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+        return System.Text.Json.JsonSerializer.Deserialize<JsonElement>(body);
+    }
+
+    private async Task<string> RegisterAndGetTokenAsync(string email, string displayName = "Tester", string password = "TestPass123!")
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation Register($input: RegisterInput!) {
+              register(input: $input) { token }
+            }
+            """,
+            new { input = new { email, displayName, password } });
+        return result.GetProperty("data").GetProperty("register").GetProperty("token").GetString()!;
+    }
+
+    private async Task ResetGameStateAsync()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var gameState = await db.GameStates.FindAsync(1);
+        if (gameState is not null)
+        {
+            gameState.CurrentTick = 0;
+            gameState.LastTickAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+    }
+
+    #region GameState tick data
+
+    [Fact]
+    public async Task GameState_ReturnsLastTickAtUtc()
+    {
+        await ResetGameStateAsync();
+        var result = await ExecuteGraphQlAsync(
+            "{ gameState { currentTick tickIntervalSeconds lastTickAtUtc taxRate } }");
+
+        var state = result.GetProperty("data").GetProperty("gameState");
+        Assert.True(DateTime.TryParse(state.GetProperty("lastTickAtUtc").GetString(), out _),
+            "lastTickAtUtc should be a parseable timestamp");
+        Assert.Equal(0, state.GetProperty("currentTick").GetInt64());
+        Assert.True(state.GetProperty("tickIntervalSeconds").GetInt32() > 0,
+            "tickIntervalSeconds must be positive");
+    }
+
+    [Fact]
+    public async Task GameState_LastTickAtUtc_IsRecentAfterReset()
+    {
+        await ResetGameStateAsync();
+        var before = DateTime.UtcNow.AddSeconds(-2);
+        var result = await ExecuteGraphQlAsync(
+            "{ gameState { lastTickAtUtc } }");
+
+        var lastTickAtUtc = DateTime.Parse(
+            result.GetProperty("data").GetProperty("gameState").GetProperty("lastTickAtUtc").GetString()!,
+            null, System.Globalization.DateTimeStyles.RoundtripKind);
+
+        Assert.True(lastTickAtUtc >= before, "lastTickAtUtc should be close to the current time after a reset");
+    }
+
+    #endregion
+
+    #region myPendingActions
+
+    [Fact]
+    public async Task MyPendingActions_Unauthenticated_ReturnsError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            "{ myPendingActions { id actionType buildingId ticksRemaining } }");
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task MyPendingActions_NoPlans_ReturnsEmpty()
+    {
+        var token = await RegisterAndGetTokenAsync($"pending-empty-{Guid.NewGuid()}@test.com", "PendingEmpty");
+        var result = await ExecuteGraphQlAsync(
+            "{ myPendingActions { id actionType buildingId ticksRemaining totalTicksRequired } }",
+            token: token);
+
+        var actions = result.GetProperty("data").GetProperty("myPendingActions");
+        Assert.Equal(0, actions.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task MyPendingActions_AfterOnboarding_NoPendingPlans()
+    {
+        var token = await RegisterAndGetTokenAsync($"pending-onboarded-{Guid.NewGuid()}@test.com", "PendingOnboarded");
+
+        // Complete onboarding using the staged flow
+        await ResetGameStateAsync();
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString()!;
+
+        var factoryLotId = await CreateTestLotForTickTestAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Pending Corp", factoryLotId } },
+            token);
+
+        var productsResult = await ExecuteGraphQlAsync("query { productTypes(industry: \"FURNITURE\") { id slug } }");
+        var productId = productsResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .Single(p => p.GetProperty("slug").GetString() == "wooden-chair")
+            .GetProperty("id")
+            .GetString()!;
+
+        var shopLotId = await CreateTestLotForTickTestAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 100_000m);
+        await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { productTypeId = productId, shopLotId } },
+            token);
+
+        var result = await ExecuteGraphQlAsync(
+            "{ myPendingActions { id actionType buildingId ticksRemaining } }",
+            token: token);
+
+        // No configuration plans should exist after a fresh onboarding
+        Assert.Equal(0, result.GetProperty("data").GetProperty("myPendingActions").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task MyPendingActions_ReturnsPendingBuildingUpgrade()
+    {
+        var token = await RegisterAndGetTokenAsync($"pending-upgrade-{Guid.NewGuid()}@test.com", "PendingUpgrade");
+
+        await ResetGameStateAsync();
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString()!;
+
+        var factoryLotId = await CreateTestLotForTickTestAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                company { id }
+                factory { id }
+              }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Upgrade Corp", factoryLotId } },
+            token);
+
+        var factoryId = startResult.GetProperty("data").GetProperty("startOnboardingCompany")
+            .GetProperty("factory").GetProperty("id").GetString()!;
+
+        // Queue a building configuration upgrade on the factory
+        var resourcesResult = await ExecuteGraphQlAsync("{ resourceTypes { id slug } }");
+        var woodId = resourcesResult.GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray()
+            .First(r => r.GetProperty("slug").GetString() == "wood")
+            .GetProperty("id")
+            .GetString()!;
+
+        var storageUnit = new
+        {
+            unitType = "STORAGE",
+            gridX = 0,
+            gridY = 0,
+            linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+            linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false,
+            resourceTypeId = woodId,
+        };
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id appliesAtTick totalTicksRequired }
+            }
+            """,
+            new { input = new { buildingId = factoryId, units = new[] { storageUnit } } },
+            token);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              myPendingActions {
+                id
+                actionType
+                buildingId
+                buildingName
+                buildingType
+                submittedAtUtc
+                submittedAtTick
+                appliesAtTick
+                ticksRemaining
+                totalTicksRequired
+              }
+            }
+            """,
+            token: token);
+
+        var actions = result.GetProperty("data").GetProperty("myPendingActions");
+        Assert.Equal(1, actions.GetArrayLength());
+
+        var action = actions[0];
+        Assert.Equal("BUILDING_UPGRADE", action.GetProperty("actionType").GetString());
+        Assert.Equal(factoryId, action.GetProperty("buildingId").GetString());
+        Assert.True(action.GetProperty("ticksRemaining").GetInt64() > 0,
+            "ticksRemaining must be positive for a newly queued upgrade");
+        Assert.True(action.GetProperty("totalTicksRequired").GetInt32() > 0,
+            "totalTicksRequired must reflect the upgrade cost");
+        Assert.True(DateTime.TryParse(action.GetProperty("submittedAtUtc").GetString(), out _));
+    }
+
+    [Fact]
+    public async Task MyPendingActions_OrderedByAppliesAtTickAscending()
+    {
+        var token = await RegisterAndGetTokenAsync($"pending-order-{Guid.NewGuid()}@test.com", "PendingOrder");
+
+        await ResetGameStateAsync();
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString()!;
+
+        var resourcesResult = await ExecuteGraphQlAsync("{ resourceTypes { id slug } }");
+        var woodId = resourcesResult.GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray()
+            .First(r => r.GetProperty("slug").GetString() == "wood")
+            .GetProperty("id")
+            .GetString()!;
+
+        // Create two buildings with pending upgrades
+        var lotId1 = await CreateTestLotForTickTestAsync(cityId, "FACTORY,MINE", "Industrial Zone", 50_000m);
+        var lotId2 = await CreateTestLotForTickTestAsync(cityId, "FACTORY,MINE", "Industrial Zone", 50_000m);
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Order Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        var b1 = await PurchaseLotAndGetBuildingIdAsync(token, companyId, lotId1, "FACTORY", "Order Factory 1");
+        var b2 = await PurchaseLotAndGetBuildingIdAsync(token, companyId, lotId2, "FACTORY", "Order Factory 2");
+
+        var storageUnit = new
+        {
+            unitType = "STORAGE",
+            gridX = 0, gridY = 0,
+            linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+            linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false,
+            resourceTypeId = woodId,
+        };
+
+        await ExecuteGraphQlAsync(
+            "mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) { storeBuildingConfiguration(input: $input) { id } }",
+            new { input = new { buildingId = b1, units = new[] { storageUnit } } },
+            token);
+        await ExecuteGraphQlAsync(
+            "mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) { storeBuildingConfiguration(input: $input) { id } }",
+            new { input = new { buildingId = b2, units = new[] { storageUnit } } },
+            token);
+
+        var result = await ExecuteGraphQlAsync(
+            "{ myPendingActions { appliesAtTick } }",
+            token: token);
+
+        var appliesAtTicks = result.GetProperty("data").GetProperty("myPendingActions")
+            .EnumerateArray()
+            .Select(a => a.GetProperty("appliesAtTick").GetInt64())
+            .ToList();
+
+        for (int i = 1; i < appliesAtTicks.Count; i++)
+        {
+            Assert.True(appliesAtTicks[i] >= appliesAtTicks[i - 1],
+                "myPendingActions should be ordered by appliesAtTick ascending");
+        }
+    }
+
+    private async Task<string> CreateTestLotForTickTestAsync(
+        string cityId,
+        string suitableTypes,
+        string district,
+        decimal price = 75_000m)
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync(candidate => candidate.Id == Guid.Parse(cityId));
+        var lot = new BuildingLot
+        {
+            Id = Guid.NewGuid(),
+            CityId = city.Id,
+            Name = $"Tick Test Lot {Guid.NewGuid():N}"[..22],
+            Description = "Tick test lot.",
+            District = district,
+            Latitude = city.Latitude + 0.01,
+            Longitude = city.Longitude + 0.01,
+            Price = price,
+            SuitableTypes = suitableTypes,
+            ConcurrencyToken = Guid.NewGuid()
+        };
+        db.BuildingLots.Add(lot);
+        await db.SaveChangesAsync();
+        return lot.Id.ToString();
+    }
+
+    private async Task<string> PurchaseLotAndGetBuildingIdAsync(
+        string token,
+        string companyId,
+        string lotId,
+        string buildingType,
+        string buildingName)
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { building { id } }
+            }
+            """,
+            new { input = new { companyId, lotId, buildingType, buildingName } },
+            token);
+        return result.GetProperty("data").GetProperty("purchaseLot").GetProperty("building").GetProperty("id").GetString()!;
+    }
+
+    #endregion
+}
