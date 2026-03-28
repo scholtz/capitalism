@@ -147,6 +147,29 @@ export interface BuildingUnit {
   vendorLockCompanyId: string | null
 }
 
+export interface BuildingUnitInventorySummary {
+  buildingUnitId: string
+  quantity: number
+  capacity: number
+  fillPercent: number
+  averageQuality: number | null
+}
+
+export interface GlobalExchangeOffer {
+  cityId: string
+  cityName: string
+  resourceTypeId: string
+  resourceName: string
+  resourceSlug: string
+  unitSymbol: string
+  localAbundance: number
+  exchangePricePerUnit: number
+  estimatedQuality: number
+  transitCostPerUnit: number
+  deliveredPricePerUnit: number
+  distanceKm: number
+}
+
 /** Matches backend ApplicationUser entity */
 export interface User {
   id: string

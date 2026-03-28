@@ -2326,6 +2326,54 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(1, chargedCount);
     }
 
+    [Fact]
+    public async Task GlobalExchangeOffers_ReturnTransitAndDeliveredPricing()
+    {
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var resourceTypesResult = await ExecuteGraphQlAsync("{ resourceTypes { id slug } }");
+        var woodId = resourceTypesResult.GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray()
+            .First(resource => resource.GetProperty("slug").GetString() == "wood")
+            .GetProperty("id")
+            .GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                cityName
+                resourceSlug
+                exchangePricePerUnit
+                transitCostPerUnit
+                deliveredPricePerUnit
+                estimatedQuality
+                distanceKm
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId, resourceTypeId = woodId });
+
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers");
+        Assert.Equal(3, offers.GetArrayLength());
+
+        var firstOffer = offers[0];
+        Assert.Equal("Bratislava", firstOffer.GetProperty("cityName").GetString());
+        Assert.Equal("wood", firstOffer.GetProperty("resourceSlug").GetString());
+        Assert.Equal(0m, firstOffer.GetProperty("transitCostPerUnit").GetDecimal());
+        Assert.Equal(
+            firstOffer.GetProperty("exchangePricePerUnit").GetDecimal(),
+            firstOffer.GetProperty("deliveredPricePerUnit").GetDecimal());
+
+        var remoteOffers = offers.EnumerateArray().Skip(1).ToList();
+        Assert.All(remoteOffers, offer =>
+        {
+            Assert.True(offer.GetProperty("transitCostPerUnit").GetDecimal() > 0m);
+            Assert.True(offer.GetProperty("deliveredPricePerUnit").GetDecimal() >= offer.GetProperty("exchangePricePerUnit").GetDecimal());
+            Assert.True(offer.GetProperty("distanceKm").GetDecimal() > 0m);
+            Assert.InRange(offer.GetProperty("estimatedQuality").GetDecimal(), 0.35m, 0.95m);
+        });
+    }
+
     #endregion
 
     #region First-sale milestone
@@ -2552,6 +2600,60 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         Assert.True(result.TryGetProperty("errors", out var errors));
         Assert.NotEmpty(errors.EnumerateArray().ToList());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_BrandQualityScopeRequiresProductType()
+    {
+        var token = await RegisterAndGetTokenAsync($"rd-config-{Guid.NewGuid()}@test.com", "ResearchTester");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Research Holding");
+        var cityId = await GetCityIdByNameAsync("Bratislava");
+        var lotId = await CreateTestLotAsync(cityId, "RESEARCH_DEVELOPMENT,COMMERCIAL", "Research District", 90_000m, "Research Lot");
+        var purchaseResult = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { building { id } }
+            }
+            """,
+            new { input = new { companyId, lotId, buildingType = "RESEARCH_DEVELOPMENT", buildingName = "Lab One" } },
+            token);
+        var buildingId = purchaseResult.GetProperty("data").GetProperty("purchaseLot").GetProperty("building").GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new
+                        {
+                            unitType = "BRAND_QUALITY",
+                            gridX = 0,
+                            gridY = 0,
+                            linkUp = false,
+                            linkDown = false,
+                            linkLeft = false,
+                            linkRight = false,
+                            linkUpLeft = false,
+                            linkUpRight = false,
+                            linkDownLeft = false,
+                            linkDownRight = false,
+                            brandScope = "PRODUCT"
+                        }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("BRAND_QUALITY_PRODUCT_REQUIRED", errors[0].GetProperty("extensions").GetProperty("code").GetString());
     }
 
     #endregion

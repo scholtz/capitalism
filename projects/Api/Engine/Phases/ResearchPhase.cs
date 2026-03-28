@@ -61,6 +61,14 @@ public sealed class ResearchPhase : ITickPhase
 
         // Determine scope from unit configuration.
         var scope = unit.BrandScope ?? BrandScope.Company;
+        var selectedIndustry = unit.ProductTypeId.HasValue && context.ProductTypesById.TryGetValue(unit.ProductTypeId.Value, out var productType)
+            ? productType.Industry
+            : null;
+
+        if (scope is BrandScope.Product or BrandScope.Category && !unit.ProductTypeId.HasValue)
+        {
+            return;
+        }
 
         foreach (var brand in brands)
         {
@@ -69,8 +77,7 @@ public sealed class ResearchPhase : ITickPhase
                 BrandScope.Product => unit.ProductTypeId.HasValue && brand.ProductTypeId == unit.ProductTypeId,
                 BrandScope.Category => !string.IsNullOrEmpty(brand.IndustryCategory)
                                        && string.Equals(brand.IndustryCategory,
-                                           unit.ProductTypeId.HasValue && context.ProductTypesById.TryGetValue(unit.ProductTypeId.Value, out var pt)
-                                               ? pt.Industry : null,
+                                           selectedIndustry,
                                            StringComparison.OrdinalIgnoreCase),
                 _ => true // COMPANY scope applies to all brands
             };

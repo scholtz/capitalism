@@ -1,5 +1,6 @@
 using Api.Data;
 using Api.Data.Entities;
+using Api.Engine;
 using Api.Security;
 using Api.Utilities;
 using HotChocolate.Authorization;
@@ -256,6 +257,131 @@ public sealed class Query
     }
 
     /// <summary>
+    /// Returns city-level global exchange offers for raw materials, including
+    /// quality and estimated transit cost into the destination city.
+    /// </summary>
+    public async Task<List<GlobalExchangeOffer>> GetGlobalExchangeOffers(
+        Guid destinationCityId,
+        Guid? resourceTypeId,
+        [Service] AppDbContext db)
+    {
+        var destinationCity = await db.Cities.FirstOrDefaultAsync(city => city.Id == destinationCityId);
+        if (destinationCity is null)
+        {
+            return [];
+        }
+
+        var cities = await db.Cities
+            .Include(city => city.Resources)
+            .OrderBy(city => city.Name)
+            .ToListAsync();
+
+        var resourceQuery = db.ResourceTypes.AsQueryable();
+        if (resourceTypeId.HasValue)
+        {
+            resourceQuery = resourceQuery.Where(resource => resource.Id == resourceTypeId.Value);
+        }
+
+        var resources = await resourceQuery
+            .OrderBy(resource => resource.Name)
+            .ToListAsync();
+
+        return cities
+            .SelectMany(city => resources.Select(resource =>
+            {
+                var abundance = city.Resources
+                    .FirstOrDefault(entry => entry.ResourceTypeId == resource.Id)?.Abundance
+                    ?? GlobalExchangeCalculator.DefaultMissingAbundance;
+                var exchangePrice = GlobalExchangeCalculator.ComputeExchangePrice(city, resource, abundance);
+                var transitCost = GlobalExchangeCalculator.ComputeTransitCostPerUnit(city, destinationCity, resource);
+
+                return new GlobalExchangeOffer
+                {
+                    CityId = city.Id,
+                    CityName = city.Name,
+                    ResourceTypeId = resource.Id,
+                    ResourceName = resource.Name,
+                    ResourceSlug = resource.Slug,
+                    UnitSymbol = resource.UnitSymbol,
+                    LocalAbundance = decimal.Round(abundance, 4, MidpointRounding.AwayFromZero),
+                    ExchangePricePerUnit = exchangePrice,
+                    EstimatedQuality = GlobalExchangeCalculator.ComputeExchangeQuality(abundance),
+                    TransitCostPerUnit = transitCost,
+                    DeliveredPricePerUnit = exchangePrice + transitCost,
+                    DistanceKm = decimal.Round(
+                        (decimal)GlobalExchangeCalculator.ComputeDistanceKm(
+                            city.Latitude,
+                            city.Longitude,
+                            destinationCity.Latitude,
+                            destinationCity.Longitude),
+                        1,
+                        MidpointRounding.AwayFromZero)
+                };
+            }))
+            .OrderBy(offer => offer.DeliveredPricePerUnit)
+            .ThenByDescending(offer => offer.EstimatedQuality)
+            .ThenBy(offer => offer.CityName)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Returns per-unit inventory fill information for a building that belongs
+    /// to the authenticated player.
+    /// </summary>
+    [Authorize]
+    public async Task<List<BuildingUnitInventorySummary>> GetBuildingUnitInventorySummaries(
+        Guid buildingId,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var building = await db.Buildings
+            .Include(candidate => candidate.Company)
+            .Include(candidate => candidate.Units)
+            .FirstOrDefaultAsync(candidate => candidate.Id == buildingId);
+
+        if (building is null || building.Company.PlayerId != userId)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Building not found or you don't own it.")
+                    .SetCode("BUILDING_NOT_FOUND")
+                    .Build());
+        }
+
+        var inventories = await db.Inventories
+            .Where(entry => entry.BuildingId == buildingId && entry.BuildingUnitId.HasValue)
+            .ToListAsync();
+
+        return building.Units
+            .Select(unit =>
+            {
+                var capacity = GetUnitInventoryCapacity(unit);
+                var unitInventories = inventories
+                    .Where(entry => entry.BuildingUnitId == unit.Id)
+                    .ToList();
+                var quantity = unitInventories.Sum(entry => entry.Quantity);
+                var averageQuality = quantity > 0m
+                    ? decimal.Round(unitInventories.Sum(entry => entry.Quantity * entry.Quality) / quantity, 4, MidpointRounding.AwayFromZero)
+                    : (decimal?)null;
+
+                return new BuildingUnitInventorySummary
+                {
+                    BuildingUnitId = unit.Id,
+                    Quantity = decimal.Round(quantity, 4, MidpointRounding.AwayFromZero),
+                    Capacity = capacity,
+                    FillPercent = capacity > 0m
+                        ? decimal.Round(Math.Clamp(quantity / capacity, 0m, 1m), 4, MidpointRounding.AwayFromZero)
+                        : 0m,
+                    AverageQuality = averageQuality
+                };
+            })
+            .Where(summary => summary.Capacity > 0m || summary.Quantity > 0m)
+            .ToList();
+    }
+
+    /// <summary>
     /// Returns all pending scheduled actions for the authenticated player.
     /// Currently covers building configuration upgrades (layout changes) that have not yet applied.
     /// </summary>
@@ -292,6 +418,18 @@ public sealed class Query
                 TotalTicksRequired = plan.TotalTicksRequired,
             })
             .ToList();
+    }
+
+    private static decimal GetUnitInventoryCapacity(BuildingUnit unit)
+    {
+        return unit.UnitType switch
+        {
+            UnitType.Mining or UnitType.Storage or UnitType.B2BSales
+                or UnitType.Purchase or UnitType.Manufacturing
+                or UnitType.Branding or UnitType.PublicSales
+                => GameConstants.StorageCapacity(unit.Level),
+            _ => 0m
+        };
     }
 }
 
@@ -375,4 +513,31 @@ public sealed class ScheduledActionSummary
 
     /// <summary>Total ticks this action required from submission to application.</summary>
     public int TotalTicksRequired { get; set; }
+}
+
+/// <summary>Projected supply offer at a city's global exchange.</summary>
+public sealed class GlobalExchangeOffer
+{
+    public Guid CityId { get; set; }
+    public string CityName { get; set; } = string.Empty;
+    public Guid ResourceTypeId { get; set; }
+    public string ResourceName { get; set; } = string.Empty;
+    public string ResourceSlug { get; set; } = string.Empty;
+    public string UnitSymbol { get; set; } = string.Empty;
+    public decimal LocalAbundance { get; set; }
+    public decimal ExchangePricePerUnit { get; set; }
+    public decimal EstimatedQuality { get; set; }
+    public decimal TransitCostPerUnit { get; set; }
+    public decimal DeliveredPricePerUnit { get; set; }
+    public decimal DistanceKm { get; set; }
+}
+
+/// <summary>Inventory fill information for a single building unit.</summary>
+public sealed class BuildingUnitInventorySummary
+{
+    public Guid BuildingUnitId { get; set; }
+    public decimal Quantity { get; set; }
+    public decimal Capacity { get; set; }
+    public decimal FillPercent { get; set; }
+    public decimal? AverageQuality { get; set; }
 }

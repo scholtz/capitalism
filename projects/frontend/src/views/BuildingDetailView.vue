@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AdvancedItemSelector from '@/components/buildings/AdvancedItemSelector.vue'
@@ -12,7 +12,16 @@ import {
 } from '@/lib/catalogPresentation'
 import { gqlRequest } from '@/lib/graphql'
 import { useAuthStore } from '@/stores/auth'
-import type { Building, BuildingConfigurationPlanRemoval, BuildingConfigurationPlanUnit, BuildingUnit, ResourceType, ProductType } from '@/types'
+import type {
+  Building,
+  BuildingConfigurationPlanRemoval,
+  BuildingConfigurationPlanUnit,
+  BuildingUnit,
+  BuildingUnitInventorySummary,
+  GlobalExchangeOffer,
+  ProductType,
+  ResourceType,
+} from '@/types'
 
 type GridUnit = BuildingUnit | BuildingConfigurationPlanUnit | EditableGridUnit
 type ItemSelection = { kind: 'resource' | 'product'; id: string } | null
@@ -77,6 +86,9 @@ const draftUnits = ref<EditableGridUnit[]>([])
 const editBaselineUnits = ref<EditableGridUnit[]>([])
 const resourceTypes = ref<ResourceType[]>([])
 const productTypes = ref<ProductType[]>([])
+const unitInventorySummaries = ref<BuildingUnitInventorySummary[]>([])
+const exchangeOffers = ref<GlobalExchangeOffer[]>([])
+const exchangeOffersLoading = ref(false)
 const showSaleDialog = ref(false)
 const salePrice = ref<number | null>(null)
 const savingSale = ref(false)
@@ -178,6 +190,16 @@ const draftTotalTicks = computed(() => {
   }, 0)
 })
 const hasDraftChanges = computed(() => !areUnitCollectionsEqual(draftUnits.value, editBaselineUnits.value))
+const selectedDisplayUnit = computed<GridUnit | undefined>(() => {
+  if (!selectedCell.value) return undefined
+
+  if (isEditing.value) {
+    return getUnitAtFrom(plannedUnits.value, selectedCell.value.x, selectedCell.value.y)
+  }
+
+  return getUnitAtFrom(activeUnits.value, selectedCell.value.x, selectedCell.value.y)
+})
+const selectedPurchaseUnit = computed(() => selectedDisplayUnit.value?.unitType === 'PURCHASE' ? selectedDisplayUnit.value : undefined)
 
 function formatBuildingType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
@@ -671,6 +693,8 @@ const configWarnings = computed<ValidationWarning[]>(() => {
   const brandingUnits = units.filter((u) => u.unitType === 'BRANDING')
   const miningUnits = units.filter((u) => u.unitType === 'MINING')
   const storageUnits = units.filter((u) => u.unitType === 'STORAGE')
+  const productQualityUnits = units.filter((u) => u.unitType === 'PRODUCT_QUALITY')
+  const brandQualityUnits = units.filter((u) => u.unitType === 'BRAND_QUALITY')
 
   // Check unit-specific configuration
   for (const unit of purchaseUnits) {
@@ -699,6 +723,21 @@ const configWarnings = computed<ValidationWarning[]>(() => {
   for (const unit of brandingUnits) {
     if (!unit.brandScope) {
       warnings.push({ key: 'buildingDetail.warnings.brandingNoScope', params: { x: unit.gridX, y: unit.gridY } })
+    }
+  }
+  for (const unit of productQualityUnits) {
+    if (!unit.productTypeId) {
+      warnings.push({ key: 'buildingDetail.warnings.productQualityNoProduct', params: { x: unit.gridX, y: unit.gridY } })
+    }
+  }
+  for (const unit of brandQualityUnits) {
+    if (!unit.brandScope) {
+      warnings.push({ key: 'buildingDetail.warnings.brandQualityNoScope', params: { x: unit.gridX, y: unit.gridY } })
+      continue
+    }
+
+    if (['PRODUCT', 'CATEGORY'].includes(unit.brandScope) && !unit.productTypeId) {
+      warnings.push({ key: 'buildingDetail.warnings.brandQualityNoProduct', params: { x: unit.gridX, y: unit.gridY } })
     }
   }
 
@@ -1025,12 +1064,150 @@ function getProductOptionLabel(product: ProductType) {
   return product.isProOnly ? `${product.name} · ${t('catalog.proBadge')}` : product.name
 }
 
+function getBrandScopeLabel(scope: string | null): string {
+  if (!scope) return t('buildingDetail.config.none')
+
+  switch (scope) {
+    case 'PRODUCT':
+      return t('buildingDetail.config.scopeProduct')
+    case 'CATEGORY':
+      return t('buildingDetail.config.scopeCategory')
+    case 'COMPANY':
+      return t('buildingDetail.config.scopeCompany')
+    default:
+      return scope
+  }
+}
+
+function formatUnitMetric(label: string, value: string): string {
+  return `${label}: ${value}`
+}
+
+function getUnitConfiguredItemLabel(unit: GridUnit | undefined): string | null {
+  if (!unit) return null
+
+  if ('productTypeId' in unit && unit.productTypeId) {
+    return getProductName(unit.productTypeId)
+  }
+
+  if ('resourceTypeId' in unit && unit.resourceTypeId) {
+    return getResourceName(unit.resourceTypeId)
+  }
+
+  return null
+}
+
+function getUnitPrimaryMetric(unit: GridUnit | undefined): string | null {
+  if (!unit) return null
+
+  if ('minPrice' in unit && unit.minPrice != null) {
+    return formatUnitMetric(t('buildingDetail.gridMetrics.minPrice'), `$${unit.minPrice}`)
+  }
+
+  if ('maxPrice' in unit && unit.maxPrice != null) {
+    return formatUnitMetric(t('buildingDetail.gridMetrics.maxPrice'), `$${unit.maxPrice}`)
+  }
+
+  if ('budget' in unit && unit.budget != null) {
+    return formatUnitMetric(t('buildingDetail.gridMetrics.budget'), `$${unit.budget}`)
+  }
+
+  if ('brandScope' in unit && unit.brandScope) {
+    return formatUnitMetric(t('buildingDetail.gridMetrics.scope'), getBrandScopeLabel(unit.brandScope))
+  }
+
+  return null
+}
+
+function getUnitInventorySummary(unit: GridUnit | undefined): BuildingUnitInventorySummary | undefined {
+  if (!unit) return undefined
+  return unitInventorySummaries.value.find((summary) => summary.buildingUnitId === unit.id)
+}
+
+function formatPercent(value: number | null | undefined): string {
+  if (value == null) return '—'
+  return `${Math.round(value * 100)}%`
+}
+
+function formatUnitQuantity(value: number): string {
+  if (Number.isInteger(value)) return `${value}`
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
+
 function updateSelectedUnitConfig(field: string, value: unknown) {
   if (!selectedCell.value || !isEditing.value) return
   const unit = getDraftUnitAt(selectedCell.value.x, selectedCell.value.y)
   if (!unit) return
   const sanitized = typeof value === 'number' && isNaN(value) ? null : value
   ;(unit as Record<string, unknown>)[field] = sanitized
+}
+
+async function loadUnitInventorySummaries() {
+  if (!auth.token) {
+    unitInventorySummaries.value = []
+    return
+  }
+
+  try {
+    const data = await gqlRequest<{ buildingUnitInventorySummaries: BuildingUnitInventorySummary[] }>(
+      `query BuildingUnitInventorySummaries($buildingId: UUID!) {
+        buildingUnitInventorySummaries(buildingId: $buildingId) {
+          buildingUnitId
+          quantity
+          capacity
+          fillPercent
+          averageQuality
+        }
+      }`,
+      { buildingId: buildingId.value },
+    )
+    unitInventorySummaries.value = data.buildingUnitInventorySummaries
+  } catch {
+    unitInventorySummaries.value = []
+  }
+}
+
+async function loadGlobalExchangeOffers() {
+  const unit = selectedPurchaseUnit.value
+  const resourceTypeId = ('resourceTypeId' in (unit ?? {}) ? unit?.resourceTypeId : null) ?? null
+  const purchaseSource = ('purchaseSource' in (unit ?? {}) ? unit?.purchaseSource : null) ?? null
+
+  if (!building.value?.cityId || !resourceTypeId || !['EXCHANGE', 'OPTIMAL'].includes(purchaseSource ?? '')) {
+    exchangeOffers.value = []
+    exchangeOffersLoading.value = false
+    return
+  }
+
+  exchangeOffersLoading.value = true
+  try {
+    const data = await gqlRequest<{ globalExchangeOffers: GlobalExchangeOffer[] }>(
+      `query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+        globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+          cityId
+          cityName
+          resourceTypeId
+          resourceName
+          resourceSlug
+          unitSymbol
+          localAbundance
+          exchangePricePerUnit
+          estimatedQuality
+          transitCostPerUnit
+          deliveredPricePerUnit
+          distanceKm
+        }
+      }`,
+      {
+        destinationCityId: building.value.cityId,
+        resourceTypeId,
+      },
+    )
+    exchangeOffers.value = data.globalExchangeOffers
+  } catch {
+    exchangeOffers.value = []
+  } finally {
+    exchangeOffersLoading.value = false
+  }
 }
 
 async function loadBuilding() {
@@ -1196,6 +1373,8 @@ async function loadBuilding() {
     isEditing.value = false
     selectedCell.value = null
     showUnitPicker.value = false
+    await loadUnitInventorySummaries()
+    await loadGlobalExchangeOffers()
   } catch (reason: unknown) {
     error.value = reason instanceof Error ? reason.message : t('buildingDetail.loadFailed')
   } finally {
@@ -1211,6 +1390,20 @@ onMounted(async () => {
 
   await loadBuilding()
 })
+
+watch(
+  () => [
+    building.value?.cityId ?? null,
+    selectedCell.value?.x ?? null,
+    selectedCell.value?.y ?? null,
+    selectedPurchaseUnit.value && 'resourceTypeId' in selectedPurchaseUnit.value ? selectedPurchaseUnit.value.resourceTypeId : null,
+    selectedPurchaseUnit.value && 'purchaseSource' in selectedPurchaseUnit.value ? selectedPurchaseUnit.value.purchaseSource : null,
+    isEditing.value,
+  ],
+  () => {
+    void loadGlobalExchangeOffers()
+  },
+)
 </script>
 
 <template>
@@ -1347,7 +1540,26 @@ onMounted(async () => {
                     >
                       <template v-if="getUnitAtFrom(activeUnits, x, y)">
                         <span class="cell-type">{{ t(`buildingDetail.unitTypes.${getUnitAtFrom(activeUnits, x, y)!.unitType}`) }}</span>
+                        <span v-if="getUnitConfiguredItemLabel(getUnitAtFrom(activeUnits, x, y))" class="cell-item">
+                          {{ getUnitConfiguredItemLabel(getUnitAtFrom(activeUnits, x, y)) }}
+                        </span>
+                        <span v-if="getUnitPrimaryMetric(getUnitAtFrom(activeUnits, x, y))" class="cell-metric">
+                          {{ getUnitPrimaryMetric(getUnitAtFrom(activeUnits, x, y)) }}
+                        </span>
                         <span class="cell-level">Lv.{{ getUnitAtFrom(activeUnits, x, y)!.level }}</span>
+                        <div
+                          v-if="getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))?.capacity"
+                          class="cell-capacity"
+                          :aria-label="t('buildingDetail.capacityMeterLabel', {
+                            quantity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.quantity),
+                            capacity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.capacity),
+                          })"
+                        >
+                          <span
+                            class="cell-capacity-fill"
+                            :style="{ width: `${Math.round((getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.fillPercent ?? 0) * 100)}%` }"
+                          ></span>
+                        </div>
                       </template>
                       <template v-else>
                         <span class="cell-empty">+</span>
@@ -1434,7 +1646,26 @@ onMounted(async () => {
                     >
                       <template v-if="getUnitAtFrom(plannedUnits, x, y)">
                         <span class="cell-type">{{ t(`buildingDetail.unitTypes.${getUnitAtFrom(plannedUnits, x, y)!.unitType}`) }}</span>
+                        <span v-if="getUnitConfiguredItemLabel(getUnitAtFrom(plannedUnits, x, y))" class="cell-item">
+                          {{ getUnitConfiguredItemLabel(getUnitAtFrom(plannedUnits, x, y)) }}
+                        </span>
+                        <span v-if="getUnitPrimaryMetric(getUnitAtFrom(plannedUnits, x, y))" class="cell-metric">
+                          {{ getUnitPrimaryMetric(getUnitAtFrom(plannedUnits, x, y)) }}
+                        </span>
                         <span class="cell-level">Lv.{{ getUnitAtFrom(plannedUnits, x, y)!.level }}</span>
+                        <div
+                          v-if="getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))?.capacity"
+                          class="cell-capacity"
+                          :aria-label="t('buildingDetail.capacityMeterLabel', {
+                            quantity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.quantity),
+                            capacity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.capacity),
+                          })"
+                        >
+                          <span
+                            class="cell-capacity-fill"
+                            :style="{ width: `${Math.round((getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.fillPercent ?? 0) * 100)}%` }"
+                          ></span>
+                        </div>
                         <span v-if="getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) > 0" class="cell-pending">
                           {{ t('buildingDetail.unitUnavailableFor', { ticks: getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) }) }}
                         </span>
@@ -1660,6 +1891,56 @@ onMounted(async () => {
                   </div>
                 </template>
 
+                <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'PRODUCT_QUALITY'">
+                  <div class="config-field">
+                    <label class="config-label">{{ t('buildingDetail.config.researchProduct') }}</label>
+                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''" @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)">
+                      <option value="">{{ t('buildingDetail.config.none') }}</option>
+                      <option
+                        v-for="pt in productTypes"
+                        :key="pt.id"
+                        :value="pt.id"
+                        :disabled="isProductLocked(pt)"
+                      >
+                        {{ getProductOptionLabel(pt) }}
+                      </option>
+                    </select>
+                  </div>
+                  <p class="config-help">{{ t('buildingDetail.config.researchProductHelp') }}</p>
+                  <p class="config-help">{{ t('buildingDetail.proAccessHint') }}</p>
+                </template>
+
+                <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'BRAND_QUALITY'">
+                  <div class="config-field">
+                    <label class="config-label">{{ t('buildingDetail.config.brandScope') }}</label>
+                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.brandScope ?? ''" @change="updateSelectedUnitConfig('brandScope', ($event.target as HTMLSelectElement).value || null)">
+                      <option value="">{{ t('buildingDetail.config.none') }}</option>
+                      <option value="PRODUCT">{{ t('buildingDetail.config.scopeProduct') }}</option>
+                      <option value="CATEGORY">{{ t('buildingDetail.config.scopeCategory') }}</option>
+                      <option value="COMPANY">{{ t('buildingDetail.config.scopeCompany') }}</option>
+                    </select>
+                  </div>
+                  <div v-if="['PRODUCT', 'CATEGORY'].includes(getDraftUnitAt(selectedCell.x, selectedCell.y)!.brandScope ?? '')" class="config-field">
+                    <label class="config-label">{{ t('buildingDetail.config.researchAnchorProduct') }}</label>
+                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''" @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)">
+                      <option value="">{{ t('buildingDetail.config.none') }}</option>
+                      <option
+                        v-for="pt in productTypes"
+                        :key="pt.id"
+                        :value="pt.id"
+                        :disabled="isProductLocked(pt)"
+                      >
+                        {{ getProductOptionLabel(pt) }}
+                      </option>
+                    </select>
+                  </div>
+                  <p class="config-help">{{ t('buildingDetail.config.researchBrandHelp') }}</p>
+                  <p class="config-help" v-if="['PRODUCT', 'CATEGORY'].includes(getDraftUnitAt(selectedCell.x, selectedCell.y)!.brandScope ?? '')">
+                    {{ t('buildingDetail.config.researchAnchorProductHelp') }}
+                  </p>
+                  <p class="config-help">{{ t('buildingDetail.proAccessHint') }}</p>
+                </template>
+
                 <!-- Storage unit config (read-only info) -->
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'STORAGE'">
                   <div class="config-field">
@@ -1702,6 +1983,64 @@ onMounted(async () => {
                   <span class="stat" v-if="(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).resourceTypeId">{{ t('buildingDetail.config.resourceType') }}: {{ getResourceName((getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).resourceTypeId) }}</span>
                   <span class="stat" v-if="(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).productTypeId">{{ t('buildingDetail.config.productType') }}: {{ getProductName((getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).productTypeId) }}</span>
                 </template>
+                <template v-if="getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!.unitType === 'PRODUCT_QUALITY'">
+                  <span class="stat" v-if="(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).productTypeId">
+                    {{ t('buildingDetail.config.researchProduct') }}: {{ getProductName((getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).productTypeId) }}
+                  </span>
+                </template>
+                <template v-if="getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!.unitType === 'BRAND_QUALITY'">
+                  <span class="stat" v-if="(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).brandScope">
+                    {{ t('buildingDetail.config.brandScope') }}: {{ getBrandScopeLabel((getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).brandScope) }}
+                  </span>
+                  <span class="stat" v-if="(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).productTypeId">
+                    {{ t('buildingDetail.config.researchAnchorProduct') }}: {{ getProductName((getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).productTypeId) }}
+                  </span>
+                </template>
+              </div>
+
+              <div v-if="getUnitInventorySummary(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y))" class="unit-insight-card">
+                <h5>{{ t('buildingDetail.inventory.title') }}</h5>
+                <div class="unit-stats">
+                  <span class="stat">
+                    {{
+                      t('buildingDetail.inventory.quantity', {
+                        quantity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y))!.quantity),
+                        capacity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y))!.capacity),
+                      })
+                    }}
+                  </span>
+                  <span class="stat" v-if="getUnitInventorySummary(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y))!.averageQuality != null">
+                    {{ t('buildingDetail.inventory.averageQuality') }}: {{ formatPercent(getUnitInventorySummary(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y))!.averageQuality) }}
+                  </span>
+                </div>
+                <div class="detail-capacity">
+                  <span
+                    class="detail-capacity-fill"
+                    :style="{ width: `${Math.round(getUnitInventorySummary(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y))!.fillPercent * 100)}%` }"
+                  ></span>
+                </div>
+              </div>
+
+              <div
+                v-if="selectedPurchaseUnit && 'resourceTypeId' in selectedPurchaseUnit && selectedPurchaseUnit.resourceTypeId && ['EXCHANGE', 'OPTIMAL'].includes(selectedPurchaseUnit.purchaseSource ?? '')"
+                class="unit-insight-card"
+              >
+                <h5>{{ t('buildingDetail.exchange.title') }}</h5>
+                <p class="config-help">{{ t('buildingDetail.exchange.subtitle') }}</p>
+                <p class="config-help" v-if="exchangeOffersLoading">{{ t('common.loading') }}</p>
+                <ul v-else class="exchange-offers-list">
+                  <li v-for="offer in exchangeOffers" :key="`${offer.cityId}-${offer.resourceTypeId}`" class="exchange-offer-item">
+                    <div class="exchange-offer-header">
+                      <strong>{{ offer.cityName }}</strong>
+                      <span>{{ t('buildingDetail.exchange.quality', { quality: formatPercent(offer.estimatedQuality) }) }}</span>
+                    </div>
+                    <div class="exchange-offer-metrics">
+                      <span>{{ t('buildingDetail.exchange.exchangePrice', { price: offer.exchangePricePerUnit, unit: offer.unitSymbol }) }}</span>
+                      <span>{{ t('buildingDetail.exchange.transit', { price: offer.transitCostPerUnit, distance: offer.distanceKm }) }}</span>
+                      <span>{{ t('buildingDetail.exchange.deliveredPrice', { price: offer.deliveredPricePerUnit, unit: offer.unitSymbol }) }}</span>
+                    </div>
+                  </li>
+                </ul>
               </div>
 
               <div class="unit-actions" v-if="isEditing">
@@ -1778,8 +2117,51 @@ onMounted(async () => {
                   {{ t('buildingDetail.config.budget') }}: ${{ (getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).budget }}
                 </span>
                 <span class="stat" v-if="(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).brandScope">
-                  {{ t('buildingDetail.config.brandScope') }}: {{ (getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).brandScope }}
+                  {{ t('buildingDetail.config.brandScope') }}: {{ getBrandScopeLabel((getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).brandScope) }}
                 </span>
+              </div>
+              <div v-if="getUnitInventorySummary(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))" class="unit-insight-card">
+                <h5>{{ t('buildingDetail.inventory.title') }}</h5>
+                <div class="unit-stats">
+                  <span class="stat">
+                    {{
+                      t('buildingDetail.inventory.quantity', {
+                        quantity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.quantity),
+                        capacity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.capacity),
+                      })
+                    }}
+                  </span>
+                  <span class="stat" v-if="getUnitInventorySummary(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.averageQuality != null">
+                    {{ t('buildingDetail.inventory.averageQuality') }}: {{ formatPercent(getUnitInventorySummary(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.averageQuality) }}
+                  </span>
+                </div>
+                <div class="detail-capacity">
+                  <span
+                    class="detail-capacity-fill"
+                    :style="{ width: `${Math.round(getUnitInventorySummary(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.fillPercent * 100)}%` }"
+                  ></span>
+                </div>
+              </div>
+              <div
+                v-if="selectedPurchaseUnit && 'resourceTypeId' in selectedPurchaseUnit && selectedPurchaseUnit.resourceTypeId && ['EXCHANGE', 'OPTIMAL'].includes(selectedPurchaseUnit.purchaseSource ?? '')"
+                class="unit-insight-card"
+              >
+                <h5>{{ t('buildingDetail.exchange.title') }}</h5>
+                <p class="config-help">{{ t('buildingDetail.exchange.subtitle') }}</p>
+                <p class="config-help" v-if="exchangeOffersLoading">{{ t('common.loading') }}</p>
+                <ul v-else class="exchange-offers-list">
+                  <li v-for="offer in exchangeOffers" :key="`${offer.cityId}-${offer.resourceTypeId}`" class="exchange-offer-item">
+                    <div class="exchange-offer-header">
+                      <strong>{{ offer.cityName }}</strong>
+                      <span>{{ t('buildingDetail.exchange.quality', { quality: formatPercent(offer.estimatedQuality) }) }}</span>
+                    </div>
+                    <div class="exchange-offer-metrics">
+                      <span>{{ t('buildingDetail.exchange.exchangePrice', { price: offer.exchangePricePerUnit, unit: offer.unitSymbol }) }}</span>
+                      <span>{{ t('buildingDetail.exchange.transit', { price: offer.transitCostPerUnit, distance: offer.distanceKm }) }}</span>
+                      <span>{{ t('buildingDetail.exchange.deliveredPrice', { price: offer.deliveredPricePerUnit, unit: offer.unitSymbol }) }}</span>
+                    </div>
+                  </li>
+                </ul>
               </div>
             </div>
           </div>
@@ -2096,6 +2478,23 @@ onMounted(async () => {
   line-height: 1.2;
 }
 
+.cell-item,
+.cell-metric {
+  font-size: 0.5625rem;
+  text-align: center;
+  line-height: 1.2;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.cell-item {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
 .cell-level,
 .cell-pending {
   font-size: 0.625rem;
@@ -2109,6 +2508,21 @@ onMounted(async () => {
 .cell-empty {
   font-size: 1.35rem;
   opacity: 0.45;
+}
+
+.cell-capacity {
+  width: 100%;
+  height: 0.3rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-border) 75%, transparent);
+}
+
+.cell-capacity-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--color-primary), #38bdf8);
 }
 
 .link-toggle {
@@ -2506,6 +2920,63 @@ onMounted(async () => {
   flex-direction: column;
   gap: 0.35rem;
   margin-top: 0.5rem;
+}
+
+.unit-insight-card {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.unit-insight-card h5 {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+}
+
+.detail-capacity {
+  width: 100%;
+  height: 0.5rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-border) 75%, transparent);
+}
+
+.detail-capacity-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--color-primary), #38bdf8);
+}
+
+.exchange-offers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.exchange-offer-item {
+  padding: 0.75rem;
+  border-radius: var(--radius-md, 8px);
+  background: color-mix(in srgb, var(--color-surface-raised, var(--color-surface)) 92%, white 8%);
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
+}
+
+.exchange-offer-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.exchange-offer-metrics {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
 }
 
 /* Layout section */

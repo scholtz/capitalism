@@ -497,6 +497,163 @@ test.describe('Building detail upgrades', () => {
     await expect(page.getByText('Purchase Source: EXCHANGE')).toBeVisible()
   })
 
+  test('shows global exchange offers and inventory fill for configured purchase units', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-exchange',
+      playerId: player.id,
+      name: 'Exchange Test Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-exchange',
+          companyId: 'company-exchange',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Exchange Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'exchange-purchase',
+              buildingId: 'building-exchange',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              maxPrice: 500,
+              purchaseSource: 'EXCHANGE',
+              inventoryQuantity: 60,
+              inventoryQuality: 0.82,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-exchange')
+    await expect(page.getByRole('heading', { name: 'Exchange Factory' })).toBeVisible()
+
+    const activeSection = getGridSection(page, 'Current Configuration')
+    await expect(getGridCell(activeSection, 0, 0)).toContainText('Wood')
+
+    await getGridCell(activeSection, 0, 0).click()
+    await expect(page.getByText('Stored inventory')).toBeVisible()
+    await expect(page.getByText('60 / 100')).toBeVisible()
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+    await expect(page.getByText('Bratislava')).toBeVisible()
+    await expect(page.getByText('Prague')).toBeVisible()
+    await expect(page.getByText('Vienna')).toBeVisible()
+  })
+
+  test('lets players configure research product and brand-quality scope', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-rd',
+      playerId: player.id,
+      name: 'Research Test Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-rd',
+          companyId: 'company-rd',
+          cityId: 'city-ba',
+          type: 'RESEARCH_DEVELOPMENT',
+          name: 'Advanced Lab',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'rd-product',
+              buildingId: 'building-rd',
+              unitType: 'PRODUCT_QUALITY',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'rd-brand',
+              buildingId: 'building-rd',
+              unitType: 'BRAND_QUALITY',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-rd')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 0, 0).click()
+    await expect(page.getByText('Research Product')).toBeVisible()
+    await page.locator('.config-field').filter({ has: page.getByText('Research Product') }).locator('select').selectOption('prod-chair')
+
+    await getGridCell(plannedSection, 1, 0).click()
+    await expect(page.getByText('Brand Scope')).toBeVisible()
+    await page.locator('.config-field').filter({ has: page.getByText('Brand Scope') }).locator('select').selectOption('CATEGORY')
+    const anchorProductField = page.locator('.config-field').filter({ has: page.getByText('Anchor Product', { exact: true }) })
+    await expect(anchorProductField).toBeVisible()
+    await anchorProductField.locator('select').selectOption('prod-chair')
+    await expect(getGridCell(plannedSection, 1, 0)).toContainText('Wooden Chair')
+  })
+
   test('factory purchase selector shows raw materials and only intermediate products', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({

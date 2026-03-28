@@ -104,6 +104,8 @@ export type MockBuildingUnit = {
   minQuality?: number | null
   brandScope?: string | null
   vendorLockCompanyId?: string | null
+  inventoryQuantity?: number | null
+  inventoryQuality?: number | null
 }
 
 export type MockBuildingConfigurationPlanUnit = MockBuildingUnit & {
@@ -212,6 +214,56 @@ const STARTING_CASH_FOR_ONBOARDING = 500000
 
 function cloneUnit(unit: MockBuildingUnit): MockBuildingUnit {
   return { ...unit }
+}
+
+function computeDistanceKm(
+  latitudeA: number,
+  longitudeA: number,
+  latitudeB: number,
+  longitudeB: number,
+) {
+  const earthRadiusKm = 6371
+  const deltaLatitude = ((latitudeB - latitudeA) * Math.PI) / 180
+  const deltaLongitude = ((longitudeB - longitudeA) * Math.PI) / 180
+  const originLatitude = (latitudeA * Math.PI) / 180
+  const destinationLatitude = (latitudeB * Math.PI) / 180
+
+  const haversine = (Math.sin(deltaLatitude / 2) ** 2)
+    + Math.cos(originLatitude) * Math.cos(destinationLatitude) * (Math.sin(deltaLongitude / 2) ** 2)
+  return earthRadiusKm * (2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine)))
+}
+
+function computeMockExchangePrice(basePrice: number, abundance: number, averageRentPerSqm: number) {
+  const scarcityMultiplier = 1.55 - Math.min(Math.max(abundance, 0), 1) * 0.75
+  const cityMultiplier = 0.95 + averageRentPerSqm / 100
+  return Number((basePrice * scarcityMultiplier * cityMultiplier).toFixed(2))
+}
+
+function computeMockExchangeQuality(abundance: number) {
+  return Number(Math.min(Math.max(0.35 + abundance * 0.6, 0.35), 0.95).toFixed(4))
+}
+
+function computeMockTransitCost(weightPerUnit: number, distanceKm: number) {
+  if (distanceKm <= 0) {
+    return 0
+  }
+
+  return Number(Math.max(distanceKm * Math.max(weightPerUnit, 0.1) * 0.0025, 0.05).toFixed(2))
+}
+
+function getMockUnitCapacity(unit: MockBuildingUnit) {
+  switch (unit.unitType) {
+    case 'MINING':
+    case 'STORAGE':
+    case 'B2B_SALES':
+    case 'PURCHASE':
+    case 'MANUFACTURING':
+    case 'BRANDING':
+    case 'PUBLIC_SALES':
+      return unit.level >= 4 ? 1000 : unit.level === 3 ? 500 : unit.level === 2 ? 250 : 100
+    default:
+      return 0
+  }
 }
 
 function areUnitsEquivalent(currentUnit: MockBuildingUnit | undefined, nextUnit: MockBuildingUnit): boolean {
@@ -478,8 +530,21 @@ export function makeDefaultCities(): MockCity[] {
       resources: [
         { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.7 },
         { resourceType: { id: 'res-grain', name: 'Grain', slug: 'grain', category: 'ORGANIC' }, abundance: 0.6 },
-      ],
-    },
+        ],
+      },
+      {
+        id: 'city-vi',
+        name: 'Vienna',
+        countryCode: 'AT',
+        latitude: 48.2082,
+        longitude: 16.3738,
+        population: 1900000,
+        averageRentPerSqm: 22,
+        resources: [
+          { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.7 },
+          { resourceType: { id: 'res-grain', name: 'Grain', slug: 'grain', category: 'ORGANIC' }, abundance: 0.6 },
+        ],
+      },
   ]
 }
 
@@ -1391,6 +1456,72 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
             })),
           },
         }),
+      })
+    }
+
+    if (query.includes('buildingUnitInventorySummaries')) {
+      const buildingId = body.variables?.buildingId
+      const building = state.players
+        .flatMap((player) => player.companies)
+        .flatMap((company) => company.buildings)
+        .find((candidate) => candidate.id === buildingId)
+
+      const buildingUnitInventorySummaries = (building?.units ?? [])
+        .map((unit) => {
+          const quantity = unit.inventoryQuantity ?? 0
+          const capacity = getMockUnitCapacity(unit)
+          return {
+            buildingUnitId: unit.id,
+            quantity,
+            capacity,
+            fillPercent: capacity > 0 ? Math.min(quantity / capacity, 1) : 0,
+            averageQuality: quantity > 0 ? (unit.inventoryQuality ?? null) : null,
+          }
+        })
+        .filter((summary) => summary.capacity > 0 || summary.quantity > 0)
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { buildingUnitInventorySummaries } }),
+      })
+    }
+
+    if (query.includes('globalExchangeOffers')) {
+      const destinationCityId = body.variables?.destinationCityId
+      const resourceTypeId = body.variables?.resourceTypeId
+      const destinationCity = state.cities.find((city) => city.id === destinationCityId)
+      const resources = state.resourceTypes.filter((resource) => !resourceTypeId || resource.id === resourceTypeId)
+
+      const globalExchangeOffers = destinationCity
+        ? state.cities.flatMap((city) =>
+            resources.map((resource) => {
+              const abundance = city.resources.find((entry) => entry.resourceType.id === resource.id)?.abundance ?? 0.05
+              const distanceKm = computeDistanceKm(city.latitude, city.longitude, destinationCity.latitude, destinationCity.longitude)
+              const exchangePricePerUnit = computeMockExchangePrice(resource.basePrice, abundance, city.averageRentPerSqm)
+              const transitCostPerUnit = computeMockTransitCost(resource.weightPerUnit, distanceKm)
+              return {
+                cityId: city.id,
+                cityName: city.name,
+                resourceTypeId: resource.id,
+                resourceName: resource.name,
+                resourceSlug: resource.slug,
+                unitSymbol: resource.unitSymbol,
+                localAbundance: abundance,
+                exchangePricePerUnit,
+                estimatedQuality: computeMockExchangeQuality(abundance),
+                transitCostPerUnit,
+                deliveredPricePerUnit: Number((exchangePricePerUnit + transitCostPerUnit).toFixed(2)),
+                distanceKm: Number(distanceKm.toFixed(1)),
+              }
+            }),
+          ).sort((left, right) => left.deliveredPricePerUnit - right.deliveredPricePerUnit)
+        : []
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { globalExchangeOffers } }),
       })
     }
 

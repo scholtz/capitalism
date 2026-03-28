@@ -591,6 +591,45 @@ public static class BuildingConfigurationService
                         .SetCode("INVALID_BUILDING_UNIT_TYPE")
                         .Build());
             }
+
+            if (unit.UnitType == UnitType.ProductQuality && !unit.ProductTypeId.HasValue)
+            {
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetMessage("Product Quality units must target a product type.")
+                        .SetCode("PRODUCT_QUALITY_PRODUCT_REQUIRED")
+                        .Build());
+            }
+
+            if (unit.UnitType == UnitType.BrandQuality)
+            {
+                if (string.IsNullOrWhiteSpace(unit.BrandScope))
+                {
+                    throw new GraphQLException(
+                        ErrorBuilder.New()
+                            .SetMessage("Brand Quality units must define a brand scope.")
+                            .SetCode("BRAND_QUALITY_SCOPE_REQUIRED")
+                            .Build());
+                }
+
+                if (unit.BrandScope is not BrandScope.Company and not BrandScope.Category and not BrandScope.Product)
+                {
+                    throw new GraphQLException(
+                        ErrorBuilder.New()
+                            .SetMessage($"Unsupported brand scope {unit.BrandScope}.")
+                            .SetCode("INVALID_BRAND_SCOPE")
+                            .Build());
+                }
+
+                if (unit.BrandScope is BrandScope.Category or BrandScope.Product && !unit.ProductTypeId.HasValue)
+                {
+                    throw new GraphQLException(
+                        ErrorBuilder.New()
+                            .SetMessage("Brand Quality units researching a category or product must target a product type.")
+                            .SetCode("BRAND_QUALITY_PRODUCT_REQUIRED")
+                            .Build());
+                }
+            }
         }
     }
 }
