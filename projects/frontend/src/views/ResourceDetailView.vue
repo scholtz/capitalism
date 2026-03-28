@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { gqlRequest } from '@/lib/graphql'
@@ -24,67 +24,61 @@ const router = useRouter()
 const loading = ref(true)
 const error = ref<string | null>(null)
 const resource = ref<ResourceType | null>(null)
-const allProducts = ref<ProductType[]>([])
+const productsUsingResource = ref<ProductType[]>([])
 
-const slug = computed(() => route.params.slug as string)
+const ENCYCLOPEDIA_RESOURCE_QUERY = `
+  query EncyclopediaResource($slug: String!) {
+    encyclopediaResource(slug: $slug) {
+      resource {
+        id name slug category basePrice weightPerUnit unitName unitSymbol imageUrl description
+      }
+      productsUsingResource {
+        id name slug industry basePrice baseCraftTicks outputQuantity energyConsumptionMwh
+        unitName unitSymbol isProOnly isUnlockedForCurrentPlayer description
+        recipes {
+          quantity
+          resourceType { id name slug category basePrice weightPerUnit unitName unitSymbol imageUrl description }
+          inputProductType { id name slug unitName unitSymbol }
+        }
+      }
+    }
+  }
+`
 
-const productsUsingResource = computed(() => {
-  if (!resource.value) return []
-  return allProducts.value.filter((product) =>
-    product.recipes.some((recipe) => recipe.resourceType?.id === resource.value!.id),
-  )
-})
-
-onMounted(async () => {
+async function loadResource(slug: string) {
   try {
     loading.value = true
-    const [resourceData, productData] = await Promise.all([
-      gqlRequest<{ resourceTypes: ResourceType[] }>(`{
-        resourceTypes {
-          id
-          name
-          slug
-          category
-          basePrice
-          weightPerUnit
-          unitName
-          unitSymbol
-          imageUrl
-          description
-        }
-      }`),
-      gqlRequest<{ productTypes: ProductType[] }>(`{
-        productTypes {
-          id
-          name
-          slug
-          industry
-          basePrice
-          baseCraftTicks
-          outputQuantity
-          energyConsumptionMwh
-          unitName
-          unitSymbol
-          isProOnly
-          isUnlockedForCurrentPlayer
-          description
-          recipes {
-            quantity
-            resourceType { id name slug category basePrice weightPerUnit unitName unitSymbol imageUrl description }
-            inputProductType { id name slug unitName unitSymbol }
-          }
-        }
-      }`),
-    ])
+    error.value = null
 
-    allProducts.value = productData.productTypes
-    resource.value = resourceData.resourceTypes.find((r) => r.slug === slug.value) ?? null
+    const data = await gqlRequest<{
+      encyclopediaResource: {
+        resource: ResourceType
+        productsUsingResource: ProductType[]
+      } | null
+    }>(ENCYCLOPEDIA_RESOURCE_QUERY, { slug })
+
+    if (data.encyclopediaResource === null) {
+      resource.value = null
+      productsUsingResource.value = []
+    } else {
+      resource.value = data.encyclopediaResource.resource
+      productsUsingResource.value = data.encyclopediaResource.productsUsingResource
+    }
   } catch (reason: unknown) {
     error.value = reason instanceof Error ? reason.message : t('resourceDetail.loadFailed')
   } finally {
     loading.value = false
   }
-})
+}
+
+watch(
+  () => route.params.slug as string,
+  (slug) => {
+    if (slug) loadResource(slug)
+  },
+  { immediate: true },
+)
+
 
 function getResourceImage(res: ResourceType) {
   return getResourceImageUrl(res)

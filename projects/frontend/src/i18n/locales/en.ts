@@ -219,6 +219,7 @@ export default {
     manufacturedProductsHelp: 'Recipes can combine raw materials, intermediate manufactured goods, and energy per batch.',
     searchPlaceholder: 'Search products, ingredients, or descriptions',
     allIndustries: 'All industries',
+    filterByIndustry: 'Filter by industry',
     basePrice: 'Base price',
     weight: 'Weight',
     craftTime: 'Craft ticks',

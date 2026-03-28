@@ -219,6 +219,7 @@ export default {
     manufacturedProductsHelp: 'Rezepte können Rohstoffe, Zwischenprodukte und Energie pro Charge kombinieren.',
     searchPlaceholder: 'Produkte, Zutaten oder Beschreibungen durchsuchen',
     allIndustries: 'Alle Industrien',
+    filterByIndustry: 'Nach Industrie filtern',
     basePrice: 'Basispreis',
     weight: 'Gewicht',
     craftTime: 'Fertigungs-Ticks',

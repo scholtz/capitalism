@@ -516,6 +516,243 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(3, industries.GetArrayLength());
     }
 
+    // ── Encyclopedia ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ResourceTypes_ReturnsDescriptionAndImageUrlFields()
+    {
+        var result = await ExecuteGraphQlAsync(
+            "{ resourceTypes { slug description imageUrl weightPerUnit unitName unitSymbol } }");
+
+        var resources = result.GetProperty("data").GetProperty("resourceTypes");
+        Assert.True(resources.GetArrayLength() >= 8);
+
+        var wood = resources.EnumerateArray().First(r => r.GetProperty("slug").GetString() == "wood");
+
+        // description is seeded and should be non-empty
+        var description = wood.GetProperty("description").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(description));
+
+        // imageUrl is populated from the emoji SVG helper in the seeder
+        var imageUrl = wood.GetProperty("imageUrl").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(imageUrl));
+        Assert.StartsWith("data:image/", imageUrl);
+
+        Assert.True(wood.GetProperty("weightPerUnit").GetDecimal() > 0);
+        Assert.False(string.IsNullOrWhiteSpace(wood.GetProperty("unitName").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(wood.GetProperty("unitSymbol").GetString()));
+    }
+
+    [Fact]
+    public async Task EncyclopediaResource_BySlug_ReturnsResourceWithMetadata()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              encyclopediaResource(slug: "wood") {
+                resource { id name slug category basePrice weightPerUnit unitName unitSymbol description imageUrl }
+                productsUsingResource { name }
+              }
+            }
+            """);
+
+        var detail = result.GetProperty("data").GetProperty("encyclopediaResource");
+        Assert.False(detail.ValueKind == System.Text.Json.JsonValueKind.Null);
+
+        var resource = detail.GetProperty("resource");
+        Assert.Equal("wood", resource.GetProperty("slug").GetString());
+        Assert.Equal("Wood", resource.GetProperty("name").GetString());
+        Assert.Equal("ORGANIC", resource.GetProperty("category").GetString());
+        Assert.True(resource.GetProperty("basePrice").GetDecimal() > 0);
+        Assert.True(resource.GetProperty("weightPerUnit").GetDecimal() > 0);
+        Assert.False(string.IsNullOrWhiteSpace(resource.GetProperty("unitName").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(resource.GetProperty("description").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(resource.GetProperty("imageUrl").GetString()));
+    }
+
+    [Fact]
+    public async Task EncyclopediaResource_BySlug_IncludesProductsThatUseResource()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              encyclopediaResource(slug: "wood") {
+                resource { slug }
+                productsUsingResource {
+                  name slug industry
+                  recipes { quantity resourceType { slug } inputProductType { slug } }
+                }
+              }
+            }
+            """);
+
+        var detail = result.GetProperty("data").GetProperty("encyclopediaResource");
+        var products = detail.GetProperty("productsUsingResource");
+
+        // The seeded Furniture products (Wooden Chair, Wooden Table, etc.) all require Wood
+        Assert.True(products.GetArrayLength() > 0);
+
+        foreach (var product in products.EnumerateArray())
+        {
+            var recipes = product.GetProperty("recipes");
+            var usesWood = recipes.EnumerateArray().Any(r =>
+                r.GetProperty("resourceType").ValueKind != System.Text.Json.JsonValueKind.Null
+                && r.GetProperty("resourceType").GetProperty("slug").GetString() == "wood");
+
+            Assert.True(usesWood, $"Product '{product.GetProperty("slug").GetString()}' is listed but does not have Wood in its recipe.");
+        }
+
+        // Products should be ordered by name
+        var names = products.EnumerateArray().Select(p => p.GetProperty("name").GetString()).ToList();
+        var sorted = names.OrderBy(n => n).ToList();
+        Assert.Equal(sorted, names);
+    }
+
+    [Fact]
+    public async Task EncyclopediaResource_BySlug_ReturnsNullForUnknownSlug()
+    {
+        var result = await ExecuteGraphQlAsync(
+            "{ encyclopediaResource(slug: \"nonexistent-resource-xyz\") { resource { name } } }");
+
+        var detail = result.GetProperty("data").GetProperty("encyclopediaResource");
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, detail.ValueKind);
+    }
+
+    [Fact]
+    public async Task EncyclopediaResource_SiliconHasNoFurnitureProducts()
+    {
+        // Silicon is used only in electronics; a free (unauthenticated) user sees it returned
+        // and any products in the list come from the silicon recipe chain.
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              encyclopediaResource(slug: "silicon") {
+                resource { slug category }
+                productsUsingResource { name industry }
+              }
+            }
+            """);
+
+        var detail = result.GetProperty("data").GetProperty("encyclopediaResource");
+        Assert.False(detail.ValueKind == System.Text.Json.JsonValueKind.Null);
+
+        var resource = detail.GetProperty("resource");
+        Assert.Equal("silicon", resource.GetProperty("slug").GetString());
+        Assert.Equal("MINERAL", resource.GetProperty("category").GetString());
+
+        var products = detail.GetProperty("productsUsingResource");
+        // All returned products must actually use silicon
+        foreach (var product in products.EnumerateArray())
+        {
+            Assert.Equal("ELECTRONICS", product.GetProperty("industry").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task EncyclopediaResource_RespectsProSubscriptionForAccessMetadata()
+    {
+        // Without auth: isUnlockedForCurrentPlayer = false for Pro products
+        var freeResult = await ExecuteGraphQlAsync(
+            """
+            {
+              encyclopediaResource(slug: "silicon") {
+                productsUsingResource { slug isProOnly isUnlockedForCurrentPlayer }
+              }
+            }
+            """);
+
+        var freeProducts = freeResult.GetProperty("data").GetProperty("encyclopediaResource")
+            .GetProperty("productsUsingResource");
+
+        foreach (var product in freeProducts.EnumerateArray())
+        {
+            if (product.GetProperty("isProOnly").GetBoolean())
+            {
+                Assert.False(product.GetProperty("isUnlockedForCurrentPlayer").GetBoolean());
+            }
+        }
+
+        // With Pro subscription: isUnlockedForCurrentPlayer = true
+        var token = await RegisterAndGetTokenAsync("encyclopedia-pro@test.com", "EncyclopediaPro");
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "encyclopedia-pro@test.com");
+            player.ProSubscriptionEndsAtUtc = DateTime.UtcNow.AddDays(30);
+            await db.SaveChangesAsync();
+        }
+
+        var proResult = await ExecuteGraphQlAsync(
+            """
+            {
+              encyclopediaResource(slug: "silicon") {
+                productsUsingResource { slug isProOnly isUnlockedForCurrentPlayer }
+              }
+            }
+            """,
+            token: token);
+
+        var proProducts = proResult.GetProperty("data").GetProperty("encyclopediaResource")
+            .GetProperty("productsUsingResource");
+
+        foreach (var product in proProducts.EnumerateArray())
+        {
+            if (product.GetProperty("isProOnly").GetBoolean())
+            {
+                Assert.True(product.GetProperty("isUnlockedForCurrentPlayer").GetBoolean());
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ProductTypes_ReturnsDescriptionField()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              productTypes(industry: "FURNITURE") { slug description }
+            }
+            """);
+
+        var products = result.GetProperty("data").GetProperty("productTypes");
+        Assert.True(products.GetArrayLength() > 0);
+
+        foreach (var product in products.EnumerateArray())
+        {
+            var description = product.GetProperty("description").GetString();
+            Assert.False(string.IsNullOrWhiteSpace(description),
+                $"Product '{product.GetProperty("slug").GetString()}' has no description.");
+        }
+    }
+
+    [Fact]
+    public async Task ProductTypes_RecipesIncludeIntermediateProductInputs()
+    {
+        // Some products use intermediate manufactured products (not just raw resources) in their recipe.
+        // Verify that those inputProductType links are correctly included.
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              productTypes {
+                slug
+                recipes {
+                  quantity
+                  resourceType { slug }
+                  inputProductType { slug name }
+                }
+              }
+            }
+            """);
+
+        var products = result.GetProperty("data").GetProperty("productTypes");
+        var hasIntermediateInput = products.EnumerateArray()
+            .SelectMany(p => p.GetProperty("recipes").EnumerateArray())
+            .Any(r => r.GetProperty("inputProductType").ValueKind != System.Text.Json.JsonValueKind.Null);
+
+        Assert.True(hasIntermediateInput,
+            "At least one seeded product should have an intermediate manufactured product as a recipe input.");
+    }
+
     #endregion
 
     #region Company Management

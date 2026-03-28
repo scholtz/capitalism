@@ -257,7 +257,7 @@ function navigateToResource(resource: ResourceType) {
 
         <div class="filters">
           <input v-model="search" type="search" class="filter-input" :placeholder="t('encyclopedia.searchPlaceholder')" />
-          <select v-model="industry" class="filter-select">
+          <select v-model="industry" class="filter-select" :aria-label="t('encyclopedia.filterByIndustry')">
             <option v-for="option in industries" :key="option" :value="option">
               {{ option === 'ALL' ? t('encyclopedia.allIndustries') : getIndustryLabel(option) }}
             </option>

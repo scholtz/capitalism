@@ -329,3 +329,80 @@ test.describe('Resource detail page', () => {
     await expect(page.getByRole('button', { name: 'Späť na encyklopédiu' })).toBeVisible()
   })
 })
+
+test.describe('Encyclopedia search and filter', () => {
+  test('search filters products by name', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia')
+    await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
+
+    // Both products should be visible before filtering
+    await expect(page.getByRole('button', { name: /Electronic Table/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Electronic Components/ })).toBeVisible()
+
+    // Type in the search field to filter
+    await page.getByPlaceholder('Search products, ingredients, or descriptions').fill('Electronic Table')
+
+    // Only the matching product should remain
+    await expect(page.getByRole('button', { name: /Electronic Table/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Electronic Components/ })).toBeHidden()
+  })
+
+  test('search filters products by ingredient name', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia')
+
+    // Electronic Table uses Wood as ingredient — searching for "wood" should surface it
+    await page.getByPlaceholder('Search products, ingredients, or descriptions').fill('Wood')
+
+    await expect(page.getByRole('button', { name: /Electronic Table/ })).toBeVisible()
+    // Electronic Components has no Wood in its recipes
+    await expect(page.getByRole('button', { name: /Electronic Components/ })).toBeHidden()
+  })
+
+  test('industry filter shows only matching products', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia')
+    await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
+
+    // Select ELECTRONICS industry filter
+    await page.getByLabel('Filter by industry').selectOption('ELECTRONICS')
+
+    await expect(page.getByRole('button', { name: /Electronic Components/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Electronic Table/ })).toBeHidden()
+  })
+
+  test('cross-navigation: clicking a resource from encyclopedia index goes to detail and back', async ({
+    page,
+  }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia')
+    await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
+
+    // Navigate to resource detail
+    await page.locator('.resource-card').filter({ hasText: 'Wood' }).click()
+    await expect(page).toHaveURL('/encyclopedia/resources/wood')
+    await expect(page.getByRole('heading', { name: 'Wood', level: 1 })).toBeVisible()
+
+    // Navigate back
+    await page.getByRole('button', { name: 'Back to Encyclopedia' }).click()
+    await expect(page).toHaveURL('/encyclopedia')
+    await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
+  })
+})

@@ -82,6 +82,54 @@ public sealed class Query
         return await db.ResourceTypes.OrderBy(r => r.Name).ToListAsync();
     }
 
+    /// <summary>
+    /// Returns a single resource type identified by its URL slug, together with all product types
+    /// that use it as a direct ingredient. Designed for the encyclopedia resource detail view.
+    /// Returns null when no resource with the given slug exists.
+    /// </summary>
+    public async Task<EncyclopediaResourceDetail?> GetEncyclopediaResource(
+        string slug,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var resource = await db.ResourceTypes
+            .FirstOrDefaultAsync(r => r.Slug == slug);
+
+        if (resource is null)
+        {
+            return null;
+        }
+
+        var hasActiveProSubscription = false;
+        if (httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true)
+        {
+            var userId = httpContextAccessor.HttpContext.User.GetRequiredUserId();
+            var subscriptionEndsAtUtc = await db.Players
+                .Where(player => player.Id == userId)
+                .Select(player => player.ProSubscriptionEndsAtUtc)
+                .FirstOrDefaultAsync();
+
+            hasActiveProSubscription = ProductAccessService.HasActiveProSubscription(subscriptionEndsAtUtc, DateTime.UtcNow);
+        }
+
+        var products = await db.ProductTypes
+            .Include(p => p.Recipes)
+            .ThenInclude(r => r.ResourceType)
+            .Include(p => p.Recipes)
+            .ThenInclude(r => r.InputProductType)
+            .Where(p => p.Recipes.Any(r => r.ResourceTypeId == resource.Id))
+            .OrderBy(p => p.Name)
+            .ToListAsync();
+
+        ProductAccessService.ApplyAccessMetadata(products, hasActiveProSubscription);
+
+        return new EncyclopediaResourceDetail
+        {
+            Resource = resource,
+            ProductsUsingResource = products,
+        };
+    }
+
     /// <summary>Lists all product types, optionally filtered by industry.</summary>
     public async Task<List<ProductType>> GetProductTypes(
         string? industry,

@@ -1706,6 +1706,28 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('encyclopediaResource')) {
+      const variables = body.variables as { slug?: string } | undefined
+      const slug = variables?.slug ?? ''
+      const resource = state.resourceTypes.find((r) => r.slug === slug) ?? null
+      const productsUsingResource = resource
+        ? state.productTypes.filter((p) =>
+            p.recipes.some((recipe) => recipe.resourceType?.slug === slug),
+          )
+        : []
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            encyclopediaResource: resource
+              ? { resource, productsUsingResource }
+              : null,
+          },
+        }),
+      })
+    }
+
     if (query.includes('resourceTypes')) {
       return route.fulfill({
         status: 200,

@@ -219,6 +219,7 @@ export default {
     manufacturedProductsHelp: 'Recepty môžu kombinovať suroviny, medziprodukty a energiu na dávku.',
     searchPlaceholder: 'Hľadať produkty, ingrediencie alebo popisy',
     allIndustries: 'Všetky odvetvia',
+    filterByIndustry: 'Filtrovať podľa odvetvia',
     basePrice: 'Základná cena',
     weight: 'Hmotnosť',
     craftTime: 'Tickov výroby',
