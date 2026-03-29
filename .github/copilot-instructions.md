@@ -277,3 +277,24 @@ To prevent this from repeating:
 3. Only claim features in the PR description that appear as **additions** in the diff.
 4. If the implementation is already on main and the branch only adds tests or follow-up work, say so explicitly in the PR description.
 5. Never let the presence of files in the working tree mislead you — files can already be on main.
+
+## Empty-PR quality failure — the "initial plan only" anti-pattern
+
+Root-cause of a past quality failure (March 2026, PR #46):
+- The agent was assigned to implement the onboarding wizard. The implementation was already delivered on `main` in a prior session (by a different agent run) before this branch was cut.
+- When the new agent session started, the diff was empty (only an "Initial plan" commit with no file changes). The agent responded by explaining the work was done — but never verified, fixed, or improved anything.
+- The product owner reviewed the PR, saw no meaningful diff and no indication of quality improvements, and concluded the delivery was unfinished.
+
+**When the diff is empty and the PR title implies work to be done:**
+1. **Do not simply reply "it's already done."** Always investigate whether there are quality gaps, test coverage holes, or product-definition misalignments even when the core implementation exists.
+2. Run the full test suite (`dotnet test` + `npm run test:unit` + `npx playwright test`) and fix any failures.
+3. Check the product definition (ROADMAP.md and the linked issue) against the existing implementation and identify missing coverage.
+4. Add missing backend tests (validation errors, duplicate prevention, all industry paths, unauthenticated calls).
+5. Add missing E2E tests (skip-path, edge cases named in the issue acceptance criteria).
+6. Update the copilot instructions with root-cause lessons so the failure does not repeat.
+7. Only report completion after meaningful improvements are committed and all tests pass.
+
+**Minimum quality bar for any PR that implements a user-facing feature:**
+- Backend: validation error tests, unauthenticated tests, duplicate-prevention tests for every mutation.
+- E2E: golden path + at least one interruption/resume test + at least one skip-path or error-recovery test.
+- All tests must pass locally before pushing; never push with known failures.

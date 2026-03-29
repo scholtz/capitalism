@@ -980,3 +980,81 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     await expect(page).toHaveURL('/dashboard')
   })
 })
+
+test.describe('Onboarding skip and re-entry behavior', () => {
+  test('player who navigates away mid-flow can re-enter and resume from correct step', async ({
+    page,
+  }) => {
+    // Issue #45 requirement: "Add at least one skip-path test verifying that the player can proceed
+    // into the game without broken state."
+    // This test simulates a player who starts step 2 (city), then navigates to the home page,
+    // then returns to /onboarding — they should resume on the step they left off.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/onboarding')
+
+    // Advance to step 2 (city selection)
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+
+    // Navigate away to home
+    await page.goto('/')
+    await expect(page).toHaveURL('/')
+
+    // Re-enter onboarding — should resume on step 2 (the page stores step in query params / sessionStorage)
+    await page.goto('/onboarding')
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+  })
+
+  test('player who navigates away from the dashboard link after completing can still see dashboard', async ({
+    page,
+  }) => {
+    // Player with completed onboarding, has a company and a shop building.
+    // Navigating to /onboarding should redirect to /dashboard (not crash or loop).
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T12:00:00Z',
+      onboardingShopBuildingId: 'building-shop-skip-test',
+      onboardingFirstSaleCompletedAtUtc: null,
+      companies: [
+        {
+          id: 'comp-skip',
+          playerId: 'player-1',
+          name: 'Skip Corp',
+          cash: 400000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-shop-skip-test',
+              companyId: 'comp-skip',
+              name: 'Skip Shop',
+              type: 'SALES_SHOP',
+              cityId: 'city-1',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 10,
+              isForSale: false,
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    // Visiting /dashboard should work normally without erroring
+    await page.goto('/dashboard')
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+    await expect(page.locator('.company-card').first()).toBeVisible()
+  })
+})

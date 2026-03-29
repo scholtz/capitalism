@@ -2198,6 +2198,178 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.True(result.TryGetProperty("errors", out _));
     }
 
+    [Fact]
+    public async Task StartOnboardingCompany_WhenAlreadyCompleted_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"onboard-already-done-{Guid.NewGuid()}@test.com", "AlreadyDone");
+        await CompleteOnboardingAsync(token, "Already Done Co");
+
+        var cityId = await GetCityIdByNameAsync();
+        var lotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Second Attempt Co", factoryLotId = lotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("ONBOARDING_ALREADY_COMPLETED", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StartOnboardingCompany_WhenAlreadyInProgress_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"onboard-in-progress-{Guid.NewGuid()}@test.com", "InProgress");
+        var cityId = await GetCityIdByNameAsync();
+        await StartOnboardingCompanyAsync(token, "First Start Co");
+
+        var lotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "Second Factory Lot");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Duplicate Start Co", factoryLotId = lotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("ONBOARDING_ALREADY_IN_PROGRESS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StartOnboardingCompany_InvalidCity_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"onboard-bad-city-{Guid.NewGuid()}@test.com", "BadCity");
+        var fakeCityId = Guid.NewGuid();
+        var fakeLotId = Guid.NewGuid();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId = fakeCityId, companyName = "Ghost City Co", factoryLotId = fakeLotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task StartOnboardingCompany_InvalidIndustry_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"onboard-bad-industry-start-{Guid.NewGuid()}@test.com", "BadIndStart");
+        var cityId = await GetCityIdByNameAsync();
+        var lotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "ELECTRONICS", cityId, companyName = "Electronics Co", factoryLotId = lotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_INDUSTRY", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_Unauthenticated_ReturnsError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { productTypeId = Guid.NewGuid(), shopLotId = Guid.NewGuid() } });
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_WhenNotInProgress_ReturnsError()
+    {
+        // A freshly registered player who has not started the staged flow cannot call finishOnboarding.
+        var token = await RegisterAndGetTokenAsync($"finish-no-progress-{Guid.NewGuid()}@test.com", "NoProgress");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { productTypeId = Guid.NewGuid(), shopLotId = Guid.NewGuid() } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("ONBOARDING_NOT_IN_PROGRESS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_WrongIndustryProduct_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"finish-wrong-product-{Guid.NewGuid()}@test.com", "WrongProduct");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Wrong Product Co");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Test Shop");
+
+        // Get a healthcare product instead of furniture
+        var healthcareProductId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+
+        var result = await FinishOnboardingAsync(token, healthcareProductId, shopLotId);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_PRODUCT", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task FullOnboardingCycle_AllThreeIndustries_ProducesValidState()
+    {
+        // Verify each starter industry produces a valid completed onboarding state
+        var industries = new[] { ("FURNITURE", "wooden-chair"), ("FOOD_PROCESSING", "bread"), ("HEALTHCARE", "basic-medicine") };
+        foreach (var (industry, slug) in industries)
+        {
+            var token = await RegisterAndGetTokenAsync($"onboard-{industry.ToLower()}-{Guid.NewGuid()}@test.com", $"{industry} Player");
+            var cityId = await GetCityIdByNameAsync();
+            var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m);
+
+            var startResult = await ExecuteGraphQlAsync(
+                """
+                mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+                  startOnboardingCompany(input: $input) {
+                    company { id cash }
+                    nextStep
+                  }
+                }
+                """,
+                new { input = new { industry, cityId, companyName = $"{industry} Corp", factoryLotId } },
+                token);
+
+            var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+            Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
+            // Cash starts at $500,000 and decreases by the factory lot price ($75,000 default)
+            var cashAfterFactory = startData.GetProperty("company").GetProperty("cash").GetDecimal();
+            Assert.True(cashAfterFactory > 0 && cashAfterFactory < 500_000m, $"Unexpected cash after factory purchase: {cashAfterFactory}");
+
+            var productId = await GetStarterProductIdAsync(industry, slug);
+            var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
+
+            var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+            Assert.False(finishResult.TryGetProperty("errors", out _), $"FinishOnboarding failed for {industry}");
+
+            var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+            Assert.Equal(industry, finishData.GetProperty("selectedProduct").GetProperty("industry").GetString());
+        }
+    }
+
     #endregion
 
     #region Rankings
