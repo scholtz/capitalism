@@ -62,7 +62,7 @@ export default {
     registerButton: 'Vytvori\u0165 \u00fa\u010det',
     haveAccount: 'U\u017e m\u00e1te \u00fa\u010det?',
     noAccount: 'Nem\u00e1te \u00fa\u010det?',
-    emailPlaceholder: 'vas@email.com',
+    emailPlaceholder: "vas{'@'}email.com",
     displayNamePlaceholder: 'Va\u0161e meno',
     passwordPlaceholder: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
     loginFailed: 'Prihl\u00e1senie zlyhalo. Skontrolujte prihlasovacie \u00fadaje a sk\u00faste znova.',

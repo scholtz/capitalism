@@ -171,6 +171,12 @@ npx playwright test --debug --project=chromium
 - Frontend uses vue-i18n v11 in Composition API mode (`useI18n()` with `t()` and `locale.value`).
 - Locale files: `src/i18n/locales/{en,sk,de}.ts`. Detection chain: localStorage (`app_locale`) → `navigator.languages` → `'en'`.
 - All user-visible strings use `t()` calls with keys organized by feature: `common.*`, `nav.*`, `home.*`, `auth.*`, `onboarding.*`, `dashboard.*`.
+- **vue-i18n v11 JIT compiler special characters**: The following characters are SPECIAL in vue-i18n message strings and must be escaped with `{'char'}` syntax when used as literal text:
+  - `{` and `}` — used for interpolation; a bare `}` causes `SyntaxError: 10` (UNEXPECTED_CLOSE_BRACE / Invalid linked format)
+  - `@` — begins a linked message reference (`@:key`); an email address like `user@example.com` MUST be written as `user{'@'}example.com`
+  - `|` — used for plural rules
+  - `$` — historical: `${param}` was NEVER valid vue-i18n syntax (use `{param}` instead); the `$` prefix is only added in the template caller, not in the message
+- **Always validate locale files with the `@intlify/message-compiler` parser after adding or editing messages.** The SyntaxError fires at runtime (JIT) not at build time, and silently causes the entire component to render as `<!---->` in Vue 3's error boundary — making root-cause diagnosis very difficult.
 
 ## PWA and service-worker development
 - `vite-plugin-pwa` is configured in `injectManifest` mode with custom service worker at `src/sw.ts`.

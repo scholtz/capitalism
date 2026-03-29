@@ -451,7 +451,7 @@ test.describe('Guest onboarding wizard', () => {
     // Switch to login tab
     await page.locator('.btn-tab', { hasText: 'Log In' }).click()
     // Display Name field should be hidden in login mode
-    await expect(page.locator('#guestDisplayName')).not.toBeVisible()
+    await expect(page.locator('#guestDisplayName')).toBeHidden()
   })
 
   test('guest can register and migrate progress', async ({ page }) => {

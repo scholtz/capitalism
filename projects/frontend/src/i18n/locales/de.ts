@@ -62,7 +62,7 @@ export default {
     registerButton: 'Konto erstellen',
     haveAccount: 'Bereits ein Konto?',
     noAccount: 'Kein Konto?',
-    emailPlaceholder: 'ihre@email.com',
+    emailPlaceholder: "ihre{'@'}email.com",
     displayNamePlaceholder: 'Ihr Name',
     passwordPlaceholder: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
     loginFailed: 'Anmeldung fehlgeschlagen. Bitte überprüfen Sie Ihre Zugangsdaten und versuchen Sie es erneut.',

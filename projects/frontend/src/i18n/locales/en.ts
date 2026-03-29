@@ -56,7 +56,7 @@ export default {
     loginTitle: 'Sign In',
     registerTitle: 'Create Account',
     email: 'Email',
-    emailPlaceholder: 'your@email.com',
+    emailPlaceholder: "your{'@'}email.com",
     displayName: 'Display Name',
     displayNamePlaceholder: 'Your name',
     password: 'Password',
