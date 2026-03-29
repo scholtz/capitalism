@@ -153,6 +153,7 @@ export default {
     guestLogin: 'Einloggen',
     guestSaveCta: 'Speichern & starten',
     guestMigrationRetry: 'Eines der von Ihnen gewählten Grundstücke wurde inzwischen vergeben. Bitte wählen Sie neue Grundstücke und fahren Sie fort.',
+    guestMigrationGenericError: 'Beim Start Ihres Unternehmens ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut oder kontaktieren Sie den Support, falls das Problem weiterhin besteht.',
   },
   startupPack: {
     eyebrow: 'Zeitlich begrenztes Startup-Paket',

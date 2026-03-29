@@ -153,6 +153,7 @@ export default {
     guestLogin: 'Log In',
     guestSaveCta: 'Save & Launch',
     guestMigrationRetry: 'One of the lots you chose was taken. Please pick new lots to continue.',
+    guestMigrationGenericError: 'Something went wrong while launching your company. Please try again or contact support if the problem persists.',
   },
   startupPack: {
     eyebrow: 'Limited-time startup pack',

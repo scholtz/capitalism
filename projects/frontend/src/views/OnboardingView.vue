@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { gqlRequest } from '@/lib/graphql'
+import { gqlRequest, GraphQLError } from '@/lib/graphql'
 import { trackStartupPackEvent } from '@/lib/startupPackAnalytics'
 import {
   getLocalizedProductDescription,
@@ -770,16 +770,27 @@ async function saveGuestProgress() {
           await markStartupPackOfferShown()
         }
         // Stay on step 5 — now show authenticated completion UI
-      } catch {
-        // Lot was taken or another error — restart wizard from step 1 with auth
-        clearProgress()
-        onboardingCompanyCash.value = null
-        completionResult.value = null
-        selectedFactoryLotId.value = ''
-        selectedShopLotId.value = ''
-        await loadLots()
-        step.value = 1
-        error.value = t('onboarding.guestMigrationRetry')
+      } catch (migrationErr: unknown) {
+        const code = migrationErr instanceof GraphQLError ? migrationErr.code : undefined
+        if (code === 'LOT_ALREADY_OWNED') {
+          // A lot was taken between the guest simulation and the real purchase — restart
+          // wizard from step 1 so the player can pick fresh lots.
+          clearProgress()
+          onboardingCompanyCash.value = null
+          completionResult.value = null
+          selectedFactoryLotId.value = ''
+          selectedShopLotId.value = ''
+          await loadLots()
+          step.value = 1
+          error.value = t('onboarding.guestMigrationRetry')
+        } else {
+          // Any other backend failure (network outage, validation error, auth mismatch,
+          // duplicate submit, etc.) must be shown explicitly — NOT masked as a lot-conflict.
+          error.value =
+            migrationErr instanceof Error
+              ? migrationErr.message
+              : t('onboarding.guestMigrationGenericError')
+        }
       } finally {
         loading.value = false
       }

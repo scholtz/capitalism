@@ -1,6 +1,7 @@
 /**
  * Onboarding flow E2E tests.
  * Covers: registration, login, onboarding wizard, and dashboard verification.
+ * Implements issue #54 — guest onboarding sandbox wizard with save-progress handoff.
  */
 import { test, expect, type Page } from '@playwright/test'
 import { setupMockApi, makePlayer, makeStartupPackOffer } from './helpers/mock-api'
@@ -10,6 +11,23 @@ async function authenticateViaLocalStorage(page: Page, token: string) {
     localStorage.setItem('auth_token', value)
     localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
   }, token)
+}
+
+/** Drives the guest wizard through steps 1–4 (no auth) and lands on the step-5 save-progress screen. */
+async function completeGuestSteps1to4(page: Page, companyName = 'Guest Corp') {
+  await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+  await page.getByRole('button', { name: 'Next' }).click()
+  await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+  await page.getByRole('button', { name: 'Next' }).click()
+  await page.getByLabel('Company Name').fill(companyName)
+  await page.getByRole('button', { name: 'List View' }).click()
+  await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+  await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+  await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+  await page.getByRole('button', { name: 'List View' }).click()
+  await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+  await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+  await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
 }
 
 async function completeGuidedOnboarding(page: Page, companyName: string) {
@@ -483,6 +501,106 @@ test.describe('Guest onboarding wizard', () => {
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
     // Should be authenticated now
     expect(state.currentUserId).toBeTruthy()
+  })
+
+  test('factory lot taken: restarts wizard at step 1 with lot-conflict message', async ({ page }) => {
+    const state = setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Mark the factory lot as already owned before the guest submits
+    const factoryLot = state.buildingLots.find((l) => l.id === 'lot-industrial-1')!
+    factoryLot.ownerCompanyId = 'other-company'
+
+    await page.locator('#guestEmail').fill('newguest@test.com')
+    await page.locator('#guestDisplayName').fill('New Guest')
+    await page.locator('#guestPassword').fill('GuestPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Wizard restarts at step 1 with the retry message
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+    await expect(page.locator('.error-message, .error-global, [role="alert"]').filter({ hasText: /lots you chose was taken/i })).toBeVisible()
+  })
+
+  test('shop lot taken: restarts wizard at step 1 with lot-conflict message', async ({ page }) => {
+    const state = setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Mark the shop lot as already owned before the guest submits (factory lot is fine)
+    const shopLot = state.buildingLots.find((l) => l.id === 'lot-commercial-1')!
+    shopLot.ownerCompanyId = 'other-company'
+
+    await page.locator('#guestEmail').fill('newguest2@test.com')
+    await page.locator('#guestDisplayName').fill('New Guest 2')
+    await page.locator('#guestPassword').fill('GuestPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Wizard restarts at step 1 with the retry message
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+    await expect(page.locator('.error-message, .error-global, [role="alert"]').filter({ hasText: /lots you chose was taken/i })).toBeVisible()
+  })
+
+  test('non-conflict backend error: shows inline error without restarting', async ({ page }) => {
+    const state = setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Inject a generic non-lot-conflict error by removing all products (causes INVALID_PRODUCT)
+    state.productTypes = []
+
+    await page.locator('#guestEmail').fill('newguest3@test.com')
+    await page.locator('#guestDisplayName').fill('New Guest 3')
+    await page.locator('#guestPassword').fill('GuestPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Must NOT restart the wizard — step-5 heading still visible
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    // An explicit error message must appear
+    await expect(page.locator('.error-message, .error-global, [role="alert"]').first()).toBeVisible()
+    // The error must NOT say "lot was taken"
+    await expect(page.locator('[role="alert"], .error-message, .error-global').filter({ hasText: /lots you chose was taken/i })).toHaveCount(0)
+  })
+
+  test('login-mode migration: existing player logs in and migrates guest progress', async ({ page }) => {
+    const existingPlayer = makePlayer({ email: 'existing@test.com', password: 'TestPass1!' })
+    const state = setupMockApi(page, { players: [existingPlayer] })
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Switch to login tab
+    await page.locator('.btn-tab', { hasText: 'Log In' }).click()
+    await page.locator('#guestEmail').fill('existing@test.com')
+    await page.locator('#guestPassword').fill('TestPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // After login, migrations run and completion screen shows
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    expect(state.currentUserId).toBe(existingPlayer.id)
+  })
+
+  test('already-onboarded login: redirects to dashboard without attempting migration', async ({
+    page,
+  }) => {
+    const completedPlayer = makePlayer({
+      email: 'done@test.com',
+      password: 'TestPass1!',
+      onboardingCompletedAtUtc: new Date().toISOString(),
+      onboardingShopBuildingId: 'building-shop-done',
+    })
+    const state = setupMockApi(page, { players: [completedPlayer] })
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Switch to login tab
+    await page.locator('.btn-tab', { hasText: 'Log In' }).click()
+    await page.locator('#guestEmail').fill('done@test.com')
+    await page.locator('#guestPassword').fill('TestPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Already completed — redirect to dashboard immediately
+    await page.waitForURL(/\/dashboard/)
+    expect(state.currentUserId).toBe(completedPlayer.id)
   })
 })
 

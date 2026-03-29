@@ -789,7 +789,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     if (query.includes('Register')) {
       const input = body.variables?.input
       if (state.players.some((p) => p.email === input?.email)) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'A player with this email already exists.' }] }) })
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'A player with this email already exists.', extensions: { code: 'DUPLICATE_EMAIL' } }] }) })
       }
       const newPlayer: MockPlayer = {
         id: `player-${Date.now()}`,
@@ -863,7 +863,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building lot not found.' }] }) })
       }
       if (lot.ownerCompanyId) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.' }] }) })
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.', extensions: { code: 'LOT_ALREADY_OWNED' } }] }) })
       }
       if (!lot.suitableTypes.split(',').map((type) => type.trim()).includes('FACTORY')) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building type FACTORY is not suitable for this lot.' }] }) })
@@ -945,7 +945,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building lot not found.' }] }) })
       }
       if (shopLot.ownerCompanyId) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.' }] }) })
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.', extensions: { code: 'LOT_ALREADY_OWNED' } }] }) })
       }
       if (!shopLot.suitableTypes.split(',').map((type) => type.trim()).includes('SALES_SHOP')) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building type SALES_SHOP is not suitable for this lot.' }] }) })
@@ -1486,7 +1486,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building lot not found.' }] }) })
       }
       if (lot.ownerCompanyId) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.' }] }) })
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.', extensions: { code: 'LOT_ALREADY_OWNED' } }] }) })
       }
       const suitableTypes = lot.suitableTypes.split(',').map((s) => s.trim())
       if (!suitableTypes.includes(input.buildingType)) {

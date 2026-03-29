@@ -153,6 +153,7 @@ export default {
     guestLogin: 'Prihlásiť sa',
     guestSaveCta: 'Uložiť a spustiť',
     guestMigrationRetry: 'Jeden z vybraných pozemkov bol medzitým obsadený. Prosím, vyberte nové pozemky a pokračujte.',
+    guestMigrationGenericError: 'Niečo sa pokazilo pri spúšťaní vašej spoločnosti. Skúste to znova alebo kontaktujte podporu, ak problém pretrváva.',
   },
   startupPack: {
     eyebrow: 'Časovo obmedzený štartovací balík',

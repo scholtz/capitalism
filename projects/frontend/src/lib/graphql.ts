@@ -6,8 +6,24 @@ export interface GraphQLResponse<T> {
 }
 
 /**
+ * Structured error thrown by gqlRequest when the API returns a GraphQL error.
+ * Carries the machine-readable `code` from `extensions.code` (e.g. `LOT_ALREADY_OWNED`)
+ * so callers can distinguish specific failure types from generic API errors.
+ */
+export class GraphQLError extends Error {
+  constructor(
+    message: string,
+    public readonly code?: string,
+  ) {
+    super(message)
+    this.name = 'GraphQLError'
+  }
+}
+
+/**
  * Lightweight GraphQL client that sends requests to the Events API.
  * Automatically attaches the JWT bearer token from localStorage when available.
+ * Throws `GraphQLError` (with `.code` from `extensions.code`) on API errors.
  */
 export async function gqlRequest<T>(
   query: string,
@@ -31,11 +47,13 @@ export async function gqlRequest<T>(
   const json: GraphQLResponse<T> = await res.json()
 
   if (json.errors && json.errors.length > 0) {
-    throw new Error(json.errors[0]!.message)
+    const firstError = json.errors[0]!
+    const code = firstError.extensions?.code as string | undefined
+    throw new GraphQLError(firstError.message, code)
   }
 
   if (!json.data) {
-    throw new Error('No data returned from GraphQL API')
+    throw new GraphQLError('No data returned from GraphQL API')
   }
 
   return json.data
