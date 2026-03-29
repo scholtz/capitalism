@@ -150,6 +150,15 @@ const onboardingCompanyCash = ref<number | null>(null)
 const milestoneLoading = ref(false)
 const milestoneError = ref<string | null>(null)
 
+// Guest mode state
+const isGuestMode = computed(() => !auth.isAuthenticated)
+const guestSaveError = ref<string | null>(null)
+const guestSaveLoading = ref(false)
+const guestAuthMode = ref<'register' | 'login'>('register')
+const guestEmail = ref('')
+const guestPassword = ref('')
+const guestDisplayName = ref('')
+
 const industries = ref<string[]>([])
 const cities = ref<City[]>([])
 const products = ref<ProductType[]>([])
@@ -264,6 +273,24 @@ const industryDescriptions: Record<string, string> = {
 }
 
 function resolveMaxReachableStep(): number {
+  // In guest mode, if factory lot is selected (simulated purchase complete), step 4 is reachable.
+  // If shop lot AND product are also selected (guest completed step 4), step 5 is reachable.
+  if (isGuestMode.value) {
+    const guestCompletedAllSteps =
+      !!selectedFactoryLotId.value
+      && onboardingCompanyCash.value !== null
+      && !!selectedShopLotId.value
+      && !!selectedProductId.value
+    if (guestCompletedAllSteps) return 5
+    if (selectedFactoryLotId.value && onboardingCompanyCash.value !== null) return 4
+    return getMaxReachableStep({
+      hasCompletionResult: false,
+      isResumingConfigureStep: false,
+      onboardingCurrentStep: null,
+      selectedCityId: selectedCityId.value,
+      selectedIndustry: selectedIndustry.value,
+    })
+  }
   return getMaxReachableStep({
     hasCompletionResult: !!completionResult.value,
     isResumingConfigureStep: isResumingConfigureStep.value,
@@ -289,6 +316,7 @@ function saveProgress() {
         companyName: companyName.value,
         factoryLotId: selectedFactoryLotId.value,
         shopLotId: selectedShopLotId.value,
+        guestCash: isGuestMode.value ? (onboardingCompanyCash.value ?? undefined) : undefined,
       }),
     )
   } catch {
@@ -321,6 +349,7 @@ function restoreProgress() {
     if (typeof saved.companyName === 'string') companyName.value = saved.companyName
     if (typeof saved.factoryLotId === 'string') selectedFactoryLotId.value = saved.factoryLotId
     if (typeof saved.shopLotId === 'string') selectedShopLotId.value = saved.shopLotId
+    if (typeof saved.guestCash === 'number') onboardingCompanyCash.value = saved.guestCash
     if (typeof saved.step === 'number') step.value = resolveClampStep(saved.step)
   } catch {
     // corrupted data — ignore
@@ -395,36 +424,35 @@ async function syncOngoingOnboardingState() {
 }
 
 onMounted(async () => {
-  if (!auth.isAuthenticated) {
-    router.push('/login')
-    return
+  // Authenticated users: check onboarding completion state first
+  if (auth.isAuthenticated) {
+    if (!auth.player) {
+      await auth.fetchMe()
+    }
+
+    if (auth.player?.onboardingFirstSaleCompletedAtUtc) {
+      // Fully done with onboarding — go straight to dashboard
+      router.push('/dashboard')
+      return
+    }
+
+    if (auth.player?.onboardingCompletedAtUtc && !auth.player.onboardingShopBuildingId) {
+      // Legacy players who completed before shop-building tracking was added,
+      // or players whose milestone shop is gone
+      router.push('/dashboard')
+      return
+    }
+
+    if (isResumingConfigureStep.value) {
+      // Player completed the lot flow but hasn't finished the configure-guide step.
+      // Resume at step 5 with the guidance panel visible.
+      await loadGameState()
+      step.value = 5
+      return
+    }
   }
 
-  if (!auth.player) {
-    await auth.fetchMe()
-  }
-
-  if (auth.player?.onboardingFirstSaleCompletedAtUtc) {
-    // Fully done with onboarding — go straight to dashboard
-    router.push('/dashboard')
-    return
-  }
-
-  if (auth.player?.onboardingCompletedAtUtc && !auth.player.onboardingShopBuildingId) {
-    // Legacy players who completed before shop-building tracking was added,
-    // or players whose milestone shop is gone
-    router.push('/dashboard')
-    return
-  }
-
-  if (isResumingConfigureStep.value) {
-    // Player completed the lot flow but hasn't finished the configure-guide step.
-    // Resume at step 5 with the guidance panel visible.
-    await loadGameState()
-    step.value = 5
-    return
-  }
-
+  // Load public data (works for both guests and authenticated users)
   try {
     loading.value = true
     const [industriesData, citiesData] = await Promise.all([
@@ -438,7 +466,10 @@ onMounted(async () => {
     cities.value = citiesData.cities
 
     restoreProgress()
-    await syncOngoingOnboardingState()
+
+    if (auth.isAuthenticated) {
+      await syncOngoingOnboardingState()
+    }
 
     if (selectedIndustry.value) {
       await loadProducts()
@@ -479,6 +510,14 @@ function prevStep() {
 
 async function startOnboardingCompany() {
   if (!canProceedStep3.value || !selectedFactoryLot.value) return
+
+  // Guest mode: simulate factory purchase locally without backend call
+  if (isGuestMode.value) {
+    onboardingCompanyCash.value = STARTING_CASH - selectedFactoryLot.value.price
+    await loadLots()
+    step.value = 4
+    return
+  }
 
   loading.value = true
   error.value = null
@@ -525,6 +564,14 @@ async function startOnboardingCompany() {
 }
 
 async function completeOnboarding() {
+  // Guest mode: simulate shop purchase locally, then show save-progress prompt
+  if (isGuestMode.value) {
+    clearProgress()
+    step.value = 5
+    await loadGameState()
+    return
+  }
+
   loading.value = true
   error.value = null
 
@@ -618,6 +665,133 @@ async function markStartupPackOfferShown() {
       context: 'onboarding',
       status: data.markStartupPackOfferShown.status,
     })
+  }
+}
+
+/**
+ * Guest mode: register or login, then migrate saved choices to the real backend.
+ * If the lot was taken in the meantime, restart wizard from step 1 with auth.
+ */
+async function saveGuestProgress() {
+  guestSaveError.value = null
+  guestSaveLoading.value = true
+
+  try {
+    if (guestAuthMode.value === 'register') {
+      await auth.register(guestEmail.value, guestDisplayName.value || companyName.value, guestPassword.value)
+    } else {
+      await auth.login(guestEmail.value, guestPassword.value)
+    }
+
+    // Now authenticated — check if this player already completed onboarding
+    if (!auth.player) {
+      await auth.fetchMe()
+    }
+
+    if (auth.player?.onboardingFirstSaleCompletedAtUtc) {
+      router.push('/dashboard')
+      return
+    }
+
+    if (auth.player?.onboardingCompletedAtUtc) {
+      router.push('/dashboard')
+      return
+    }
+
+    // Try to run the real mutations with the saved guest choices
+    if (
+      selectedIndustry.value
+      && selectedCityId.value
+      && companyName.value
+      && selectedFactoryLotId.value
+      && selectedProductId.value
+      && selectedShopLotId.value
+    ) {
+      try {
+        loading.value = true
+        error.value = null
+
+        const startResult = await gqlRequest<{ startOnboardingCompany: OnboardingStartResult }>(
+          `mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+            startOnboardingCompany(input: $input) {
+              nextStep
+              company { id name cash }
+              factory { id name type }
+              factoryLot {
+                id cityId name description district latitude longitude price suitableTypes
+                ownerCompanyId buildingId
+                ownerCompany { id name }
+                building { id name type }
+              }
+            }
+          }`,
+          {
+            input: {
+              industry: selectedIndustry.value,
+              cityId: selectedCityId.value,
+              companyName: companyName.value.trim(),
+              factoryLotId: selectedFactoryLotId.value,
+            },
+          },
+        )
+
+        onboardingCompanyCash.value = startResult.startOnboardingCompany.company.cash
+        selectedFactoryLotId.value = startResult.startOnboardingCompany.factoryLot.id
+        await auth.fetchMe()
+
+        const finishResult = await gqlRequest<{ finishOnboarding: OnboardingResult }>(
+          `mutation FinishOnboarding($input: FinishOnboardingInput!) {
+            finishOnboarding(input: $input) {
+              company { id name cash }
+              factory { id name type }
+              salesShop { id name type }
+              selectedProduct { name industry basePrice }
+              startupPackOffer {
+                id offerKey status createdAtUtc expiresAtUtc shownAtUtc
+                dismissedAtUtc claimedAtUtc companyCashGrant proDurationDays grantedCompanyId
+              }
+            }
+          }`,
+          {
+            input: {
+              productTypeId: selectedProductId.value,
+              shopLotId: selectedShopLotId.value,
+            },
+          },
+        )
+
+        completionResult.value = finishResult.finishOnboarding
+        startupPackOffer.value = finishResult.finishOnboarding.startupPackOffer
+        auth.setStartupPackOffer(finishResult.finishOnboarding.startupPackOffer)
+        onboardingCompanyCash.value = finishResult.finishOnboarding.company.cash
+        await auth.fetchMe()
+        startupPackOffer.value = auth.startupPackOffer ?? startupPackOffer.value
+        if (startupPackOffer.value?.status === 'ELIGIBLE') {
+          await markStartupPackOfferShown()
+        }
+        // Stay on step 5 — now show authenticated completion UI
+      } catch {
+        // Lot was taken or another error — restart wizard from step 1 with auth
+        clearProgress()
+        onboardingCompanyCash.value = null
+        completionResult.value = null
+        selectedFactoryLotId.value = ''
+        selectedShopLotId.value = ''
+        await loadLots()
+        step.value = 1
+        error.value = t('onboarding.guestMigrationRetry')
+      } finally {
+        loading.value = false
+      }
+    } else {
+      // Not enough guest data — restart from step 1 with auth
+      clearProgress()
+      step.value = 1
+    }
+  } catch (e: unknown) {
+    guestSaveError.value = e instanceof Error ? e.message : t('auth.loginFailed')
+  } finally {
+    guestSaveLoading.value = false
   }
 }
 
@@ -1091,11 +1265,100 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="step === 5 && (completionResult || isResumingConfigureStep)" class="step-content completion-step">
+      <div v-if="step === 5 && (completionResult || isResumingConfigureStep || isGuestMode)" class="step-content completion-step">
         <div class="completion-hero">
-          <h2 class="completion-title">{{ t('onboarding.completionTitle') }}</h2>
-          <p class="completion-desc">{{ t('onboarding.completionDesc') }}</p>
+          <h2 class="completion-title">{{ t(isGuestMode ? 'onboarding.guestCompletionTitle' : 'onboarding.completionTitle') }}</h2>
+          <p class="completion-desc">{{ t(isGuestMode ? 'onboarding.guestCompletionDesc' : 'onboarding.completionDesc') }}</p>
         </div>
+
+        <!-- Guest mode: show simulated achievements and save-progress form -->
+        <div v-if="isGuestMode" class="completion-achievements">
+          <div class="achievement-item">
+            <span class="achievement-icon">🏭</span>
+            <div class="achievement-text">
+              <strong>{{ companyName || t('onboarding.guestCompanyPlaceholder') }}</strong>
+              <span>{{ t('onboarding.completionFactory') }}</span>
+            </div>
+          </div>
+          <div class="achievement-item">
+            <span class="achievement-icon">🏪</span>
+            <div class="achievement-text">
+              <strong>{{ selectedShopLot?.name || t('onboarding.guestShopPlaceholder') }}</strong>
+              <span>{{ t('onboarding.completionShop') }}</span>
+            </div>
+          </div>
+          <div v-if="selectedProduct" class="achievement-item">
+            <span class="achievement-icon">📦</span>
+            <div class="achievement-text">
+              <strong>{{ getProductName(selectedProduct) }}</strong>
+              <span>{{ t('onboarding.completionProduct', { product: getProductName(selectedProduct) }) }}</span>
+            </div>
+          </div>
+          <div class="achievement-item">
+            <span class="achievement-icon">💰</span>
+            <div class="achievement-text">
+              <strong>${{ formatCurrency(onboardingCompanyCash ?? STARTING_CASH) }}</strong>
+              <span>{{ t('onboarding.completionCapital', { amount: '$' + formatCurrency(onboardingCompanyCash ?? STARTING_CASH) }) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Guest mode tick countdown -->
+        <div v-if="isGuestMode && gameState" class="guest-tick-panel">
+          <span class="configure-step-icon">⏱</span>
+          <div>
+            <strong>{{ t('onboarding.configureStepTick') }}</strong>
+            <p>{{ t('onboarding.configureStepTickDesc') }}</p>
+            <p class="tick-status">{{ t('onboarding.configureStepTickStatus', { tick: formatNumber(gameState.currentTick) }) }}</p>
+            <p v-if="tickCountdown" class="tick-countdown" role="timer">{{ tickCountdown }}</p>
+          </div>
+        </div>
+
+        <!-- Guest save-progress section -->
+        <section v-if="isGuestMode" class="guest-save-progress" aria-labelledby="guest-save-title">
+          <div class="guest-save-header">
+            <span class="guest-save-icon">🔐</span>
+            <div>
+              <h3 id="guest-save-title">{{ t('onboarding.guestSaveTitle') }}</h3>
+              <p class="guest-save-subtitle">{{ t('onboarding.guestSaveSubtitle') }}</p>
+            </div>
+          </div>
+
+          <div class="guest-auth-toggle">
+            <button
+              class="btn-tab"
+              :class="{ active: guestAuthMode === 'register' }"
+              @click="guestAuthMode = 'register'"
+            >{{ t('onboarding.guestRegister') }}</button>
+            <button
+              class="btn-tab"
+              :class="{ active: guestAuthMode === 'login' }"
+              @click="guestAuthMode = 'login'"
+            >{{ t('onboarding.guestLogin') }}</button>
+          </div>
+
+          <div class="guest-auth-form">
+            <div class="form-group compact">
+              <label for="guestEmail">{{ t('auth.email') }}</label>
+              <input id="guestEmail" v-model="guestEmail" type="email" autocomplete="email" :placeholder="t('auth.emailPlaceholder')" />
+            </div>
+            <div v-if="guestAuthMode === 'register'" class="form-group compact">
+              <label for="guestDisplayName">{{ t('auth.displayName') }}</label>
+              <input id="guestDisplayName" v-model="guestDisplayName" type="text" autocomplete="name" :placeholder="companyName || t('auth.displayNamePlaceholder')" />
+            </div>
+            <div class="form-group compact">
+              <label for="guestPassword">{{ t('auth.password') }}</label>
+              <input id="guestPassword" v-model="guestPassword" type="password" autocomplete="current-password" :placeholder="t('auth.passwordPlaceholder')" />
+            </div>
+
+            <p v-if="guestSaveError" class="error-inline" role="alert">{{ guestSaveError }}</p>
+
+            <button class="btn btn-primary btn-lg btn-full" :disabled="guestSaveLoading" @click="saveGuestProgress">
+              {{ guestSaveLoading ? t('common.loading') : t('onboarding.guestSaveCta') }}
+              <span v-if="!guestSaveLoading" class="btn-arrow">💾</span>
+            </button>
+          </div>
+        </section>
 
         <div v-if="completionResult" class="completion-achievements">
           <div class="achievement-item">
@@ -1123,7 +1386,7 @@ onUnmounted(() => {
             <span class="achievement-icon">💰</span>
             <div class="achievement-text">
               <strong>${{ completionResult.company.cash.toLocaleString() }}</strong>
-              <span>{{ t('onboarding.completionCapital', { amount: completionResult.company.cash.toLocaleString() }) }}</span>
+              <span>{{ t('onboarding.completionCapital', { amount: '$' + completionResult.company.cash.toLocaleString() }) }}</span>
             </div>
           </div>
         </div>
@@ -1210,7 +1473,7 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <section class="configure-guide" aria-labelledby="configure-guide-title">
+        <section v-if="!isGuestMode" class="configure-guide" aria-labelledby="configure-guide-title">
           <h3 id="configure-guide-title">{{ t('onboarding.configureShopTitle') }}</h3>
           <p class="configure-guide-desc">{{ t('onboarding.configureShopDesc') }}</p>
 
@@ -1281,7 +1544,7 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <div class="completion-next">
+        <div v-if="!isGuestMode" class="completion-next">
           <h3>{{ t('onboarding.completionNextSteps') }}</h3>
           <div class="completion-actions">
             <RouterLink to="/dashboard" class="btn btn-secondary">
@@ -2038,6 +2301,106 @@ onUnmounted(() => {
 .milestone-error {
   font-size: 0.9rem;
   color: var(--color-error, #ff4757);
+  margin: 0;
+}
+
+/* Guest mode styles */
+.guest-tick-panel {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.guest-tick-panel .configure-step-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.guest-tick-panel strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--color-text);
+}
+
+.guest-save-progress {
+  background: linear-gradient(135deg, rgba(0, 71, 255, 0.06) 0%, rgba(0, 200, 83, 0.04) 100%);
+  border: 2px solid var(--color-primary);
+  border-radius: 12px;
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.guest-save-header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.guest-save-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.guest-save-header h3 {
+  margin: 0 0 0.375rem;
+  font-size: 1.25rem;
+  color: var(--color-primary);
+}
+
+.guest-save-subtitle {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.guest-auth-toggle {
+  display: flex;
+  gap: 0;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  width: fit-content;
+}
+
+.btn-tab {
+  padding: 0.5rem 1.25rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  transition: all 0.2s ease;
+}
+
+.btn-tab.active {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.guest-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 420px;
+}
+
+.btn-full {
+  width: 100%;
+  justify-content: center;
+}
+
+.error-inline {
+  color: var(--color-error, #ff4757);
+  font-size: 0.875rem;
   margin: 0;
 }
 

@@ -303,11 +303,11 @@ test.describe('Onboarding wizard', () => {
     await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
   })
 
-  test('redirects to login if not authenticated', async ({ page }) => {
+  test('shows wizard step 1 to unauthenticated visitors', async ({ page }) => {
     setupMockApi(page)
     await page.goto('/onboarding')
-    await page.waitForURL('/login')
-    await expect(page).toHaveURL('/login')
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+    await expect(page).toHaveURL(/\/onboarding/)
   })
 
   test('can complete onboarding with Food Processing industry', async ({ page }) => {
@@ -388,6 +388,101 @@ test.describe('Onboarding wizard', () => {
     // Completion
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
+  })
+})
+
+test.describe('Guest onboarding wizard', () => {
+  test('unauthenticated visitor can complete steps 1-4 without login', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Step 1: Choose industry
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Choose city
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: Choose factory lot (no company created on backend)
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Guest Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Choose product and shop lot (no backend call)
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: Guest save-progress screen
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Save & Launch' })).toBeVisible()
+  })
+
+  test('guest save-progress form shows register and login tabs', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Quick completion through steps 1-4
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Guest Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Save-progress section should show register/login tabs
+    await expect(page.locator('.btn-tab', { hasText: 'Create Account' })).toBeVisible()
+    await expect(page.locator('.btn-tab', { hasText: 'Log In' })).toBeVisible()
+
+    // Switch to login tab
+    await page.locator('.btn-tab', { hasText: 'Log In' }).click()
+    // Display Name field should be hidden in login mode
+    await expect(page.locator('#guestDisplayName')).not.toBeVisible()
+  })
+
+  test('guest can register and migrate progress', async ({ page }) => {
+    const state = setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Complete steps 1-4 as guest
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Guest Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Fill register form and submit
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await page.locator('#guestEmail').fill('guest@test.com')
+    await page.locator('#guestDisplayName').fill('Guest Player')
+    await page.locator('#guestPassword').fill('GuestPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // After registration, the backend mutations run and completion screen shows
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    // Should be authenticated now
+    expect(state.currentUserId).toBeTruthy()
   })
 })
 
