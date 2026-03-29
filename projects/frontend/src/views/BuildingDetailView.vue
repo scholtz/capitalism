@@ -5,6 +5,13 @@ import { useI18n } from 'vue-i18n'
 import AdvancedItemSelector from '@/components/buildings/AdvancedItemSelector.vue'
 import { isProductLocked } from '@/lib/productAccess'
 import {
+  formatPercent,
+  formatUnitQuantity,
+  getFillBucket,
+  getUnitConfiguredItemId,
+  getUnitPriceMetric,
+} from '@/lib/gridTileHelpers'
+import {
   applyDiagonalLinkCycle,
   applyHorizontalLinkCycle,
   applyVerticalLinkCycle,
@@ -1165,53 +1172,24 @@ function formatUnitMetric(label: string, value: string): string {
 
 function getUnitConfiguredItemLabel(unit: GridUnit | undefined): string | null {
   if (!unit) return null
-
-  if ('productTypeId' in unit && unit.productTypeId) {
-    return getProductName(unit.productTypeId)
-  }
-
-  if ('resourceTypeId' in unit && unit.resourceTypeId) {
-    return getResourceName(unit.resourceTypeId)
-  }
-
-  return null
+  const item = getUnitConfiguredItemId(unit)
+  if (!item) return null
+  return item.kind === 'product' ? getProductName(item.id) : getResourceName(item.id)
 }
 
 function getUnitPrimaryMetric(unit: GridUnit | undefined): string | null {
   if (!unit) return null
-
-  if ('minPrice' in unit && unit.minPrice != null) {
-    return formatUnitMetric(t('buildingDetail.gridMetrics.minPrice'), `$${unit.minPrice}`)
+  const metric = getUnitPriceMetric(unit)
+  if (!metric) return null
+  if (metric.kind === 'scope') {
+    return formatUnitMetric(t('buildingDetail.gridMetrics.scope'), getBrandScopeLabel(metric.value as string))
   }
-
-  if ('maxPrice' in unit && unit.maxPrice != null) {
-    return formatUnitMetric(t('buildingDetail.gridMetrics.maxPrice'), `$${unit.maxPrice}`)
-  }
-
-  if ('budget' in unit && unit.budget != null) {
-    return formatUnitMetric(t('buildingDetail.gridMetrics.budget'), `$${unit.budget}`)
-  }
-
-  if ('brandScope' in unit && unit.brandScope) {
-    return formatUnitMetric(t('buildingDetail.gridMetrics.scope'), getBrandScopeLabel(unit.brandScope))
-  }
-
-  return null
+  return formatUnitMetric(t(`buildingDetail.gridMetrics.${metric.kind}`), `$${metric.value}`)
 }
 
 function getUnitInventorySummary(unit: GridUnit | undefined): BuildingUnitInventorySummary | undefined {
   if (!unit) return undefined
   return unitInventorySummaries.value.find((summary) => summary.buildingUnitId === unit.id)
-}
-
-function formatPercent(value: number | null | undefined): string {
-  if (value == null) return '—'
-  return `${Math.round(value * 100)}%`
-}
-
-function formatUnitQuantity(value: number): string {
-  if (Number.isInteger(value)) return `${value}`
-  return value.toFixed(2).replace(/\.?0+$/, '')
 }
 
 function getPurchaseUnitResourceTypeId(unit: GridUnit | undefined): string | null {
@@ -1220,6 +1198,25 @@ function getPurchaseUnitResourceTypeId(unit: GridUnit | undefined): string | nul
 
 function getPurchaseUnitSource(unit: GridUnit | undefined): string | null {
   return unit && 'purchaseSource' in unit ? unit.purchaseSource : null
+}
+
+function getGridCellAriaLabel(unit: GridUnit | undefined): string {
+  if (!unit) return t('buildingDetail.cellAriaLabelEmpty')
+
+  const typePart = t(`buildingDetail.unitTypes.${unit.unitType}`)
+  const itemLabel = getUnitConfiguredItemLabel(unit)
+  const metric = getUnitPrimaryMetric(unit)
+  const inventory = getUnitInventorySummary(unit)
+
+  const itemPart = itemLabel ? t('buildingDetail.cellAriaLabelItem', { item: itemLabel }) : ''
+  const metricPart = metric ? t('buildingDetail.cellAriaLabelMetric', { metric }) : ''
+  let fillPart = ''
+  if (inventory?.capacity) {
+    fillPart = t('buildingDetail.cellAriaLabelFill', {
+      fill: formatPercent(inventory.fillPercent),
+    })
+  }
+  return `${typePart}${itemPart}${metricPart}${fillPart}`
 }
 
 function updateSelectedUnitConfig(field: string, value: unknown) {
@@ -1635,33 +1632,35 @@ watch(
                       :style="getUnitAtFrom(activeUnits, x, y)
                         ? { borderColor: getUnitColor(getUnitAtFrom(activeUnits, x, y)!.unitType), background: getUnitColor(getUnitAtFrom(activeUnits, x, y)!.unitType) + '18' }
                         : {}"
+                      role="button"
+                      :tabindex="getUnitAtFrom(activeUnits, x, y) ? 0 : -1"
+                      :aria-label="getGridCellAriaLabel(getUnitAtFrom(activeUnits, x, y))"
                       @click="selectedCell = getUnitAtFrom(activeUnits, x, y) ? { x, y } : null"
+                      @keydown.enter.space.prevent="selectedCell = getUnitAtFrom(activeUnits, x, y) ? { x, y } : null"
                     >
                       <template v-if="getUnitAtFrom(activeUnits, x, y)">
-                        <span class="cell-type">{{ t(`buildingDetail.unitTypes.${getUnitAtFrom(activeUnits, x, y)!.unitType}`) }}</span>
-                        <span v-if="getUnitConfiguredItemLabel(getUnitAtFrom(activeUnits, x, y))" class="cell-item">
+                        <span class="cell-type" aria-hidden="true">{{ t(`buildingDetail.unitTypes.${getUnitAtFrom(activeUnits, x, y)!.unitType}`) }}</span>
+                        <span v-if="getUnitConfiguredItemLabel(getUnitAtFrom(activeUnits, x, y))" class="cell-item" aria-hidden="true">
                           {{ getUnitConfiguredItemLabel(getUnitAtFrom(activeUnits, x, y)) }}
                         </span>
-                        <span v-if="getUnitPrimaryMetric(getUnitAtFrom(activeUnits, x, y))" class="cell-metric">
+                        <span v-if="getUnitPrimaryMetric(getUnitAtFrom(activeUnits, x, y))" class="cell-metric" aria-hidden="true">
                           {{ getUnitPrimaryMetric(getUnitAtFrom(activeUnits, x, y)) }}
                         </span>
-                        <span class="cell-level">Lv.{{ getUnitAtFrom(activeUnits, x, y)!.level }}</span>
+                        <span class="cell-level" aria-hidden="true">Lv.{{ getUnitAtFrom(activeUnits, x, y)!.level }}</span>
                         <div
                           v-if="getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))?.capacity"
                           class="cell-capacity"
-                          :aria-label="t('buildingDetail.capacityMeterLabel', {
-                            quantity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.quantity),
-                            capacity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.capacity),
-                          })"
+                          aria-hidden="true"
                         >
                           <span
                             class="cell-capacity-fill"
+                            :data-fill="getFillBucket(getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.fillPercent)"
                             :style="{ width: `${Math.round((getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.fillPercent ?? 0) * 100)}%` }"
                           ></span>
                         </div>
                       </template>
                       <template v-else>
-                        <span class="cell-empty">+</span>
+                        <span class="cell-empty" aria-hidden="true">+</span>
                       </template>
                     </div>
 
@@ -1759,41 +1758,40 @@ watch(
                       :style="getUnitAtFrom(plannedUnits, x, y)
                         ? { borderColor: getUnitColor(getUnitAtFrom(plannedUnits, x, y)!.unitType), background: getUnitColor(getUnitAtFrom(plannedUnits, x, y)!.unitType) + '18' }
                         : {}"
+                      :aria-label="getGridCellAriaLabel(getUnitAtFrom(plannedUnits, x, y))"
                       @click="clickDraftCell(x, y)"
                     >
                       <template v-if="getUnitAtFrom(plannedUnits, x, y)">
-                        <span class="cell-type">{{ t(`buildingDetail.unitTypes.${getUnitAtFrom(plannedUnits, x, y)!.unitType}`) }}</span>
-                        <span v-if="getUnitConfiguredItemLabel(getUnitAtFrom(plannedUnits, x, y))" class="cell-item">
+                        <span class="cell-type" aria-hidden="true">{{ t(`buildingDetail.unitTypes.${getUnitAtFrom(plannedUnits, x, y)!.unitType}`) }}</span>
+                        <span v-if="getUnitConfiguredItemLabel(getUnitAtFrom(plannedUnits, x, y))" class="cell-item" aria-hidden="true">
                           {{ getUnitConfiguredItemLabel(getUnitAtFrom(plannedUnits, x, y)) }}
                         </span>
-                        <span v-if="getUnitPrimaryMetric(getUnitAtFrom(plannedUnits, x, y))" class="cell-metric">
+                        <span v-if="getUnitPrimaryMetric(getUnitAtFrom(plannedUnits, x, y))" class="cell-metric" aria-hidden="true">
                           {{ getUnitPrimaryMetric(getUnitAtFrom(plannedUnits, x, y)) }}
                         </span>
-                        <span class="cell-level">Lv.{{ getUnitAtFrom(plannedUnits, x, y)!.level }}</span>
+                        <span class="cell-level" aria-hidden="true">Lv.{{ getUnitAtFrom(plannedUnits, x, y)!.level }}</span>
                         <div
                           v-if="getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))?.capacity"
                           class="cell-capacity"
-                          :aria-label="t('buildingDetail.capacityMeterLabel', {
-                            quantity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.quantity),
-                            capacity: formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.capacity),
-                          })"
+                          aria-hidden="true"
                         >
                           <span
                             class="cell-capacity-fill"
+                            :data-fill="getFillBucket(getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.fillPercent)"
                             :style="{ width: `${Math.round((getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.fillPercent ?? 0) * 100)}%` }"
                           ></span>
                         </div>
-                        <span v-if="getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) > 0" class="cell-pending">
+                        <span v-if="getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) > 0" class="cell-pending" aria-hidden="true">
                           {{ t('buildingDetail.unitUnavailableFor', { ticks: getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) }) }}
                         </span>
                         <span
                           v-if="isUnitReverting(getUnitAtFrom(plannedUnits, x, y))"
                           class="cell-reverting"
-                          :aria-label="t('buildingDetail.revertingAriaLabel')"
+                          aria-hidden="true"
                         >{{ t('buildingDetail.reverting') }}</span>
                       </template>
                       <template v-else>
-                        <span class="cell-empty">+</span>
+                        <span class="cell-empty" aria-hidden="true">+</span>
                       </template>
                     </button>
 
@@ -2733,6 +2731,15 @@ watch(
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--color-primary), #38bdf8);
+  transition: background 0.2s ease;
+}
+
+.cell-capacity-fill[data-fill='medium'] {
+  background: linear-gradient(90deg, #3b82f6, #38bdf8);
+}
+
+.cell-capacity-fill[data-fill='high'] {
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
 }
 
 .link-toggle {

@@ -1779,7 +1779,7 @@ test.describe('Building detail upgrades', () => {
 
     // The diagonal button covering the 2×2 block (0,0)-(1,1) is enabled (all 4 cells occupied)
     const diagButton = plannedSection.locator('.link-toggle.diagonal').first()
-    await expect(diagButton).not.toBeDisabled()
+    await expect(diagButton).toBeEnabled()
     await diagButton.click()
     // tl-br: PURCHASE(0,0).linkDownRight → MANUFACTURING(1,1)
     await expect(diagButton).toHaveClass(/state-tl-br/)
@@ -1793,5 +1793,280 @@ test.describe('Building detail upgrades', () => {
     await expect(page.locator('.config-warnings')).toContainText(
       'Manufacturing unit at (1, 1) is not linked to a storage or sales output.',
     )
+  })
+
+  // ---------------------------------------------------------------------------
+  // Grid tile metadata: resource / product labels, fill bars, price metrics
+  // ---------------------------------------------------------------------------
+
+  test('mine grid shows resource label and fill bar directly in active grid tiles', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-mine',
+      playerId: player.id,
+      name: 'Coal Mine Co',
+      cash: 300000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-mine',
+          companyId: 'company-mine',
+          cityId: 'city-ba',
+          type: 'MINE',
+          name: 'Coal Mine',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'mine-u1',
+              buildingId: 'building-mine',
+              unitType: 'MINING',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              inventoryQuantity: 75,
+              inventoryQuality: 0.9,
+            },
+            {
+              id: 'mine-u2',
+              buildingId: 'building-mine',
+              unitType: 'STORAGE',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              inventoryQuantity: 10,
+            },
+            {
+              id: 'mine-u3',
+              buildingId: 'building-mine',
+              unitType: 'B2B_SALES',
+              gridX: 2,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              minPrice: 85,
+              inventoryQuantity: 0,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-mine')
+    await expect(page.getByRole('heading', { name: 'Coal Mine' })).toBeVisible()
+
+    const activeSection = getGridSection(page, 'Current Configuration')
+
+    // Mining unit: shows 'Wood' resource label directly in tile
+    const miningCell = getGridCell(activeSection, 0, 0)
+    await expect(miningCell).toContainText('Mining')
+    await expect(miningCell).toContainText('Wood')
+
+    // Mining unit: fill bar is present (75/100 = 75% fill = high bucket)
+    await expect(miningCell.locator('.cell-capacity')).toBeVisible()
+    await expect(miningCell.locator('.cell-capacity-fill[data-fill="high"]')).toBeVisible()
+
+    // Storage unit: also shows resource label and fill bar at lower fill
+    const storageCell = getGridCell(activeSection, 1, 0)
+    await expect(storageCell).toContainText('Storage')
+    await expect(storageCell).toContainText('Wood')
+    await expect(storageCell.locator('.cell-capacity')).toBeVisible()
+    await expect(storageCell.locator('.cell-capacity-fill[data-fill="low"]')).toBeVisible()
+
+    // B2B_SALES unit: shows resource label AND min price metric
+    const salesCell = getGridCell(activeSection, 2, 0)
+    await expect(salesCell).toContainText('B2B Sales')
+    await expect(salesCell).toContainText('Wood')
+    await expect(salesCell).toContainText('Sell from: $85')
+
+    // All occupied tiles include accessible aria-label describing unit type
+    await expect(miningCell).toHaveAttribute('aria-label', /Mining/)
+    await expect(miningCell).toHaveAttribute('aria-label', /Wood/)
+    await expect(salesCell).toHaveAttribute('aria-label', /B2B Sales/)
+    await expect(salesCell).toHaveAttribute('aria-label', /Wood/)
+    await expect(salesCell).toHaveAttribute('aria-label', /Sell from/)
+  })
+
+  test('factory grid shows product label and price metric in planned configuration after edit', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-factory',
+      playerId: player.id,
+      name: 'Chair Factory Ltd',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-factory',
+          companyId: 'company-factory',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Chair Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'factory-u1',
+              buildingId: 'building-factory',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              maxPrice: 120,
+              inventoryQuantity: 40,
+            },
+            {
+              id: 'factory-u2',
+              buildingId: 'building-factory',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              productTypeId: 'prod-chair',
+              inventoryQuantity: 20,
+            },
+            {
+              id: 'factory-u3',
+              buildingId: 'building-factory',
+              unitType: 'PUBLIC_SALES',
+              gridX: 2,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              productTypeId: 'prod-chair',
+              minPrice: 50,
+              inventoryQuantity: 5,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-factory')
+    await expect(page.getByRole('heading', { name: 'Chair Factory' })).toBeVisible()
+
+    const activeSection = getGridSection(page, 'Current Configuration')
+
+    // Purchase unit shows resource label and max price metric
+    const purchaseCell = getGridCell(activeSection, 0, 0)
+    await expect(purchaseCell).toContainText('Purchase')
+    await expect(purchaseCell).toContainText('Wood')
+    await expect(purchaseCell).toContainText('Buy up to: $120')
+    await expect(purchaseCell.locator('.cell-capacity')).toBeVisible()
+
+    // Manufacturing unit shows product label and fill bar
+    const mfgCell = getGridCell(activeSection, 1, 0)
+    await expect(mfgCell).toContainText('Manufacturing')
+    await expect(mfgCell).toContainText('Wooden Chair')
+    await expect(mfgCell.locator('.cell-capacity')).toBeVisible()
+
+    // Public sales unit shows product label and min price metric
+    const salesCell = getGridCell(activeSection, 2, 0)
+    await expect(salesCell).toContainText('Public Sales')
+    await expect(salesCell).toContainText('Wooden Chair')
+    await expect(salesCell).toContainText('Sell from: $50')
+
+    // Enter edit mode – the planned grid should show same metadata
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+
+    const plannedPurchase = getGridCell(plannedSection, 0, 0)
+    await expect(plannedPurchase).toContainText('Purchase')
+    await expect(plannedPurchase).toContainText('Wood')
+    await expect(plannedPurchase).toContainText('Buy up to: $120')
+
+    const plannedMfg = getGridCell(plannedSection, 1, 0)
+    await expect(plannedMfg).toContainText('Manufacturing')
+    await expect(plannedMfg).toContainText('Wooden Chair')
+
+    const plannedSales = getGridCell(plannedSection, 2, 0)
+    await expect(plannedSales).toContainText('Public Sales')
+    await expect(plannedSales).toContainText('Wooden Chair')
+    await expect(plannedSales).toContainText('Sell from: $50')
+
+    // Planned grid buttons include accessible aria-labels
+    await expect(plannedPurchase).toHaveAttribute('aria-label', /Purchase/)
+    await expect(plannedPurchase).toHaveAttribute('aria-label', /Wood/)
+    await expect(plannedPurchase).toHaveAttribute('aria-label', /Buy up to/)
   })
 })
