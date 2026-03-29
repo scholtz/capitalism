@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
 import { trackStartupPackEvent } from '@/lib/startupPackAnalytics'
+import { computeSimulatedProfit, trackOnboardingEvent } from '@/lib/onboardingAnalytics'
 import {
   getLocalizedProductDescription,
   getLocalizedProductName,
@@ -240,6 +241,20 @@ const configureGuideCash = computed(() => {
   return auth.player?.companies[0]?.cash ?? 0
 })
 
+/** Simulated first-tick profit for the guest completion preview. */
+const simulatedProfit = computed(() => {
+  if (!selectedProduct.value) return null
+  const recipeCost = selectedProduct.value.recipes.reduce((sum, r) => {
+    const unitCost = r.resourceType?.basePrice ?? 0
+    return sum + unitCost * r.quantity
+  }, 0)
+  return computeSimulatedProfit(
+    selectedProduct.value.basePrice,
+    selectedProduct.value.outputQuantity,
+    recipeCost > 0 ? recipeCost : undefined,
+  )
+})
+
 function findResumedShopBasePrice(): number | null {
   const resumedShop = auth.player?.companies
     .flatMap((company) => company.buildings)
@@ -424,6 +439,9 @@ async function syncOngoingOnboardingState() {
 }
 
 onMounted(async () => {
+  // Track onboarding start event
+  trackOnboardingEvent('onboarding_start', { authenticated: auth.isAuthenticated })
+
   // Authenticated users: check onboarding completion state first
   if (auth.isAuthenticated) {
     if (!auth.player) {
@@ -491,12 +509,14 @@ async function nextStep() {
   error.value = null
 
   if (step.value === 1 && canProceedStep1.value) {
+    trackOnboardingEvent('industry_selected', { industry: selectedIndustry.value })
     await loadProducts()
     step.value = 2
     return
   }
 
   if (step.value === 2 && canProceedStep2.value) {
+    trackOnboardingEvent('city_selected', { cityId: selectedCityId.value })
     await loadLots()
     step.value = 3
   }
@@ -514,6 +534,12 @@ async function startOnboardingCompany() {
   // Guest mode: simulate factory purchase locally without backend call
   if (isGuestMode.value) {
     onboardingCompanyCash.value = STARTING_CASH - selectedFactoryLot.value.price
+    trackOnboardingEvent('factory_configured', {
+      guest: true,
+      lotId: selectedFactoryLotId.value,
+      industry: selectedIndustry.value,
+      cityId: selectedCityId.value,
+    })
     await loadLots()
     step.value = 4
     return
@@ -549,6 +575,12 @@ async function startOnboardingCompany() {
 
     onboardingCompanyCash.value = result.startOnboardingCompany.company.cash
     selectedFactoryLotId.value = result.startOnboardingCompany.factoryLot.id
+    trackOnboardingEvent('factory_configured', {
+      guest: false,
+      lotId: selectedFactoryLotId.value,
+      industry: selectedIndustry.value,
+      cityId: selectedCityId.value,
+    })
     await auth.fetchMe()
     await loadLots()
     step.value = 4
@@ -567,6 +599,22 @@ async function completeOnboarding() {
   // Guest mode: simulate shop purchase locally, then show save-progress prompt
   if (isGuestMode.value) {
     clearProgress()
+    trackOnboardingEvent('shop_configured', {
+      guest: true,
+      lotId: selectedShopLotId.value,
+      productId: selectedProductId.value,
+      industry: selectedIndustry.value,
+    })
+    trackOnboardingEvent('save_prompt_shown', { guest: true })
+    if (simulatedProfit.value) {
+      trackOnboardingEvent('first_profit_shown', {
+        guest: true,
+        revenue: simulatedProfit.value.revenue,
+        cost: simulatedProfit.value.cost,
+        profit: simulatedProfit.value.profit,
+        productId: selectedProductId.value,
+      })
+    }
     step.value = 5
     await loadGameState()
     return
@@ -611,6 +659,12 @@ async function completeOnboarding() {
     auth.setStartupPackOffer(result.finishOnboarding.startupPackOffer)
     onboardingCompanyCash.value = result.finishOnboarding.company.cash
     clearProgress()
+    trackOnboardingEvent('shop_configured', {
+      guest: false,
+      productId: selectedProductId.value,
+      industry: selectedIndustry.value,
+    })
+    trackOnboardingEvent('completed', { guest: false })
     await auth.fetchMe()
     startupPackOffer.value = auth.startupPackOffer ?? startupPackOffer.value
     if (startupPackOffer.value?.status === 'ELIGIBLE') {
@@ -1322,6 +1376,33 @@ onUnmounted(() => {
             <p>{{ t('onboarding.configureStepTickDesc') }}</p>
             <p class="tick-status">{{ t('onboarding.configureStepTickStatus', { tick: formatNumber(gameState.currentTick) }) }}</p>
             <p v-if="tickCountdown" class="tick-countdown" role="timer">{{ tickCountdown }}</p>
+          </div>
+        </div>
+
+        <!-- Guest simulated profit preview -->
+        <div v-if="isGuestMode && simulatedProfit" class="guest-profit-preview" role="region" aria-label="Simulated first profit">
+          <div class="profit-preview-header">
+            <span class="profit-preview-icon">📈</span>
+            <div>
+              <strong>{{ t('onboarding.guestProfitPreviewTitle') }}</strong>
+              <p>{{ t('onboarding.guestProfitPreviewDesc') }}</p>
+            </div>
+          </div>
+          <div class="profit-preview-stats">
+            <div class="profit-stat">
+              <span class="profit-stat-label">{{ t('onboarding.guestProfitRevenue') }}</span>
+              <span class="profit-stat-value profit-stat-revenue">${{ formatCurrency(simulatedProfit.revenue) }}</span>
+            </div>
+            <div class="profit-stat">
+              <span class="profit-stat-label">{{ t('onboarding.guestProfitCost') }}</span>
+              <span class="profit-stat-value profit-stat-cost">-${{ formatCurrency(simulatedProfit.cost) }}</span>
+            </div>
+            <div class="profit-stat profit-stat-net">
+              <span class="profit-stat-label">{{ t('onboarding.guestProfitNet') }}</span>
+              <span class="profit-stat-value" :class="simulatedProfit.profit >= 0 ? 'profit-stat-positive' : 'profit-stat-negative'">
+                {{ simulatedProfit.profit >= 0 ? '+' : '' }}${{ formatCurrency(simulatedProfit.profit) }}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -2337,6 +2418,85 @@ onUnmounted(() => {
   display: block;
   margin-bottom: 0.25rem;
   color: var(--color-text);
+}
+
+/* Guest simulated profit preview */
+.guest-profit-preview {
+  background: linear-gradient(135deg, rgba(0, 200, 83, 0.08) 0%, rgba(0, 71, 255, 0.04) 100%);
+  border: 1px solid rgba(0, 200, 83, 0.4);
+  border-radius: 10px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.profit-preview-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.profit-preview-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.profit-preview-header strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--color-text);
+}
+
+.profit-preview-header p {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.profit-preview-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-top: 1px solid rgba(0, 200, 83, 0.25);
+  padding-top: 0.75rem;
+}
+
+.profit-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.profit-stat-net {
+  border-top: 1px solid rgba(0, 200, 83, 0.25);
+  padding-top: 0.5rem;
+  font-weight: 600;
+}
+
+.profit-stat-label {
+  color: var(--color-text-secondary);
+}
+
+.profit-stat-value {
+  font-weight: 500;
+}
+
+.profit-stat-revenue {
+  color: var(--color-text);
+}
+
+.profit-stat-cost {
+  color: var(--color-text-secondary);
+}
+
+.profit-stat-positive {
+  color: #22c55e;
+}
+
+.profit-stat-negative {
+  color: var(--color-error, #ff4757);
 }
 
 .guest-save-progress {

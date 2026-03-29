@@ -154,6 +154,11 @@ export default {
     guestSaveCta: 'Uložiť a spustiť',
     guestMigrationRetry: 'Jeden z vybraných pozemkov bol medzitým obsadený. Prosím, vyberte nové pozemky a pokračujte.',
     guestMigrationGenericError: 'Niečo sa pokazilo pri spúšťaní vašej spoločnosti. Skúste to znova alebo kontaktujte podporu, ak problém pretrváva.',
+    guestProfitPreviewTitle: '💡 Ukážka zisku z prvého taktu',
+    guestProfitPreviewDesc: 'Na základe zvoleného produktu a trhových cien je tu odhad vášho prvého výrobného cyklu.',
+    guestProfitRevenue: 'Odhadovaný príjem',
+    guestProfitCost: 'Odhadované náklady na materiál',
+    guestProfitNet: 'Projektovaný čistý zisk',
   },
   startupPack: {
     eyebrow: 'Časovo obmedzený štartovací balík',

@@ -154,6 +154,11 @@ export default {
     guestSaveCta: 'Speichern & starten',
     guestMigrationRetry: 'Eines der von Ihnen gewählten Grundstücke wurde inzwischen vergeben. Bitte wählen Sie neue Grundstücke und fahren Sie fort.',
     guestMigrationGenericError: 'Beim Start Ihres Unternehmens ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut oder kontaktieren Sie den Support, falls das Problem weiterhin besteht.',
+    guestProfitPreviewTitle: '💡 Gewinnvorschau für den ersten Takt',
+    guestProfitPreviewDesc: 'Basierend auf Ihrem gewählten Produkt und Marktpreisen hier eine Schätzung Ihres ersten Produktionszyklus.',
+    guestProfitRevenue: 'Geschätzter Umsatz',
+    guestProfitCost: 'Geschätzte Materialkosten',
+    guestProfitNet: 'Projizierter Nettogewinn',
   },
   startupPack: {
     eyebrow: 'Zeitlich begrenztes Startup-Paket',

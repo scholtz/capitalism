@@ -154,6 +154,11 @@ export default {
     guestSaveCta: 'Save & Launch',
     guestMigrationRetry: 'One of the lots you chose was taken. Please pick new lots to continue.',
     guestMigrationGenericError: 'Something went wrong while launching your company. Please try again or contact support if the problem persists.',
+    guestProfitPreviewTitle: '💡 First-Tick Profit Preview',
+    guestProfitPreviewDesc: 'Based on your chosen product and market prices, here is an estimate of your first production cycle.',
+    guestProfitRevenue: 'Estimated revenue',
+    guestProfitCost: 'Estimated materials cost',
+    guestProfitNet: 'Projected net profit',
   },
   startupPack: {
     eyebrow: 'Limited-time startup pack',
