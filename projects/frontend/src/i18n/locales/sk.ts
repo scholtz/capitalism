@@ -234,6 +234,7 @@ export default {
     compositionTitle: 'Zloženie požiadaviek',
     compositionHelp: 'Vizualizujte, ako každá vstupná požiadavka vstupuje do vybraného vyrobeného produktu.',
     viewDetail: 'Zobraziť detail',
+    searchNoResults: 'Žiadne suroviny ani produkty nezodpovedajú vášmu vyhľadávaniu. Skúste iný výraz alebo vymažte filtre.',
   },
   resourceDetail: {
     backToEncyclopedia: 'Späť na encyklopédiu',

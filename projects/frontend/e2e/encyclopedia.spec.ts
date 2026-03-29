@@ -374,4 +374,63 @@ test.describe('Encyclopedia search and filter', () => {
     await expect(page).toHaveURL('/encyclopedia')
     await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
   })
+
+  test('search with no matches shows empty state message', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia')
+    await page.getByPlaceholder('Search resources, ingredients, or descriptions').fill('zzz-no-match-xyz')
+
+    await expect(page.locator('.search-empty-state')).toBeVisible()
+    await expect(page.locator('.search-empty-state')).toContainText('No resources or products match your search')
+    await expect(page.getByRole('button', { name: /Wood/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Electronic/ })).toHaveCount(0)
+  })
+
+  test('clearing search after no-results restores full list', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia')
+    const searchInput = page.getByPlaceholder('Search resources, ingredients, or descriptions')
+    await searchInput.fill('zzz-no-match-xyz')
+    await expect(page.locator('.search-empty-state')).toBeVisible()
+
+    await searchInput.fill('')
+    await expect(page.locator('.search-empty-state')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Wood/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Electronic Table/ })).toBeVisible()
+  })
+
+  test('chain navigation: resource → product → related resource navigates correctly', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    // Start at wood resource detail
+    await page.goto('/encyclopedia/resources/wood')
+    await expect(page.getByRole('heading', { name: 'Wood', level: 1 })).toBeVisible()
+
+    // Navigate downstream to Electronic Table (a product that uses wood)
+    const downstreamCard = page.locator('.product-card').filter({ hasText: 'Electronic Table' })
+    await downstreamCard.click()
+    await expect(page).toHaveURL('/encyclopedia/resources/electronic-table')
+    await expect(page.getByRole('heading', { name: 'Electronic Table', level: 1 })).toBeVisible()
+
+    // From Electronic Table, navigate back upstream to Wood via ingredient link
+    await page.getByRole('link', { name: /Wood/ }).first().click()
+    await expect(page).toHaveURL('/encyclopedia/resources/wood')
+    await expect(page.getByRole('heading', { name: 'Wood', level: 1 })).toBeVisible()
+
+    // Navigate back to encyclopedia list
+    await page.getByRole('button', { name: 'Back to Encyclopedia' }).click()
+    await expect(page).toHaveURL('/encyclopedia')
+    await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
+  })
 })

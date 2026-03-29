@@ -258,6 +258,9 @@ function navigateToEntry(slug: string) {
       </div>
 
       <div class="resource-grid">
+        <p v-if="catalogEntries.length === 0" class="search-empty-state">
+          {{ t('encyclopedia.searchNoResults') }}
+        </p>
         <article
           v-for="entry in catalogEntries"
           :key="entry.id"
@@ -471,6 +474,14 @@ function navigateToEntry(slug: string) {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--color-primary);
+}
+
+.search-empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
 }
 
 @media (max-width: 720px) {

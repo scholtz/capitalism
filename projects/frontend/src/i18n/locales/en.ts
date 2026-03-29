@@ -234,6 +234,7 @@ export default {
     compositionTitle: 'Requirement composition',
     compositionHelp: 'Visualize each upstream requirement flowing into the selected manufactured product.',
     viewDetail: 'View detail',
+    searchNoResults: 'No resources or products match your search. Try a different term or clear the filters.',
   },
   resourceDetail: {
     backToEncyclopedia: 'Back to Encyclopedia',

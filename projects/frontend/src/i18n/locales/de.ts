@@ -234,6 +234,7 @@ export default {
     compositionTitle: 'Anforderungszusammensetzung',
     compositionHelp: 'Visualisieren Sie, wie jede vorgelagerte Anforderung in das ausgewählte Endprodukt fließt.',
     viewDetail: 'Detail anzeigen',
+    searchNoResults: 'Keine Ressourcen oder Produkte entsprechen Ihrer Suche. Versuchen Sie einen anderen Begriff oder löschen Sie die Filter.',
   },
   resourceDetail: {
     backToEncyclopedia: 'Zurück zur Enzyklopädie',
