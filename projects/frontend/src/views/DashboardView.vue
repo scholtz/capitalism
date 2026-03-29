@@ -324,7 +324,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
         <p class="startup-pack-subtitle">
           {{
             t('startupPack.subtitle', {
-              amount: formatCurrency(auth.startupPackOffer.companyCashGrant),
+              amount: '$' + formatCurrency(auth.startupPackOffer.companyCashGrant),
             })
           }}
         </p>
@@ -345,7 +345,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
                 <p>
                   {{
                     t('startupPack.cashBenefitBody', {
-                      amount: formatCurrency(activeStartupPackOffer.companyCashGrant),
+                      amount: '$' + formatCurrency(activeStartupPackOffer.companyCashGrant),
                       company: targetCompany?.name ?? t('dashboard.title'),
                     })
                   }}

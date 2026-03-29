@@ -2479,9 +2479,9 @@ watch(
                       <span>{{ t('buildingDetail.exchange.quality', { quality: formatPercent(offer.estimatedQuality) }) }}</span>
                     </div>
                     <div class="exchange-offer-metrics">
-                      <span>{{ t('buildingDetail.exchange.exchangePrice', { price: offer.exchangePricePerUnit, unit: offer.unitSymbol }) }}</span>
-                      <span>{{ t('buildingDetail.exchange.transit', { price: offer.transitCostPerUnit, distance: offer.distanceKm }) }}</span>
-                      <span>{{ t('buildingDetail.exchange.deliveredPrice', { price: offer.deliveredPricePerUnit, unit: offer.unitSymbol }) }}</span>
+                      <span>{{ t('buildingDetail.exchange.exchangePrice', { price: '$' + offer.exchangePricePerUnit, unit: offer.unitSymbol }) }}</span>
+                      <span>{{ t('buildingDetail.exchange.transit', { price: '$' + offer.transitCostPerUnit, distance: offer.distanceKm }) }}</span>
+                      <span>{{ t('buildingDetail.exchange.deliveredPrice', { price: '$' + offer.deliveredPricePerUnit, unit: offer.unitSymbol }) }}</span>
                     </div>
                   </li>
                 </ul>
@@ -2647,9 +2647,9 @@ watch(
                       <span>{{ t('buildingDetail.exchange.quality', { quality: formatPercent(offer.estimatedQuality) }) }}</span>
                     </div>
                     <div class="exchange-offer-metrics">
-                      <span>{{ t('buildingDetail.exchange.exchangePrice', { price: offer.exchangePricePerUnit, unit: offer.unitSymbol }) }}</span>
-                      <span>{{ t('buildingDetail.exchange.transit', { price: offer.transitCostPerUnit, distance: offer.distanceKm }) }}</span>
-                      <span>{{ t('buildingDetail.exchange.deliveredPrice', { price: offer.deliveredPricePerUnit, unit: offer.unitSymbol }) }}</span>
+                      <span>{{ t('buildingDetail.exchange.exchangePrice', { price: '$' + offer.exchangePricePerUnit, unit: offer.unitSymbol }) }}</span>
+                      <span>{{ t('buildingDetail.exchange.transit', { price: '$' + offer.transitCostPerUnit, distance: offer.distanceKm }) }}</span>
+                      <span>{{ t('buildingDetail.exchange.deliveredPrice', { price: '$' + offer.deliveredPricePerUnit, unit: offer.unitSymbol }) }}</span>
                     </div>
                   </li>
                 </ul>

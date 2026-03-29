@@ -1403,7 +1403,7 @@ onUnmounted(() => {
           </div>
 
           <p class="startup-pack-subtitle">
-            {{ t('startupPack.subtitle', { amount: formatCurrency(startupPackOffer.companyCashGrant) }) }}
+            {{ t('startupPack.subtitle', { amount: '$' + formatCurrency(startupPackOffer.companyCashGrant) }) }}
           </p>
 
           <div v-if="activeStartupPackOffer" class="startup-pack-active">
@@ -1422,7 +1422,7 @@ onUnmounted(() => {
                   <p>
                     {{
                       t('startupPack.cashBenefitBody', {
-                        amount: formatCurrency(activeStartupPackOffer.companyCashGrant),
+                        amount: '$' + formatCurrency(activeStartupPackOffer.companyCashGrant),
                         company: completionResult?.company.name ?? '',
                       })
                     }}
@@ -1460,7 +1460,7 @@ onUnmounted(() => {
             <p>
               {{
                 t('startupPack.cashBenefitBody', {
-                  amount: formatCurrency(claimedStartupPackOffer.companyCashGrant),
+                  amount: '$' + formatCurrency(claimedStartupPackOffer.companyCashGrant),
                   company: completionResult?.company.name ?? '',
                 })
               }}
@@ -1482,7 +1482,7 @@ onUnmounted(() => {
               <span class="configure-step-icon">💰</span>
               <div class="configure-step-body">
                 <strong>{{ t('onboarding.configureStepCash') }}</strong>
-                <p>{{ t('onboarding.configureStepCashDesc', { amount: formatCurrency(configureGuideCash) }) }}</p>
+                <p>{{ t('onboarding.configureStepCashDesc', { amount: '$' + formatCurrency(configureGuideCash) }) }}</p>
               </div>
             </article>
 
@@ -1495,7 +1495,7 @@ onUnmounted(() => {
                     configureGuideBasePrice === null
                       ? t('onboarding.configureStepPriceDesc')
                       : t('onboarding.configureStepPriceDescWithPrice', {
-                          price: formatCurrency(configureGuideBasePrice),
+                          price: '$' + formatCurrency(configureGuideBasePrice),
                         })
                   }}
                 </p>
