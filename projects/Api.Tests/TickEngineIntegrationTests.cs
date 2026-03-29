@@ -478,4 +478,246 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         Assert.True(totalMined > 0m,
             "Mining should accumulate resources over multiple ticks.");
     }
+
+    #region Global Exchange Purchasing
+
+    /// <summary>
+    /// Seeds a factory with a PURCHASE unit configured to buy from the global
+    /// exchange (PurchaseSource = "EXCHANGE").  No player-placed sell orders exist.
+    /// </summary>
+    private async Task<(Guid CompanyId, Guid BuildingId, Guid CityId, Guid PurchaseUnitId, Guid ResourceTypeId)>
+        SeedExchangePurchaseUnitAsync(
+            AppDbContext db,
+            decimal? maxPrice = null,
+            decimal? minQuality = null,
+            string purchaseSource = "EXCHANGE",
+            string resourceSlug = "wood")
+    {
+        var city = await db.Cities.Include(c => c.Resources).ThenInclude(r => r.ResourceType).FirstAsync();
+
+        var player = new Player
+        {
+            Id = Guid.NewGuid(),
+            Email = $"exchg-{Guid.NewGuid():N}@test.com",
+            DisplayName = "Exchange Tester",
+            PasswordHash = "hash",
+            Role = PlayerRole.Player
+        };
+        db.Players.Add(player);
+
+        var company = new Company
+        {
+            Id = Guid.NewGuid(),
+            PlayerId = player.Id,
+            Name = "Exchange Corp",
+            Cash = 1_000_000m
+        };
+        db.Companies.Add(company);
+
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == resourceSlug);
+
+        var building = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = BuildingType.Factory,
+            Name = "Exchange Factory",
+            Level = 1
+        };
+        db.Buildings.Add(building);
+
+        var purchaseUnit = new BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            MaxPrice = maxPrice,
+            MinQuality = minQuality,
+            PurchaseSource = purchaseSource
+        };
+        db.BuildingUnits.Add(purchaseUnit);
+
+        await db.SaveChangesAsync();
+        return (company.Id, building.Id, city.Id, purchaseUnit.Id, resource.Id);
+    }
+
+    [Fact]
+    public async Task PurchasingPhase_GlobalExchange_FillsInventoryWhenNoPlayerOrders()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var (companyId, buildingId, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "EXCHANGE");
+
+        var company = await db.Companies.FindAsync(companyId);
+        var cashBefore = company!.Cash;
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        // Inventory should have been filled from the global exchange.
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId)
+            .ToListAsync();
+
+        Assert.NotEmpty(inventory);
+        Assert.True(inventory.Sum(i => i.Quantity) > 0m,
+            "Purchase unit should have filled inventory from global exchange.");
+
+        // Company cash should have decreased (cost of purchase).
+        Assert.True(company.Cash < cashBefore,
+            "Company should have paid for global exchange purchase.");
+
+        // Quality should be within expected exchange range (0.35 – 0.95).
+        Assert.All(inventory, inv => Assert.InRange(inv.Quality, 0.35m, 0.95m));
+    }
+
+    [Fact]
+    public async Task PurchasingPhase_GlobalExchange_RespectsMaxPrice()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Set MaxPrice to an impossibly low value (0.001) so no global exchange offer qualifies.
+        var (companyId, buildingId, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 0.001m, purchaseSource: "EXCHANGE");
+
+        var company = await db.Companies.FindAsync(companyId);
+        var cashBefore = company!.Cash;
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        // Inventory should remain empty because no offer meets the max price.
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId)
+            .ToListAsync();
+
+        Assert.True(inventory.Sum(i => i.Quantity) == 0m,
+            "Purchase unit should not have bought anything when max price is too low.");
+
+        // Cash should be unchanged.
+        Assert.Equal(cashBefore, company.Cash);
+    }
+
+    [Fact]
+    public async Task PurchasingPhase_GlobalExchange_RespectsMinQuality()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Set MinQuality to 1.0 (perfect) – no global exchange city will meet this.
+        var (companyId, buildingId, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, minQuality: 1.0m, purchaseSource: "EXCHANGE");
+
+        var company = await db.Companies.FindAsync(companyId);
+        var cashBefore = company!.Cash;
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId)
+            .ToListAsync();
+
+        Assert.True(inventory.Sum(i => i.Quantity) == 0m,
+            "Purchase unit should not have bought anything when min quality requirement is unattainable.");
+        Assert.Equal(cashBefore, company.Cash);
+    }
+
+    [Fact]
+    public async Task PurchasingPhase_LocalSource_DoesNotUsGlobalExchange()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // LOCAL source should not fill from global exchange; no player sell orders exist.
+        var (companyId, _, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "LOCAL");
+
+        var company = await db.Companies.FindAsync(companyId);
+        var cashBefore = company!.Cash;
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId)
+            .ToListAsync();
+
+        // LOCAL source with no player orders → no inventory filled.
+        Assert.True(inventory.Sum(i => i.Quantity) == 0m,
+            "LOCAL purchase source should not fill from global exchange.");
+        Assert.Equal(cashBefore, company.Cash);
+    }
+
+    [Fact]
+    public async Task PurchasingPhase_OptimalSource_UsesGlobalExchangeWhenNoPlayerOrders()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // OPTIMAL source should fall back to global exchange when no player orders exist.
+        var (companyId, _, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "OPTIMAL");
+
+        var company = await db.Companies.FindAsync(companyId);
+        var cashBefore = company!.Cash;
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId)
+            .ToListAsync();
+
+        Assert.True(inventory.Sum(i => i.Quantity) > 0m,
+            "OPTIMAL source should fill from global exchange when no player orders are available.");
+        Assert.True(company.Cash < cashBefore,
+            "Company cash should decrease after OPTIMAL purchase from global exchange.");
+    }
+
+    [Fact]
+    public async Task PurchasingPhase_GlobalExchange_DeliveredPriceMatchesCalculator()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var (companyId, buildingId, cityId, purchaseUnitId, resourceId) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "EXCHANGE");
+
+        var company = await db.Companies.FindAsync(companyId);
+        var cashBefore = company!.Cash;
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        // Reload ledger entry to verify the price paid matches the calculator.
+        var ledgerEntry = await db.LedgerEntries
+            .Where(e => e.CompanyId == companyId && e.BuildingUnitId == purchaseUnitId)
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(ledgerEntry);
+        Assert.True(ledgerEntry!.Amount < 0m, "Purchasing cost should be negative in the ledger.");
+
+        // Verify the unit has inventory and quality is in valid range.
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId)
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(inventory);
+        Assert.True(inventory!.Quantity > 0m);
+        Assert.InRange(inventory.Quality, 0.35m, 0.95m);
+
+        // Cash decrease must exactly match the ledger debit.
+        Assert.Equal(cashBefore + ledgerEntry.Amount, company.Cash);
+    }
+
+    #endregion
 }

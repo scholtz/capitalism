@@ -3017,6 +3017,205 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         });
     }
 
+    [Fact]
+    public async Task GlobalExchangeOffers_AllResourcesInAllCities_ReturnValidData()
+    {
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+
+        // Request all resources (no filter) for Bratislava as destination.
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!) {
+              globalExchangeOffers(destinationCityId: $destinationCityId) {
+                cityId
+                cityName
+                resourceTypeId
+                resourceName
+                exchangePricePerUnit
+                transitCostPerUnit
+                deliveredPricePerUnit
+                estimatedQuality
+                localAbundance
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId });
+
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers");
+
+        // Seeded: 3 cities × 8 resources = 24 offers.
+        Assert.Equal(24, offers.GetArrayLength());
+
+        // All fields must be positive and quality must be in range.
+        Assert.All(offers.EnumerateArray(), offer =>
+        {
+            Assert.True(offer.GetProperty("exchangePricePerUnit").GetDecimal() > 0m);
+            Assert.True(offer.GetProperty("deliveredPricePerUnit").GetDecimal() > 0m);
+            Assert.InRange(offer.GetProperty("estimatedQuality").GetDecimal(), 0.35m, 0.95m);
+            Assert.InRange(offer.GetProperty("localAbundance").GetDecimal(), 0m, 1m);
+        });
+
+        // Delivered price must always be >= exchange price (transit cost is non-negative).
+        Assert.All(offers.EnumerateArray(), offer =>
+            Assert.True(offer.GetProperty("deliveredPricePerUnit").GetDecimal() >=
+                        offer.GetProperty("exchangePricePerUnit").GetDecimal()));
+    }
+
+    [Fact]
+    public async Task GlobalExchangeOffers_SameCityOfferHasZeroTransitCost()
+    {
+        var pragueId = await GetCityIdByNameAsync("Prague");
+        var woodId = (await ExecuteGraphQlAsync("{ resourceTypes { id slug } }"))
+            .GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray().First(r => r.GetProperty("slug").GetString() == "wood")
+            .GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                cityName
+                transitCostPerUnit
+                deliveredPricePerUnit
+                exchangePricePerUnit
+              }
+            }
+            """,
+            new { destinationCityId = pragueId, resourceTypeId = woodId });
+
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers");
+        var pragueOffer = offers.EnumerateArray().First(o => o.GetProperty("cityName").GetString() == "Prague");
+
+        // Prague → Prague transit cost must be zero.
+        Assert.Equal(0m, pragueOffer.GetProperty("transitCostPerUnit").GetDecimal());
+        Assert.Equal(
+            pragueOffer.GetProperty("exchangePricePerUnit").GetDecimal(),
+            pragueOffer.GetProperty("deliveredPricePerUnit").GetDecimal());
+
+        // Other cities must have positive transit costs.
+        var remoteOffers = offers.EnumerateArray().Where(o => o.GetProperty("cityName").GetString() != "Prague").ToList();
+        Assert.All(remoteOffers, o => Assert.True(o.GetProperty("transitCostPerUnit").GetDecimal() > 0m));
+    }
+
+    [Fact]
+    public async Task GlobalExchangeOffers_OrderedByDeliveredPriceThenQuality()
+    {
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var woodId = (await ExecuteGraphQlAsync("{ resourceTypes { id slug } }"))
+            .GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray().First(r => r.GetProperty("slug").GetString() == "wood")
+            .GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                cityName
+                deliveredPricePerUnit
+                estimatedQuality
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId, resourceTypeId = woodId });
+
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers")
+            .EnumerateArray().ToList();
+
+        // Verify ascending delivered price ordering.
+        for (var i = 0; i < offers.Count - 1; i++)
+        {
+            var currentPrice = offers[i].GetProperty("deliveredPricePerUnit").GetDecimal();
+            var nextPrice = offers[i + 1].GetProperty("deliveredPricePerUnit").GetDecimal();
+            Assert.True(currentPrice <= nextPrice,
+                $"Offers at index {i} and {i + 1} are not in ascending delivered price order.");
+        }
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_PurchaseUnit_PersistsExchangeSourceAndConstraints()
+    {
+        var email = $"exchange-cfg-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "Exchange Cfg Tester");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Exchange Cfg Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Exchange Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var woodId = (await ExecuteGraphQlAsync("{ resourceTypes { id slug } }"))
+            .GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray().First(r => r.GetProperty("slug").GetString() == "wood")
+            .GetProperty("id").GetString()!;
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new
+                        {
+                            gridX = 0, gridY = 0,
+                            unitType = "PURCHASE",
+                            resourceTypeId = woodId,
+                            maxPrice = 50.00m,
+                            minQuality = 0.6m,
+                            purchaseSource = "EXCHANGE",
+                            linkRight = false, linkLeft = false, linkUp = false, linkDown = false,
+                            linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false,
+                        }
+                    }
+                }
+            },
+            token);
+
+        // AdvanceGameTicksAsync bumps the counter; myCompanies query then applies due plans.
+        await AdvanceGameTicksAsync(3);
+
+        var companiesResult = await ExecuteGraphQlAsync(
+            """
+            {
+              myCompanies {
+                buildings {
+                  id
+                  units { gridX gridY unitType resourceTypeId maxPrice minQuality purchaseSource }
+                }
+              }
+            }
+            """,
+            token: token);
+
+        var building = companiesResult.GetProperty("data").GetProperty("myCompanies")
+            .EnumerateArray()
+            .SelectMany(c => c.GetProperty("buildings").EnumerateArray())
+            .First(b => b.GetProperty("id").GetString() == buildingId);
+
+        var unit = building.GetProperty("units").EnumerateArray()
+            .First(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+
+        Assert.Equal("EXCHANGE", unit.GetProperty("purchaseSource").GetString());
+        Assert.Equal(50.00m, unit.GetProperty("maxPrice").GetDecimal());
+        Assert.Equal(0.6m, unit.GetProperty("minQuality").GetDecimal());
+        Assert.Equal(woodId, unit.GetProperty("resourceTypeId").GetString());
+    }
+
     #endregion
 
     #region First-sale milestone
