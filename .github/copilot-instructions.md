@@ -298,3 +298,18 @@ Root-cause of a past quality failure (March 2026, PR #46):
 - Backend: validation error tests, unauthenticated tests, duplicate-prevention tests for every mutation.
 - E2E: golden path + at least one interruption/resume test + at least one skip-path or error-recovery test.
 - All tests must pass locally before pushing; never push with known failures.
+
+## E2E test quality — preventing selector failures
+
+Root-cause of a quality failure (March 2026, PR #48 / global exchange):
+- Two E2E tests were pushed with known failures ("ran out of time") because selectors were wrong.
+- Test 1: `getByText(/Exchange:/)` matched multiple elements (one per city offer) — strict mode violation.
+- Test 2: Used non-existent button text "Edit Layout" (real text: "Edit Building"), wrong section heading "New Configuration" (real: "Planned Upgrade"), and `getByLabel` on labels without `for` attributes.
+
+**How to prevent these failures:**
+1. **Never push E2E tests without running them first.** If Playwright tests can't run due to missing browser, install it: `npx playwright install --with-deps chromium`.
+2. **Verify all button and heading text against the actual i18n keys.** Check `src/i18n/locales/en.ts` for exact English strings before writing `getByRole('button', { name: '...' })` or `getByRole('heading', { name: '...' })`.
+3. **For `getByText` that may match multiple elements, always scope or use `.first()`.** Exchange offer items repeat per city; use `.locator('.exchange-offers-list').getByText(...)` or `.first()`.
+4. **Labels without `for` attributes cannot be found with `getByLabel`.** Scope using `.locator('.config-field').filter({ has: page.getByText('Label Text') }).locator('input')` instead.
+5. **After placing a unit via the picker (`placeUnit`), `selectedCell` is reset to null.** The cell must be clicked again before the config panel is visible.
+6. **Always run the targeted spec before `report_progress`:** `npx playwright test --project=chromium e2e/<spec>.ts`. Only then run the full suite.
