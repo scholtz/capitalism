@@ -5,6 +5,14 @@ import { useI18n } from 'vue-i18n'
 import AdvancedItemSelector from '@/components/buildings/AdvancedItemSelector.vue'
 import { isProductLocked } from '@/lib/productAccess'
 import {
+  applyHorizontalLinkCycle,
+  applyVerticalLinkCycle,
+  getHorizontalLinkArrow,
+  getHorizontalLinkState,
+  getVerticalLinkArrow,
+  getVerticalLinkState,
+} from '@/lib/linkHelpers'
+import {
   getLocalizedProductDescription,
   getLocalizedProductName,
   getLocalizedResourceDescription,
@@ -22,6 +30,7 @@ import type {
   ProductType,
   ResourceType,
 } from '@/types'
+import type { HorizontalLinkState, VerticalLinkState } from '@/lib/linkHelpers'
 
 type GridUnit = BuildingUnit | BuildingConfigurationPlanUnit | EditableGridUnit
 type ItemSelection = { kind: 'resource' | 'product'; id: string } | null
@@ -417,59 +426,14 @@ function removeDraftUnit(x: number, y: number) {
   showUnitPicker.value = false
 }
 
-type HorizontalLinkState = 'none' | 'forward' | 'backward' | 'both'
-type VerticalLinkState = 'none' | 'forward' | 'backward' | 'both'
-
-/**
- * Returns the directional link state between cell (x,y) and (x+1,y):
- *   forward  – only left unit sends right (A→B)
- *   backward – only right unit sends left (B→A)
- *   both     – both units have the flag set (bidirectional)
- *   none     – no connection
- */
+/** Wraps the imported getHorizontalLinkState to use the local GridUnit array type. */
 function getHorizontalLinkStateFor(units: GridUnit[], x: number, y: number): HorizontalLinkState {
-  const left = getUnitAtFrom(units, x, y)
-  const right = getUnitAtFrom(units, x + 1, y)
-  const hasForward = !!left?.linkRight
-  const hasBackward = !!right?.linkLeft
-  if (hasForward && hasBackward) return 'both'
-  if (hasForward) return 'forward'
-  if (hasBackward) return 'backward'
-  return 'none'
+  return getHorizontalLinkState(units, x, y)
 }
 
-/**
- * Returns the directional link state between cell (x,y) and (x,y+1):
- *   forward  – only top unit sends down (A→B)
- *   backward – only bottom unit sends up (B→A)
- *   both     – bidirectional
- *   none     – no connection
- */
+/** Wraps the imported getVerticalLinkState to use the local GridUnit array type. */
 function getVerticalLinkStateFor(units: GridUnit[], x: number, y: number): VerticalLinkState {
-  const top = getUnitAtFrom(units, x, y)
-  const bottom = getUnitAtFrom(units, x, y + 1)
-  const hasForward = !!top?.linkDown
-  const hasBackward = !!bottom?.linkUp
-  if (hasForward && hasBackward) return 'both'
-  if (hasForward) return 'forward'
-  if (hasBackward) return 'backward'
-  return 'none'
-}
-
-/** Unicode arrow character for a horizontal directional state. */
-function getHorizontalLinkArrow(state: HorizontalLinkState): string {
-  if (state === 'forward') return '▶'
-  if (state === 'backward') return '◀'
-  if (state === 'both') return '↔'
-  return ''
-}
-
-/** Unicode arrow character for a vertical directional state. */
-function getVerticalLinkArrow(state: VerticalLinkState): string {
-  if (state === 'forward') return '▼'
-  if (state === 'backward') return '▲'
-  if (state === 'both') return '↕'
-  return ''
+  return getVerticalLinkState(units, x, y)
 }
 
 /**
@@ -483,20 +447,7 @@ function toggleHorizontalLink(x: number, y: number) {
   const right = getDraftUnitAt(x + 1, y)
   if (!left || !right) return
 
-  const current = getHorizontalLinkStateFor(draftUnits.value, x, y)
-  if (current === 'none') {
-    left.linkRight = true
-    right.linkLeft = false
-  } else if (current === 'forward') {
-    left.linkRight = false
-    right.linkLeft = true
-  } else if (current === 'backward') {
-    left.linkRight = true
-    right.linkLeft = true
-  } else {
-    left.linkRight = false
-    right.linkLeft = false
-  }
+  applyHorizontalLinkCycle(left, right, getHorizontalLinkStateFor(draftUnits.value, x, y))
 }
 
 /**
@@ -509,20 +460,7 @@ function toggleVerticalLink(x: number, y: number) {
   const bottom = getDraftUnitAt(x, y + 1)
   if (!top || !bottom) return
 
-  const current = getVerticalLinkStateFor(draftUnits.value, x, y)
-  if (current === 'none') {
-    top.linkDown = true
-    bottom.linkUp = false
-  } else if (current === 'forward') {
-    top.linkDown = false
-    bottom.linkUp = true
-  } else if (current === 'backward') {
-    top.linkDown = true
-    bottom.linkUp = true
-  } else {
-    top.linkDown = false
-    bottom.linkUp = false
-  }
+  applyVerticalLinkCycle(top, bottom, getVerticalLinkStateFor(draftUnits.value, x, y))
 }
 
 function clearDiagonalState(units: EditableGridUnit[], x: number, y: number) {

@@ -193,6 +193,7 @@ dotnet test ../Api.Tests  # Run integration tests
 ## Validation requirements before reporting completion
 - For backend changes, do not stop at Debug-only targeted tests. Always run the workflow-equivalent Release pipeline locally:
   - `cd projects/Api && dotnet restore Api.slnx && dotnet build Api.slnx --configuration Release --no-restore && dotnet test Api.slnx --configuration Release --no-build`
+- **NEVER push with known failing tests.** If a test fails because of your change, you MUST fix it before pushing — even if the test appears "pre-existing" or "unrelated". An existing test that breaks under your new validation is evidence that the test data was invalid under the new rule; fix the test data, not the validation.
 - For frontend changes that affect shipped UI, also run the workflow-equivalent frontend checks:
   - `cd projects/frontend && npm ci && npm run lint && npm run test:unit && npm run build`
   - **Lint must exit 0 (no errors) before pushing.** Run `npm run lint` explicitly after every frontend code change, not just at the very end. Common lint errors include unused destructured variables (e.g., `const { a, unusedB } = composable()`) and unreachable imports.
@@ -200,7 +201,7 @@ dotnet test ../Api.Tests  # Run integration tests
   - `cd projects/frontend && npx playwright install --with-deps chromium`
   - `cd projects/frontend && npx playwright test --project=chromium e2e/<relevant-spec>.ts`
 - For onboarding/auth/routing changes, do not stop at a single happy-path spec. Run the broader Playwright surface that CI depends on (`npm run test:e2e`) or, if you are narrowing scope, explicitly include both onboarding and home/dashboard coverage so CTA and redirect regressions are caught before pushing.
-- If you discover pre-existing failing tests outside the changed area, call them out explicitly in progress/final reporting instead of assuming the repository is green.
+- If you discover tests failing after your changes, root-cause them before assuming they are pre-existing. A test that was passing before your change and fails after is your responsibility.
 
 ## Lint quality gate
 - **Always run `npm run lint` immediately after finishing code edits** and before `report_progress`. Do not defer lint to "final validation" — catch unused variables, missing imports, and type narrowing issues while edits are fresh.
@@ -208,15 +209,21 @@ dotnet test ../Api.Tests  # Run integration tests
 - When a composable handles its own cleanup internally via `onUnmounted`, callers do not need to destructure `stop*` / `cleanup*` functions unless they need to invoke cleanup manually before unmount.
 
 ## Unit test coverage requirements
-- **All composables with pure business logic must have unit tests.** Extract pure functions (time formatting, cost calculations, string transformations) from composables so they can be tested without Vue or i18n context.
-- Place composable unit tests in `src/composables/__tests__/`. Tests use Vitest with `environment: 'node'` — no browser APIs available.
-- When you add a composable, also add a `__tests__/<composableName>.test.ts` covering: happy path, edge cases (zero, negative, empty), and format/boundary cases.
+- **All composables and `src/lib/` helpers with pure business logic must have unit tests.** Extract pure functions (time formatting, cost calculations, link-state logic) from Vue components into `src/lib/` or `src/composables/` so they can be tested without Vue or i18n context.
+- Place composable unit tests in `src/composables/__tests__/` and lib unit tests in `src/lib/__tests__/`. Tests use Vitest with `environment: 'node'` — no browser APIs available.
+- When you add a module with pure helpers, also add a `__tests__/<moduleName>.test.ts` covering: happy path, edge cases (zero, negative, empty), and format/boundary cases.
 - The full unit test command is `cd projects/frontend && npm run test:unit`.
 
 ## HotChocolate v15 notes
 - Non-nullable input fields must be explicitly provided in GraphQL variables even if the C# class has a default.
 - Enum values use SCREAMING_SNAKE_CASE strings (e.g., `"FURNITURE"`, `"IN_PERSON"`).
 - JWT authentication is configured via `[Authorize]` attribute on mutations.
+
+## Backend integration test data quality — unit link flags
+- **Every active link flag in test `StoreBuildingConfiguration` inputs must point to an occupied cell in the same submitted unit list.** The server validates this and returns `LINK_TARGET_MISSING` otherwise. A flag `linkRight=true` on a unit at `gridX=1` requires a unit at `gridX=2` in the same input array.
+- **Link flags pointing outside the 4×4 grid are rejected with `LINK_OUT_OF_BOUNDS`.** Example: `linkRight=true` on a unit at `gridX=3` (max column) is always invalid.
+- **Links are directional and asymmetric.** Setting `linkRight=true` on unit A does NOT require `linkLeft=true` on unit B. The engine treats each flag independently (source pushes resources in that direction). Test data can be asymmetric by design.
+- Root-cause of quality failure (March 2026, PR #40): test data for `StoreBuildingConfiguration_ExpiredProCanKeepExistingLockedProductInPlace` had `linkRight=true` on a MANUFACTURING unit at x=1 with no unit at x=2 — the new validation correctly rejected it, causing CI failure. Fix: remove the orphan link flag from the test data.
 
 ## Playwright E2E test quality requirements
 - **Never push code with known failing tests.** If tests fail locally, fix them before pushing. Do not assume CI will behave differently. If there is a legitimate build-cache discrepancy, document it and investigate before pushing.
