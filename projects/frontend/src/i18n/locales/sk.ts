@@ -519,6 +519,9 @@ export default {
       transit: 'Doprava: {price} · {distance} km',
       deliveredPrice: 'Dodané: {price}/{unit}',
       quality: 'Kvalita {quality}',
+      blockedMaxPrice: 'Nad vašou max cenou (${maxPrice}/{unit})',
+      blockedMinQuality: 'Pod vašou min kvalitou ({minQuality})',
+      noValidOffers: 'Žiadne ponuky nespĺňajú vaše cenové a kvalitatívne obmedzenia. Uvoľnite limity alebo zvoľte iný zdroj.',
     },
     selector: {
       rawMaterials: 'Suroviny',

@@ -519,6 +519,9 @@ export default {
       transit: 'Transport: {price} · {distance} km',
       deliveredPrice: 'Geliefert: {price}/{unit}',
       quality: 'Qualität {quality}',
+      blockedMaxPrice: 'Über Ihrem Maxpreis (${maxPrice}/{unit})',
+      blockedMinQuality: 'Unter Ihrer Mindestqualität ({minQuality})',
+      noValidOffers: 'Keine Angebote erfüllen Ihre Preis- und Qualitätsbeschränkungen. Lockern Sie die Grenzen oder wählen Sie eine andere Quelle.',
     },
     selector: {
       rawMaterials: 'Rohstoffe',

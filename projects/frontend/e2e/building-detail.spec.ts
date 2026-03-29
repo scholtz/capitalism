@@ -2691,4 +2691,162 @@ test.describe('Global exchange market', () => {
     const pragueTransitText = await pragueSection.getByText(/Transit:/).textContent()
     expect(pragueTransitText).not.toContain('$0.00')
   })
+
+  test('shows no-valid-offers message when max price is set below all delivered prices', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-blocked-price',
+      playerId: player.id,
+      name: 'Blocked Price Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-blocked-price',
+          companyId: 'company-blocked-price',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Blocked Price Factory',
+          latitude: 48.1486,
+          longitude: 17.1077,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-blocked-price',
+              buildingId: 'building-blocked-price',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              purchaseSource: 'EXCHANGE',
+              // Extremely low max price so no offer can pass
+              maxPrice: 0.01,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-blocked-price')
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // No-valid-offers banner must appear
+    await expect(
+      page.getByText(/No offers meet your price and quality constraints/),
+    ).toBeVisible()
+
+    // All offer items should show the max-price blocked reason
+    const offerItems = page.locator('.exchange-offer-item.offer-blocked')
+    await expect(offerItems.first()).toBeVisible()
+    // The blocked reason text must appear for at least one offer
+    await expect(page.locator('.offer-blocked-reason').first()).toBeVisible()
+    await expect(page.locator('.offer-blocked-reason').first()).toContainText('Over your max price')
+  })
+
+  test('shows blocked-quality reason when min quality is set above all available exchange quality', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-blocked-qual',
+      playerId: player.id,
+      name: 'Blocked Quality Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-blocked-qual',
+          companyId: 'company-blocked-qual',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Blocked Quality Factory',
+          latitude: 48.1486,
+          longitude: 17.1077,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-blocked-qual',
+              buildingId: 'building-blocked-qual',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              purchaseSource: 'EXCHANGE',
+              maxPrice: 9999,
+              // Exchange quality tops out at 0.95 — set minQuality above that to block all
+              minQuality: 0.99,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-blocked-qual')
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // No-valid-offers banner must appear
+    await expect(
+      page.getByText(/No offers meet your price and quality constraints/),
+    ).toBeVisible()
+
+    // Blocked reason must reference quality constraint
+    await expect(page.locator('.offer-blocked-reason').first()).toBeVisible()
+    await expect(page.locator('.offer-blocked-reason').first()).toContainText('Below your min quality')
+  })
 })

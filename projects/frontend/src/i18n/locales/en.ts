@@ -520,6 +520,9 @@ export default {
       transit: 'Transit: {price} · {distance} km',
       deliveredPrice: 'Delivered: {price}/{unit}',
       quality: 'Quality {quality}',
+      blockedMaxPrice: 'Over your max price (${maxPrice}/{unit})',
+      blockedMinQuality: 'Below your min quality ({minQuality})',
+      noValidOffers: 'No offers meet your price and quality constraints. Relax the limits or choose a different source.',
     },
     selector: {
       rawMaterials: 'Raw Materials',

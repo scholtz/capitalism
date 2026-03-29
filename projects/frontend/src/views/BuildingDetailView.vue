@@ -301,6 +301,26 @@ const selectedPurchaseUnit = computed(() => selectedDisplayUnit.value?.unitType 
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
 
+type ExchangeOfferItem = GlobalExchangeOffer & { blocked: boolean; blockedReason: string | null }
+
+const exchangeOfferItems = computed<ExchangeOfferItem[]>(() => {
+  const maxPrice = selectedPurchaseUnit.value?.maxPrice ?? null
+  const minQuality = selectedPurchaseUnit.value?.minQuality ?? null
+  return exchangeOffers.value.map((offer) => {
+    if (maxPrice !== null && offer.deliveredPricePerUnit > maxPrice) {
+      return { ...offer, blocked: true, blockedReason: 'maxPrice' }
+    }
+    if (minQuality !== null && offer.estimatedQuality < minQuality) {
+      return { ...offer, blocked: true, blockedReason: 'minQuality' }
+    }
+    return { ...offer, blocked: false, blockedReason: null }
+  })
+})
+
+const allExchangeOffersBlocked = computed(
+  () => exchangeOfferItems.value.length > 0 && exchangeOfferItems.value.every((o) => o.blocked),
+)
+
 function formatBuildingType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
 }
@@ -2617,19 +2637,30 @@ watch(
                 <h5>{{ t('buildingDetail.exchange.title') }}</h5>
                 <p class="config-help">{{ t('buildingDetail.exchange.subtitle') }}</p>
                 <p class="config-help" v-if="exchangeOffersLoading">{{ t('common.loading') }}</p>
-                <ul v-else class="exchange-offers-list">
-                  <li v-for="offer in exchangeOffers" :key="`${offer.cityId}-${offer.resourceTypeId}`" class="exchange-offer-item">
-                    <div class="exchange-offer-header">
-                      <strong>{{ offer.cityName }}</strong>
-                      <span>{{ t('buildingDetail.exchange.quality', { quality: formatPercent(offer.estimatedQuality) }) }}</span>
-                    </div>
-                    <div class="exchange-offer-metrics">
-                      <span>{{ t('buildingDetail.exchange.exchangePrice', { price: '$' + offer.exchangePricePerUnit, unit: offer.unitSymbol }) }}</span>
-                      <span>{{ t('buildingDetail.exchange.transit', { price: '$' + offer.transitCostPerUnit, distance: offer.distanceKm }) }}</span>
-                      <span>{{ t('buildingDetail.exchange.deliveredPrice', { price: '$' + offer.deliveredPricePerUnit, unit: offer.unitSymbol }) }}</span>
-                    </div>
-                  </li>
-                </ul>
+                <template v-else>
+                  <p v-if="allExchangeOffersBlocked" class="config-help exchange-no-valid-offers">
+                    {{ t('buildingDetail.exchange.noValidOffers') }}
+                  </p>
+                  <ul class="exchange-offers-list">
+                    <li v-for="offer in exchangeOfferItems" :key="`${offer.cityId}-${offer.resourceTypeId}`" :class="['exchange-offer-item', { 'offer-blocked': offer.blocked }]">
+                      <div class="exchange-offer-header">
+                        <strong>{{ offer.cityName }}</strong>
+                        <span>{{ t('buildingDetail.exchange.quality', { quality: formatPercent(offer.estimatedQuality) }) }}</span>
+                      </div>
+                      <div class="exchange-offer-metrics">
+                        <span>{{ t('buildingDetail.exchange.exchangePrice', { price: '$' + offer.exchangePricePerUnit, unit: offer.unitSymbol }) }}</span>
+                        <span>{{ t('buildingDetail.exchange.transit', { price: '$' + offer.transitCostPerUnit, distance: offer.distanceKm }) }}</span>
+                        <span>{{ t('buildingDetail.exchange.deliveredPrice', { price: '$' + offer.deliveredPricePerUnit, unit: offer.unitSymbol }) }}</span>
+                      </div>
+                      <p v-if="offer.blockedReason === 'maxPrice'" class="offer-blocked-reason">
+                        {{ t('buildingDetail.exchange.blockedMaxPrice', { maxPrice: selectedPurchaseUnit?.maxPrice, unit: offer.unitSymbol }) }}
+                      </p>
+                      <p v-else-if="offer.blockedReason === 'minQuality'" class="offer-blocked-reason">
+                        {{ t('buildingDetail.exchange.blockedMinQuality', { minQuality: formatPercent(selectedPurchaseUnit?.minQuality ?? 0) }) }}
+                      </p>
+                    </li>
+                  </ul>
+                </template>
               </div>
 
               <div class="unit-actions" v-if="isEditing">
@@ -2793,19 +2824,30 @@ watch(
                 <h5>{{ t('buildingDetail.exchange.title') }}</h5>
                 <p class="config-help">{{ t('buildingDetail.exchange.subtitle') }}</p>
                 <p class="config-help" v-if="exchangeOffersLoading">{{ t('common.loading') }}</p>
-                <ul v-else class="exchange-offers-list">
-                  <li v-for="offer in exchangeOffers" :key="`${offer.cityId}-${offer.resourceTypeId}`" class="exchange-offer-item">
-                    <div class="exchange-offer-header">
-                      <strong>{{ offer.cityName }}</strong>
-                      <span>{{ t('buildingDetail.exchange.quality', { quality: formatPercent(offer.estimatedQuality) }) }}</span>
-                    </div>
-                    <div class="exchange-offer-metrics">
-                      <span>{{ t('buildingDetail.exchange.exchangePrice', { price: '$' + offer.exchangePricePerUnit, unit: offer.unitSymbol }) }}</span>
-                      <span>{{ t('buildingDetail.exchange.transit', { price: '$' + offer.transitCostPerUnit, distance: offer.distanceKm }) }}</span>
-                      <span>{{ t('buildingDetail.exchange.deliveredPrice', { price: '$' + offer.deliveredPricePerUnit, unit: offer.unitSymbol }) }}</span>
-                    </div>
-                  </li>
-                </ul>
+                <template v-else>
+                  <p v-if="allExchangeOffersBlocked" class="config-help exchange-no-valid-offers">
+                    {{ t('buildingDetail.exchange.noValidOffers') }}
+                  </p>
+                  <ul class="exchange-offers-list">
+                    <li v-for="offer in exchangeOfferItems" :key="`${offer.cityId}-${offer.resourceTypeId}`" :class="['exchange-offer-item', { 'offer-blocked': offer.blocked }]">
+                      <div class="exchange-offer-header">
+                        <strong>{{ offer.cityName }}</strong>
+                        <span>{{ t('buildingDetail.exchange.quality', { quality: formatPercent(offer.estimatedQuality) }) }}</span>
+                      </div>
+                      <div class="exchange-offer-metrics">
+                        <span>{{ t('buildingDetail.exchange.exchangePrice', { price: '$' + offer.exchangePricePerUnit, unit: offer.unitSymbol }) }}</span>
+                        <span>{{ t('buildingDetail.exchange.transit', { price: '$' + offer.transitCostPerUnit, distance: offer.distanceKm }) }}</span>
+                        <span>{{ t('buildingDetail.exchange.deliveredPrice', { price: '$' + offer.deliveredPricePerUnit, unit: offer.unitSymbol }) }}</span>
+                      </div>
+                      <p v-if="offer.blockedReason === 'maxPrice'" class="offer-blocked-reason">
+                        {{ t('buildingDetail.exchange.blockedMaxPrice', { maxPrice: selectedPurchaseUnit?.maxPrice, unit: offer.unitSymbol }) }}
+                      </p>
+                      <p v-else-if="offer.blockedReason === 'minQuality'" class="offer-blocked-reason">
+                        {{ t('buildingDetail.exchange.blockedMinQuality', { minQuality: formatPercent(selectedPurchaseUnit?.minQuality ?? 0) }) }}
+                      </p>
+                    </li>
+                  </ul>
+                </template>
               </div>
             </div>
           </div>
@@ -3888,6 +3930,21 @@ watch(
   gap: 0.25rem;
   font-size: 0.75rem;
   color: var(--color-text-secondary);
+}
+
+.offer-blocked {
+  opacity: 0.5;
+}
+
+.offer-blocked-reason {
+  margin-top: 0.35rem;
+  font-size: 0.7rem;
+  color: var(--color-error, #ef4444);
+}
+
+.exchange-no-valid-offers {
+  color: var(--color-error, #ef4444);
+  font-size: 0.8rem;
 }
 
 /* Inventory table */
