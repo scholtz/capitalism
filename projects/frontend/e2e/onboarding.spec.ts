@@ -657,10 +657,8 @@ test.describe('Full onboarding journey', () => {
   test('register → onboard → dashboard shows new company', async ({ page }) => {
     setupMockApi(page)
 
-    // Start at home, click Get Started
-    await page.goto('/')
-    await page.getByRole('link', { name: 'Get Started' }).click()
-    await page.waitForURL('/login')
+    // Navigate to login page to register (Get Started now routes to /onboarding for guest flow)
+    await page.goto('/login')
 
     // Register
     await page.getByRole('button', { name: 'Create Account' }).click()

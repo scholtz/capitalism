@@ -13,7 +13,9 @@ test.describe('Home page', () => {
     setupMockApi(page)
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'Capitalism V' }).first()).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Get Started' })).toBeVisible()
+    const getStartedLink = page.getByRole('link', { name: 'Get Started' })
+    await expect(getStartedLink).toBeVisible()
+    await expect(getStartedLink).toHaveAttribute('href', '/onboarding')
   })
 
   test('shows leaderboard heading', async ({ page }) => {

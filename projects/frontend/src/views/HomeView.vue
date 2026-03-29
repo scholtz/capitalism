@@ -47,7 +47,7 @@ onMounted(async () => {
         <h1 class="hero-title">{{ t('home.heroTitle') }}</h1>
         <p class="hero-description">{{ t('home.heroDescription') }}</p>
         <div class="hero-actions">
-          <RouterLink v-if="!auth.isAuthenticated" to="/login" class="btn btn-primary">
+          <RouterLink v-if="!auth.isAuthenticated" to="/onboarding" class="btn btn-primary">
             {{ t('home.getStarted') }}
           </RouterLink>
           <RouterLink
