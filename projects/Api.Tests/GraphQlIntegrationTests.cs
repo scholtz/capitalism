@@ -2682,6 +2682,121 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task ClaimStartupPack_Unauthenticated_ReturnsError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation ClaimStartupPack($input: ClaimStartupPackInput!) {
+              claimStartupPack(input: $input) {
+                offer { status }
+              }
+            }
+            """,
+            new { input = new { companyId = Guid.NewGuid() } });
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task DismissStartupPackOffer_Unauthenticated_ReturnsError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            "mutation { dismissStartupPackOffer { status } }");
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task MarkStartupPackOfferShown_Unauthenticated_ReturnsError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            "mutation { markStartupPackOfferShown { status } }");
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task ClaimStartupPack_WrongCompany_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"startup-wrong-co-{Guid.NewGuid()}@test.com", "WrongCoPlayer");
+        await CompleteOnboardingAsync(token, "Wrong Co Corp");
+
+        // Register a second player and get their company id
+        var otherToken = await RegisterAndGetTokenAsync($"startup-other-co-{Guid.NewGuid()}@test.com", "OtherCoPlayer");
+        var (otherCompanyId, _, _) = await CompleteOnboardingAsync(otherToken, "Other Co Corp");
+
+        // First player tries to claim using the other player's company
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation ClaimStartupPack($input: ClaimStartupPackInput!) {
+              claimStartupPack(input: $input) {
+                offer { status }
+              }
+            }
+            """,
+            new { input = new { companyId = otherCompanyId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Contains(errors.EnumerateArray(), error => error.GetProperty("extensions").GetProperty("code").GetString() == "COMPANY_NOT_FOUND");
+    }
+
+    [Fact]
+    public async Task DismissStartupPackOffer_AlreadyDismissed_IsIdempotent()
+    {
+        var token = await RegisterAndGetTokenAsync($"startup-dismiss-idem-{Guid.NewGuid()}@test.com", "DismissIdemPlayer");
+        await CompleteOnboardingAsync(token, "Dismiss Idem Corp");
+
+        var first = await ExecuteGraphQlAsync(
+            "mutation { dismissStartupPackOffer { status dismissedAtUtc } }",
+            token: token);
+        var firstOffer = first.GetProperty("data").GetProperty("dismissStartupPackOffer");
+        Assert.Equal("DISMISSED", firstOffer.GetProperty("status").GetString());
+        var firstDismissedAt = firstOffer.GetProperty("dismissedAtUtc").GetString();
+
+        var second = await ExecuteGraphQlAsync(
+            "mutation { dismissStartupPackOffer { status dismissedAtUtc } }",
+            token: token);
+        var secondOffer = second.GetProperty("data").GetProperty("dismissStartupPackOffer");
+        Assert.Equal("DISMISSED", secondOffer.GetProperty("status").GetString());
+        // dismissedAtUtc must not be overwritten on subsequent calls
+        Assert.Equal(firstDismissedAt, secondOffer.GetProperty("dismissedAtUtc").GetString());
+    }
+
+    [Fact]
+    public async Task ClaimStartupPack_FromDismissedState_GrantsEntitlements()
+    {
+        var token = await RegisterAndGetTokenAsync($"startup-claim-from-dismissed-{Guid.NewGuid()}@test.com", "ClaimDismissedPlayer");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Claim Dismissed Corp");
+
+        // Dismiss the offer first
+        var dismissResult = await ExecuteGraphQlAsync(
+            "mutation { dismissStartupPackOffer { status } }",
+            token: token);
+        Assert.Equal("DISMISSED", dismissResult.GetProperty("data").GetProperty("dismissStartupPackOffer").GetProperty("status").GetString());
+
+        // Claim after dismissal – must still succeed
+        var claimResult = await ExecuteGraphQlAsync(
+            """
+            mutation ClaimStartupPack($input: ClaimStartupPackInput!) {
+              claimStartupPack(input: $input) {
+                offer { status claimedAtUtc grantedCompanyId }
+                company { cash }
+                proSubscriptionEndsAtUtc
+              }
+            }
+            """,
+            new { input = new { companyId } },
+            token);
+
+        Assert.False(claimResult.TryGetProperty("errors", out _));
+        var payload = claimResult.GetProperty("data").GetProperty("claimStartupPack");
+        Assert.Equal("CLAIMED", payload.GetProperty("offer").GetProperty("status").GetString());
+        Assert.True(payload.GetProperty("company").GetProperty("cash").GetDecimal() >= StartupPackService.CompanyCashGrant);
+        Assert.True(DateTime.TryParse(payload.GetProperty("proSubscriptionEndsAtUtc").GetString(), out _));
+    }
+
+    [Fact]
     public async Task CompleteOnboarding_InvalidIndustry_ReturnsError()
     {
         var token = await RegisterAndGetTokenAsync("badindustry@test.com", "BadInd");

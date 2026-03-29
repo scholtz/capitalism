@@ -961,6 +961,84 @@ test.describe('Onboarding resume and progress persistence', () => {
     await expect(page.getByText('Startup pack expired')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeHidden()
   })
+
+  test('player can claim startup pack directly from the dashboard and see entitlement state', async ({
+    page,
+  }) => {
+    const company = {
+      id: 'comp-dashboard-claim',
+      playerId: 'player-1',
+      name: 'Dashboard Claim Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    }
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T12:00:00Z',
+      startupPackOffer: makeStartupPackOffer({
+        status: 'SHOWN',
+        shownAtUtc: '2026-01-01T13:00:00Z',
+        expiresAtUtc: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      }),
+      companies: [company],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // The revisit banner should be visible since the offer is SHOWN
+    await expect(page.getByRole('heading', { name: 'Your startup pack is still available' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+
+    // Claim from dashboard
+    await page.getByRole('button', { name: 'Claim startup pack' }).click()
+
+    // Confirmed claimed state appears
+    await expect(page.getByText('Startup pack activated')).toBeVisible()
+    // Claim button should no longer be visible after successful claim
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeHidden()
+  })
+
+  test('player can dismiss startup pack from the dashboard and offer is no longer shown as active', async ({
+    page,
+  }) => {
+    const company = {
+      id: 'comp-dashboard-dismiss',
+      playerId: 'player-1',
+      name: 'Dashboard Dismiss Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    }
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T12:00:00Z',
+      startupPackOffer: makeStartupPackOffer({
+        status: 'ELIGIBLE',
+        expiresAtUtc: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      }),
+      companies: [company],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // Offer should be visible (ELIGIBLE transitions to SHOWN on dashboard load)
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+
+    // Dismiss the offer
+    await page.getByRole('button', { name: 'Maybe later' }).click()
+
+    // Confirmation message appears, offer is still accessible (dismissed but not removed)
+    await expect(
+      page.getByText('The offer has been saved to your dashboard until it expires.'),
+    ).toBeVisible()
+  })
 })
 
 test.describe('Guided first-profit onboarding (post-completion)', () => {
