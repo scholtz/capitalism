@@ -1278,4 +1278,230 @@ test.describe('Building detail upgrades', () => {
     await expect(topLeftCell).toContainText('Reverting')
     await expect(topLeftCell).toContainText('Storage')
   })
+
+  test('directional link editing: full user journey — cycle states, see changes summary, submit, confirm pending', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-dir',
+      playerId: player.id,
+      name: 'Directional Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-dir',
+          companyId: 'company-dir',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Directional Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'dir-1',
+              buildingId: 'building-dir',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'dir-2',
+              buildingId: 'building-dir',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-dir')
+    await expect(page.getByRole('heading', { name: 'Directional Factory' })).toBeVisible()
+
+    // Enter edit mode
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+
+    // The horizontal link button between (0,0) and (1,0) starts as none/inactive
+    const hLink = plannedSection.locator('.link-toggle.horizontal').first()
+    await expect(hLink).not.toHaveClass(/active/)
+    await expect(hLink).toHaveClass(/link-state-none/)
+
+    // First click: forward (A→B) — only left sends right
+    await hLink.click()
+    await expect(hLink).toHaveClass(/active/)
+    await expect(hLink).toHaveClass(/link-state-forward/)
+
+    // Link changes summary should now show one added link
+    const summary = plannedSection.locator('.link-changes-summary')
+    await expect(summary).toBeVisible()
+    await expect(summary).toContainText('Link changes')
+    await expect(summary.locator('.link-change-added')).toHaveCount(1)
+
+    // Second click: backward (B→A)
+    await hLink.click()
+    await expect(hLink).toHaveClass(/link-state-backward/)
+    await expect(hLink).toHaveClass(/active/)
+
+    // Third click: both (bidirectional)
+    await hLink.click()
+    await expect(hLink).toHaveClass(/link-state-both/)
+    await expect(hLink).toHaveClass(/active/)
+    // Two flags set = two added entries in the summary
+    await expect(summary.locator('.link-change-added')).toHaveCount(2)
+
+    // Fourth click: back to none
+    await hLink.click()
+    await expect(hLink).toHaveClass(/link-state-none/)
+    await expect(hLink).not.toHaveClass(/active/)
+    // No changes → summary should disappear
+    await expect(summary).toHaveCount(0)
+
+    // Click forward once more, then submit
+    await hLink.click()
+    await expect(hLink).toHaveClass(/link-state-forward/)
+    await expect(page.getByRole('button', { name: 'Store Upgrade' })).toBeEnabled()
+    await page.getByRole('button', { name: 'Store Upgrade' }).click()
+
+    // After submit the building shows upgrade-in-progress banner
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+
+    // Re-enter edit mode and confirm the pending configuration shows the forward link
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const queuedSection = getGridSection(page, 'Queued Upgrade')
+    const queuedHLink = queuedSection.locator('.link-toggle.horizontal').first()
+    await expect(queuedHLink).toHaveClass(/link-state-forward/)
+  })
+
+  test('directional link editing: configuration warnings shown when purchase unit is not linked', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-warn-link',
+      playerId: player.id,
+      name: 'Warn Link Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-warn-link',
+          companyId: 'company-warn-link',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Warn Link Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'wl-1',
+              buildingId: 'building-warn-link',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'wl-2',
+              buildingId: 'building-warn-link',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-warn-link')
+    await expect(page.getByRole('heading', { name: 'Warn Link Factory' })).toBeVisible()
+
+    // Warnings are shown even before editing - purchase and manufacturing not linked
+    await expect(page.getByText('Configuration Warnings')).toBeVisible()
+    await expect(page.locator('.config-warnings')).toContainText('Purchase unit at (0, 0) is not linked to a consumer unit.')
+    await expect(page.locator('.config-warnings')).toContainText('Manufacturing unit at (1, 0) is not linked to a storage or sales output.')
+
+    // Enter edit mode — warnings persist until links are added
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+
+    // Add a forward link from Purchase → Manufacturing
+    const hLink = plannedSection.locator('.link-toggle.horizontal').first()
+    await hLink.click()
+    await expect(hLink).toHaveClass(/link-state-forward/)
+
+    // Purchase is now linked — its warning should be gone but manufacturing still has no output
+    await expect(page.locator('.config-warnings')).not.toContainText(
+      'Purchase unit at (0, 0) is not linked to a consumer unit.',
+    )
+    await expect(page.locator('.config-warnings')).toContainText(
+      'Manufacturing unit at (1, 0) is not linked to a storage or sales output.',
+    )
+  })
 })

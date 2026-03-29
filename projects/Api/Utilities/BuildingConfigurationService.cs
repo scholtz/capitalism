@@ -572,6 +572,8 @@ public static class BuildingConfigurationService
                     .Build());
         }
 
+        var unitPositions = new HashSet<(int, int)>(submittedUnits.Select(u => (u.GridX, u.GridY)));
+
         foreach (var unit in submittedUnits)
         {
             if (unit.GridX < 0 || unit.GridX > 3 || unit.GridY < 0 || unit.GridY > 3)
@@ -591,6 +593,10 @@ public static class BuildingConfigurationService
                         .SetCode("INVALID_BUILDING_UNIT_TYPE")
                         .Build());
             }
+
+            // Validate directional link flags: each active link must point to a cell
+            // that is within the 4x4 grid boundary and occupied by another unit in the plan.
+            ValidateDirectionalLinks(unit, unitPositions);
 
             if (unit.UnitType == UnitType.ProductQuality && !unit.ProductTypeId.HasValue)
             {
@@ -631,5 +637,50 @@ public static class BuildingConfigurationService
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Validates that each active directional link flag on a unit points to a cell
+    /// within the 4x4 grid boundary and occupied by another unit in the submitted plan.
+    /// Links are directional: a flag set on unit A means A sends resources toward that
+    /// neighbor. The neighbor does not need a reciprocal flag for the link to be valid.
+    /// </summary>
+    private static void ValidateDirectionalLinks(
+        BuildingConfigurationUnitInput unit,
+        HashSet<(int, int)> unitPositions)
+    {
+        void CheckLink(bool flagActive, int targetX, int targetY, string direction)
+        {
+            if (!flagActive) return;
+
+            if (targetX < 0 || targetX > 3 || targetY < 0 || targetY > 3)
+            {
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetMessage(
+                            $"Unit at ({unit.GridX}, {unit.GridY}) has a {direction} link that points outside the 4x4 grid boundary.")
+                        .SetCode("LINK_OUT_OF_BOUNDS")
+                        .Build());
+            }
+
+            if (!unitPositions.Contains((targetX, targetY)))
+            {
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetMessage(
+                            $"Unit at ({unit.GridX}, {unit.GridY}) has a {direction} link pointing to an empty cell at ({targetX}, {targetY}). Add a unit there or remove the link.")
+                        .SetCode("LINK_TARGET_MISSING")
+                        .Build());
+            }
+        }
+
+        CheckLink(unit.LinkRight,     unit.GridX + 1, unit.GridY,     "right");
+        CheckLink(unit.LinkLeft,      unit.GridX - 1, unit.GridY,     "left");
+        CheckLink(unit.LinkDown,      unit.GridX,     unit.GridY + 1, "down");
+        CheckLink(unit.LinkUp,        unit.GridX,     unit.GridY - 1, "up");
+        CheckLink(unit.LinkDownRight, unit.GridX + 1, unit.GridY + 1, "down-right diagonal");
+        CheckLink(unit.LinkDownLeft,  unit.GridX - 1, unit.GridY + 1, "down-left diagonal");
+        CheckLink(unit.LinkUpRight,   unit.GridX + 1, unit.GridY - 1, "up-right diagonal");
+        CheckLink(unit.LinkUpLeft,    unit.GridX - 1, unit.GridY - 1, "up-left diagonal");
     }
 }

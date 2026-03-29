@@ -1253,8 +1253,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                             buildingId,
                             units = new[]
                             {
-                                new { unitType = "BRANDING", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = true },
-                                new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = true, linkDownRight = false }
+                                new { unitType = "BRANDING", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                                new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
                             }
                         }
                     },
@@ -1297,8 +1297,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     building.GetProperty("units").EnumerateArray(),
                     unit => unit.GetProperty("gridX").GetInt32() == 0
                         && unit.GetProperty("gridY").GetInt32() == 0
-                        && unit.GetProperty("unitType").GetString() == "BRANDING"
-                        && unit.GetProperty("linkDownRight").GetBoolean());
+                        && unit.GetProperty("unitType").GetString() == "BRANDING");
             }
 
             [Fact]
@@ -3126,6 +3125,239 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         Assert.True(result.TryGetProperty("errors", out var errors));
         Assert.Equal("BRAND_QUALITY_PRODUCT_REQUIRED", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_DirectionalLink_StoredAndReadBackCorrectly()
+    {
+        // Directional links: only PURCHASE has linkRight=true (A→B), MANUFACTURING has linkLeft=false.
+        // The engine and API must preserve asymmetric flags.
+        var token = await RegisterAndGetTokenAsync($"dirlink-{Guid.NewGuid()}@test.com", "DirLinkTester");
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Directional Link Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Directional Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // Asymmetric: PURCHASE.linkRight=true, MANUFACTURING.linkLeft=false (one-way A→B)
+        var configResult = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) {
+                    buildingId
+                    units { gridX gridY unitType linkRight linkLeft }
+                }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = true,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(configResult.TryGetProperty("errors", out _));
+        var planUnits = configResult.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units");
+
+        // PURCHASE should have linkRight=true
+        var purchaseUnit = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+        Assert.True(purchaseUnit.GetProperty("linkRight").GetBoolean());
+
+        // MANUFACTURING should have linkLeft=false (asymmetric / directional)
+        var mfgUnit = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "MANUFACTURING");
+        Assert.False(mfgUnit.GetProperty("linkLeft").GetBoolean());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_LinkOutOfBounds_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"linkbound-{Guid.NewGuid()}@test.com", "LinkBoundTester");
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Bounds Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Bounds Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // linkRight on a unit at x=3 points outside the 4x4 grid
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 3, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = true,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("LINK_OUT_OF_BOUNDS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_LinkTargetMissing_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"linkmissing-{Guid.NewGuid()}@test.com", "LinkMissingTester");
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Missing Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Missing Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // PURCHASE at (0,0) has linkRight=true but there is no unit at (1,0)
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = true,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("LINK_TARGET_MISSING", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_DirectionalLinks_PreservedThroughCancellation()
+    {
+        // Directional links set in a pending plan must survive a cancel-and-requeue cycle.
+        var token = await RegisterAndGetTokenAsync($"dircancel-{Guid.NewGuid()}@test.com", "DirCancelTester");
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Cancel Dir Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Cancel Dir Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // Queue a plan with directional links (only PURCHASE sends right, MANUFACTURING does not receive left)
+        await ExecuteGraphQlAsync(
+            "mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) { storeBuildingConfiguration(input: $input) { id } }",
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = true,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        // Cancel the plan
+        await ExecuteGraphQlAsync(
+            "mutation CancelBuildingConfiguration($input: CancelBuildingConfigurationInput!) { cancelBuildingConfiguration(input: $input) { id } }",
+            new { input = new { buildingId } },
+            token);
+
+        // Re-queue the same plan with the same directional flags
+        var requeue = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) {
+                    units { unitType linkRight linkLeft }
+                }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = true,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(requeue.TryGetProperty("errors", out _));
+        var requeueUnits = requeue.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units");
+        var purchaseUnit = requeueUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+        Assert.True(purchaseUnit.GetProperty("linkRight").GetBoolean());
+        var mfgUnit = requeueUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "MANUFACTURING");
+        Assert.False(mfgUnit.GetProperty("linkLeft").GetBoolean());
     }
 
     #endregion
