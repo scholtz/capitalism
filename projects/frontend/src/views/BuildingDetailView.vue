@@ -5,8 +5,11 @@ import { useI18n } from 'vue-i18n'
 import AdvancedItemSelector from '@/components/buildings/AdvancedItemSelector.vue'
 import { isProductLocked } from '@/lib/productAccess'
 import {
+  applyDiagonalLinkCycle,
   applyHorizontalLinkCycle,
   applyVerticalLinkCycle,
+  getDiagonalLinkLabel,
+  getDiagonalLinkState,
   getHorizontalLinkArrow,
   getHorizontalLinkState,
   getVerticalLinkArrow,
@@ -463,28 +466,8 @@ function toggleVerticalLink(x: number, y: number) {
   applyVerticalLinkCycle(top, bottom, getVerticalLinkStateFor(draftUnits.value, x, y))
 }
 
-function clearDiagonalState(units: EditableGridUnit[], x: number, y: number) {
-  const topLeft = getUnitAtFrom(units, x, y) as EditableGridUnit | undefined
-  const topRight = getUnitAtFrom(units, x + 1, y) as EditableGridUnit | undefined
-  const bottomLeft = getUnitAtFrom(units, x, y + 1) as EditableGridUnit | undefined
-  const bottomRight = getUnitAtFrom(units, x + 1, y + 1) as EditableGridUnit | undefined
-
-  if (topLeft) topLeft.linkDownRight = false
-  if (bottomRight) bottomRight.linkUpLeft = false
-  if (topRight) topRight.linkDownLeft = false
-  if (bottomLeft) bottomLeft.linkUpRight = false
-}
-
-function getDiagonalStateFor(units: GridUnit[], x: number, y: number): 'none' | 'tl-br' | 'tr-bl' | 'cross' {
-  const topLeft = getUnitAtFrom(units, x, y)
-  const topRight = getUnitAtFrom(units, x + 1, y)
-  const hasTopLeftToBottomRight = !!topLeft?.linkDownRight
-  const hasTopRightToBottomLeft = !!topRight?.linkDownLeft
-
-  if (hasTopLeftToBottomRight && hasTopRightToBottomLeft) return 'cross'
-  if (hasTopLeftToBottomRight) return 'tl-br'
-  if (hasTopRightToBottomLeft) return 'tr-bl'
-  return 'none'
+function getDiagonalStateFor(units: GridUnit[], x: number, y: number) {
+  return getDiagonalLinkState(units, x, y)
 }
 
 function toggleDiagonalLink(x: number, y: number) {
@@ -496,27 +479,7 @@ function toggleDiagonalLink(x: number, y: number) {
   const bottomRight = getDraftUnitAt(x + 1, y + 1)
   if (!topLeft || !topRight || !bottomLeft || !bottomRight) return
 
-  const currentState = getDiagonalStateFor(draftUnits.value, x, y)
-  clearDiagonalState(draftUnits.value, x, y)
-
-  if (currentState === 'none') {
-    topLeft.linkDownRight = true
-    bottomRight.linkUpLeft = true
-    return
-  }
-
-  if (currentState === 'tl-br') {
-    topRight.linkDownLeft = true
-    bottomLeft.linkUpRight = true
-    return
-  }
-
-  if (currentState === 'tr-bl') {
-    topLeft.linkDownRight = true
-    bottomRight.linkUpLeft = true
-    topRight.linkDownLeft = true
-    bottomLeft.linkUpRight = true
-  }
+  applyDiagonalLinkCycle(topLeft, topRight, bottomLeft, bottomRight, getDiagonalStateFor(draftUnits.value, x, y))
 }
 
 function isHorizontalLinkActiveFor(units: GridUnit[], x: number, y: number): boolean {
@@ -1868,7 +1831,7 @@ watch(
                       class="link-toggle diagonal"
                       :class="[`state-${getDiagonalStateFor(plannedUnits, x, y)}`, { disabled: !canToggleDiagonalLink(plannedUnits, x, y) }]"
                       :disabled="!canToggleDiagonalLink(plannedUnits, x, y)"
-                      :aria-label="t('buildingDetail.links')"
+                      :aria-label="`${t('buildingDetail.links')} ${getDiagonalLinkLabel(getDiagonalStateFor(plannedUnits, x, y))}`"
                       @click="toggleDiagonalLink(x, y)"
                     >
                       <span class="diag-line diag-line-primary"></span>

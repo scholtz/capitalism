@@ -138,3 +138,76 @@ export function applyVerticalLinkCycle<T extends LinkFlagSource>(
     bottom.linkUp = false
   }
 }
+
+// ---------------------------------------------------------------------------
+// Diagonal link helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Represents the active diagonal link state of a 2×2 block rooted at (x,y):
+ *   tl-br  – top-left sends to bottom-right (↘)
+ *   tr-bl  – top-right sends to bottom-left (↙)
+ *   cross  – both diagonals active
+ *   none   – no diagonal connection
+ */
+export type DiagonalLinkState = 'none' | 'tl-br' | 'tr-bl' | 'cross'
+
+/**
+ * Returns the diagonal link state of the 2×2 block whose top-left corner is (x,y).
+ * Inspects linkDownRight on (x,y) and linkDownLeft on (x+1,y).
+ */
+export function getDiagonalLinkState<T extends LinkFlagSource>(
+  units: T[],
+  x: number,
+  y: number,
+): DiagonalLinkState {
+  const topLeft = unitAt(units, x, y)
+  const topRight = unitAt(units, x + 1, y)
+  const hasTlBr = !!topLeft?.linkDownRight
+  const hasTrBl = !!topRight?.linkDownLeft
+  if (hasTlBr && hasTrBl) return 'cross'
+  if (hasTlBr) return 'tl-br'
+  if (hasTrBl) return 'tr-bl'
+  return 'none'
+}
+
+/** Unicode symbol describing the diagonal link state for display. */
+export function getDiagonalLinkLabel(state: DiagonalLinkState): string {
+  if (state === 'tl-br') return '↘'
+  if (state === 'tr-bl') return '↙'
+  if (state === 'cross') return '✕'
+  return ''
+}
+
+/**
+ * Applies the 4-state diagonal toggle cycle to a 2×2 group of mutable unit objects:
+ *   none → tl-br (topLeft→bottomRight ↘) → tr-bl (topRight→bottomLeft ↙) → cross (both) → none
+ * Mutates the passed objects in place.
+ */
+export function applyDiagonalLinkCycle<T extends LinkFlagSource>(
+  topLeft: T,
+  topRight: T,
+  bottomLeft: T,
+  bottomRight: T,
+  current: DiagonalLinkState,
+): void {
+  // Clear all diagonal flags first
+  topLeft.linkDownRight = false
+  bottomRight.linkUpLeft = false
+  topRight.linkDownLeft = false
+  bottomLeft.linkUpRight = false
+
+  if (current === 'none') {
+    topLeft.linkDownRight = true
+    bottomRight.linkUpLeft = true
+  } else if (current === 'tl-br') {
+    topRight.linkDownLeft = true
+    bottomLeft.linkUpRight = true
+  } else if (current === 'tr-bl') {
+    topLeft.linkDownRight = true
+    bottomRight.linkUpLeft = true
+    topRight.linkDownLeft = true
+    bottomLeft.linkUpRight = true
+  }
+  // 'cross' → stays cleared (all flags already set to false above)
+}

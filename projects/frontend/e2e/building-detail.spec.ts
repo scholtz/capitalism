@@ -1504,4 +1504,294 @@ test.describe('Building detail upgrades', () => {
       'Manufacturing unit at (1, 0) is not linked to a storage or sales output.',
     )
   })
+
+  test('diagonal link editing: full journey — create diagonal connections, review summary, submit plan', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-diag',
+      playerId: player.id,
+      name: 'Diagonal Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-diag',
+          companyId: 'company-diag',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Diagonal Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'diag-1',
+              buildingId: 'building-diag',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'diag-2',
+              buildingId: 'building-diag',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'diag-3',
+              buildingId: 'building-diag',
+              unitType: 'STORAGE',
+              gridX: 0,
+              gridY: 1,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'diag-4',
+              buildingId: 'building-diag',
+              unitType: 'B2B_SALES',
+              gridX: 1,
+              gridY: 1,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-diag')
+    await expect(page.getByRole('heading', { name: 'Diagonal Factory' })).toBeVisible()
+
+    // Enter edit mode
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+
+    // The diagonal button between (0,0)-(1,1) starts as none
+    const diagButton = plannedSection.locator('.link-toggle.diagonal').first()
+    await expect(diagButton).toHaveClass(/state-none/)
+
+    // First click: tl-br (↘ direction)
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-tl-br/)
+
+    // Link changes summary should show added diagonal link
+    const summary = plannedSection.locator('.link-changes-summary')
+    await expect(summary).toBeVisible()
+    await expect(summary).toContainText('Link changes')
+    await expect(summary.locator('.link-change-added')).toHaveCount(2) // tl has linkDownRight, br has linkUpLeft
+
+    // Second click: tr-bl (↙ direction)
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-tr-bl/)
+
+    // Third click: cross (both diagonals)
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-cross/)
+
+    // Fourth click: back to none
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-none/)
+    // No changes → summary should disappear
+    await expect(summary).toHaveCount(0)
+
+    // Click twice more to reach tl-br, then submit
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-tl-br/)
+    await page.getByRole('button', { name: 'Store Upgrade' }).click()
+
+    // After submit: upgrade-in-progress banner appears
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+
+    // Re-enter edit mode and verify the queued plan shows the diagonal state
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const queuedSection = getGridSection(page, 'Queued Upgrade')
+    await expect(queuedSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-tl-br/)
+  })
+
+  test('diagonal link editing: flow diagnostics — warnings shown for disconnected layout, resolved after linking', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-diag-warn',
+      playerId: player.id,
+      name: 'Flow Warn Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-diag-warn',
+          companyId: 'company-diag-warn',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Flow Warn Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            // 2×2 block: all 4 cells occupied so diagonal toggle is enabled
+            {
+              id: 'fw-1',
+              buildingId: 'building-diag-warn',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'fw-2',
+              buildingId: 'building-diag-warn',
+              unitType: 'STORAGE',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'fw-3',
+              buildingId: 'building-diag-warn',
+              unitType: 'B2B_SALES',
+              gridX: 0,
+              gridY: 1,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'fw-4',
+              buildingId: 'building-diag-warn',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 1,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-diag-warn')
+    await expect(page.getByRole('heading', { name: 'Flow Warn Factory' })).toBeVisible()
+
+    // Warnings visible before editing: purchase and manufacturing not connected
+    await expect(page.getByText('Configuration Warnings')).toBeVisible()
+    await expect(page.locator('.config-warnings')).toContainText(
+      'Purchase unit at (0, 0) is not linked to a consumer unit.',
+    )
+    await expect(page.locator('.config-warnings')).toContainText(
+      'Manufacturing unit at (1, 1) is not linked to a storage or sales output.',
+    )
+
+    // Enter edit mode
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+
+    // The diagonal button covering the 2×2 block (0,0)-(1,1) is enabled (all 4 cells occupied)
+    const diagButton = plannedSection.locator('.link-toggle.diagonal').first()
+    await expect(diagButton).not.toBeDisabled()
+    await diagButton.click()
+    // tl-br: PURCHASE(0,0).linkDownRight → MANUFACTURING(1,1)
+    await expect(diagButton).toHaveClass(/state-tl-br/)
+
+    // Purchase warning should be gone — PURCHASE now links diagonally to MANUFACTURING
+    await expect(page.locator('.config-warnings')).not.toContainText(
+      'Purchase unit at (0, 0) is not linked to a consumer unit.',
+    )
+
+    // Manufacturing still has no output link — warning remains
+    await expect(page.locator('.config-warnings')).toContainText(
+      'Manufacturing unit at (1, 1) is not linked to a storage or sales output.',
+    )
+  })
 })

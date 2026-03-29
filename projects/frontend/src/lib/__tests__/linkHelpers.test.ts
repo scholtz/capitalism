@@ -6,8 +6,11 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  applyDiagonalLinkCycle,
   applyHorizontalLinkCycle,
   applyVerticalLinkCycle,
+  getDiagonalLinkLabel,
+  getDiagonalLinkState,
   getHorizontalLinkArrow,
   getHorizontalLinkState,
   getVerticalLinkArrow,
@@ -265,6 +268,177 @@ describe('applyVerticalLinkCycle', () => {
     applyVerticalLinkCycle(top, bottom, getState())
     expect(getState()).toBe('both')
     applyVerticalLinkCycle(top, bottom, getState())
+    expect(getState()).toBe('none')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getDiagonalLinkState
+// ---------------------------------------------------------------------------
+
+describe('getDiagonalLinkState', () => {
+  it('returns none when no diagonal flags are set', () => {
+    const units = [makeUnit(0, 0), makeUnit(1, 0), makeUnit(0, 1), makeUnit(1, 1)]
+    expect(getDiagonalLinkState(units, 0, 0)).toBe('none')
+  })
+
+  it('returns tl-br when topLeft.linkDownRight is true', () => {
+    const units = [
+      makeUnit(0, 0, { linkDownRight: true }),
+      makeUnit(1, 0),
+      makeUnit(0, 1),
+      makeUnit(1, 1),
+    ]
+    expect(getDiagonalLinkState(units, 0, 0)).toBe('tl-br')
+  })
+
+  it('returns tr-bl when topRight.linkDownLeft is true', () => {
+    const units = [
+      makeUnit(0, 0),
+      makeUnit(1, 0, { linkDownLeft: true }),
+      makeUnit(0, 1),
+      makeUnit(1, 1),
+    ]
+    expect(getDiagonalLinkState(units, 0, 0)).toBe('tr-bl')
+  })
+
+  it('returns cross when both topLeft.linkDownRight and topRight.linkDownLeft are true', () => {
+    const units = [
+      makeUnit(0, 0, { linkDownRight: true }),
+      makeUnit(1, 0, { linkDownLeft: true }),
+      makeUnit(0, 1),
+      makeUnit(1, 1),
+    ]
+    expect(getDiagonalLinkState(units, 0, 0)).toBe('cross')
+  })
+
+  it('returns none when units array is empty', () => {
+    expect(getDiagonalLinkState([], 0, 0)).toBe('none')
+  })
+
+  it('handles non-zero block positions correctly', () => {
+    const units = [
+      makeUnit(1, 2, { linkDownRight: true }),
+      makeUnit(2, 2),
+      makeUnit(1, 3),
+      makeUnit(2, 3),
+    ]
+    expect(getDiagonalLinkState(units, 1, 2)).toBe('tl-br')
+    expect(getDiagonalLinkState(units, 0, 0)).toBe('none')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getDiagonalLinkLabel
+// ---------------------------------------------------------------------------
+
+describe('getDiagonalLinkLabel', () => {
+  it('returns ↘ for tl-br', () => {
+    expect(getDiagonalLinkLabel('tl-br')).toBe('↘')
+  })
+
+  it('returns ↙ for tr-bl', () => {
+    expect(getDiagonalLinkLabel('tr-bl')).toBe('↙')
+  })
+
+  it('returns ✕ for cross', () => {
+    expect(getDiagonalLinkLabel('cross')).toBe('✕')
+  })
+
+  it('returns empty string for none', () => {
+    expect(getDiagonalLinkLabel('none')).toBe('')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// applyDiagonalLinkCycle
+// ---------------------------------------------------------------------------
+
+describe('applyDiagonalLinkCycle', () => {
+  function make2x2() {
+    return {
+      tl: makeUnit(0, 0) as LinkFlagSource & {
+        linkDownRight?: boolean
+        linkDownLeft?: boolean
+        linkUpRight?: boolean
+        linkUpLeft?: boolean
+      },
+      tr: makeUnit(1, 0) as LinkFlagSource & {
+        linkDownRight?: boolean
+        linkDownLeft?: boolean
+        linkUpRight?: boolean
+        linkUpLeft?: boolean
+      },
+      bl: makeUnit(0, 1) as LinkFlagSource & {
+        linkDownRight?: boolean
+        linkDownLeft?: boolean
+        linkUpRight?: boolean
+        linkUpLeft?: boolean
+      },
+      br: makeUnit(1, 1) as LinkFlagSource & {
+        linkDownRight?: boolean
+        linkDownLeft?: boolean
+        linkUpRight?: boolean
+        linkUpLeft?: boolean
+      },
+    }
+  }
+
+  it('none → tl-br: topLeft.linkDownRight and bottomRight.linkUpLeft set', () => {
+    const { tl, tr, bl, br } = make2x2()
+    applyDiagonalLinkCycle(tl, tr, bl, br, 'none')
+    expect(tl.linkDownRight).toBe(true)
+    expect(br.linkUpLeft).toBe(true)
+    expect(tr.linkDownLeft).toBe(false)
+    expect(bl.linkUpRight).toBe(false)
+  })
+
+  it('tl-br → tr-bl: topRight.linkDownLeft and bottomLeft.linkUpRight set', () => {
+    const { tl, tr, bl, br } = make2x2()
+    applyDiagonalLinkCycle(tl, tr, bl, br, 'tl-br')
+    expect(tl.linkDownRight).toBe(false)
+    expect(br.linkUpLeft).toBe(false)
+    expect(tr.linkDownLeft).toBe(true)
+    expect(bl.linkUpRight).toBe(true)
+  })
+
+  it('tr-bl → cross: all four diagonal flags set', () => {
+    const { tl, tr, bl, br } = make2x2()
+    applyDiagonalLinkCycle(tl, tr, bl, br, 'tr-bl')
+    expect(tl.linkDownRight).toBe(true)
+    expect(br.linkUpLeft).toBe(true)
+    expect(tr.linkDownLeft).toBe(true)
+    expect(bl.linkUpRight).toBe(true)
+  })
+
+  it('cross → none: all diagonal flags cleared', () => {
+    const { tl, tr, bl, br } = make2x2()
+    // Pre-set all flags
+    tl.linkDownRight = true
+    br.linkUpLeft = true
+    tr.linkDownLeft = true
+    bl.linkUpRight = true
+    applyDiagonalLinkCycle(tl, tr, bl, br, 'cross')
+    expect(tl.linkDownRight).toBe(false)
+    expect(br.linkUpLeft).toBe(false)
+    expect(tr.linkDownLeft).toBe(false)
+    expect(bl.linkUpRight).toBe(false)
+  })
+
+  it('full cycle returns to none after 4 steps', () => {
+    const { tl, tr, bl, br } = make2x2()
+    const units = [tl, tr, bl, br]
+
+    const getState = () => getDiagonalLinkState(units, 0, 0)
+
+    expect(getState()).toBe('none')
+    applyDiagonalLinkCycle(tl, tr, bl, br, getState())
+    expect(getState()).toBe('tl-br')
+    applyDiagonalLinkCycle(tl, tr, bl, br, getState())
+    expect(getState()).toBe('tr-bl')
+    applyDiagonalLinkCycle(tl, tr, bl, br, getState())
+    expect(getState()).toBe('cross')
+    applyDiagonalLinkCycle(tl, tr, bl, br, getState())
     expect(getState()).toBe('none')
   })
 })

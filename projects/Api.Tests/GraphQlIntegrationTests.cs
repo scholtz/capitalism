@@ -3360,6 +3360,220 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.False(mfgUnit.GetProperty("linkLeft").GetBoolean());
     }
 
+    [Fact]
+    public async Task StoreBuildingConfiguration_DiagonalLink_StoredAndReadBackCorrectly()
+    {
+        // Diagonal links: PURCHASE at (0,0) has linkDownRight=true (↘ to STORAGE at (1,1)).
+        // STORAGE at (1,1) has linkUpLeft=true (confirming the return direction).
+        // The backend must persist all four diagonal flag fields independently.
+        var token = await RegisterAndGetTokenAsync($"diaglink-{Guid.NewGuid()}@test.com", "DiagLinkTester");
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Diagonal Link Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Diagonal Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // 2×2 block: PURCHASE (0,0) → STORAGE (1,1) diagonal (↘), MANUFACTURING (1,0) → STORAGE (0,1) diagonal (↙)
+        var configResult = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) {
+                    buildingId
+                    units { gridX gridY unitType linkDownRight linkDownLeft linkUpLeft linkUpRight }
+                }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",       gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = true },
+                        new { unitType = "MANUFACTURING",  gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = true, linkDownRight = false },
+                        new { unitType = "STORAGE",        gridX = 0, gridY = 1,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = true, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "B2B_SALES",      gridX = 1, gridY = 1,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = true, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(configResult.TryGetProperty("errors", out _));
+        var planUnits = configResult.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units");
+
+        var purchaseUnitDiag = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+        Assert.True(purchaseUnitDiag.GetProperty("linkDownRight").GetBoolean());
+        Assert.False(purchaseUnitDiag.GetProperty("linkDownLeft").GetBoolean());
+
+        var mfgUnitDiag = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "MANUFACTURING");
+        Assert.True(mfgUnitDiag.GetProperty("linkDownLeft").GetBoolean());
+        Assert.False(mfgUnitDiag.GetProperty("linkDownRight").GetBoolean());
+
+        var storageUnitDiag = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "STORAGE");
+        Assert.True(storageUnitDiag.GetProperty("linkUpRight").GetBoolean());
+        Assert.False(storageUnitDiag.GetProperty("linkUpLeft").GetBoolean());
+
+        var b2bSalesUnitDiag = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "B2B_SALES");
+        Assert.True(b2bSalesUnitDiag.GetProperty("linkUpLeft").GetBoolean());
+        Assert.False(b2bSalesUnitDiag.GetProperty("linkUpRight").GetBoolean());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_DiagonalLinkOutOfBounds_ReturnsError()
+    {
+        // linkDownRight on a unit at (3,3) points outside the 4x4 grid (target would be (4,4))
+        var token = await RegisterAndGetTokenAsync($"diagbound-{Guid.NewGuid()}@test.com", "DiagBoundTester");
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Diag Bounds Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Diag Bounds Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        // linkDownRight on bottom-right corner points to (4,4) — out of bounds
+                        new { unitType = "STORAGE", gridX = 3, gridY = 3,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = true }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("LINK_OUT_OF_BOUNDS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_DiagonalLinkUpLeftOutOfBounds_ReturnsError()
+    {
+        // linkUpLeft on a unit at (0,0) points to (-1,-1) — out of bounds
+        var token = await RegisterAndGetTokenAsync($"diagbound2-{Guid.NewGuid()}@test.com", "DiagBound2Tester");
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Diag Bounds Corp 2" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Diag Bounds Factory 2" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        // linkUpLeft on top-left corner points to (-1,-1) — out of bounds
+                        new { unitType = "STORAGE", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = true, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("LINK_OUT_OF_BOUNDS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_DiagonalLinkTargetMissing_ReturnsError()
+    {
+        // PURCHASE at (0,0) has linkDownRight=true but there is no unit at (1,1)
+        var token = await RegisterAndGetTokenAsync($"diagmissing-{Guid.NewGuid()}@test.com", "DiagMissingTester");
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Diag Missing Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Diag Missing Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        // PURCHASE at (0,0) has linkDownRight=true but no unit at (1,1)
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = true }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("LINK_TARGET_MISSING", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
     #endregion
 
     #region Company Ledger & Public Sales Analytics
