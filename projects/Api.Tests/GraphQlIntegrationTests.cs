@@ -4460,6 +4460,61 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GlobalExchangeOffers_UnknownDestinationCity_ReturnsEmptyList()
+    {
+        var unknownCityId = Guid.NewGuid();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!) {
+              globalExchangeOffers(destinationCityId: $destinationCityId) {
+                cityName
+                exchangePricePerUnit
+              }
+            }
+            """,
+            new { destinationCityId = unknownCityId });
+
+        Assert.False(result.TryGetProperty("errors", out _), "Expected no GraphQL errors for unknown city");
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers");
+        Assert.Equal(0, offers.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task GlobalExchangeOffers_FilteredByResourceType_ReturnsOnlyMatchingResource()
+    {
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var resourceTypesResult = await ExecuteGraphQlAsync("{ resourceTypes { id slug } }");
+        var coalId = resourceTypesResult.GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray()
+            .First(r => r.GetProperty("slug").GetString() == "coal")
+            .GetProperty("id")
+            .GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                resourceSlug
+                exchangePricePerUnit
+                deliveredPricePerUnit
+                estimatedQuality
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId, resourceTypeId = coalId });
+
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers");
+
+        // 3 seeded cities × 1 filtered resource = 3 offers.
+        Assert.Equal(3, offers.GetArrayLength());
+
+        // Every returned offer must be for coal.
+        Assert.All(offers.EnumerateArray(), offer =>
+            Assert.Equal("coal", offer.GetProperty("resourceSlug").GetString()));
+    }
+
+    [Fact]
     public async Task StoreBuildingConfiguration_PurchaseUnit_PersistsExchangeSourceAndConstraints()
     {
         var email = $"exchange-cfg-{Guid.NewGuid():N}@test.com";

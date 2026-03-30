@@ -3055,7 +3055,194 @@ test.describe('Global exchange market', () => {
   })
 })
 
-// ── Starter factory setup flow ────────────────────────────────────────────────
+// ── Exchange panel narrow/mobile layout ────────────────────────────────────────
+
+test.describe('Global exchange market — narrow layout', () => {
+  function makeExchangePlayer() {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-narrow-ex',
+      playerId: player.id,
+      name: 'Narrow Exchange Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-narrow-ex',
+          companyId: 'company-narrow-ex',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Narrow Exchange Factory',
+          latitude: 48.1486,
+          longitude: 17.1077,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-narrow-ex',
+              buildingId: 'building-narrow-ex',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              purchaseSource: 'EXCHANGE',
+              maxPrice: 999,
+            },
+          ],
+        },
+      ],
+    })
+    return player
+  }
+
+  test('exchange offers list is visible and readable on 375px viewport', async ({ page }) => {
+    const player = makeExchangePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/building/building-narrow-ex')
+    await expect(page.getByRole('heading', { name: 'Narrow Exchange Factory' })).toBeVisible()
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Exchange section heading must be visible
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // All three city offers must appear in the list
+    const offersList = page.locator('.exchange-offers-list')
+    await expect(offersList).toBeVisible()
+    await expect(offersList.getByText('Bratislava')).toBeVisible()
+    await expect(offersList.getByText('Prague')).toBeVisible()
+    await expect(offersList.getByText('Vienna')).toBeVisible()
+  })
+
+  test('exchange price, transit cost, and delivered price are visible on 375px viewport', async ({
+    page,
+  }) => {
+    const player = makeExchangePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/building/building-narrow-ex')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    const offersList = page.locator('.exchange-offers-list')
+    // Exchange price, transit and delivered price labels must all be present
+    await expect(offersList.getByText(/Exchange:/).first()).toBeVisible()
+    await expect(offersList.getByText(/Transit:/).first()).toBeVisible()
+    await expect(offersList.getByText(/Delivered:/).first()).toBeVisible()
+
+    // Quality must be visible for at least the first offer
+    await expect(offersList.getByText(/Quality \d/).first()).toBeVisible()
+  })
+
+  test('best-offer badge and no-valid-offers message are visible on 375px viewport', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-narrow-blocked',
+      playerId: player.id,
+      name: 'Narrow Blocked Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-narrow-blocked',
+          companyId: 'company-narrow-blocked',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Narrow Blocked Factory',
+          latitude: 48.1486,
+          longitude: 17.1077,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-narrow-blocked',
+              buildingId: 'building-narrow-blocked',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              purchaseSource: 'EXCHANGE',
+              // Extremely low max price so no offer can pass
+              maxPrice: 0.01,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/building/building-narrow-blocked')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+    // "No valid offers" message must be visible without horizontal scrolling
+    await expect(page.getByText(/No offers meet your price and quality constraints/)).toBeVisible()
+  })
+})
 
 test.describe('Starter factory setup banner', () => {
   function makeEmptyFactoryPlayer() {
