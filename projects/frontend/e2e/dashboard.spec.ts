@@ -316,3 +316,188 @@ test.describe('Dashboard — pending actions timeline', () => {
     await expect(page.getByRole('status')).toContainText('No scheduled actions')
   })
 })
+
+// ── Power grid dashboard tests ─────────────────────────────────────────────
+
+test.describe('Dashboard — power grid summary', () => {
+  test('shows legacy grid label when no power plants exist in city', async ({ page }) => {
+    const building: MockBuilding = {
+      id: 'building-factory-1',
+      companyId: 'comp-1',
+      cityId: 'city-ba',
+      type: 'FACTORY',
+      name: 'Test Factory',
+      latitude: 48.15,
+      longitude: 17.11,
+      level: 1,
+      powerConsumption: 5,
+      powerStatus: 'POWERED',
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      units: [],
+      pendingConfiguration: null,
+    }
+
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-1',
+          playerId: 'player-1',
+          name: 'Power Test Co',
+          cash: 250000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [building],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // The city has no power plants, so the legacy grid label should appear.
+    await expect(page.locator('.power-balance--legacy')).toBeVisible()
+    await expect(page.locator('.power-balance--legacy')).toContainText('Legacy grid')
+  })
+
+  test('shows balanced power status when supply exceeds demand', async ({ page }) => {
+    const powerPlant: MockBuilding = {
+      id: 'building-plant-1',
+      companyId: 'comp-2',
+      cityId: 'city-ba',
+      type: 'POWER_PLANT',
+      name: 'Coal Plant',
+      latitude: 48.14,
+      longitude: 17.12,
+      level: 1,
+      powerConsumption: 0,
+      powerPlantType: 'COAL',
+      powerOutput: 50,
+      powerStatus: 'POWERED',
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      units: [],
+      pendingConfiguration: null,
+    }
+
+    const factory: MockBuilding = {
+      id: 'building-factory-2',
+      companyId: 'comp-2',
+      cityId: 'city-ba',
+      type: 'FACTORY',
+      name: 'Main Factory',
+      latitude: 48.15,
+      longitude: 17.11,
+      level: 1,
+      powerConsumption: 5,
+      powerStatus: 'POWERED',
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      units: [],
+      pendingConfiguration: null,
+    }
+
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-2',
+          playerId: 'player-1',
+          name: 'Powered Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [powerPlant, factory],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // Supply (50 MW) > Demand (5 MW) → BALANCED
+    await expect(page.locator('.power-balance--balanced')).toBeVisible()
+    await expect(page.locator('.power-balance--balanced')).toContainText('50')
+    await expect(page.locator('.power-balance--balanced')).toContainText('5')
+  })
+
+  test('shows constrained warning when supply is below demand', async ({ page }) => {
+    const powerPlant: MockBuilding = {
+      id: 'building-plant-3',
+      companyId: 'comp-3',
+      cityId: 'city-ba',
+      type: 'POWER_PLANT',
+      name: 'Small Solar',
+      latitude: 48.14,
+      longitude: 17.12,
+      level: 1,
+      powerConsumption: 0,
+      powerPlantType: 'SOLAR',
+      powerOutput: 8,
+      powerStatus: 'POWERED',
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      units: [],
+      pendingConfiguration: null,
+    }
+
+    const factories: MockBuilding[] = [1, 2, 3].map((i) => ({
+      id: `building-factory-${i}`,
+      companyId: 'comp-3',
+      cityId: 'city-ba',
+      type: 'FACTORY',
+      name: `Factory ${i}`,
+      latitude: 48.15,
+      longitude: 17.11,
+      level: 1,
+      powerConsumption: 5,
+      powerStatus: 'CONSTRAINED',
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      units: [],
+      pendingConfiguration: null,
+    }))
+
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-3',
+          playerId: 'player-1',
+          name: 'Shortage Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [powerPlant, ...factories],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // Supply (8 MW) < Demand (15 MW) → CONSTRAINED
+    await expect(page.locator('.power-balance--constrained')).toBeVisible()
+    // CONSTRAINED buildings show yellow badge
+    await expect(page.locator('.power-badge--constrained').first()).toBeVisible()
+  })
+})

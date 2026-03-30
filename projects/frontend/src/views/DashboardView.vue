@@ -7,7 +7,7 @@ import { gqlRequest } from '@/lib/graphql'
 import { trackStartupPackEvent } from '@/lib/startupPackAnalytics'
 import { useTickCountdown } from '@/composables/useTickCountdown'
 import PendingActionsTimeline from '@/components/dashboard/PendingActionsTimeline.vue'
-import type { Company, GameState, ScheduledActionSummary, StartupPackOffer } from '@/types'
+import type { Company, GameState, ScheduledActionSummary, StartupPackOffer, CityPowerBalance } from '@/types'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -22,6 +22,7 @@ const offerMessage = ref<string | null>(null)
 const gameState = ref<GameState | null>(null)
 const pendingActions = ref<ScheduledActionSummary[]>([])
 const pendingActionsLoading = ref(false)
+const cityPowerBalances = ref<Record<string, CityPowerBalance>>({})
 
 const { tickCountdown, startTickCountdown } = useTickCountdown(gameState)
 
@@ -59,6 +60,26 @@ function formatBuildingType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+/** Returns the power status label for a building's powerStatus field. */
+function getBuildingPowerLabel(powerStatus: string): string {
+  const key = `powerGrid.buildingStatus.${powerStatus}` as Parameters<typeof t>[0]
+  return t(key)
+}
+
+/** Returns the CSS class for a power status badge. */
+function powerStatusClass(status: string): string {
+  if (status === 'CONSTRAINED') return 'power-badge power-badge--constrained'
+  if (status === 'OFFLINE') return 'power-badge power-badge--offline'
+  return 'power-badge power-badge--powered'
+}
+
+/** Returns the CSS class for the city power balance status. */
+function powerBalanceClass(status: string): string {
+  if (status === 'CRITICAL') return 'power-balance power-balance--critical'
+  if (status === 'CONSTRAINED') return 'power-balance power-balance--constrained'
+  return 'power-balance power-balance--balanced'
+}
+
 onMounted(async () => {
   if (!auth.isAuthenticated) {
     router.push('/login')
@@ -75,7 +96,7 @@ onMounted(async () => {
       gqlRequest<{ myCompanies: Company[] }>(
         `{ myCompanies {
           id name cash foundedAtUtc
-          buildings { id name type level cityId units { id unitType gridX gridY level } }
+          buildings { id name type level cityId powerStatus units { id unitType gridX gridY level } }
         } }`,
       ),
       gqlRequest<{ gameState: GameState }>(
@@ -92,6 +113,12 @@ onMounted(async () => {
       trackStartupPackEvent('view', { context: 'dashboard', status: auth.startupPackOffer.status })
     }
 
+    // Load city power balances for each unique city that has buildings.
+    const cityIds = [
+      ...new Set(companiesData.myCompanies.flatMap((c) => c.buildings.map((b) => b.cityId))),
+    ]
+    await loadCityPowerBalances(cityIds)
+
     await loadPendingActions()
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to load dashboard'
@@ -99,6 +126,31 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+async function loadCityPowerBalances(cityIds: string[]) {
+  if (cityIds.length === 0) return
+  // Load balances best-effort in parallel; failures are non-critical.
+  const results = await Promise.allSettled(
+    cityIds.map((cityId) =>
+      gqlRequest<{ cityPowerBalance: CityPowerBalance }>(
+        `query CityPower($cityId: UUID!) {
+          cityPowerBalance(cityId: $cityId) {
+            cityId totalSupplyMw totalDemandMw reserveMw reservePercent status
+            powerPlantCount consumerBuildingCount
+            powerPlants { buildingId buildingName plantType outputMw powerStatus }
+          }
+        }`,
+        { cityId },
+      ),
+    ),
+  )
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      const balance = result.value.cityPowerBalance
+      cityPowerBalances.value[balance.cityId] = balance
+    }
+  }
+}
 
 async function loadPendingActions() {
   pendingActionsLoading.value = true
@@ -458,8 +510,47 @@ function formatTimeRemaining(expiresAtUtc: string): string {
             <div class="building-stats">
               <span class="building-level">Lv.{{ building.level }}</span>
               <span class="building-units">{{ building.units.length }} units</span>
+              <span
+                v-if="building.powerStatus && building.powerStatus !== 'POWERED'"
+                :class="powerStatusClass(building.powerStatus)"
+                :aria-label="getBuildingPowerLabel(building.powerStatus)"
+              >
+                {{ building.powerStatus === 'OFFLINE' ? '🔴' : '🟡' }}
+                {{ getBuildingPowerLabel(building.powerStatus) }}
+              </span>
             </div>
           </RouterLink>
+        </div>
+
+        <!-- City power summary for this company's city -->
+        <div
+          v-if="company.buildings.length > 0 && company.buildings[0]"
+          class="city-power-row"
+        >
+          <template v-for="cityId in [...new Set(company.buildings.map((b) => b.cityId))]" :key="cityId">
+            <div
+              v-if="cityPowerBalances[cityId] && cityPowerBalances[cityId].powerPlantCount > 0"
+              :class="powerBalanceClass(cityPowerBalances[cityId].status)"
+              :aria-label="t('powerGrid.title')"
+            >
+              <span class="power-balance-icon">⚡</span>
+              <span class="power-balance-label">{{ t('powerGrid.powerCardTitle') }}</span>
+              <span v-if="cityPowerBalances[cityId].status === 'BALANCED'" class="power-balance-value">
+                {{ cityPowerBalances[cityId].totalSupplyMw }} / {{ cityPowerBalances[cityId].totalDemandMw }} {{ t('powerGrid.unit') }}
+              </span>
+              <span v-else class="power-balance-warning">
+                {{ cityPowerBalances[cityId].status === 'CRITICAL'
+                  ? t('powerGrid.criticalWarning')
+                  : t('powerGrid.shortageWarning') }}
+              </span>
+              <RouterLink :to="`/city/${cityId}`" class="power-balance-link">{{ t('powerGrid.viewDetails') }}</RouterLink>
+            </div>
+            <div v-else class="power-balance power-balance--legacy">
+              <span class="power-balance-icon">⚡</span>
+              <span class="power-balance-label">{{ t('powerGrid.powerCardTitle') }}</span>
+              <span class="power-balance-value">{{ t('powerGrid.powerCardNoPower') }}</span>
+            </div>
+          </template>
         </div>
       </div>
       </div>
@@ -807,6 +898,87 @@ function formatTimeRemaining(expiresAtUtc: string): string {
 .building-units {
   font-size: 0.6875rem;
   color: var(--color-text-secondary);
+}
+
+/* Power status badges on building cards */
+.power-badge {
+  font-size: 0.625rem;
+  font-weight: 700;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.power-badge--powered {
+  background: rgba(34, 197, 94, 0.15);
+  color: #15803d;
+}
+
+.power-badge--constrained {
+  background: rgba(251, 191, 36, 0.2);
+  color: #b45309;
+}
+
+.power-badge--offline {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--color-danger);
+}
+
+/* City power balance bar under buildings grid */
+.city-power-row {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.power-balance {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  flex-wrap: wrap;
+}
+
+.power-balance--balanced {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #15803d;
+}
+
+.power-balance--constrained {
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #b45309;
+}
+
+.power-balance--critical {
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  color: var(--color-danger);
+}
+
+.power-balance--legacy {
+  background: var(--color-bg-secondary, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.power-balance-icon {
+  flex-shrink: 0;
+}
+
+.power-balance-label {
+  font-weight: 600;
+}
+
+.power-balance-link {
+  color: inherit;
+  text-decoration: underline;
+  font-size: 0.75rem;
+  margin-left: auto;
 }
 
 .error-message {

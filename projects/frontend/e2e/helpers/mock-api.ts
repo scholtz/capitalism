@@ -115,6 +115,8 @@ export type MockBuilding = {
   totalAreaSqm?: number | null
   powerPlantType?: string | null
   powerOutput?: number | null
+  /** Power supply status: POWERED | CONSTRAINED | OFFLINE */
+  powerStatus?: string
   mediaType?: string | null
   interestRate?: number | null
   builtAtUtc?: string
@@ -929,6 +931,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
             longitude: lot.longitude,
             level: 1,
             powerConsumption: 2,
+            powerStatus: 'POWERED',
             isForSale: false,
             builtAtUtc: new Date().toISOString(),
             units: [],
@@ -1004,6 +1007,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         longitude: shopLot.longitude,
         level: 1,
         powerConsumption: 1,
+        powerStatus: 'POWERED',
         isForSale: false,
         builtAtUtc: new Date().toISOString(),
         units: [],
@@ -1056,8 +1060,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         cash: 500000,
         foundedAtUtc: new Date().toISOString(),
         buildings: [
-          { id: `building-factory-${Date.now()}`, companyId: '', cityId: input.cityId, type: 'FACTORY', name: `${input.companyName} Factory`, latitude: 48.15, longitude: 17.11, level: 1, powerConsumption: 2, isForSale: false, builtAtUtc: new Date().toISOString(), units: [], pendingConfiguration: null },
-          { id: `building-shop-${Date.now()}`, companyId: '', cityId: input.cityId, type: 'SALES_SHOP', name: `${input.companyName} Shop`, latitude: 48.15, longitude: 17.11, level: 1, powerConsumption: 1, isForSale: false, builtAtUtc: new Date().toISOString(), units: [], pendingConfiguration: null },
+          { id: `building-factory-${Date.now()}`, companyId: '', cityId: input.cityId, type: 'FACTORY', name: `${input.companyName} Factory`, latitude: 48.15, longitude: 17.11, level: 1, powerConsumption: 2, powerStatus: 'POWERED', isForSale: false, builtAtUtc: new Date().toISOString(), units: [], pendingConfiguration: null },
+          { id: `building-shop-${Date.now()}`, companyId: '', cityId: input.cityId, type: 'SALES_SHOP', name: `${input.companyName} Shop`, latitude: 48.15, longitude: 17.11, level: 1, powerConsumption: 1, powerStatus: 'POWERED', isForSale: false, builtAtUtc: new Date().toISOString(), units: [], pendingConfiguration: null },
         ],
       }
       player.companies.push(company)
@@ -1213,6 +1217,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         longitude: city?.longitude ?? 0,
         level: 1,
         powerConsumption: 1,
+        powerStatus: 'POWERED',
         isForSale: false,
         builtAtUtc: new Date().toISOString(),
         units: [],
@@ -1599,6 +1604,11 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       }
 
       company.cash -= lot.price
+      const isPowerPlant = input.buildingType === 'POWER_PLANT'
+      const plantType = input.powerPlantType ?? (isPowerPlant ? 'COAL' : null)
+      const defaultOutputByType: Record<string, number> = {
+        COAL: 50, GAS: 40, SOLAR: 20, WIND: 25, NUCLEAR: 200,
+      }
       const newBuilding: MockBuilding = {
         id: `building-lot-${Date.now()}`,
         companyId: company.id,
@@ -1608,7 +1618,10 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         latitude: lot.latitude,
         longitude: lot.longitude,
         level: 1,
-        powerConsumption: 1,
+        powerConsumption: isPowerPlant ? 0 : 1,
+        powerPlantType: plantType,
+        powerOutput: isPowerPlant ? (defaultOutputByType[plantType ?? ''] ?? 30) : null,
+        powerStatus: 'POWERED',
         isForSale: false,
         builtAtUtc: new Date().toISOString(),
         units: [],
@@ -1925,6 +1938,44 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { cityLots } }),
+      })
+    }
+
+    if (query.includes('cityPowerBalance')) {
+      const cityId = body.variables?.cityId
+      const allBuildings = state.players.flatMap((p) => p.companies.flatMap((c) => c.buildings)).filter((b) => b.cityId === cityId)
+      const powerPlants = allBuildings.filter((b) => b.type === 'POWER_PLANT')
+      const consumers = allBuildings.filter((b) => b.type !== 'POWER_PLANT')
+      const defaultOutputByType: Record<string, number> = { COAL: 50, GAS: 40, SOLAR: 20, WIND: 25, NUCLEAR: 200 }
+      const totalSupplyMw = powerPlants.reduce((sum, b) => sum + (b.powerOutput ?? defaultOutputByType[b.powerPlantType ?? ''] ?? 30), 0)
+      const totalDemandMw = consumers.reduce((sum, b) => sum + b.powerConsumption, 0)
+      const reserveMw = totalSupplyMw - totalDemandMw
+      const reservePercent = totalDemandMw > 0 ? Math.round((reserveMw / totalDemandMw) * 1000) / 10 : 100
+      let balanceStatus = 'BALANCED'
+      if (totalDemandMw > 0 && totalSupplyMw < totalDemandMw) {
+        balanceStatus = totalSupplyMw >= totalDemandMw * 0.5 ? 'CONSTRAINED' : 'CRITICAL'
+      }
+      const cityPowerBalance = {
+        cityId,
+        totalSupplyMw,
+        totalDemandMw,
+        reserveMw,
+        reservePercent,
+        status: balanceStatus,
+        powerPlants: powerPlants.map((b) => ({
+          buildingId: b.id,
+          buildingName: b.name,
+          plantType: b.powerPlantType ?? 'COAL',
+          outputMw: b.powerOutput ?? defaultOutputByType[b.powerPlantType ?? ''] ?? 30,
+          powerStatus: b.powerStatus ?? 'POWERED',
+        })),
+        powerPlantCount: powerPlants.length,
+        consumerBuildingCount: consumers.length,
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { cityPowerBalance } }),
       })
     }
 

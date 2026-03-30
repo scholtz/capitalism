@@ -1950,6 +1950,7 @@ async function loadBuilding() {
             longitude
             level
             powerConsumption
+            powerStatus
             isForSale
             askingPrice
             pricePerSqm
@@ -2183,6 +2184,20 @@ watch(
           <span class="meta-pill">
             <span class="meta-label">{{ t('buildings.power') }}</span>
             <span class="meta-value">{{ building.powerConsumption }} {{ t('buildings.powerUnit') }}</span>
+          </span>
+          <span
+            v-if="building.powerStatus"
+            class="meta-pill power-status-pill"
+            :class="{
+              'power-status-powered': building.powerStatus === 'POWERED',
+              'power-status-constrained': building.powerStatus === 'CONSTRAINED',
+              'power-status-offline': building.powerStatus === 'OFFLINE',
+            }"
+            :title="t(`powerGrid.buildingStatusHint.${building.powerStatus}`, { percent: 50 })"
+            role="status"
+          >
+            <span class="meta-label">{{ t('powerGrid.powerCardTitle') }}</span>
+            <span class="meta-value">{{ t(`powerGrid.buildingStatus.${building.powerStatus}`) }}</span>
           </span>
           <span class="meta-pill" :class="building.isForSale ? 'for-sale' : ''">
             {{ building.isForSale ? t('buildingDetail.forSale') : t('buildingDetail.notForSale') }}
@@ -3646,6 +3661,21 @@ watch(
 .meta-pill.for-sale {
   background: rgba(0, 200, 83, 0.1);
   color: var(--color-secondary);
+}
+
+.power-status-pill.power-status-powered {
+  background: rgba(34, 197, 94, 0.1);
+  color: #15803d;
+}
+
+.power-status-pill.power-status-constrained {
+  background: rgba(251, 191, 36, 0.15);
+  color: #b45309;
+}
+
+.power-status-pill.power-status-offline {
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--color-danger);
 }
 
 .meta-label,

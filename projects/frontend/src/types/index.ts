@@ -56,6 +56,8 @@ export interface Building {
   totalAreaSqm: number | null
   powerPlantType: string | null
   powerOutput: number | null
+  /** Power supply status set by the tick engine: POWERED | CONSTRAINED | OFFLINE */
+  powerStatus: string
   mediaType: string | null
   interestRate: number | null
   builtAtUtc: string
@@ -516,4 +518,28 @@ export interface MarketShareEntry {
   label: string
   companyId: string | null
   share: number
+}
+
+/** Summary of a single power plant in the city power balance view. */
+export interface PowerPlantSummary {
+  buildingId: string
+  buildingName: string
+  /** Plant type: COAL | GAS | SOLAR | WIND | NUCLEAR */
+  plantType: string
+  outputMw: number
+  powerStatus: string
+}
+
+/** City-level power balance snapshot returned by the cityPowerBalance query. */
+export interface CityPowerBalance {
+  cityId: string
+  totalSupplyMw: number
+  totalDemandMw: number
+  reserveMw: number
+  reservePercent: number
+  /** BALANCED | CONSTRAINED | CRITICAL */
+  status: string
+  powerPlants: PowerPlantSummary[]
+  powerPlantCount: number
+  consumerBuildingCount: number
 }
