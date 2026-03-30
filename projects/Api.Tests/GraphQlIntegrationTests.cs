@@ -6658,4 +6658,114 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     }
 
     #endregion
+
+    #region Database migration transition
+
+    [Fact]
+    public async Task StartupWithExistingEnsureCreatedDatabase_MigratesToMigrationsManagedSchema()
+    {
+        // Regression test for the EnsureCreatedAsync→MigrateAsync transition.
+        //
+        // SCENARIO: A developer or hosted environment has a SQLite database that was originally
+        // created by EnsureCreatedAsync (before migration support was introduced). It has all
+        // tables but no __EFMigrationsHistory table. A new deployment switches to MigrateAsync.
+        //
+        // EXPECTED BEHAVIOR: InitializeAsync should succeed — it detects the missing history
+        // table, baselines all current migrations as already applied, and then MigrateAsync
+        // finds nothing to do (no pending migrations).
+        //
+        // IMPLEMENTATION: We simulate the legacy database by creating a new temporary SQLite DB,
+        // applying the schema via EnsureCreatedAsync, dropping the __EFMigrationsHistory table
+        // (if it was created by EnsureCreated — it won't be since EnsureCreated never creates
+        // it, so the DB is already in the legacy state), then running InitializeAsync.
+
+        var dbPath = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            $"capitalism-migration-test-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseSqlite($"Data Source={dbPath}")
+                .Options;
+
+            // Step 1: Create the legacy database — EnsureCreatedAsync creates all tables but
+            // does NOT create __EFMigrationsHistory (that is a migrations-specific artifact).
+            await using (var legacyCtx = new AppDbContext(options))
+            {
+                var wasCreated = await legacyCtx.Database.EnsureCreatedAsync();
+                Assert.True(wasCreated, "Fresh database should have been created");
+
+                // Confirm __EFMigrationsHistory is absent (legacy state).
+                var conn = legacyCtx.Database.GetDbConnection();
+                await conn.OpenAsync();
+                await using var checkCmd = conn.CreateCommand();
+                checkCmd.CommandText =
+                    "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='__EFMigrationsHistory'";
+                var historyExists = Convert.ToInt64(await checkCmd.ExecuteScalarAsync() ?? 0L) > 0;
+                conn.Close();
+
+                Assert.False(historyExists,
+                    "EnsureCreatedAsync must NOT create __EFMigrationsHistory — this test depends on the legacy state");
+            }
+
+            // Step 2: Now run InitializeAsync against this legacy database.
+            // The safe bootstrap in AppDbInitializer should detect the missing history table,
+            // create it, baseline all migrations, and complete without throwing.
+            await using var upgradeCtx = new AppDbContext(options);
+
+            var testSeedOptions = Microsoft.Extensions.Options.Options.Create(new Api.Configuration.SeedDataOptions
+            {
+                AdminEmail = "admin@migration-test.local",
+                AdminDisplayName = "Migration Test Admin",
+                AdminPassword = "TestPassword123!"
+            });
+
+            var initializer = new AppDbInitializer(upgradeCtx, testSeedOptions);
+            var exception = await Record.ExceptionAsync(() => initializer.InitializeAsync());
+            if (exception is not null)
+                throw new InvalidOperationException(
+                    $"InitializeAsync must succeed on a legacy EnsureCreated database. Got: {exception.Message}", exception);
+            Assert.Null(exception);
+
+            // Step 3: Verify __EFMigrationsHistory was created and populated.
+            await using var verifyCtx = new AppDbContext(options);
+            var conn2 = verifyCtx.Database.GetDbConnection();
+            await conn2.OpenAsync();
+            await using var histCheck = conn2.CreateCommand();
+            histCheck.CommandText =
+                "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='__EFMigrationsHistory'";
+            var historyNowExists = Convert.ToInt64(await histCheck.ExecuteScalarAsync() ?? 0L) > 0;
+
+            await using var rowCheck = conn2.CreateCommand();
+            rowCheck.CommandText = "SELECT COUNT(1) FROM __EFMigrationsHistory";
+            var historyRowCount = Convert.ToInt64(await rowCheck.ExecuteScalarAsync() ?? 0L);
+            conn2.Close();
+
+            Assert.True(historyNowExists, "__EFMigrationsHistory must exist after safe migration bootstrap");
+            Assert.True(historyRowCount > 0, "__EFMigrationsHistory must have at least one baseline row");
+
+            // Step 4: A second call to InitializeAsync (simulating a server restart) must also
+            // succeed — the history table now exists so the baseline step is skipped.
+            await using var restartCtx = new AppDbContext(options);
+            var restartInitializer = new AppDbInitializer(restartCtx, testSeedOptions);
+            var restartException = await Record.ExceptionAsync(() => restartInitializer.InitializeAsync());
+            if (restartException is not null)
+                throw new InvalidOperationException(
+                    $"Second InitializeAsync (server restart) must succeed. Got: {restartException.Message}", restartException);
+            Assert.Null(restartException);
+        }
+        finally
+        {
+            // Clean up temp database files.
+            foreach (var suffix in new[] { "", "-wal", "-shm" })
+            {
+                var path = dbPath + suffix;
+                if (System.IO.File.Exists(path))
+                    System.IO.File.Delete(path);
+            }
+        }
+    }
+
+    #endregion
 }

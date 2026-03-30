@@ -19,13 +19,26 @@ public sealed class AppDbInitializer(
     IOptions<SeedDataOptions> seedOptions)
 {
     /// <summary>
-    /// Ensures the schema is up to date (applies any pending EF migrations) and seeds initial
-    /// data if missing. Using MigrateAsync ensures the schema evolves safely across deployments
-    /// without requiring a database recreate.
+    /// Ensures the schema is up to date and seeds initial data if missing.
+    ///
+    /// Startup sequence (relational databases):
+    /// 1. <c>EnsureCreatedAsync</c> — creates the database and all tables if they do not exist
+    ///    yet.  For databases that already exist (whether bootstrapped by a previous
+    ///    <c>EnsureCreated</c> call or by an earlier migration run) this is a no-op.
+    /// 2. <c>EnsureMigrationsHistoryBaselineAsync</c> — if <c>__EFMigrationsHistory</c> is
+    ///    absent (legacy database that was bootstrapped by <c>EnsureCreatedAsync</c> before
+    ///    migration support was introduced) this method creates the history table and marks every
+    ///    currently-defined migration as already applied.  This prevents <c>MigrateAsync</c>
+    ///    from attempting to re-create tables that already exist.
+    /// 3. <c>MigrateAsync</c> — applies only the migrations that are not yet in the history
+    ///    table.  For a brand-new or already up-to-date database this is a no-op.
+    ///
+    /// For in-memory databases (used in local development) migrations are not supported by
+    /// the provider; <c>EnsureCreatedAsync</c> is used directly and steps 2–3 are skipped.
     /// </summary>
     public async Task InitializeAsync()
     {
-        await dbContext.Database.MigrateAsync();
+        await SafelyApplyMigrationsAsync();
 
         if (!await dbContext.Players.AnyAsync(p => p.Email == seedOptions.Value.AdminEmail))
         {
@@ -698,6 +711,150 @@ public sealed class AppDbInitializer(
     {
         var hash = MD5.HashData(Encoding.UTF8.GetBytes(key));
         return new Guid(hash);
+    }
+
+    /// <summary>
+    /// Applies the database schema in a way that is safe for three distinct startup scenarios:
+    /// <list type="bullet">
+    ///   <item><description>
+    ///     <b>In-memory database (local development)</b> — EF migrations are not supported by
+    ///     the in-memory provider.  <c>EnsureCreatedAsync</c> is used directly; migration steps
+    ///     are skipped.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <b>Fresh relational database</b> — <c>EnsureCreatedAsync</c> creates the schema,
+    ///     then a baseline entry is inserted into <c>__EFMigrationsHistory</c> for every
+    ///     currently-defined migration so that <c>MigrateAsync</c> has nothing left to apply.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <b>Legacy relational database</b> (created by <c>EnsureCreatedAsync</c> before
+    ///     migration support was introduced, no <c>__EFMigrationsHistory</c> table) —
+    ///     same as fresh path: baseline entries are inserted for all existing migrations so that
+    ///     the initial migration is not replayed against tables that already exist.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <b>Relational database already managed by migrations</b> — <c>EnsureCreatedAsync</c>
+    ///     is a no-op, <c>EnsureMigrationsHistoryBaselineAsync</c> detects the existing history
+    ///     table and returns immediately, and <c>MigrateAsync</c> applies only pending
+    ///     migrations.
+    ///   </description></item>
+    /// </list>
+    /// </summary>
+    private async Task SafelyApplyMigrationsAsync()
+    {
+        // In-memory databases (development mode: UseInMemoryDatabase) do not support EF
+        // migrations at all — the in-memory provider has no IMigrator service.  Fall back to
+        // EnsureCreatedAsync which correctly builds the schema from the current model.
+        if (!dbContext.Database.IsRelational())
+        {
+            await dbContext.Database.EnsureCreatedAsync();
+            return;
+        }
+
+        // For relational databases (SQLite in production and test environments):
+        //   a) EnsureCreatedAsync is idempotent and safe to call even when tables already exist.
+        //      It creates the database file and schema when absent and returns false (no-op)
+        //      when the database already exists — regardless of whether it was originally
+        //      created by EnsureCreated or by a previous migration run.
+        await dbContext.Database.EnsureCreatedAsync();
+
+        //   b) If the database has no __EFMigrationsHistory table, every currently-defined
+        //      migration is marked as already applied so that MigrateAsync (step c) does not
+        //      attempt to re-create tables that already exist.
+        await EnsureMigrationsHistoryBaselineAsync();
+
+        //   c) Apply any migrations that are not yet recorded in __EFMigrationsHistory.
+        //      This is a no-op for brand-new or already up-to-date databases.
+        await dbContext.Database.MigrateAsync();
+    }
+
+    /// <summary>
+    /// Creates <c>__EFMigrationsHistory</c> and inserts baseline rows for every currently-defined
+    /// migration when the table does not exist.  This makes databases that were bootstrapped
+    /// with <c>EnsureCreatedAsync</c> (before migration support was introduced) compatible with
+    /// <c>MigrateAsync</c> without requiring a database drop-and-recreate.
+    ///
+    /// If <c>__EFMigrationsHistory</c> already exists the method returns immediately; it never
+    /// removes or alters existing history rows.
+    /// </summary>
+    private async Task EnsureMigrationsHistoryBaselineAsync()
+    {
+        // The EF Core migration history table name matches the default used by
+        // SqliteHistoryRepository (and other relational providers).
+        const string historyTable = "__EFMigrationsHistory";
+
+        // The ProductVersion column records which EF Core version managed each migration.
+        // For baseline rows we record the current EF Core runtime version so reviewers can
+        // see when the baseline was applied.
+        var efProductVersion =
+            (System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(
+                typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly))
+            ?.InformationalVersion
+            ?? "unknown";
+
+        var connection = dbContext.Database.GetDbConnection();
+        var wasOpen = connection.State == System.Data.ConnectionState.Open;
+
+        if (!wasOpen)
+            await connection.OpenAsync();
+
+        try
+        {
+            // Check whether the migrations-history table already exists.
+            await using var checkCmd = connection.CreateCommand();
+            checkCmd.CommandText =
+                $"SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='{historyTable}'";
+            var historyExists =
+                Convert.ToInt64(await checkCmd.ExecuteScalarAsync() ?? 0L) > 0;
+
+            if (historyExists)
+                return; // Already managed by migrations — nothing to do.
+
+            // Create the history table using the SQLite-compatible schema that EF Core generates.
+            await using var createCmd = connection.CreateCommand();
+            createCmd.CommandText =
+                $"""
+                CREATE TABLE "{historyTable}" (
+                    "MigrationId" TEXT NOT NULL,
+                    "ProductVersion" TEXT NOT NULL,
+                    CONSTRAINT "PK__{historyTable}" PRIMARY KEY ("MigrationId")
+                )
+                """;
+            await createCmd.ExecuteNonQueryAsync();
+
+            // Baseline: mark every currently-defined migration as already applied.
+            // EnsureCreatedAsync (called just before this) already created the full schema
+            // corresponding to all migrations up to HEAD, so no migration needs to be
+            // replayed.  Future migrations added after this baseline will still be applied
+            // correctly by MigrateAsync because they will NOT be in this initial history.
+            foreach (var migrationId in dbContext.Database.GetMigrations())
+            {
+                // Use parameterized queries to prevent any injection risks even though
+                // migration IDs come from the compiled assembly (not external input).
+                await using var insertCmd = connection.CreateCommand();
+                insertCmd.CommandText =
+                    $"""
+                    INSERT INTO "{historyTable}" ("MigrationId", "ProductVersion")
+                    VALUES (@MigrationId, @ProductVersion)
+                    """;
+                var migParam = insertCmd.CreateParameter();
+                migParam.ParameterName = "@MigrationId";
+                migParam.Value = migrationId;
+                insertCmd.Parameters.Add(migParam);
+
+                var verParam = insertCmd.CreateParameter();
+                verParam.ParameterName = "@ProductVersion";
+                verParam.Value = efProductVersion;
+                insertCmd.Parameters.Add(verParam);
+
+                await insertCmd.ExecuteNonQueryAsync();
+            }
+        }
+        finally
+        {
+            if (!wasOpen)
+                connection.Close();
+        }
     }
 
     private sealed record ResourceSeed(
