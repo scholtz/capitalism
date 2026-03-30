@@ -80,6 +80,18 @@ export default {
     step3Desc: 'Name your company, review your startup budget, and secure a factory-capable lot in the city.',
     step4Title: 'Choose Product & First Shop Lot',
     step4Desc: 'Select your starter product, then buy a sales-shop lot that is ready for public sales.',
+    industryDescFurniture:
+      'Turn raw timber into home goods that every household needs. A simple wood supply chain, a one-tick craft cycle, and a market that never sleeps. Great for players who want to see profit fast and scale with minimal inputs.',
+    industryDescFoodProcessing:
+      'Feed the city with daily staples. Grain is cheap and abundant, bread sells in high volume every tick, and food customers keep coming back. Perfect for players who prefer steady, high-frequency sales over premium margins.',
+    industryDescHealthcare:
+      'Manufacture essential medicines that residents cannot go without. Chemical mineral inputs convert to high-margin bottles at premium prices. Ideal for players who want fewer sales but larger revenue per unit sold.',
+    industryFirstProductFurniture: 'First product: Wooden Chair · $45 / unit',
+    industryFirstProductFoodProcessing: 'First product: Bread · $3 / unit',
+    industryFirstProductHealthcare: 'First product: Basic Medicine · $50 / unit',
+    industryWhyFurniture: 'Low entry cost · fast craft · scalable',
+    industryWhyFoodProcessing: 'High volume · always in demand · competitive',
+    industryWhyHealthcare: 'Premium margin · steady demand · resilient',
     companyName: 'Company Name',
     companyNamePlaceholder: 'Enter your company name',
     selectProduct: 'Select Your First Product',

@@ -283,10 +283,25 @@ const industryIcons: Record<string, string> = {
   HEALTHCARE: '💊',
 }
 
-const industryDescriptions: Record<string, string> = {
-  FURNITURE: 'Craft wooden furniture from harvested timber.',
-  FOOD_PROCESSING: 'Process grain and crops into food products.',
-  HEALTHCARE: 'Manufacture medicines from chemical minerals.',
+/** Maps each starter industry to its i18n description key. */
+const industryDescKeys: Record<string, string> = {
+  FURNITURE: 'onboarding.industryDescFurniture',
+  FOOD_PROCESSING: 'onboarding.industryDescFoodProcessing',
+  HEALTHCARE: 'onboarding.industryDescHealthcare',
+}
+
+/** Maps each starter industry to its i18n first-product hint key. */
+const industryFirstProductKeys: Record<string, string> = {
+  FURNITURE: 'onboarding.industryFirstProductFurniture',
+  FOOD_PROCESSING: 'onboarding.industryFirstProductFoodProcessing',
+  HEALTHCARE: 'onboarding.industryFirstProductHealthcare',
+}
+
+/** Maps each starter industry to its i18n "why choose" tag key. */
+const industryWhyKeys: Record<string, string> = {
+  FURNITURE: 'onboarding.industryWhyFurniture',
+  FOOD_PROCESSING: 'onboarding.industryWhyFoodProcessing',
+  HEALTHCARE: 'onboarding.industryWhyHealthcare',
 }
 
 function resolveMaxReachableStep(): number {
@@ -1119,7 +1134,9 @@ useTickRefresh(async () => {
           >
             <span class="card-icon">{{ industryIcons[ind] || '🏭' }}</span>
             <span class="card-title">{{ formatIndustry(ind) }}</span>
-            <span class="card-desc">{{ industryDescriptions[ind] || '' }}</span>
+            <span class="card-first-product">{{ t(industryFirstProductKeys[ind] || '') }}</span>
+            <span class="card-desc">{{ t(industryDescKeys[ind] || '') }}</span>
+            <span class="card-why">{{ t(industryWhyKeys[ind] || '') }}</span>
           </button>
         </div>
         <div class="step-actions">
@@ -1905,6 +1922,23 @@ useTickRefresh(async () => {
   font-size: 0.8125rem;
   color: var(--color-text-secondary);
   line-height: 1.4;
+}
+
+.card-first-product {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: rgba(0, 71, 255, 0.08);
+  border-radius: var(--radius-sm, 4px);
+  padding: 0.2rem 0.5rem;
+  display: inline-block;
+}
+
+.card-why {
+  font-size: 0.6875rem;
+  color: var(--color-text-muted, var(--color-text-secondary));
+  font-style: italic;
+  line-height: 1.3;
 }
 
 .city-card {

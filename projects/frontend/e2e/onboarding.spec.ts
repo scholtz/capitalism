@@ -328,6 +328,54 @@ test.describe('Onboarding wizard', () => {
     await expect(page).toHaveURL(/\/onboarding/)
   })
 
+  test('industry cards show first product hint for each starter industry', async ({ page }) => {
+    // ROADMAP: "Each option should explain the fantasy, likely first product, and why a player might choose it."
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await expect(page.locator('.industry-card', { hasText: 'Furniture' }).locator('.card-first-product')).toContainText(
+      'Wooden Chair',
+    )
+    await expect(
+      page.locator('.industry-card', { hasText: 'Food Processing' }).locator('.card-first-product'),
+    ).toContainText('Bread')
+    await expect(
+      page.locator('.industry-card', { hasText: 'Healthcare' }).locator('.card-first-product'),
+    ).toContainText('Basic Medicine')
+  })
+
+  test('industry cards show why-choose tagline for each starter industry', async ({ page }) => {
+    // ROADMAP: "Each option should explain ... why a player might choose it."
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await expect(page.locator('.industry-card', { hasText: 'Furniture' }).locator('.card-why')).toContainText(
+      'Low entry cost',
+    )
+    await expect(
+      page.locator('.industry-card', { hasText: 'Food Processing' }).locator('.card-why'),
+    ).toContainText('High volume')
+    await expect(page.locator('.industry-card', { hasText: 'Healthcare' }).locator('.card-why')).toContainText(
+      'Premium margin',
+    )
+  })
+
+  test('industry card descriptions explain the business fantasy', async ({ page }) => {
+    // ROADMAP: "Each option should explain the fantasy ... and why a player might choose it."
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    // Furniture description explains timber → home goods supply chain
+    await expect(page.locator('.industry-card', { hasText: 'Furniture' }).locator('.card-desc')).toContainText(
+      'timber',
+    )
+    // Food Processing description explains the volume/frequency trade-off
+    await expect(
+      page.locator('.industry-card', { hasText: 'Food Processing' }).locator('.card-desc'),
+    ).toContainText('volume')
+    // Healthcare description explains premium pricing
+    await expect(page.locator('.industry-card', { hasText: 'Healthcare' }).locator('.card-desc')).toContainText(
+      'premium',
+    )
+  })
+
   test('can complete onboarding with Food Processing industry', async ({ page }) => {
     const player = makePlayer()
     const state = setupMockApi(page, { players: [player] })

@@ -427,3 +427,43 @@ Root-cause of a bug (March 2026, PR #76 guest onboarding follow-up):
 - A test asserting `localStorage.getItem('onboarding_progress') === null` after migration correctly caught this bug.
 
 **Rule: always call `clearProgress()` after a successful guest-to-authenticated migration** so the localStorage sandbox state is cleaned up. The watch-based `saveProgress()` will still fire on reactive updates, but the key insight is that after `clearProgress()` the authenticated code path will NOT re-write guest state because `isGuestMode` becomes false (the player is now authenticated).
+
+## Guest onboarding quality — test all industries end-to-end, check MaxPrice vs exchange price
+
+Root-cause of a silent production bug (March 2026, PR #93):
+- `ConfigureStarterFactory` set `MaxPrice = product.BasePrice` on the raw-material purchase unit.
+- For Food Processing (Bread), `BasePrice = 3m` but Grain's global exchange price in Bratislava is `~6m`.
+- The purchasing phase silently skips the exchange when `exchangePrice > MaxPrice`, so the factory could never buy any Grain. The entire Food Processing supply chain was permanently broken at launch.
+- This was not caught because supply chain end-to-end tests only covered Furniture. Healthcare and Furniture were unaffected because their product base prices exceeded their raw material exchange prices.
+
+**Rules to prevent recurrence:**
+1. **When setting `MaxPrice` on any purchase unit, compare it against the actual global exchange price for that resource in the target city.** Do NOT use `product.BasePrice` as a purchase cap unless you have verified it exceeds the exchange price for that industry's raw material.
+2. **Always run supply chain tick tests for ALL starter industries, not just Furniture.** After calling `FinishOnboarding`, process at least 4 ticks and assert that shop purchase unit inventory fills and `PublicSalesRecords` are created for every seeded industry (FURNITURE, FOOD_PROCESSING, HEALTHCARE).
+3. **When a feature covers multiple industries, add backend integration tests for each industry's full tick cycle** — not just a single "all three industries produce valid state" happy-path test.
+4. **null MaxPrice means no cap (decimal.MaxValue in the purchasing phase)** — this is the safe default for starter factory purchase units and allows the unit to buy at market rate regardless of the product price.
+
+## Starter industry card UX quality — ROADMAP requires fantasy, first product, and why-choose
+
+Root-cause of a UX gap (March 2026, PR #93):
+- Industry card descriptions were a single bland sentence: "Craft wooden furniture from harvested timber."
+- The ROADMAP explicitly requires: "Each option should explain the fantasy, likely first product, and why a player might choose it."
+- No tests verified the content quality of the industry cards.
+
+**Rules to prevent recurrence:**
+1. **When implementing any wizard selection step (industry, city, product), match the ROADMAP's content requirements exactly.** For industry cards this means: fantasy description, first product name + price, and a "why choose" tagline.
+2. **Industry descriptions must use i18n keys** (not hardcoded English strings in the component) so all three locales (en, sk, de) are kept in sync.
+3. **Add E2E tests that assert the specific content values** (product names, key description words, why tags) are visible on the cards — not just that the cards are rendered.
+4. **The `.card-first-product` badge is the canonical selector** for industry first-product hints; `.card-why` is the canonical selector for the tagline. Tests must use these selectors when verifying card content.
+
+## "Already on main" quality mandate — investigating before claiming done
+
+Root-cause of a quality failure (March 2026, PR #93 initial session):
+- The branch diff vs main was empty. The agent found the onboarding wizard already implemented and reported it as complete without investigating bugs or gaps.
+- A silent supply chain bug (MaxPrice blocking Food Processing) and poor UX copy (1-sentence industry descriptions not matching ROADMAP) both went undetected.
+
+**When the diff is empty and the feature appears "already implemented":**
+1. Run the full supply chain end-to-end for **every variant** defined in the ROADMAP, not just the first happy path.
+2. Compare every visible UI string against the ROADMAP's content requirements for that screen. Short descriptions that don't explain fantasy/product/why are UX gaps.
+3. Run `dotnet test` with a filter targeting the specific feature area to find failures the happy-path tests mask.
+4. Screenshot every wizard step and compare against the ROADMAP description before declaring done.
+5. A feature is only "done" when ALL of: CI passes, product copy matches ROADMAP, all industries work end-to-end, and tests cover every defined variant.

@@ -80,6 +80,18 @@ export default {
     step3Desc: 'Pomenujte firmu, skontrolujte rozpočet a zaistite si pozemok vhodný pre továreň.',
     step4Title: 'Vyberte produkt a prvý obchodný pozemok',
     step4Desc: 'Zvoľte štartovací produkt a potom kúpte pozemok pre predajňu pripravenú na verejný predaj.',
+    industryDescFurniture:
+      'Premieňajte drevo na nábytok, ktorý potrebuje každá domácnosť. Jednoduchý dodávateľský reťazec, rýchly cyklus výroby a trh, ktorý nikdy nespí. Vhodné pre hráčov, ktorí chcú rýchlo dosiahnuť zisk.',
+    industryDescFoodProcessing:
+      'Zásobujte mesto dennými potravinami. Obilie je lacné, chlieb sa predáva vo veľkom objeme a zákazníci sa vracajú každý takt. Ideálne pre hráčov, ktorí uprednostňujú stabilné, frekventované predaje.',
+    industryDescHealthcare:
+      'Vyrábajte lieky, bez ktorých sa obyvatelia nezaobídu. Chemické minerály sa menia na vysoko výnosné fľaše za prémiové ceny. Vhodné pre hráčov, ktorí preferujú menej predajov s vyšším výnosom na jednotku.',
+    industryFirstProductFurniture: 'Prvý produkt: Drevená stolička · $45 / ks',
+    industryFirstProductFoodProcessing: 'Prvý produkt: Chlieb · $3 / bochník',
+    industryFirstProductHealthcare: 'Prvý produkt: Základný liek · $50 / fľaša',
+    industryWhyFurniture: 'Nízke vstupné náklady · rýchla výroba · škálovateľné',
+    industryWhyFoodProcessing: 'Vysoký objem · vždy dopyt · konkurencieschopné',
+    industryWhyHealthcare: 'Prémiová marža · stabilný dopyt · odolné',
     companyName: 'Názov firmy',
     companyNamePlaceholder: 'Zadajte názov firmy',
     selectProduct: 'Váš prvý produkt',

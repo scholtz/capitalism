@@ -80,6 +80,18 @@ export default {
     step3Desc: 'Benennen Sie Ihr Unternehmen, prüfen Sie Ihr Startbudget und sichern Sie sich ein fabriktaugliches Grundstück.',
     step4Title: 'Produkt und erstes Ladenlokal wählen',
     step4Desc: 'Wählen Sie Ihr Startprodukt und kaufen Sie dann ein Verkaufsgrundstück für den öffentlichen Verkauf.',
+    industryDescFurniture:
+      'Verwandeln Sie Rohholz in Möbel, die jeder Haushalt braucht. Einfache Lieferkette, schneller Taktzyklus und ein Markt, der nie schläft. Ideal für Spieler, die schnell Gewinn sehen wollen.',
+    industryDescFoodProcessing:
+      'Versorgen Sie die Stadt mit täglichen Lebensmitteln. Getreide ist günstig, Brot verkauft sich in hohem Volumen und Lebensmittelkunden kommen jeden Takt zurück. Perfekt für gleichmäßige, häufige Verkäufe.',
+    industryDescHealthcare:
+      'Stellen Sie wichtige Medikamente her, auf die die Einwohner nicht verzichten können. Chemische Mineralien werden zu hochmargigen Flaschen zu Premiumpreisen. Ideal für weniger Verkäufe mit höherem Umsatz pro Einheit.',
+    industryFirstProductFurniture: 'Erstes Produkt: Holzstuhl · $45 / Stück',
+    industryFirstProductFoodProcessing: 'Erstes Produkt: Brot · $3 / Laib',
+    industryFirstProductHealthcare: 'Erstes Produkt: Grundmedizin · $50 / Flasche',
+    industryWhyFurniture: 'Geringe Einstiegskosten · schnelle Fertigung · skalierbar',
+    industryWhyFoodProcessing: 'Hohes Volumen · immer gefragt · wettbewerbsfähig',
+    industryWhyHealthcare: 'Hohe Marge · stabiler Bedarf · resilient',
     companyName: 'Firmenname',
     companyNamePlaceholder: 'Firmennamen eingeben',
     selectProduct: 'Erstes Produkt wählen',
