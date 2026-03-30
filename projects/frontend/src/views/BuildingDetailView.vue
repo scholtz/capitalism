@@ -121,6 +121,9 @@ const layoutName = ref('')
 const showLayoutDialog = ref(false)
 const selectedHistoryItemKey = ref<string | null>(null)
 
+let activeBuildingLoadRequest = 0
+let activeExchangeOffersRequest = 0
+
 const LAYOUT_STORAGE_KEY = 'capitalism_building_layouts'
 
 const allowedUnitsMap: Record<string, string[]> = {
@@ -1775,9 +1778,11 @@ function updateSelectedUnitConfig(field: string, value: unknown) {
   ;(unit as Record<string, unknown>)[field] = sanitized
 }
 
-async function loadUnitInventorySummaries() {
+async function loadUnitInventorySummaries(requestId?: number) {
   if (!auth.token) {
-    unitInventorySummaries.value = []
+    if (requestId == null || requestId === activeBuildingLoadRequest) {
+      unitInventorySummaries.value = []
+    }
     return
   }
 
@@ -1796,15 +1801,29 @@ async function loadUnitInventorySummaries() {
       }`,
       { buildingId: buildingId.value },
     )
-    unitInventorySummaries.value = data.buildingUnitInventorySummaries
+    if (requestId != null && requestId !== activeBuildingLoadRequest) {
+      return
+    }
+
+    if (!deepEqual(unitInventorySummaries.value, data.buildingUnitInventorySummaries)) {
+      unitInventorySummaries.value = data.buildingUnitInventorySummaries
+    }
   } catch {
-    unitInventorySummaries.value = []
+    if (requestId != null && requestId !== activeBuildingLoadRequest) {
+      return
+    }
+
+    if (unitInventorySummaries.value.length > 0) {
+      unitInventorySummaries.value = []
+    }
   }
 }
 
-async function loadUnitInventories() {
+async function loadUnitInventories(requestId?: number) {
   if (!auth.token) {
-    unitInventories.value = []
+    if (requestId == null || requestId === activeBuildingLoadRequest) {
+      unitInventories.value = []
+    }
     return
   }
 
@@ -1824,15 +1843,29 @@ async function loadUnitInventories() {
       }`,
       { buildingId: buildingId.value },
     )
-    unitInventories.value = data.buildingUnitInventories
+    if (requestId != null && requestId !== activeBuildingLoadRequest) {
+      return
+    }
+
+    if (!deepEqual(unitInventories.value, data.buildingUnitInventories)) {
+      unitInventories.value = data.buildingUnitInventories
+    }
   } catch {
-    unitInventories.value = []
+    if (requestId != null && requestId !== activeBuildingLoadRequest) {
+      return
+    }
+
+    if (unitInventories.value.length > 0) {
+      unitInventories.value = []
+    }
   }
 }
 
-async function loadUnitResourceHistories() {
+async function loadUnitResourceHistories(requestId?: number) {
   if (!auth.token) {
-    unitResourceHistories.value = []
+    if (requestId == null || requestId === activeBuildingLoadRequest) {
+      unitResourceHistories.value = []
+    }
     return
   }
 
@@ -1852,20 +1885,37 @@ async function loadUnitResourceHistories() {
       }`,
       { buildingId: buildingId.value, limit: 60 },
     )
-    unitResourceHistories.value = data.buildingUnitResourceHistories
+    if (requestId != null && requestId !== activeBuildingLoadRequest) {
+      return
+    }
+
+    if (!deepEqual(unitResourceHistories.value, data.buildingUnitResourceHistories)) {
+      unitResourceHistories.value = data.buildingUnitResourceHistories
+    }
   } catch {
-    unitResourceHistories.value = []
+    if (requestId != null && requestId !== activeBuildingLoadRequest) {
+      return
+    }
+
+    if (unitResourceHistories.value.length > 0) {
+      unitResourceHistories.value = []
+    }
   }
 }
 
 async function loadGlobalExchangeOffers() {
+  const requestId = ++activeExchangeOffersRequest
   const unit = selectedPurchaseUnit.value
   const resourceTypeId = getPurchaseUnitResourceTypeId(unit)
   const purchaseSource = getPurchaseUnitSource(unit)
 
   if (!building.value?.cityId || !resourceTypeId || !['EXCHANGE', 'OPTIMAL'].includes(purchaseSource ?? '')) {
-    exchangeOffers.value = []
-    exchangeOffersLoading.value = false
+    if (requestId === activeExchangeOffersRequest) {
+      if (exchangeOffers.value.length > 0) {
+        exchangeOffers.value = []
+      }
+      exchangeOffersLoading.value = false
+    }
     return
   }
 
@@ -1893,17 +1943,36 @@ async function loadGlobalExchangeOffers() {
         resourceTypeId,
       },
     )
-    exchangeOffers.value = data.globalExchangeOffers
+    if (requestId !== activeExchangeOffersRequest) {
+      return
+    }
+
+    if (!deepEqual(exchangeOffers.value, data.globalExchangeOffers)) {
+      exchangeOffers.value = data.globalExchangeOffers
+    }
   } catch {
-    exchangeOffers.value = []
+    if (requestId !== activeExchangeOffersRequest) {
+      return
+    }
+
+    if (exchangeOffers.value.length > 0) {
+      exchangeOffers.value = []
+    }
   } finally {
-    exchangeOffersLoading.value = false
+    if (requestId === activeExchangeOffersRequest) {
+      exchangeOffersLoading.value = false
+    }
   }
 }
 
 async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
+  const requestId = ++activeBuildingLoadRequest
+  const shouldShowLoading = !building.value
+
   try {
-    loading.value = true
+    if (shouldShowLoading) {
+      loading.value = true
+    }
     error.value = null
     const preserveDraft = options.preserveDraft === true
 
@@ -2050,6 +2119,10 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
       }`),
     ])
 
+    if (requestId !== activeBuildingLoadRequest) {
+      return
+    }
+
     currentTick.value = gameStateData.gameState?.currentTick ?? 0
     if (!deepEqual(resourceTypes.value, resourceData.resourceTypes ?? [])) {
       resourceTypes.value = resourceData.resourceTypes ?? []
@@ -2084,12 +2157,23 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
       showUnitPicker.value = false
     }
 
-    await Promise.all([loadUnitInventorySummaries(), loadUnitInventories(), loadUnitResourceHistories()])
+    await Promise.all([loadUnitInventorySummaries(requestId), loadUnitInventories(requestId), loadUnitResourceHistories(requestId)])
+
+    if (requestId !== activeBuildingLoadRequest) {
+      return
+    }
+
     await loadGlobalExchangeOffers()
   } catch (reason: unknown) {
+    if (requestId !== activeBuildingLoadRequest) {
+      return
+    }
+
     error.value = reason instanceof Error ? reason.message : t('buildingDetail.loadFailed')
   } finally {
-    loading.value = false
+    if (requestId === activeBuildingLoadRequest) {
+      loading.value = false
+    }
   }
 }
 

@@ -10,6 +10,26 @@ export function useTickRefresh(refresh: () => Promise<void> | void, options: Tic
   const gameStateStore = useGameStateStore()
   const { gameState } = storeToRefs(gameStateStore)
   let lastSeenTick: number | null = null
+  let refreshInFlight: Promise<void> | null = null
+  let queuedRefresh = false
+
+  const runRefresh = async () => {
+    if (refreshInFlight) {
+      queuedRefresh = true
+      return refreshInFlight
+    }
+
+    refreshInFlight = (async () => {
+      do {
+        queuedRefresh = false
+        await refresh()
+      } while (queuedRefresh && (!options.enabled || options.enabled()))
+    })().finally(() => {
+      refreshInFlight = null
+    })
+
+    return refreshInFlight
+  }
 
   const stop = watch(
     () => gameState.value?.currentTick ?? null,
@@ -32,7 +52,7 @@ export function useTickRefresh(refresh: () => Promise<void> | void, options: Tic
         return
       }
 
-      void refresh()
+      void runRefresh()
     },
   )
 

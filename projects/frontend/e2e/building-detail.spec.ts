@@ -2,7 +2,10 @@ import { expect, test } from '@playwright/test'
 import { makeChairProduct, makePlayer, setupMockApi } from './helpers/mock-api'
 
 function getGridSection(page: Parameters<typeof test>[0]['page'], heading: string) {
-  return page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: heading }) }).first()
+  return page
+    .locator('.grid-section')
+    .filter({ has: page.getByRole('heading', { name: heading }) })
+    .first()
 }
 
 function getGridCell(section: ReturnType<typeof getGridSection>, x: number, y: number) {
@@ -896,11 +899,19 @@ test.describe('Building detail upgrades', () => {
     const plannedSection = getGridSection(page, 'Planned Upgrade')
     await getGridCell(plannedSection, 0, 0).click()
     await expect(page.getByText('Research Product')).toBeVisible()
-    await page.locator('.config-field').filter({ has: page.getByText('Research Product') }).locator('select').selectOption('prod-chair')
+    await page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Research Product') })
+      .locator('select')
+      .selectOption('prod-chair')
 
     await getGridCell(plannedSection, 1, 0).click()
     await expect(page.getByText('Brand Scope')).toBeVisible()
-    await page.locator('.config-field').filter({ has: page.getByText('Brand Scope') }).locator('select').selectOption('CATEGORY')
+    await page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Brand Scope') })
+      .locator('select')
+      .selectOption('CATEGORY')
     const anchorProductField = page.locator('.config-field').filter({ has: page.getByText('Anchor Product', { exact: true }) })
     await expect(anchorProductField).toBeVisible()
     await anchorProductField.locator('select').selectOption('prod-chair')
@@ -969,9 +980,7 @@ test.describe('Building detail upgrades', () => {
 
     const state = setupMockApi(page, {
       players: [player],
-      resourceTypes: [
-        { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC', basePrice: 10, weightPerUnit: 5, unitName: 'Ton', unitSymbol: 't', description: 'Wood', imageUrl: null },
-      ],
+      resourceTypes: [{ id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC', basePrice: 10, weightPerUnit: 5, unitName: 'Ton', unitSymbol: 't', description: 'Wood', imageUrl: null }],
       productTypes: [
         {
           id: 'prod-components',
@@ -1532,9 +1541,7 @@ test.describe('Building detail upgrades', () => {
     await expect(topLeftCell).toContainText('Storage')
   })
 
-  test('directional link editing: full user journey — cycle states, see changes summary, submit, confirm pending', async ({
-    page,
-  }) => {
+  test('directional link editing: full user journey — cycle states, see changes summary, submit, confirm pending', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-dir',
@@ -1661,9 +1668,7 @@ test.describe('Building detail upgrades', () => {
     await expect(queuedHLink).toHaveClass(/link-state-forward/)
   })
 
-  test('directional link editing: configuration warnings shown when purchase unit is not linked', async ({
-    page,
-  }) => {
+  test('directional link editing: configuration warnings shown when purchase unit is not linked', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-warn-link',
@@ -1750,17 +1755,11 @@ test.describe('Building detail upgrades', () => {
     await expect(hLink).toHaveClass(/link-state-forward/)
 
     // Purchase is now linked — its warning should be gone but manufacturing still has no output
-    await expect(page.locator('.config-warnings')).not.toContainText(
-      'Purchase unit at (0, 0) is not linked to a consumer unit.',
-    )
-    await expect(page.locator('.config-warnings')).toContainText(
-      'Manufacturing unit at (1, 0) is not linked to a storage or sales output.',
-    )
+    await expect(page.locator('.config-warnings')).not.toContainText('Purchase unit at (0, 0) is not linked to a consumer unit.')
+    await expect(page.locator('.config-warnings')).toContainText('Manufacturing unit at (1, 0) is not linked to a storage or sales output.')
   })
 
-  test('diagonal link editing: full journey — create diagonal connections, review summary, submit plan', async ({
-    page,
-  }) => {
+  test('diagonal link editing: full journey — create diagonal connections, review summary, submit plan', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-diag',
@@ -1910,9 +1909,7 @@ test.describe('Building detail upgrades', () => {
     await expect(queuedSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-tl-br/)
   })
 
-  test('diagonal link editing: flow diagnostics — warnings shown for disconnected layout, resolved after linking', async ({
-    page,
-  }) => {
+  test('diagonal link editing: flow diagnostics — warnings shown for disconnected layout, resolved after linking', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-diag-warn',
@@ -2019,12 +2016,8 @@ test.describe('Building detail upgrades', () => {
 
     // Warnings visible before editing: purchase and manufacturing not connected
     await expect(page.getByText('Configuration Warnings')).toBeVisible()
-    await expect(page.locator('.config-warnings')).toContainText(
-      'Purchase unit at (0, 0) is not linked to a consumer unit.',
-    )
-    await expect(page.locator('.config-warnings')).toContainText(
-      'Manufacturing unit at (1, 1) is not linked to a storage or sales output.',
-    )
+    await expect(page.locator('.config-warnings')).toContainText('Purchase unit at (0, 0) is not linked to a consumer unit.')
+    await expect(page.locator('.config-warnings')).toContainText('Manufacturing unit at (1, 1) is not linked to a storage or sales output.')
 
     // Enter edit mode
     await page.getByRole('button', { name: 'Edit Building' }).click()
@@ -2038,23 +2031,17 @@ test.describe('Building detail upgrades', () => {
     await expect(diagButton).toHaveClass(/state-tl-br/)
 
     // Purchase warning should be gone — PURCHASE now links diagonally to MANUFACTURING
-    await expect(page.locator('.config-warnings')).not.toContainText(
-      'Purchase unit at (0, 0) is not linked to a consumer unit.',
-    )
+    await expect(page.locator('.config-warnings')).not.toContainText('Purchase unit at (0, 0) is not linked to a consumer unit.')
 
     // Manufacturing still has no output link — warning remains
-    await expect(page.locator('.config-warnings')).toContainText(
-      'Manufacturing unit at (1, 1) is not linked to a storage or sales output.',
-    )
+    await expect(page.locator('.config-warnings')).toContainText('Manufacturing unit at (1, 1) is not linked to a storage or sales output.')
   })
 
   // ---------------------------------------------------------------------------
   // Grid tile metadata: resource / product labels, fill bars, price metrics
   // ---------------------------------------------------------------------------
 
-  test('mine grid shows resource label and fill bar directly in active grid tiles', async ({
-    page,
-  }) => {
+  test('mine grid shows resource label and fill bar directly in active grid tiles', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-mine',
@@ -2181,9 +2168,7 @@ test.describe('Building detail upgrades', () => {
     await expect(salesCell).toHaveAttribute('aria-label', /Sell from/)
   })
 
-  test('factory grid shows product label and price metric in planned configuration after edit', async ({
-    page,
-  }) => {
+  test('factory grid shows product label and price metric in planned configuration after edit', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-factory',
@@ -2322,12 +2307,105 @@ test.describe('Building detail upgrades', () => {
     await expect(plannedPurchase).toHaveAttribute('aria-label', /Wood/)
     await expect(plannedPurchase).toHaveAttribute('aria-label', /Buy up to/)
   })
+
+  test('keeps the active configuration panel stable during async offer refreshes', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-focus',
+      playerId: player.id,
+      name: 'Focus Safe Industries',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-focus',
+          companyId: 'company-focus',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Focus Safe Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'focus-purchase',
+              buildingId: 'building-focus',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              maxPrice: 25,
+              purchaseSource: 'OPTIMAL',
+            },
+            {
+              id: 'focus-manufacturing',
+              buildingId: 'building-focus',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: true,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              productTypeId: makeChairProduct().id,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-focus')
+    await expect(page.getByRole('heading', { name: 'Focus Safe Factory' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 0, 0).click()
+
+    const searchInput = page.locator('.sidebar .selector-search')
+    await searchInput.fill('wood')
+    await expect(searchInput).toHaveValue('wood')
+
+    const purchaseSourceSelect = page.locator('.unit-config-fields select').first()
+    await purchaseSourceSelect.selectOption('EXCHANGE')
+    await purchaseSourceSelect.selectOption('OPTIMAL')
+
+    await expect(page.locator('.loading')).toHaveCount(0)
+    await expect(page.locator('.sidebar')).toBeVisible()
+    await expect(getGridCell(plannedSection, 0, 0)).toHaveClass(/selected/)
+    await expect(searchInput).toHaveValue('wood')
+  })
 })
 
 test.describe('Global exchange market', () => {
-  test('shows exchange offer prices, transit costs, and delivered prices for all cities', async ({
-    page,
-  }) => {
+  test('shows exchange offer prices, transit costs, and delivered prices for all cities', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-exmkt',
@@ -2386,7 +2464,10 @@ test.describe('Global exchange market', () => {
     await expect(page.getByRole('heading', { name: 'Market Factory' })).toBeVisible()
 
     // Click on the PURCHASE cell to see exchange offers panel
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
 
     // Exchange offers section must be visible
@@ -2468,7 +2549,10 @@ test.describe('Global exchange market', () => {
     await expect(page.getByRole('heading', { name: 'Local Factory' })).toBeVisible()
 
     // Click on the PURCHASE cell
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
 
     // Exchange offers must NOT appear for LOCAL source
@@ -2532,7 +2616,10 @@ test.describe('Global exchange market', () => {
     await page.goto('/building/building-optimal')
     await expect(page.getByRole('heading', { name: 'Optimal Factory' })).toBeVisible()
 
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
 
     // OPTIMAL source also triggers exchange offer visibility
@@ -2540,9 +2627,7 @@ test.describe('Global exchange market', () => {
     await expect(page.getByText('Bratislava')).toBeVisible()
   })
 
-  test('configuring a purchase unit with EXCHANGE source persists and shows exchange offers', async ({
-    page,
-  }) => {
+  test('configuring a purchase unit with EXCHANGE source persists and shows exchange offers', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-cfg',
@@ -2585,7 +2670,10 @@ test.describe('Global exchange market', () => {
     await expect(page.getByRole('button', { name: 'Store Upgrade' })).toBeVisible()
 
     // Click on an empty cell (0,0) in the draft ("Planned Upgrade") section
-    const draftSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) }).first()
+    const draftSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
     await draftSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
 
     // Unit picker should appear; select PURCHASE unit
@@ -2614,9 +2702,7 @@ test.describe('Global exchange market', () => {
     await expect(page.getByText('Min Quality')).toBeVisible()
   })
 
-  test('exchange offer shows correct breakdown: exchange price, transit, delivered', async ({
-    page,
-  }) => {
+  test('exchange offer shows correct breakdown: exchange price, transit, delivered', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-breakdown',
@@ -2672,7 +2758,10 @@ test.describe('Global exchange market', () => {
     }, `token-${player.id}`)
 
     await page.goto('/building/building-breakdown')
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
 
     await expect(page.getByText('Global exchange offers')).toBeVisible()
@@ -2692,9 +2781,7 @@ test.describe('Global exchange market', () => {
     expect(pragueTransitText).not.toContain('$0.00')
   })
 
-  test('shows no-valid-offers message when max price is set below all delivered prices', async ({
-    page,
-  }) => {
+  test('shows no-valid-offers message when max price is set below all delivered prices', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-blocked-price',
@@ -2760,9 +2847,7 @@ test.describe('Global exchange market', () => {
     await expect(page.getByText('Global exchange offers')).toBeVisible()
 
     // No-valid-offers banner must appear
-    await expect(
-      page.getByText(/No offers meet your price and quality constraints/),
-    ).toBeVisible()
+    await expect(page.getByText(/No offers meet your price and quality constraints/)).toBeVisible()
 
     // All offer items should show the max-price blocked reason
     const offerItems = page.locator('.exchange-offer-item.offer-blocked')
@@ -2772,9 +2857,7 @@ test.describe('Global exchange market', () => {
     await expect(page.locator('.offer-blocked-reason').first()).toContainText('Over your max price')
   })
 
-  test('shows blocked-quality reason when min quality is set above all available exchange quality', async ({
-    page,
-  }) => {
+  test('shows blocked-quality reason when min quality is set above all available exchange quality', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-blocked-qual',
@@ -2841,18 +2924,14 @@ test.describe('Global exchange market', () => {
     await expect(page.getByText('Global exchange offers')).toBeVisible()
 
     // No-valid-offers banner must appear
-    await expect(
-      page.getByText(/No offers meet your price and quality constraints/),
-    ).toBeVisible()
+    await expect(page.getByText(/No offers meet your price and quality constraints/)).toBeVisible()
 
     // Blocked reason must reference quality constraint
     await expect(page.locator('.offer-blocked-reason').first()).toBeVisible()
     await expect(page.locator('.offer-blocked-reason').first()).toContainText('Below your min quality')
   })
 
-  test('shows "best delivered price" badge on the offer with the lowest delivered price', async ({
-    page,
-  }) => {
+  test('shows "best delivered price" badge on the offer with the lowest delivered price', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-best-badge',
@@ -2929,9 +3008,7 @@ test.describe('Global exchange market', () => {
     await expect(page.getByText(/lowest delivered price/)).toBeVisible()
   })
 
-  test('nearby supplier with higher sticker price wins over far supplier due to transit cost', async ({
-    page,
-  }) => {
+  test('nearby supplier with higher sticker price wins over far supplier due to transit cost', async ({ page }) => {
     const player = makePlayer()
     // Bratislava is the destination city. Override city abundances so Prague has a lower exchange
     // price (high abundance) than Bratislava, but Prague's transit cost still makes its delivered
@@ -3138,9 +3215,7 @@ test.describe('Global exchange market — narrow layout', () => {
     await expect(offersList.getByText('Vienna')).toBeVisible()
   })
 
-  test('exchange price, transit cost, and delivered price are visible on 375px viewport', async ({
-    page,
-  }) => {
+  test('exchange price, transit cost, and delivered price are visible on 375px viewport', async ({ page }) => {
     const player = makeExchangePlayer()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
@@ -3171,9 +3246,7 @@ test.describe('Global exchange market — narrow layout', () => {
     await expect(offersList.getByText(/Quality \d/).first()).toBeVisible()
   })
 
-  test('best-offer badge and no-valid-offers message are visible on 375px viewport', async ({
-    page,
-  }) => {
+  test('best-offer badge and no-valid-offers message are visible on 375px viewport', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-narrow-blocked',
@@ -3435,11 +3508,7 @@ test.describe('Production chain configuration', () => {
    * Returns a player whose factory has PURCHASE, MANUFACTURING, and STORAGE units
    * saved as active units. The resources/products can be configured via the override params.
    */
-  function makeFactoryWithStarterUnits({
-    purchaseResourceId = null as string | null,
-    purchaseProductId = null as string | null,
-    manufacturingProductId = null as string | null,
-  } = {}) {
+  function makeFactoryWithStarterUnits({ purchaseResourceId = null as string | null, purchaseProductId = null as string | null, manufacturingProductId = null as string | null } = {}) {
     return makePlayer({
       onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
       companies: [
@@ -4068,9 +4137,7 @@ test.describe('Starter sales-shop setup banner', () => {
     await expect(page.getByRole('button', { name: /Apply Starter Shop Layout/i })).toBeVisible()
   })
 
-  test('apply starter shop layout pre-populates PURCHASE and PUBLIC_SALES units', async ({
-    page,
-  }) => {
+  test('apply starter shop layout pre-populates PURCHASE and PUBLIC_SALES units', async ({ page }) => {
     const player = makeEmptySalesShopPlayer()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
@@ -4130,9 +4197,7 @@ test.describe('Starter sales-shop setup banner', () => {
     await expect(page.locator('.starter-setup-banner--shop')).toBeHidden()
   })
 
-  test('starter shop banner is hidden for a sales shop that already has units', async ({
-    page,
-  }) => {
+  test('starter shop banner is hidden for a sales shop that already has units', async ({ page }) => {
     const player = makePlayer({
       onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
       companies: [
@@ -4198,11 +4263,7 @@ test.describe('Starter sales-shop setup banner', () => {
 // ── Sales chain status panel ─────────────────────────────────────────────────
 
 test.describe('Sales chain status panel', () => {
-  function makeShopWithUnits({
-    purchaseProductId = null as string | null,
-    publicSalesProductId = null as string | null,
-    publicSalesMinPrice = null as number | null,
-  } = {}) {
+  function makeShopWithUnits({ purchaseProductId = null as string | null, publicSalesProductId = null as string | null, publicSalesMinPrice = null as number | null } = {}) {
     return makePlayer({
       onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
       companies: [
@@ -4282,9 +4343,7 @@ test.describe('Sales chain status panel', () => {
     return state
   }
 
-  test('shows sales chain panel with incomplete status when units are unconfigured', async ({
-    page,
-  }) => {
+  test('shows sales chain panel with incomplete status when units are unconfigured', async ({ page }) => {
     const player = makeShopWithUnits()
     await loginAndGoto(page, player, '/building/building-sales-chain-shop')
 
@@ -4315,9 +4374,7 @@ test.describe('Sales chain status panel', () => {
     await expect(page.getByText(/Public Sales unit.*minimum selling price/i)).toBeVisible()
   })
 
-  test('shows Ready to Sell when both purchase and public sales are fully configured', async ({
-    page,
-  }) => {
+  test('shows Ready to Sell when both purchase and public sales are fully configured', async ({ page }) => {
     const player = makeShopWithUnits({
       purchaseProductId: 'prod-chair',
       publicSalesProductId: 'prod-chair',
@@ -4375,9 +4432,7 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
     return player
   }
 
-  test('save and reload shows configured product and price in sales chain panel', async ({
-    page,
-  }) => {
+  test('save and reload shows configured product and price in sales chain panel', async ({ page }) => {
     // Start with an empty shop, apply the starter layout, configure product and price, save,
     // then simulate reload (navigate away and back) and verify the sales chain panel shows
     // the saved product and price correctly.
@@ -4470,7 +4525,12 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
     await expect(panel.getByText(/Wooden Chair · \$67\.50/i)).toBeVisible()
 
     // The PURCHASE step shows the product name
-    await expect(panel.locator('.chain-step--configured').first().getByText(/Wooden Chair/i)).toBeVisible()
+    await expect(
+      panel
+        .locator('.chain-step--configured')
+        .first()
+        .getByText(/Wooden Chair/i),
+    ).toBeVisible()
 
     // The complete message includes the price
     await expect(panel.locator('.chain-complete-message').getByText(/67\.50/i)).toBeVisible()
@@ -4505,12 +4565,18 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
     await publicSalesCell.click()
 
     // PUBLIC_SALES uses a <select> dropdown for product type (label has no `for` attr, scope by config-field)
-    const productTypeField = page.locator('.config-field').filter({ has: page.getByText('Product Type', { exact: true }) }).first()
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
     await expect(productTypeField.locator('select')).toBeVisible()
     await productTypeField.locator('select').selectOption({ label: 'Wooden Chair' })
 
     // Set a negative min price in the number input
-    const minPriceField = page.locator('.config-field').filter({ has: page.getByText('Min Price', { exact: true }) }).first()
+    const minPriceField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Min Price', { exact: true }) })
+      .first()
     await minPriceField.locator('input').fill('-5')
 
     // Attempt to save — should trigger INVALID_MIN_PRICE error from mock
@@ -4551,12 +4617,18 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
     const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await publicSalesCell.click()
 
-    const productTypeField = page.locator('.config-field').filter({ has: page.getByText('Product Type', { exact: true }) }).first()
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
     await expect(productTypeField.locator('select')).toBeVisible()
     await productTypeField.locator('select').selectOption({ label: 'Wooden Chair' })
 
     // Set price to exactly 0
-    const minPriceField = page.locator('.config-field').filter({ has: page.getByText('Min Price', { exact: true }) }).first()
+    const minPriceField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Min Price', { exact: true }) })
+      .first()
     await minPriceField.locator('input').fill('0')
 
     await page.getByRole('button', { name: /Store Upgrade/i }).click()
