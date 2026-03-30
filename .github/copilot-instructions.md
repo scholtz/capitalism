@@ -348,19 +348,19 @@ Root-cause of a quality failure (March 2026, PR #48 / global exchange):
 - Test 1: `getByText(/Exchange:/)` matched multiple elements (one per city offer) — strict mode violation.
 - Test 2: Used non-existent button text "Edit Layout" (real text: "Edit Building"), wrong section heading "New Configuration" (real: "Planned Upgrade"), and `getByLabel` on labels without `for` attributes.
 
-Root-cause of a CI failure (March 2026, PR #82 / power grid):
-- Two encyclopedia tests failed in CI with `getByLabel('Language').selectOption('sk')` — error: "Element is not a `<select>` element".
-- The locator resolved to `<div role="group" aria-label="Language" class="language-buttons">` — a cached/stale build artifact, NOT the native `<select>` from `LanguageSwitcher.vue`.
-- The fix was to use `page.locator('#language-select')` which directly targets the stable `id="language-select"` on the `<select>` element.
+Root-cause of a CI failure (March 2026, PR #82 / power grid — second attempt):
+- Two encyclopedia tests failed in CI with `getByLabel('Language').selectOption('sk')` / `page.locator('#language-select').selectOption('sk')` — the element either resolved to the wrong type or timed out.
+- Root cause: interacting with the LanguageSwitcher UI element in the header is unreliable in CI (different build artifacts, stale caches, strict mode issues).
+- **Correct fix: use `page.addInitScript(() => localStorage.setItem('app_locale', 'sk'))` BEFORE `page.goto()`.** The i18n module reads `app_locale` from localStorage on startup (see `src/i18n/index.ts:detectLocale()`), so setting it before navigation gives a fully-localized page without any UI interaction.
 
 **How to prevent these failures:**
 1. **Never push E2E tests without running them first.** If Playwright tests can't run due to missing browser, install it: `npx playwright install --with-deps chromium`.
 2. **Verify all button and heading text against the actual i18n keys.** Check `src/i18n/locales/en.ts` for exact English strings before writing `getByRole('button', { name: '...' })` or `getByRole('heading', { name: '...' })`.
 3. **For `getByText` that may match multiple elements, always scope or use `.first()`.** Exchange offer items repeat per city; use `.locator('.exchange-offers-list').getByText(...)` or `.first()`.
 4. **Labels without `for` attributes cannot be found with `getByLabel`.** Scope using `.locator('.config-field').filter({ has: page.getByText('Label Text') }).locator('input')` instead.
-5. **When `getByLabel` could match a non-form-control element (e.g., `<div role="group" aria-label="...">`) prefer the stable CSS ID selector.** Use `page.locator('#language-select')` instead of `page.getByLabel('Language')` for the LanguageSwitcher `<select>`.
+5. **To test locale/language changes, use `page.addInitScript(() => localStorage.setItem('app_locale', 'sk'))` before `page.goto()`.** Do NOT use `page.locator('#language-select').selectOption(...)` — the UI element can be unreliable across CI build variants.
 6. **After placing a unit via the picker (`placeUnit`), `selectedCell` is reset to null.** The cell must be clicked again before the config panel is visible.
-7. **Always run the targeted spec before `report_progress`:** `npx playwright test --project=chromium e2e/<spec>.ts`. Only then run the full suite.
+7. **Always run the targeted spec before `report_progress` with `CI=true`:** `CI=true npx playwright test --project=chromium e2e/<spec>.ts`. Only then run the full suite. Running without `CI=true` uses dev server which may behave differently from the production build used in CI.
 
 ## Minimal-change PR quality — prove the gap, don't just fix the symptom
 

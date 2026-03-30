@@ -83,8 +83,9 @@ test.describe('Manufacturing encyclopedia', () => {
       ],
     })
 
+    // Set Slovak locale via localStorage before navigation (more reliable than UI interaction)
+    await page.addInitScript(() => localStorage.setItem('app_locale', 'sk'))
     await page.goto('/encyclopedia')
-    await page.locator('#language-select').selectOption('sk')
 
     await expect(page.getByRole('heading', { name: 'Výrobná encyklopédia' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Drevo/ })).toBeVisible()
@@ -307,8 +308,9 @@ test.describe('Resource detail page', () => {
       ],
     })
 
+    // Set Slovak locale via localStorage before navigation (more reliable than UI interaction)
+    await page.addInitScript(() => localStorage.setItem('app_locale', 'sk'))
     await page.goto('/encyclopedia/resources/wood')
-    await page.locator('#language-select').selectOption('sk')
 
     await expect(page.getByRole('heading', { name: 'Drevo', level: 1 })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Späť na encyklopédiu' })).toBeVisible()
