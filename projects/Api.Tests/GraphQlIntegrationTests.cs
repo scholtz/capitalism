@@ -1798,6 +1798,262 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                 Assert.Equal(JsonValueKind.Null, building.GetProperty("pendingConfiguration").ValueKind);
             }
 
+    #region RecipeCompatibility
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_CompatibleRecipeInput_Succeeds()
+    {
+        var token = await RegisterAndGetTokenAsync("recipe-compat@test.com", "RecipeCompat");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Compat Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Compat Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // Get Wooden Chair product and Wood resource
+        var productsResult = await ExecuteGraphQlAsync(
+            "{ productTypes(industry: \"FURNITURE\") { id slug } }",
+            token: token);
+        var chairProductId = productsResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .First(p => p.GetProperty("slug").GetString() == "wooden-chair")
+            .GetProperty("id").GetString();
+
+        var resourcesResult = await ExecuteGraphQlAsync(
+            "{ resourceTypes { id slug } }",
+            token: token);
+        var woodResourceId = resourcesResult.GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray()
+            .First(r => r.GetProperty("slug").GetString() == "wood")
+            .GetProperty("id").GetString();
+
+        // PURCHASE (Wood) → MANUFACTURING (Wooden Chair) — compatible combination
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = woodResourceId, productTypeId = (string?)null },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId },
+                        new { unitType = "STORAGE", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "Compatible combination should succeed");
+
+        // Verify the pending configuration stores the resource and product type IDs
+        var buildingQuery = await ExecuteGraphQlAsync(
+            """
+            {
+              myCompanies {
+                buildings {
+                  id
+                  pendingConfiguration {
+                    units { unitType resourceTypeId productTypeId }
+                  }
+                }
+              }
+            }
+            """,
+            token: token);
+
+        var buildings = buildingQuery.GetProperty("data").GetProperty("myCompanies")[0].GetProperty("buildings").EnumerateArray().ToList();
+        var factory = buildings.Single(b => b.GetProperty("id").GetString() == buildingId);
+        var pending = factory.GetProperty("pendingConfiguration").GetProperty("units").EnumerateArray().ToList();
+
+        Assert.Contains(pending, u =>
+            u.GetProperty("unitType").GetString() == "PURCHASE"
+            && u.GetProperty("resourceTypeId").GetString() == woodResourceId);
+        Assert.Contains(pending, u =>
+            u.GetProperty("unitType").GetString() == "MANUFACTURING"
+            && u.GetProperty("productTypeId").GetString() == chairProductId);
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_IncompatibleRecipeInput_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync("recipe-incompat@test.com", "RecipeIncompat");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Incompat Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Incompat Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // Get Wooden Chair (requires Wood) and Grain resource (incompatible)
+        var productsResult = await ExecuteGraphQlAsync(
+            "{ productTypes(industry: \"FURNITURE\") { id slug } }",
+            token: token);
+        var chairProductId = productsResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .First(p => p.GetProperty("slug").GetString() == "wooden-chair")
+            .GetProperty("id").GetString();
+
+        var resourcesResult = await ExecuteGraphQlAsync(
+            "{ resourceTypes { id slug } }",
+            token: token);
+        var grainResourceId = resourcesResult.GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray()
+            .First(r => r.GetProperty("slug").GetString() == "grain")
+            .GetProperty("id").GetString();
+
+        // PURCHASE (Grain) → MANUFACTURING (Wooden Chair which needs Wood) — incompatible!
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = grainResourceId, productTypeId = (string?)null },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId },
+                        new { unitType = "STORAGE", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors), "Incompatible combination should return an error");
+        Assert.Equal("RECIPE_INPUT_MISMATCH", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ManufacturingWithoutPurchaseResource_Succeeds()
+    {
+        // A MANUFACTURING unit with a product type but an unconfigured (null-resource) PURCHASE unit
+        // is incomplete but not invalid — the player should be allowed to save partial configurations.
+        var token = await RegisterAndGetTokenAsync("partial-config@test.com", "PartialConfig");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Partial Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Partial Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var productsResult = await ExecuteGraphQlAsync(
+            "{ productTypes(industry: \"FURNITURE\") { id slug } }",
+            token: token);
+        var chairProductId = productsResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .First(p => p.GetProperty("slug").GetString() == "wooden-chair")
+            .GetProperty("id").GetString();
+
+        // MANUFACTURING has Wooden Chair but PURCHASE has no resource — should be allowed (incomplete, not invalid)
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId },
+                        new { unitType = "STORAGE", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "Incomplete (not incompatible) configuration should be allowed");
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_UnauthorizedPlayerCannotConfigureAnotherPlayersBuilding()
+    {
+        var token1 = await RegisterAndGetTokenAsync("owner-bldg@test.com", "Owner");
+        var token2 = await RegisterAndGetTokenAsync("intruder-bldg@test.com", "Intruder");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Owner Corp" } },
+            token1);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Owner Factory" } },
+            token1);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // token2 (intruder) should not be able to configure token1's building
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token2);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("BUILDING_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    #endregion
+
     #region CancelBuildingConfiguration
 
     [Fact]

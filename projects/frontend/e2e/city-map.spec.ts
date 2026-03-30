@@ -456,7 +456,7 @@ test.describe('City Map View', () => {
 
     // Already-owned lot shows "Manage Building" (not the post-purchase banner)
     await expect(page.getByRole('link', { name: /Manage Building/i })).toBeVisible()
-    await expect(page.locator('.post-purchase-banner')).not.toBeVisible()
+    await expect(page.locator('.post-purchase-banner')).toBeHidden()
   })
 
   test('shows insufficient funds error when company cash is too low', async ({ page }) => {

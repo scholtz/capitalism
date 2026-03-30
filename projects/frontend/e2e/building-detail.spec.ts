@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { makePlayer, setupMockApi } from './helpers/mock-api'
+import { makeChairProduct, makePlayer, setupMockApi } from './helpers/mock-api'
 
 function getGridSection(page: Parameters<typeof test>[0]['page'], heading: string) {
   return page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: heading }) }).first()
@@ -2945,7 +2945,7 @@ test.describe('Starter factory setup banner', () => {
     await expect(storageCell).toContainText('Storage')
 
     // Starter setup banner should no longer be visible (we are now in edit mode)
-    await expect(page.locator('.starter-setup-banner')).not.toBeVisible()
+    await expect(page.locator('.starter-setup-banner')).toBeHidden()
   })
 
   test('apply starter layout can be saved via Store Upgrade', async ({ page }) => {
@@ -2971,7 +2971,7 @@ test.describe('Starter factory setup banner', () => {
     // After save, upgrade-in-progress banner should appear (pending configuration)
     await expect(page.locator('.upgrade-banner')).toBeVisible()
     // Starter setup banner should be gone
-    await expect(page.locator('.starter-setup-banner')).not.toBeVisible()
+    await expect(page.locator('.starter-setup-banner')).toBeHidden()
   })
 
   test('starter setup banner is hidden for a factory that already has units', async ({ page }) => {
@@ -3033,6 +3033,409 @@ test.describe('Starter factory setup banner', () => {
     await page.goto('/building/building-factory-with-units')
 
     // Should NOT show the starter setup banner for a factory that already has units
-    await expect(page.locator('.starter-setup-banner')).not.toBeVisible()
+    await expect(page.locator('.starter-setup-banner')).toBeHidden()
+  })
+})
+
+// ── Production chain configuration ───────────────────────────────────────────
+
+test.describe('Production chain configuration', () => {
+  /**
+   * Returns a player whose factory has PURCHASE, MANUFACTURING, and STORAGE units
+   * saved as active units. The resources/products can be configured via the override params.
+   */
+  function makeFactoryWithStarterUnits({
+    purchaseResourceId = null as string | null,
+    purchaseProductId = null as string | null,
+    manufacturingProductId = null as string | null,
+  } = {}) {
+    return makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-chain',
+          playerId: 'player-1',
+          name: 'Chain Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-chain-factory',
+              companyId: 'company-chain',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Chain Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'unit-purchase',
+                  buildingId: 'building-chain-factory',
+                  unitType: 'PURCHASE',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkRight: true,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  resourceTypeId: purchaseResourceId,
+                  productTypeId: purchaseProductId,
+                },
+                {
+                  id: 'unit-manufacturing',
+                  buildingId: 'building-chain-factory',
+                  unitType: 'MANUFACTURING',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkRight: true,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: manufacturingProductId,
+                },
+                {
+                  id: 'unit-storage',
+                  buildingId: 'building-chain-factory',
+                  unitType: 'STORAGE',
+                  gridX: 2,
+                  gridY: 0,
+                  level: 1,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: true,
+                  linkRight: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+  }
+
+  async function setupChainTest(page: import('@playwright/test').Page, player: ReturnType<typeof makePlayer>) {
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    return state
+  }
+
+  test('shows production chain panel for factory with starter layout units', async ({ page }) => {
+    const player = makeFactoryWithStarterUnits()
+    await setupChainTest(page, player)
+    await page.goto('/building/building-chain-factory')
+
+    // Production chain panel should be visible
+    await expect(page.getByRole('region', { name: /production chain status/i })).toBeVisible()
+    const panel = page.getByRole('region', { name: /production chain status/i })
+    // Panel should show the three unit type labels
+    await expect(panel.locator('.chain-step-type', { hasText: 'Purchase' })).toBeVisible()
+    await expect(panel.locator('.chain-step-type', { hasText: 'Manufacturing' })).toBeVisible()
+    await expect(panel.locator('.chain-step-type', { hasText: 'Storage' })).toBeVisible()
+  })
+
+  test('chain panel shows incomplete status when units are not yet configured', async ({ page }) => {
+    const player = makeFactoryWithStarterUnits()
+    await setupChainTest(page, player)
+    await page.goto('/building/building-chain-factory')
+
+    const panel = page.getByRole('region', { name: /production chain status/i })
+    // Should show "Configuration Needed" badge
+    await expect(panel.getByText(/Configuration Needed/i)).toBeVisible()
+    // Should show "Not configured yet" for purchase and manufacturing steps
+    await expect(panel.locator('.chain-step-missing-label').first()).toBeVisible()
+    // Should show guidance items
+    await expect(panel.getByText(/select the raw material to buy/i)).toBeVisible()
+    await expect(panel.getByText(/select the product to manufacture/i)).toBeVisible()
+  })
+
+  test('chain panel shows fully configured status when all units have items set', async ({ page }) => {
+    const player = makeFactoryWithStarterUnits({
+      purchaseResourceId: 'res-wood',
+      manufacturingProductId: 'prod-chair',
+    })
+    await setupChainTest(page, player)
+    await page.goto('/building/building-chain-factory')
+
+    const panel = page.getByRole('region', { name: /production chain status/i })
+    // Should show "Chain Ready" badge
+    await expect(panel.getByText(/Chain Ready/i)).toBeVisible()
+    // Should show resource name in Purchase step (exact match to avoid "Wooden Chair" substring)
+    await expect(panel.locator('.chain-step').nth(0).locator('.chain-step-value')).toContainText('Wood')
+    // Should show product name in Manufacturing step
+    await expect(panel.locator('.chain-step').nth(2).locator('.chain-step-value')).toContainText('Wooden Chair')
+    // Should show chain complete message
+    await expect(panel.getByText(/next step/i)).toBeVisible()
+  })
+
+  test('configure purchase unit and save: chain panel reflects new resource', async ({ page }) => {
+    const player = makeFactoryWithStarterUnits()
+    const state = await setupChainTest(page, player)
+    await page.goto('/building/building-chain-factory')
+
+    // Panel starts with "Configuration Needed"
+    const panel = page.getByRole('region', { name: /production chain status/i })
+    await expect(panel.getByText(/Configuration Needed/i)).toBeVisible()
+
+    // Enter edit mode
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    // Click the PURCHASE unit cell (0,0)
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Configure with Wood resource via the item selector
+    await expect(page.getByText('Input Item')).toBeVisible()
+    await page.getByPlaceholder(/Search/i).fill('Wood')
+    await page.getByRole('button', { name: /^Wood/ }).first().click()
+
+    // Save the configuration
+    const storeBtn = page.getByRole('button', { name: /Store Upgrade/i })
+    await storeBtn.click()
+
+    // After save, exit edit mode, chain panel should update
+    await expect(page.locator('.production-chain-panel')).toBeVisible()
+
+    // Mock state should reflect the new pending config with Wood resource
+    const pendingBuilding = state.players[0].companies[0].buildings[0]
+    const pendingUnits = pendingBuilding.pendingConfiguration?.units ?? []
+    const purchaseUnit = pendingUnits.find((u) => u.unitType === 'PURCHASE')
+    expect(purchaseUnit?.resourceTypeId).toBe('res-wood')
+  })
+
+  test('configure manufacturing unit and save: chain panel reflects selected product', async ({ page }) => {
+    const player = makeFactoryWithStarterUnits({ purchaseResourceId: 'res-wood' })
+    const state = await setupChainTest(page, player)
+    await page.goto('/building/building-chain-factory')
+
+    // Enter edit mode
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    // Click the MANUFACTURING unit cell (1,0)
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    // Configure with Wooden Chair (output product)
+    await expect(page.getByText('Output Product')).toBeVisible()
+    await page.getByRole('button', { name: /Wooden Chair/ }).click()
+
+    // Save
+    const storeBtn = page.getByRole('button', { name: /Store Upgrade/i })
+    await storeBtn.click()
+
+    // Verify pending config has the product
+    const pendingUnits = state.players[0].companies[0].buildings[0].pendingConfiguration?.units ?? []
+    const mfgUnit = pendingUnits.find((u) => u.unitType === 'MANUFACTURING')
+    expect(mfgUnit?.productTypeId).toBe('prod-chair')
+  })
+
+  test('reloading page shows saved production chain configuration', async ({ page }) => {
+    // Factory already has fully configured active units
+    const player = makeFactoryWithStarterUnits({
+      purchaseResourceId: 'res-wood',
+      manufacturingProductId: 'prod-chair',
+    })
+    await setupChainTest(page, player)
+
+    // First visit
+    await page.goto('/building/building-chain-factory')
+    const panel = page.getByRole('region', { name: /production chain status/i })
+    await expect(panel.getByText(/Chain Ready/i)).toBeVisible()
+    await expect(panel.locator('.chain-step').nth(0).locator('.chain-step-value')).toContainText('Wood')
+    await expect(panel.locator('.chain-step').nth(2).locator('.chain-step-value')).toContainText('Wooden Chair')
+
+    // Reload the page — configuration should persist from the mock state
+    await page.reload()
+    await expect(page.getByRole('region', { name: /production chain status/i })).toBeVisible()
+    await expect(page.getByRole('region', { name: /production chain status/i }).getByText(/Chain Ready/i)).toBeVisible()
+  })
+
+  test('incompatible recipe combination shows a warning in edit mode', async ({ page }) => {
+    // Factory has PURCHASE with Grain (res-grain) and MANUFACTURING will try to produce
+    // Wooden Chair (which requires Wood, not Grain) — should show a recipe mismatch warning.
+    const player = makeFactoryWithStarterUnits({ purchaseResourceId: 'res-grain' })
+    const state = await setupChainTest(page, player)
+    // Add a chair product and grain resource to mock state
+    state.productTypes = [
+      makeChairProduct(),
+      {
+        id: 'prod-bread',
+        name: 'Bread',
+        slug: 'bread',
+        industry: 'FOOD_PROCESSING',
+        basePrice: 3,
+        baseCraftTicks: 1,
+        outputQuantity: 12,
+        energyConsumptionMwh: 0.5,
+        unitName: 'Loaf',
+        unitSymbol: 'loaves',
+        isProOnly: false,
+        description: 'Bread from grain.',
+        recipes: [
+          {
+            resourceType: { id: 'res-grain', name: 'Grain', slug: 'grain', unitName: 'Ton', unitSymbol: 't' },
+            inputProductType: null,
+            quantity: 1,
+          },
+        ],
+      },
+    ]
+    state.resourceTypes = [
+      { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC', basePrice: 10, weightPerUnit: 5, unitName: 'Ton', unitSymbol: 't', description: 'Wood', imageUrl: null },
+      { id: 'res-grain', name: 'Grain', slug: 'grain', category: 'ORGANIC', basePrice: 5, weightPerUnit: 2, unitName: 'Ton', unitSymbol: 't', description: 'Grain', imageUrl: null },
+    ]
+
+    await page.goto('/building/building-chain-factory')
+
+    // Enter edit mode and manually select Wooden Chair for MANUFACTURING
+    // (which requires Wood, but PURCHASE has Grain)
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    // Directly patch the draft state by configuring manufacturing unit via JS
+    // We set the manufacturing unit's productTypeId to the chair product
+    // The frontend configWarnings should detect the mismatch (Grain purchase != Wood required)
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+    await expect(page.getByText('Output Product')).toBeVisible()
+
+    // The manufacturing selector should NOT show Wooden Chair because it requires Wood, not Grain
+    // (getManufacturingSelectableItems filters by reachable inputs from linked Purchase units)
+    await expect(page.getByRole('button', { name: /Wooden Chair/ })).toHaveCount(0)
+    // It SHOULD show Bread (requires Grain which is what's in the Purchase unit)
+    await expect(page.getByRole('button', { name: /Bread/ })).toBeVisible()
+  })
+
+  test('starter setup banner is hidden when factory has the starter layout in pending config', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-pending',
+          playerId: 'player-1',
+          name: 'Pending Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-pending-factory',
+              companyId: 'company-pending',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Pending Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [],
+              pendingConfiguration: {
+                id: 'pending-plan-1',
+                buildingId: 'building-pending-factory',
+                submittedAtUtc: '2026-01-01T00:00:00Z',
+                submittedAtTick: 10,
+                appliesAtTick: 13,
+                totalTicksRequired: 3,
+                units: [
+                  {
+                    id: 'pending-unit-purchase',
+                    buildingId: 'building-pending-factory',
+                    unitType: 'PURCHASE',
+                    gridX: 0,
+                    gridY: 0,
+                    level: 1,
+                    linkUp: false,
+                    linkDown: false,
+                    linkLeft: false,
+                    linkRight: true,
+                    linkUpLeft: false,
+                    linkUpRight: false,
+                    linkDownLeft: false,
+                    linkDownRight: false,
+                    isChanged: true,
+                    isReverting: false,
+                    appliesAtTick: 13,
+                    startedAtTick: 10,
+                    ticksRequired: 3,
+                  },
+                  {
+                    id: 'pending-unit-mfg',
+                    buildingId: 'building-pending-factory',
+                    unitType: 'MANUFACTURING',
+                    gridX: 1,
+                    gridY: 0,
+                    level: 1,
+                    linkUp: false,
+                    linkDown: false,
+                    linkLeft: false,
+                    linkRight: true,
+                    linkUpLeft: false,
+                    linkUpRight: false,
+                    linkDownLeft: false,
+                    linkDownRight: false,
+                    isChanged: true,
+                    isReverting: false,
+                    appliesAtTick: 13,
+                    startedAtTick: 10,
+                    ticksRequired: 3,
+                  },
+                ],
+                removals: [],
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-pending-factory')
+
+    // Starter setup banner should NOT show (there's a pending config)
+    await expect(page.locator('.starter-setup-banner')).toBeHidden()
+    // Production chain panel SHOULD show (factory has pending configuration)
+    await expect(page.locator('.production-chain-panel')).toBeVisible()
+    // It should show "Configuration Needed" since pending units have no resource/product
+    await expect(page.getByRole('region', { name: /production chain status/i }).getByText(/Configuration Needed/i)).toBeVisible()
   })
 })

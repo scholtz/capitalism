@@ -555,6 +555,7 @@ export default {
       manufacturingNotLinked: 'Výrobná jednotka na ({x}, {y}) nie je prepojená.',
       miningNotLinked: 'Ťažobná jednotka na ({x}, {y}) nie je prepojená.',
       storageNotLinked: 'Skladová jednotka na ({x}, {y}) nie je prepojená.',
+      recipeMismatch: 'Výrobná jednotka na ({x}, {y}) vyrába "{product}", ale žiadna nákupná jednotka nedodáva požadovaný vstup. Aktualizujte nákupnú jednotku alebo vyberte kompatibilný produkt.',
     },
     layouts: {
       title: 'Uložené rozloženia',
@@ -564,6 +565,19 @@ export default {
       delete: 'Odstrániť',
       units: 'jednotiek',
       empty: 'Žiadne uložené rozloženia pre tento typ budovy.',
+    },
+    productionChain: {
+      title: 'Výrobný reťazec',
+      chainComplete: 'Reťazec pripravený',
+      chainIncomplete: 'Potrebná konfigurácia',
+      notConfigured: 'Zatiaľ nenakonfigurované',
+      storageDesc: 'Uchováva hotové produkty',
+      whatRemains: 'Čo je ešte potrebné nakonfigurovať:',
+      todoSelectResource: 'Otvorte nákupnú jednotku a vyberte surovinu, ktorú chcete nakupovať.',
+      todoSelectProduct: 'Otvorte výrobnú jednotku a vyberte produkt, ktorý chcete vyrábať.',
+      editHint: 'Kliknite na "Upraviť budovu" vyššie a potom kliknite na jednotku v mriežke.',
+      chainCompleteDesc: 'Táto továreň je nakonfigurovaná na nákup {resource} a výrobu {product}. Počiatočný výrobný reťazec je kompletný.',
+      nextStep: 'Ďalší krok: zriaďte predajňu a začnite predávať vyrobené tovary.',
     },
   },
   cityMap: {

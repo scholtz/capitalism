@@ -25,6 +25,7 @@ public static class BuildingConfigurationService
         long currentTick)
     {
         ValidateUnits(building.Type, submittedUnits);
+        await ValidateRecipeCompatibilityAsync(db, building.Type, submittedUnits);
 
         var existingPlan = await db.BuildingConfigurationPlans
             .Include(plan => plan.Units)
@@ -579,6 +580,84 @@ public static class BuildingConfigurationService
 
         plan.AppliesAtTick = currentTick + remainingTicks;
         plan.TotalTicksRequired = (int)remainingTicks;
+    }
+
+    /// <summary>
+    /// Validates that every Manufacturing unit whose product type is specified does not
+    /// conflict with any Purchase unit that has an explicitly configured resource.
+    /// Specifically, if a Purchase unit supplies a resource R and a linked Manufacturing
+    /// unit targets a product whose recipe does NOT include R, that is rejected with
+    /// <c>RECIPE_INPUT_MISMATCH</c>.  Purchase units with no resource configured are
+    /// excluded from this check — an unconfigured purchase is incomplete but not invalid.
+    /// </summary>
+    private static async Task ValidateRecipeCompatibilityAsync(
+        AppDbContext db,
+        string buildingType,
+        IReadOnlyCollection<BuildingConfigurationUnitInput> submittedUnits)
+    {
+        if (buildingType != BuildingType.Factory)
+        {
+            return;
+        }
+
+        var manufacturingUnits = submittedUnits
+            .Where(u => u.UnitType == UnitType.Manufacturing && u.ProductTypeId.HasValue)
+            .ToList();
+
+        if (manufacturingUnits.Count == 0)
+        {
+            return;
+        }
+
+        // Only consider Purchase units that have an explicit resource or product configured.
+        var configuredPurchaseResourceIds = submittedUnits
+            .Where(u => u.UnitType == UnitType.Purchase && u.ResourceTypeId.HasValue)
+            .Select(u => u.ResourceTypeId!.Value)
+            .ToHashSet();
+
+        var configuredPurchaseProductIds = submittedUnits
+            .Where(u => u.UnitType == UnitType.Purchase && u.ProductTypeId.HasValue)
+            .Select(u => u.ProductTypeId!.Value)
+            .ToHashSet();
+
+        // Nothing explicitly configured in Purchase units — nothing to cross-check.
+        if (configuredPurchaseResourceIds.Count == 0 && configuredPurchaseProductIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var mfgUnit in manufacturingUnits)
+        {
+            var productId = mfgUnit.ProductTypeId!.Value;
+
+            var recipes = await db.ProductRecipes
+                .Where(r => r.ProductTypeId == productId)
+                .ToListAsync();
+
+            if (recipes.Count == 0)
+            {
+                // No recipe defined — nothing to cross-check.
+                continue;
+            }
+
+            // For each ingredient, check whether any configured purchase unit supplies it.
+            // If all configured purchase inputs fail to match any recipe ingredient, reject.
+            bool anyPurchaseSuppliesRecipe = recipes.Any(recipe =>
+                (recipe.ResourceTypeId.HasValue && configuredPurchaseResourceIds.Contains(recipe.ResourceTypeId.Value))
+                || (recipe.InputProductTypeId.HasValue && configuredPurchaseProductIds.Contains(recipe.InputProductTypeId.Value)));
+
+            if (!anyPurchaseSuppliesRecipe)
+            {
+                var product = await db.ProductTypes.FindAsync(productId);
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetMessage(
+                            $"The Manufacturing unit's product '{product?.Name ?? productId.ToString()}' requires an input that no configured Purchase unit in this plan supplies. " +
+                            "Update the Purchase unit to supply a resource or product required by this product's recipe.")
+                        .SetCode("RECIPE_INPUT_MISMATCH")
+                        .Build());
+            }
+        }
     }
 
     private static void ValidateUnits(string buildingType, IReadOnlyCollection<BuildingConfigurationUnitInput> submittedUnits)

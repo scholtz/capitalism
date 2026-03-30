@@ -555,6 +555,7 @@ export default {
       manufacturingNotLinked: 'Fertigungseinheit bei ({x}, {y}) ist nicht verbunden.',
       miningNotLinked: 'Bergbaueinheit bei ({x}, {y}) ist nicht verbunden.',
       storageNotLinked: 'Lagereinheit bei ({x}, {y}) ist nicht verbunden.',
+      recipeMismatch: 'Fertigungseinheit bei ({x}, {y}) produziert "{product}", aber keine Einkaufseinheit liefert den benötigten Input. Aktualisieren Sie die Einkaufseinheit oder wählen Sie ein kompatibles Produkt.',
     },
     layouts: {
       title: 'Gespeicherte Layouts',
@@ -564,6 +565,19 @@ export default {
       delete: 'Löschen',
       units: 'Einheiten',
       empty: 'Keine gespeicherten Layouts für diesen Gebäudetyp.',
+    },
+    productionChain: {
+      title: 'Produktionskette',
+      chainComplete: 'Kette bereit',
+      chainIncomplete: 'Konfiguration erforderlich',
+      notConfigured: 'Noch nicht konfiguriert',
+      storageDesc: 'Lagert Fertigprodukte',
+      whatRemains: 'Was noch konfiguriert werden muss:',
+      todoSelectResource: 'Öffnen Sie die Einkaufseinheit und wählen Sie den zu kaufenden Rohstoff aus.',
+      todoSelectProduct: 'Öffnen Sie die Fertigungseinheit und wählen Sie das herzustellende Produkt aus.',
+      editHint: 'Klicken Sie oben auf "Gebäude bearbeiten" und dann auf eine Einheit im Raster.',
+      chainCompleteDesc: 'Diese Fabrik ist konfiguriert, um {resource} zu kaufen und {product} herzustellen. Die Startproduktionskette ist vollständig.',
+      nextStep: 'Nächster Schritt: Richten Sie ein Verkaufsgeschäft ein, um Ihre hergestellten Waren zu verkaufen.',
     },
   },
   cityMap: {

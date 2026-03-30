@@ -556,6 +556,7 @@ export default {
       manufacturingNotLinked: 'Manufacturing unit at ({x}, {y}) is not linked to a storage or sales output.',
       miningNotLinked: 'Mining unit at ({x}, {y}) is not linked to a storage or sales output.',
       storageNotLinked: 'Storage unit at ({x}, {y}) is not linked to any other unit.',
+      recipeMismatch: 'Manufacturing unit at ({x}, {y}) produces "{product}" but no Purchase unit supplies the required input. Update the Purchase unit or choose a compatible product.',
     },
     layouts: {
       title: 'Saved Layouts',
@@ -565,6 +566,19 @@ export default {
       delete: 'Delete',
       units: 'units',
       empty: 'No saved layouts for this building type.',
+    },
+    productionChain: {
+      title: 'Production Chain',
+      chainComplete: 'Chain Ready',
+      chainIncomplete: 'Configuration Needed',
+      notConfigured: 'Not configured yet',
+      storageDesc: 'Holds finished goods',
+      whatRemains: 'What still needs to be configured:',
+      todoSelectResource: 'Open the Purchase unit and select the raw material to buy.',
+      todoSelectProduct: 'Open the Manufacturing unit and select the product to manufacture.',
+      editHint: 'Click "Edit Building" above, then click on a unit in the grid to configure it.',
+      chainCompleteDesc: 'This factory is configured to buy {resource} and manufacture {product}. The starter production chain is complete.',
+      nextStep: 'Next step: set up a Sales Shop to start selling your manufactured goods and earning revenue.',
     },
   },
   cityMap: {
