@@ -38,6 +38,24 @@ public sealed class CreateCompanyInput
     public string Name { get; set; } = string.Empty;
 }
 
+/// <summary>Input for updating company profile and salary settings.</summary>
+public sealed class UpdateCompanySettingsInput
+{
+    public Guid CompanyId { get; set; }
+
+    [Required, MaxLength(200)]
+    public string Name { get; set; } = string.Empty;
+
+    [Required]
+    public List<CompanyCitySalarySettingInput> CitySalarySettings { get; set; } = [];
+}
+
+public sealed class CompanyCitySalarySettingInput
+{
+    public Guid CityId { get; set; }
+    public decimal SalaryMultiplier { get; set; }
+}
+
 /// <summary>Input for placing a building on the map.</summary>
 public sealed class PlaceBuildingInput
 {

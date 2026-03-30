@@ -260,6 +260,78 @@ public sealed class Query
             .ToListAsync();
     }
 
+    /// <summary>Returns owner-editable company settings including salary levels per city.</summary>
+    [Authorize]
+    public async Task<CompanySettingsResult?> GetCompanySettings(
+        Guid companyId,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var company = await db.Companies
+            .Include(candidate => candidate.CitySalarySettings)
+            .FirstOrDefaultAsync(candidate => candidate.Id == companyId && candidate.PlayerId == userId);
+
+        if (company is null)
+        {
+            return null;
+        }
+
+        var cities = await db.Cities
+            .OrderBy(city => city.Name)
+            .ToListAsync();
+        var allCompanies = await db.Companies
+            .Include(candidate => candidate.Buildings)
+            .ToListAsync();
+        var allOwnedLots = await db.BuildingLots
+            .Where(lot => lot.OwnerCompanyId.HasValue)
+            .ToListAsync();
+        var companyBuildingIds = allCompanies
+            .SelectMany(candidate => candidate.Buildings)
+            .Select(building => building.Id)
+            .ToList();
+        var allInventories = await db.Inventories
+            .Where(inventory => companyBuildingIds.Contains(inventory.BuildingId))
+            .Include(inventory => inventory.ResourceType)
+            .Include(inventory => inventory.ProductType)
+            .ToListAsync();
+
+        var companyAssetValues = allCompanies.ToDictionary(
+            candidate => candidate.Id,
+            candidate => ComputeCompanyAssetValue(candidate, allOwnedLots, allInventories));
+        var assetValue = companyAssetValues.GetValueOrDefault(company.Id);
+        var currentTick = await db.GameStates.AsNoTracking().Select(state => state.CurrentTick).FirstOrDefaultAsync();
+        var overheadRate = CompanyEconomyCalculator.ComputeAdministrationOverheadRate(
+            company,
+            assetValue,
+            companyAssetValues.Values.DefaultIfEmpty(0m).Max(),
+            currentTick);
+
+        return new CompanySettingsResult
+        {
+            CompanyId = company.Id,
+            CompanyName = company.Name,
+            Cash = company.Cash,
+            FoundedAtTick = company.FoundedAtTick,
+            AdministrationOverheadRate = overheadRate,
+            AssetValue = assetValue,
+            CitySalarySettings = cities
+                .Select(city =>
+                {
+                    var multiplier = CompanyEconomyCalculator.GetSalaryMultiplier(company.CitySalarySettings, city.Id);
+                    return new CompanyCitySalarySettingResult
+                    {
+                        CityId = city.Id,
+                        CityName = city.Name,
+                        BaseSalaryPerManhour = city.BaseSalaryPerManhour,
+                        SalaryMultiplier = multiplier,
+                        EffectiveSalaryPerManhour = CompanyEconomyCalculator.GetEffectiveHourlyWage(city, multiplier),
+                    };
+                })
+                .ToList(),
+        };
+    }
+
     /// <summary>Gets the current game state (tick, tax info).</summary>
     public async Task<GameState?> GetGameState([Service] AppDbContext db)
     {
@@ -620,6 +692,8 @@ public sealed class Query
 
         var totalRevenue = LedgerCalculator.GetTotalRevenue(entries);
         var totalPurchasingCosts = LedgerCalculator.GetTotalPurchasingCosts(entries);
+        var totalLaborCosts = LedgerCalculator.GetTotalLaborCosts(entries);
+        var totalEnergyCosts = LedgerCalculator.GetTotalEnergyCosts(entries);
         var totalMarketingCosts = LedgerCalculator.GetTotalMarketingCosts(entries);
         var totalTaxPaid = LedgerCalculator.GetTotalTaxPaid(entries);
         var totalOtherCosts = LedgerCalculator.GetTotalOtherCosts(entries);
@@ -682,19 +756,21 @@ public sealed class Query
             CurrentCash = company.Cash,
             TotalRevenue = totalRevenue,
             TotalPurchasingCosts = totalPurchasingCosts,
+            TotalLaborCosts = totalLaborCosts,
+            TotalEnergyCosts = totalEnergyCosts,
             TotalMarketingCosts = totalMarketingCosts,
             TotalTaxPaid = totalTaxPaid,
             TotalOtherCosts = totalOtherCosts,
             TaxableIncome = taxableIncome,
             EstimatedIncomeTax = estimatedIncomeTax,
             TotalPropertyPurchases = totalPropertyPurchases,
-            NetIncome = totalRevenue - totalPurchasingCosts - totalMarketingCosts - totalTaxPaid - totalOtherCosts,
+            NetIncome = totalRevenue - totalPurchasingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts - totalTaxPaid - totalOtherCosts,
             PropertyValue = propertyValue,
             PropertyAppreciation = propertyValue - totalPropertyPurchases,
             BuildingValue = buildingValue,
             InventoryValue = inventoryValue,
             TotalAssets = company.Cash + propertyValue + buildingValue + inventoryValue,
-            CashFromOperations = totalRevenue - totalPurchasingCosts - totalMarketingCosts,
+            CashFromOperations = totalRevenue - totalPurchasingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts,
             CashFromInvestments = -totalPropertyPurchases,
             FirstRecordedTick = entries.Count > 0 ? entries.Min(e => e.RecordedAtTick) : 0,
             LastRecordedTick = entries.Count > 0 ? entries.Max(e => e.RecordedAtTick) : 0,
@@ -776,6 +852,8 @@ public sealed class Query
     {
         var totalRevenue = LedgerCalculator.GetTotalRevenue(entries);
         var totalPurchasingCosts = LedgerCalculator.GetTotalPurchasingCosts(entries);
+        var totalLaborCosts = LedgerCalculator.GetTotalLaborCosts(entries);
+        var totalEnergyCosts = LedgerCalculator.GetTotalEnergyCosts(entries);
         var totalMarketingCosts = LedgerCalculator.GetTotalMarketingCosts(entries);
         var totalTaxPaid = LedgerCalculator.GetTotalTaxPaid(entries);
         var totalOtherCosts = LedgerCalculator.GetTotalOtherCosts(entries);
@@ -789,13 +867,33 @@ public sealed class Query
             GameYear = gameYear,
             IsCurrentGameYear = gameYear == currentGameYear,
             TotalRevenue = totalRevenue,
-            NetIncome = totalRevenue - totalPurchasingCosts - totalMarketingCosts - totalTaxPaid - totalOtherCosts,
+            TotalLaborCosts = totalLaborCosts,
+            TotalEnergyCosts = totalEnergyCosts,
+            NetIncome = totalRevenue - totalPurchasingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts - totalTaxPaid - totalOtherCosts,
             TotalTaxPaid = totalTaxPaid,
             TaxableIncome = taxableIncome,
             EstimatedIncomeTax = estimatedIncomeTax,
             FirstRecordedTick = entries.Count > 0 ? entries.Min(entry => entry.RecordedAtTick) : 0,
             LastRecordedTick = entries.Count > 0 ? entries.Max(entry => entry.RecordedAtTick) : 0,
         };
+    }
+
+    private static decimal ComputeCompanyAssetValue(
+        Company company,
+        IReadOnlyCollection<BuildingLot> allOwnedLots,
+        IReadOnlyCollection<Inventory> allInventories)
+    {
+        var buildingIds = company.Buildings.Select(building => building.Id).ToHashSet();
+        var inventoryValue = allInventories
+            .Where(inventory => buildingIds.Contains(inventory.BuildingId))
+            .Sum(WealthCalculator.GetItemBasePrice);
+        var lotValue = allOwnedLots
+            .Where(lot => lot.OwnerCompanyId == company.Id)
+            .Sum(WealthCalculator.GetLandValue);
+
+        return company.Cash + company.Buildings.Sum(WealthCalculator.GetBuildingValue) + lotValue + allInventories
+            .Where(inventory => buildingIds.Contains(inventory.BuildingId))
+            .Sum(inventory => inventory.Quantity * WealthCalculator.GetItemBasePrice(inventory));
     }
 
     /// <summary>Returns analytics for a PUBLIC_SALES building unit.</summary>

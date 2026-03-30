@@ -9,11 +9,7 @@ async function authenticateViaLocalStorage(page: Parameters<typeof test>[0]['pag
   }, token)
 }
 
-function makePendingBuildingPlan(
-  buildingId: string,
-  currentTick: number,
-  ticksRequired = 3,
-): MockBuildingConfigurationPlan {
+function makePendingBuildingPlan(buildingId: string, currentTick: number, ticksRequired = 3): MockBuildingConfigurationPlan {
   return {
     id: `plan-${buildingId}`,
     buildingId,
@@ -346,6 +342,44 @@ test.describe('Dashboard — pending actions timeline', () => {
 
     // After tick advance, the plan is applied and the action should be gone
     await expect(page.getByRole('status')).toContainText('No scheduled actions')
+  })
+})
+
+test.describe('Dashboard — company settings', () => {
+  test('opens company settings and saves company name and city salary multiplier', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-settings',
+          playerId: 'player-1',
+          name: 'Settings Corp',
+          cash: 275000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 24,
+          citySalaryMultipliers: { bratislava: 1.1 },
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await page.getByRole('link', { name: 'Settings' }).click()
+    await expect(page).toHaveURL('/company/comp-settings/settings')
+    await expect(page.getByRole('heading', { name: 'Settings Corp' })).toBeVisible()
+
+    await page.getByLabel('Company Name').fill('Renamed Industries')
+    await page.getByLabel('Salary Multiplier Bratislava').fill('1.35')
+    await page.getByRole('button', { name: 'Save' }).click()
+
+    await expect(page.getByRole('status')).toContainText('Company settings saved')
+    await expect(page.getByRole('heading', { name: 'Renamed Industries' })).toBeVisible()
+    await expect(page.getByLabel('Salary Multiplier Bratislava')).toHaveValue('1.35')
   })
 })
 

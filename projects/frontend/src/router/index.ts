@@ -15,6 +15,7 @@ const router = createRouter({
     { path: '/building/:id', name: 'building-detail', component: () => import('@/views/BuildingDetailView.vue') },
     { path: '/city/:id', name: 'city-map', component: () => import('@/views/CityMapView.vue') },
     { path: '/ledger/:companyId', name: 'ledger', component: () => import('@/views/LedgerView.vue') },
+    { path: '/company/:companyId/settings', name: 'company-settings', component: () => import('@/views/CompanySettingsView.vue') },
   ],
   scrollBehavior() {
     return { top: 0 }

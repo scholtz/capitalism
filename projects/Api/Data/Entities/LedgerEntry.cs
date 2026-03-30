@@ -35,6 +35,8 @@ public static class LedgerCategory
 {
     public const string Revenue = "REVENUE";
     public const string PurchasingCost = "PURCHASING_COST";
+    public const string LaborCost = "LABOR_COST";
+    public const string EnergyCost = "ENERGY_COST";
     public const string PropertyPurchase = "PROPERTY_PURCHASE";
     public const string UnitUpgrade = "UNIT_UPGRADE";
     public const string Marketing = "MARKETING";

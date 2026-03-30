@@ -53,6 +53,8 @@ export type MockLedgerSummary = {
   currentCash: number
   totalRevenue: number
   totalPurchasingCosts: number
+  totalLaborCosts: number
+  totalEnergyCosts: number
   totalMarketingCosts: number
   totalTaxPaid: number
   totalOtherCosts: number
@@ -87,6 +89,8 @@ export type MockLedgerHistoryYear = {
   gameYear: number
   isCurrentGameYear: boolean
   totalRevenue: number
+  totalLaborCosts: number
+  totalEnergyCosts: number
   netIncome: number
   totalTaxPaid: number
   taxableIncome: number
@@ -116,6 +120,8 @@ export type MockCompany = {
   name: string
   cash: number
   foundedAtUtc: string
+  foundedAtTick?: number
+  citySalaryMultipliers?: Record<string, number>
   buildings: MockBuilding[]
 }
 
@@ -235,6 +241,7 @@ export type MockCity = {
   longitude: number
   population: number
   averageRentPerSqm: number
+  baseSalaryPerManhour: number
   resources: { resourceType: { id: string; name: string; slug: string; category: string }; abundance: number }[]
 }
 
@@ -281,6 +288,7 @@ export type MockProductType = {
   baseCraftTicks: number
   outputQuantity?: number
   energyConsumptionMwh?: number
+  basicLaborHours?: number
   unitName?: string
   unitSymbol?: string
   imageUrl?: string | null
@@ -348,15 +356,16 @@ function buildMockGameStatePayload(gameState: MockState['gameState']) {
 
 function buildMockLedgerHistoryYear(summary: MockLedgerSummary, currentGameYear: number): MockLedgerHistoryYear {
   const gameYear = summary.gameYear ?? currentGameYear
-  const taxableIncome = summary.taxableIncome ?? Math.max(
-    summary.totalRevenue - summary.totalPurchasingCosts - summary.totalMarketingCosts - summary.totalOtherCosts,
-    0,
-  )
+  const taxableIncome =
+    summary.taxableIncome ??
+    Math.max(summary.totalRevenue - summary.totalPurchasingCosts - summary.totalLaborCosts - summary.totalEnergyCosts - summary.totalMarketingCosts - summary.totalOtherCosts, 0)
 
   return {
     gameYear,
     isCurrentGameYear: summary.isCurrentGameYear ?? gameYear === currentGameYear,
     totalRevenue: summary.totalRevenue,
+    totalLaborCosts: summary.totalLaborCosts,
+    totalEnergyCosts: summary.totalEnergyCosts,
     netIncome: summary.netIncome,
     totalTaxPaid: summary.totalTaxPaid,
     taxableIncome,
@@ -369,16 +378,15 @@ function buildMockLedgerHistoryYear(summary: MockLedgerSummary, currentGameYear:
 function buildMockLedgerSummaryPayload(summary: MockLedgerSummary, gameState: MockState['gameState']) {
   const currentGameYear = computeMockGameYear(gameState.currentTick)
   const gameYear = summary.gameYear ?? currentGameYear
-  const incomeTaxDueAtTick = summary.incomeTaxDueAtTick ?? ((gameYear - GAME_START_YEAR + 1) * TICKS_PER_YEAR)
+  const incomeTaxDueAtTick = summary.incomeTaxDueAtTick ?? (gameYear - GAME_START_YEAR + 1) * TICKS_PER_YEAR
 
   return {
     ...summary,
     gameYear,
     isCurrentGameYear: summary.isCurrentGameYear ?? gameYear === currentGameYear,
-    taxableIncome: summary.taxableIncome ?? Math.max(
-      summary.totalRevenue - summary.totalPurchasingCosts - summary.totalMarketingCosts - summary.totalOtherCosts,
-      0,
-    ),
+    taxableIncome:
+      summary.taxableIncome ??
+      Math.max(summary.totalRevenue - summary.totalPurchasingCosts - summary.totalLaborCosts - summary.totalEnergyCosts - summary.totalMarketingCosts - summary.totalOtherCosts, 0),
     estimatedIncomeTax: summary.estimatedIncomeTax ?? summary.totalTaxPaid,
     incomeTaxDueAtTick,
     incomeTaxDueGameTimeUtc: summary.incomeTaxDueGameTimeUtc ?? computeMockInGameTimeUtc(incomeTaxDueAtTick),
@@ -409,20 +417,14 @@ function getMockUnitResourceHistory(unit: MockBuildingUnit) {
   }))
 }
 
-function computeDistanceKm(
-  latitudeA: number,
-  longitudeA: number,
-  latitudeB: number,
-  longitudeB: number,
-) {
+function computeDistanceKm(latitudeA: number, longitudeA: number, latitudeB: number, longitudeB: number) {
   const earthRadiusKm = 6371
   const deltaLatitude = ((latitudeB - latitudeA) * Math.PI) / 180
   const deltaLongitude = ((longitudeB - longitudeA) * Math.PI) / 180
   const originLatitude = (latitudeA * Math.PI) / 180
   const destinationLatitude = (latitudeB * Math.PI) / 180
 
-  const haversine = (Math.sin(deltaLatitude / 2) ** 2)
-    + Math.cos(originLatitude) * Math.cos(destinationLatitude) * (Math.sin(deltaLongitude / 2) ** 2)
+  const haversine = Math.sin(deltaLatitude / 2) ** 2 + Math.cos(originLatitude) * Math.cos(destinationLatitude) * Math.sin(deltaLongitude / 2) ** 2
   return earthRadiusKm * (2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine)))
 }
 
@@ -477,18 +479,18 @@ function getMockUnitInventoryItems(unit: MockBuildingUnit) {
     return []
   }
 
-  return [{
-    id: `${unit.id}-inventory-legacy`,
-    buildingUnitId: unit.id,
-    resourceTypeId: unit.resourceTypeId ?? null,
-    productTypeId: unit.productTypeId ?? null,
-    quantity: unit.inventoryQuantity ?? 0,
-    quality: unit.inventoryQuality ?? 0.5,
-    sourcingCostTotal: unit.inventorySourcingCostTotal ?? 0,
-    sourcingCostPerUnit: (unit.inventoryQuantity ?? 0) > 0
-      ? Number(((unit.inventorySourcingCostTotal ?? 0) / (unit.inventoryQuantity ?? 0)).toFixed(2))
-      : 0,
-  }]
+  return [
+    {
+      id: `${unit.id}-inventory-legacy`,
+      buildingUnitId: unit.id,
+      resourceTypeId: unit.resourceTypeId ?? null,
+      productTypeId: unit.productTypeId ?? null,
+      quantity: unit.inventoryQuantity ?? 0,
+      quality: unit.inventoryQuality ?? 0.5,
+      sourcingCostTotal: unit.inventorySourcingCostTotal ?? 0,
+      sourcingCostPerUnit: (unit.inventoryQuantity ?? 0) > 0 ? Number(((unit.inventorySourcingCostTotal ?? 0) / (unit.inventoryQuantity ?? 0)).toFixed(2)) : 0,
+    },
+  ]
 }
 
 function areUnitsEquivalent(currentUnit: MockBuildingUnit | undefined, nextUnit: MockBuildingUnit): boolean {
@@ -496,28 +498,30 @@ function areUnitsEquivalent(currentUnit: MockBuildingUnit | undefined, nextUnit:
     return false
   }
 
-  return currentUnit.unitType === nextUnit.unitType
-    && currentUnit.gridX === nextUnit.gridX
-    && currentUnit.gridY === nextUnit.gridY
-    && currentUnit.linkUp === nextUnit.linkUp
-    && currentUnit.linkDown === nextUnit.linkDown
-    && currentUnit.linkLeft === nextUnit.linkLeft
-    && currentUnit.linkRight === nextUnit.linkRight
-    && currentUnit.linkUpLeft === nextUnit.linkUpLeft
-    && currentUnit.linkUpRight === nextUnit.linkUpRight
-    && currentUnit.linkDownLeft === nextUnit.linkDownLeft
-    && currentUnit.linkDownRight === nextUnit.linkDownRight
-    && (currentUnit.resourceTypeId ?? null) === (nextUnit.resourceTypeId ?? null)
-    && (currentUnit.productTypeId ?? null) === (nextUnit.productTypeId ?? null)
-    && (currentUnit.minPrice ?? null) === (nextUnit.minPrice ?? null)
-    && (currentUnit.maxPrice ?? null) === (nextUnit.maxPrice ?? null)
-    && (currentUnit.purchaseSource ?? null) === (nextUnit.purchaseSource ?? null)
-    && (currentUnit.saleVisibility ?? null) === (nextUnit.saleVisibility ?? null)
-    && (currentUnit.budget ?? null) === (nextUnit.budget ?? null)
-    && (currentUnit.mediaHouseBuildingId ?? null) === (nextUnit.mediaHouseBuildingId ?? null)
-    && (currentUnit.minQuality ?? null) === (nextUnit.minQuality ?? null)
-    && (currentUnit.brandScope ?? null) === (nextUnit.brandScope ?? null)
-    && (currentUnit.vendorLockCompanyId ?? null) === (nextUnit.vendorLockCompanyId ?? null)
+  return (
+    currentUnit.unitType === nextUnit.unitType &&
+    currentUnit.gridX === nextUnit.gridX &&
+    currentUnit.gridY === nextUnit.gridY &&
+    currentUnit.linkUp === nextUnit.linkUp &&
+    currentUnit.linkDown === nextUnit.linkDown &&
+    currentUnit.linkLeft === nextUnit.linkLeft &&
+    currentUnit.linkRight === nextUnit.linkRight &&
+    currentUnit.linkUpLeft === nextUnit.linkUpLeft &&
+    currentUnit.linkUpRight === nextUnit.linkUpRight &&
+    currentUnit.linkDownLeft === nextUnit.linkDownLeft &&
+    currentUnit.linkDownRight === nextUnit.linkDownRight &&
+    (currentUnit.resourceTypeId ?? null) === (nextUnit.resourceTypeId ?? null) &&
+    (currentUnit.productTypeId ?? null) === (nextUnit.productTypeId ?? null) &&
+    (currentUnit.minPrice ?? null) === (nextUnit.minPrice ?? null) &&
+    (currentUnit.maxPrice ?? null) === (nextUnit.maxPrice ?? null) &&
+    (currentUnit.purchaseSource ?? null) === (nextUnit.purchaseSource ?? null) &&
+    (currentUnit.saleVisibility ?? null) === (nextUnit.saleVisibility ?? null) &&
+    (currentUnit.budget ?? null) === (nextUnit.budget ?? null) &&
+    (currentUnit.mediaHouseBuildingId ?? null) === (nextUnit.mediaHouseBuildingId ?? null) &&
+    (currentUnit.minQuality ?? null) === (nextUnit.minQuality ?? null) &&
+    (currentUnit.brandScope ?? null) === (nextUnit.brandScope ?? null) &&
+    (currentUnit.vendorLockCompanyId ?? null) === (nextUnit.vendorLockCompanyId ?? null)
+  )
 }
 
 function arePendingUnitsEquivalent(currentUnit: MockBuildingConfigurationPlanUnit | undefined, nextUnit: MockBuildingUnit): boolean {
@@ -535,9 +539,7 @@ function calculateCancelTicks(baseTicks: number): number {
 function buildPlanSummary(plan: MockBuildingConfigurationPlan, currentTick: number): MockBuildingConfigurationPlan {
   const remainingTicks = Math.max(
     0,
-    ...plan.units
-      .filter((unit) => unit.isChanged)
-      .map((unit) => Math.max(unit.appliesAtTick - currentTick, 0)),
+    ...plan.units.filter((unit) => unit.isChanged).map((unit) => Math.max(unit.appliesAtTick - currentTick, 0)),
     ...plan.removals.map((removal) => Math.max(removal.appliesAtTick - currentTick, 0)),
   )
 
@@ -558,30 +560,30 @@ function calculateUnitTicks(currentUnit: MockBuildingUnit | undefined, nextUnit:
   }
 
   if (
-    currentUnit.linkUp !== nextUnit.linkUp
-    || currentUnit.linkDown !== nextUnit.linkDown
-    || currentUnit.linkLeft !== nextUnit.linkLeft
-    || currentUnit.linkRight !== nextUnit.linkRight
-    || currentUnit.linkUpLeft !== nextUnit.linkUpLeft
-    || currentUnit.linkUpRight !== nextUnit.linkUpRight
-    || currentUnit.linkDownLeft !== nextUnit.linkDownLeft
-    || currentUnit.linkDownRight !== nextUnit.linkDownRight
+    currentUnit.linkUp !== nextUnit.linkUp ||
+    currentUnit.linkDown !== nextUnit.linkDown ||
+    currentUnit.linkLeft !== nextUnit.linkLeft ||
+    currentUnit.linkRight !== nextUnit.linkRight ||
+    currentUnit.linkUpLeft !== nextUnit.linkUpLeft ||
+    currentUnit.linkUpRight !== nextUnit.linkUpRight ||
+    currentUnit.linkDownLeft !== nextUnit.linkDownLeft ||
+    currentUnit.linkDownRight !== nextUnit.linkDownRight
   ) {
     return 1
   }
 
   if (
-    (currentUnit.resourceTypeId ?? null) !== (nextUnit.resourceTypeId ?? null)
-    || (currentUnit.productTypeId ?? null) !== (nextUnit.productTypeId ?? null)
-    || (currentUnit.minPrice ?? null) !== (nextUnit.minPrice ?? null)
-    || (currentUnit.maxPrice ?? null) !== (nextUnit.maxPrice ?? null)
-    || (currentUnit.purchaseSource ?? null) !== (nextUnit.purchaseSource ?? null)
-    || (currentUnit.saleVisibility ?? null) !== (nextUnit.saleVisibility ?? null)
-    || (currentUnit.budget ?? null) !== (nextUnit.budget ?? null)
-    || (currentUnit.mediaHouseBuildingId ?? null) !== (nextUnit.mediaHouseBuildingId ?? null)
-    || (currentUnit.minQuality ?? null) !== (nextUnit.minQuality ?? null)
-    || (currentUnit.brandScope ?? null) !== (nextUnit.brandScope ?? null)
-    || (currentUnit.vendorLockCompanyId ?? null) !== (nextUnit.vendorLockCompanyId ?? null)
+    (currentUnit.resourceTypeId ?? null) !== (nextUnit.resourceTypeId ?? null) ||
+    (currentUnit.productTypeId ?? null) !== (nextUnit.productTypeId ?? null) ||
+    (currentUnit.minPrice ?? null) !== (nextUnit.minPrice ?? null) ||
+    (currentUnit.maxPrice ?? null) !== (nextUnit.maxPrice ?? null) ||
+    (currentUnit.purchaseSource ?? null) !== (nextUnit.purchaseSource ?? null) ||
+    (currentUnit.saleVisibility ?? null) !== (nextUnit.saleVisibility ?? null) ||
+    (currentUnit.budget ?? null) !== (nextUnit.budget ?? null) ||
+    (currentUnit.mediaHouseBuildingId ?? null) !== (nextUnit.mediaHouseBuildingId ?? null) ||
+    (currentUnit.minQuality ?? null) !== (nextUnit.minQuality ?? null) ||
+    (currentUnit.brandScope ?? null) !== (nextUnit.brandScope ?? null) ||
+    (currentUnit.vendorLockCompanyId ?? null) !== (nextUnit.vendorLockCompanyId ?? null)
   ) {
     return 1
   }
@@ -612,11 +614,9 @@ function applyDueBuildingUpgrades(state: MockState): void {
           unit.ticksRequired = 0
         }
 
-        building.units = Array.from(liveUnits.values())
-          .sort((left, right) => (left.gridY - right.gridY) || (left.gridX - right.gridX))
+        building.units = Array.from(liveUnits.values()).sort((left, right) => left.gridY - right.gridY || left.gridX - right.gridX)
 
-        building.pendingConfiguration.removals = building.pendingConfiguration.removals
-          .filter((candidate) => candidate.appliesAtTick > state.gameState.currentTick)
+        building.pendingConfiguration.removals = building.pendingConfiguration.removals.filter((candidate) => candidate.appliesAtTick > state.gameState.currentTick)
 
         if (!building.pendingConfiguration.units.some((unit) => unit.isChanged) && building.pendingConfiguration.removals.length === 0) {
           building.pendingConfiguration = null
@@ -734,6 +734,7 @@ export function makeBratislava(): MockCity {
     longitude: 17.1077,
     population: 475000,
     averageRentPerSqm: 14,
+    baseSalaryPerManhour: 18,
     resources: [
       { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.7 },
       { resourceType: { id: 'res-grain', name: 'Grain', slug: 'grain', category: 'ORGANIC' }, abundance: 0.6 },
@@ -752,24 +753,26 @@ export function makeDefaultCities(): MockCity[] {
       longitude: 14.4378,
       population: 1350000,
       averageRentPerSqm: 18,
+      baseSalaryPerManhour: 22,
       resources: [
         { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.7 },
         { resourceType: { id: 'res-grain', name: 'Grain', slug: 'grain', category: 'ORGANIC' }, abundance: 0.6 },
-        ],
-      },
-      {
-        id: 'city-vi',
-        name: 'Vienna',
-        countryCode: 'AT',
-        latitude: 48.2082,
-        longitude: 16.3738,
-        population: 1900000,
-        averageRentPerSqm: 22,
-        resources: [
-          { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.7 },
-          { resourceType: { id: 'res-grain', name: 'Grain', slug: 'grain', category: 'ORGANIC' }, abundance: 0.6 },
-        ],
-      },
+      ],
+    },
+    {
+      id: 'city-vi',
+      name: 'Vienna',
+      countryCode: 'AT',
+      latitude: 48.2082,
+      longitude: 16.3738,
+      population: 1900000,
+      averageRentPerSqm: 22,
+      baseSalaryPerManhour: 28,
+      resources: [
+        { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.7 },
+        { resourceType: { id: 'res-grain', name: 'Grain', slug: 'grain', category: 'ORGANIC' }, abundance: 0.6 },
+      ],
+    },
   ]
 }
 
@@ -868,6 +871,7 @@ export function makeChairProduct(): MockProductType {
     baseCraftTicks: 2,
     outputQuantity: 20,
     energyConsumptionMwh: 1,
+    basicLaborHours: 1.6,
     unitName: 'Chair',
     unitSymbol: 'chairs',
     isProOnly: false,
@@ -888,6 +892,7 @@ export function makeDefaultProducts(): MockProductType[] {
       baseCraftTicks: 1,
       outputQuantity: 12,
       energyConsumptionMwh: 0.5,
+      basicLaborHours: 0.9,
       unitName: 'Loaf',
       unitSymbol: 'loaves',
       isProOnly: false,
@@ -903,6 +908,7 @@ export function makeDefaultProducts(): MockProductType[] {
       baseCraftTicks: 3,
       outputQuantity: 8,
       energyConsumptionMwh: 1,
+      basicLaborHours: 2.1,
       unitName: 'Bottle',
       unitSymbol: 'bottles',
       isProOnly: false,
@@ -944,7 +950,11 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     if (query.includes('Register')) {
       const input = body.variables?.input
       if (state.players.some((p) => p.email === input?.email)) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'A player with this email already exists.', extensions: { code: 'DUPLICATE_EMAIL' } }] }) })
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'A player with this email already exists.', extensions: { code: 'DUPLICATE_EMAIL' } }] }),
+        })
       }
       const newPlayer: MockPlayer = {
         id: `player-${Date.now()}`,
@@ -1018,9 +1028,18 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building lot not found.' }] }) })
       }
       if (lot.ownerCompanyId) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.', extensions: { code: 'LOT_ALREADY_OWNED' } }] }) })
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.', extensions: { code: 'LOT_ALREADY_OWNED' } }] }),
+        })
       }
-      if (!lot.suitableTypes.split(',').map((type) => type.trim()).includes('FACTORY')) {
+      if (
+        !lot.suitableTypes
+          .split(',')
+          .map((type) => type.trim())
+          .includes('FACTORY')
+      ) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building type FACTORY is not suitable for this lot.' }] }) })
       }
       if (STARTING_CASH_FOR_ONBOARDING < lot.price) {
@@ -1035,6 +1054,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         name: input.companyName,
         cash: STARTING_CASH_FOR_ONBOARDING - lot.price,
         foundedAtUtc: new Date().toISOString(),
+        foundedAtTick: state.gameState.currentTick,
         buildings: [
           {
             id: factoryId,
@@ -1101,13 +1121,26 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building lot not found.' }] }) })
       }
       if (shopLot.ownerCompanyId) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.', extensions: { code: 'LOT_ALREADY_OWNED' } }] }) })
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.', extensions: { code: 'LOT_ALREADY_OWNED' } }] }),
+        })
       }
-      if (!shopLot.suitableTypes.split(',').map((type) => type.trim()).includes('SALES_SHOP')) {
+      if (
+        !shopLot.suitableTypes
+          .split(',')
+          .map((type) => type.trim())
+          .includes('SALES_SHOP')
+      ) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building type SALES_SHOP is not suitable for this lot.' }] }) })
       }
       if (company.cash < shopLot.price) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: `Insufficient funds. This lot costs $${shopLot.price.toLocaleString()}.` }] }) })
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: `Insufficient funds. This lot costs $${shopLot.price.toLocaleString()}.` }] }),
+        })
       }
 
       company.cash -= shopLot.price
@@ -1174,9 +1207,40 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         name: input.companyName,
         cash: 500000,
         foundedAtUtc: new Date().toISOString(),
+        foundedAtTick: state.gameState.currentTick,
         buildings: [
-          { id: `building-factory-${Date.now()}`, companyId: '', cityId: input.cityId, type: 'FACTORY', name: `${input.companyName} Factory`, latitude: 48.15, longitude: 17.11, level: 1, powerConsumption: 2, powerStatus: 'POWERED', isForSale: false, builtAtUtc: new Date().toISOString(), units: [], pendingConfiguration: null },
-          { id: `building-shop-${Date.now()}`, companyId: '', cityId: input.cityId, type: 'SALES_SHOP', name: `${input.companyName} Shop`, latitude: 48.15, longitude: 17.11, level: 1, powerConsumption: 1, powerStatus: 'POWERED', isForSale: false, builtAtUtc: new Date().toISOString(), units: [], pendingConfiguration: null },
+          {
+            id: `building-factory-${Date.now()}`,
+            companyId: '',
+            cityId: input.cityId,
+            type: 'FACTORY',
+            name: `${input.companyName} Factory`,
+            latitude: 48.15,
+            longitude: 17.11,
+            level: 1,
+            powerConsumption: 2,
+            powerStatus: 'POWERED',
+            isForSale: false,
+            builtAtUtc: new Date().toISOString(),
+            units: [],
+            pendingConfiguration: null,
+          },
+          {
+            id: `building-shop-${Date.now()}`,
+            companyId: '',
+            cityId: input.cityId,
+            type: 'SALES_SHOP',
+            name: `${input.companyName} Shop`,
+            latitude: 48.15,
+            longitude: 17.11,
+            level: 1,
+            powerConsumption: 1,
+            powerStatus: 'POWERED',
+            isForSale: false,
+            builtAtUtc: new Date().toISOString(),
+            units: [],
+            pendingConfiguration: null,
+          },
         ],
       }
       player.companies.push(company)
@@ -1255,7 +1319,11 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
 
       if (new Date(player.startupPackOffer.expiresAtUtc).getTime() <= Date.now() && player.startupPackOffer.status !== 'CLAIMED') {
         player.startupPackOffer.status = 'EXPIRED'
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Startup pack offer has expired.', extensions: { code: 'STARTUP_PACK_EXPIRED' } }] }) })
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Startup pack offer has expired.', extensions: { code: 'STARTUP_PACK_EXPIRED' } }] }),
+        })
       }
 
       if (player.startupPackOffer.status !== 'CLAIMED') {
@@ -1263,9 +1331,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         const now = new Date()
         // Keep this stacking rule aligned with projects/Api/Types/Mutation.cs so
         // the mock mirrors the backend-authoritative entitlement behavior.
-        const baseDate = player.proSubscriptionEndsAtUtc && new Date(player.proSubscriptionEndsAtUtc) > now
-          ? new Date(player.proSubscriptionEndsAtUtc)
-          : now
+        const baseDate = player.proSubscriptionEndsAtUtc && new Date(player.proSubscriptionEndsAtUtc) > now ? new Date(player.proSubscriptionEndsAtUtc) : now
         baseDate.setUTCDate(baseDate.getUTCDate() + player.startupPackOffer.proDurationDays)
         player.proSubscriptionEndsAtUtc = baseDate.toISOString()
         player.startupPackOffer.status = 'CLAIMED'
@@ -1301,6 +1367,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         name: input.name,
         cash: 1000000,
         foundedAtUtc: new Date().toISOString(),
+        foundedAtTick: state.gameState.currentTick,
         buildings: [],
       }
       player.companies.push(company)
@@ -1308,6 +1375,25 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { createCompany: company } }),
+      })
+    }
+
+    if (query.includes('UpdateCompanySettings')) {
+      const input = body.variables?.input
+      const player = state.players.find((candidate) => candidate.id === state.currentUserId)
+      const company = player?.companies.find((candidate) => candidate.id === input?.companyId)
+
+      if (!company) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Company not found or you do not own it.' }] }) })
+      }
+
+      company.name = input.name
+      company.citySalaryMultipliers = Object.fromEntries((input.citySalarySettings ?? []).map((entry: { cityId: string; salaryMultiplier: number }) => [entry.cityId, entry.salaryMultiplier]))
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { updateCompanySettings: { id: company.id, name: company.name } } }),
       })
     }
 
@@ -1358,8 +1444,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       }
 
       const activePlayer = state.players.find((candidate) => candidate.id === state.currentUserId)
-      const hasActiveProSubscription = !!activePlayer?.proSubscriptionEndsAtUtc
-        && new Date(activePlayer.proSubscriptionEndsAtUtc).getTime() > Date.now()
+      const hasActiveProSubscription = !!activePlayer?.proSubscriptionEndsAtUtc && new Date(activePlayer.proSubscriptionEndsAtUtc).getTime() > Date.now()
 
       for (const unit of input.units ?? []) {
         if (!unit.productTypeId) {
@@ -1367,14 +1452,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         }
 
         const product = state.productTypes.find((candidate) => candidate.id === unit.productTypeId)
-        const isRetainingExistingProduct = [
-          ...(building.units ?? []),
-          ...(building.pendingConfiguration?.units ?? []),
-        ].some((candidate) =>
-          candidate.unitType === unit.unitType
-          && candidate.gridX === unit.gridX
-          && candidate.gridY === unit.gridY
-          && (candidate.productTypeId ?? null) === unit.productTypeId,
+        const isRetainingExistingProduct = [...(building.units ?? []), ...(building.pendingConfiguration?.units ?? [])].some(
+          (candidate) => candidate.unitType === unit.unitType && candidate.gridX === unit.gridX && candidate.gridY === unit.gridY && (candidate.productTypeId ?? null) === unit.productTypeId,
         )
 
         if (product?.isProOnly && !hasActiveProSubscription && !isRetainingExistingProduct) {
@@ -1382,10 +1461,12 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify({
-              errors: [{
-                message: `Pro subscription unlocks additional products to manufacture and sell. Activate Pro to use ${product.name}.`,
-                extensions: { code: 'PRO_SUBSCRIPTION_REQUIRED' },
-              }],
+              errors: [
+                {
+                  message: `Pro subscription unlocks additional products to manufacture and sell. Activate Pro to use ${product.name}.`,
+                  extensions: { code: 'PRO_SUBSCRIPTION_REQUIRED' },
+                },
+              ],
             }),
           })
         }
@@ -1395,16 +1476,12 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       // and at least one PURCHASE unit has a resource explicitly configured, verify
       // that the resource satisfies the product's recipe.
       if (building.type === 'FACTORY') {
-        const purchaseResourceIds = (input.units ?? [])
-          .filter((u: MockBuildingUnit) => u.unitType === 'PURCHASE' && u.resourceTypeId)
-          .map((u: MockBuildingUnit) => u.resourceTypeId!)
+        const purchaseResourceIds = (input.units ?? []).filter((u: MockBuildingUnit) => u.unitType === 'PURCHASE' && u.resourceTypeId).map((u: MockBuildingUnit) => u.resourceTypeId!)
 
-        const purchaseProductIds = (input.units ?? [])
-          .filter((u: MockBuildingUnit) => u.unitType === 'PURCHASE' && u.productTypeId)
-          .map((u: MockBuildingUnit) => u.productTypeId!)
+        const purchaseProductIds = (input.units ?? []).filter((u: MockBuildingUnit) => u.unitType === 'PURCHASE' && u.productTypeId).map((u: MockBuildingUnit) => u.productTypeId!)
 
         if (purchaseResourceIds.length > 0 || purchaseProductIds.length > 0) {
-          for (const unit of (input.units ?? [])) {
+          for (const unit of input.units ?? []) {
             if (unit.unitType !== 'MANUFACTURING' || !unit.productTypeId) continue
 
             const product = state.productTypes.find((p) => p.id === unit.productTypeId)
@@ -1412,8 +1489,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
 
             const anyRecipeSatisfied = product.recipes.some(
               (recipe: { resourceType: { id: string } | null; inputProductType: { id: string } | null }) =>
-                (recipe.resourceType?.id && purchaseResourceIds.includes(recipe.resourceType.id))
-                || (recipe.inputProductType?.id && purchaseProductIds.includes(recipe.inputProductType.id)),
+                (recipe.resourceType?.id && purchaseResourceIds.includes(recipe.resourceType.id)) || (recipe.inputProductType?.id && purchaseProductIds.includes(recipe.inputProductType.id)),
             )
 
             if (!anyRecipeSatisfied) {
@@ -1421,10 +1497,12 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
                 status: 200,
                 contentType: 'application/json',
                 body: JSON.stringify({
-                  errors: [{
-                    message: `The Manufacturing unit's product '${product.name}' requires an input that no configured Purchase unit in this plan supplies. Update the Purchase unit to supply a resource or product required by this product's recipe.`,
-                    extensions: { code: 'RECIPE_INPUT_MISMATCH' },
-                  }],
+                  errors: [
+                    {
+                      message: `The Manufacturing unit's product '${product.name}' requires an input that no configured Purchase unit in this plan supplies. Update the Purchase unit to supply a resource or product required by this product's recipe.`,
+                      extensions: { code: 'RECIPE_INPUT_MISMATCH' },
+                    },
+                  ],
                 }),
               })
             }
@@ -1435,21 +1513,18 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       // Zero/negative price validation: PUBLIC_SALES and B2B_SALES units must have a positive minPrice.
       // The runtime engine (PublicSalesPhase) silently replaces price <= 0 with base price, so
       // accepting 0 would misrepresent the actual selling price to the player.
-      for (const unit of (input.units ?? [])) {
-        if (
-          (unit.unitType === 'PUBLIC_SALES' || unit.unitType === 'B2B_SALES') &&
-          unit.minPrice !== null &&
-          unit.minPrice !== undefined &&
-          unit.minPrice <= 0
-        ) {
+      for (const unit of input.units ?? []) {
+        if ((unit.unitType === 'PUBLIC_SALES' || unit.unitType === 'B2B_SALES') && unit.minPrice !== null && unit.minPrice !== undefined && unit.minPrice <= 0) {
           return route.fulfill({
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify({
-              errors: [{
-                message: 'Minimum price must be greater than zero.',
-                extensions: { code: 'INVALID_MIN_PRICE' },
-              }],
+              errors: [
+                {
+                  message: 'Minimum price must be greater than zero.',
+                  extensions: { code: 'INVALID_MIN_PRICE' },
+                },
+              ],
             }),
           })
         }
@@ -1460,43 +1535,41 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         (input.units ?? []).map((unit: MockBuildingUnit, index: number) => {
           const current = building.units.find((candidate) => candidate.gridX === unit.gridX && candidate.gridY === unit.gridY)
 
-          return [`${unit.gridX},${unit.gridY}`, {
-            id: `pending-unit-${index}-${Date.now()}`,
-            buildingId: building.id,
-            unitType: unit.unitType,
-            gridX: unit.gridX,
-            gridY: unit.gridY,
-            level: current?.level ?? 1,
-            linkUp: unit.linkUp,
-            linkDown: unit.linkDown,
-            linkLeft: unit.linkLeft,
-            linkRight: unit.linkRight,
-            linkUpLeft: unit.linkUpLeft,
-            linkUpRight: unit.linkUpRight,
-            linkDownLeft: unit.linkDownLeft,
-            linkDownRight: unit.linkDownRight,
-            resourceTypeId: unit.resourceTypeId ?? null,
-            productTypeId: unit.productTypeId ?? null,
-            minPrice: unit.minPrice ?? null,
-            maxPrice: unit.maxPrice ?? null,
-            purchaseSource: unit.purchaseSource ?? null,
-            saleVisibility: unit.saleVisibility ?? null,
-            budget: unit.budget ?? null,
-            mediaHouseBuildingId: unit.mediaHouseBuildingId ?? null,
-            minQuality: unit.minQuality ?? null,
-            brandScope: unit.brandScope ?? null,
-            vendorLockCompanyId: unit.vendorLockCompanyId ?? null,
-          } satisfies MockBuildingUnit]
+          return [
+            `${unit.gridX},${unit.gridY}`,
+            {
+              id: `pending-unit-${index}-${Date.now()}`,
+              buildingId: building.id,
+              unitType: unit.unitType,
+              gridX: unit.gridX,
+              gridY: unit.gridY,
+              level: current?.level ?? 1,
+              linkUp: unit.linkUp,
+              linkDown: unit.linkDown,
+              linkLeft: unit.linkLeft,
+              linkRight: unit.linkRight,
+              linkUpLeft: unit.linkUpLeft,
+              linkUpRight: unit.linkUpRight,
+              linkDownLeft: unit.linkDownLeft,
+              linkDownRight: unit.linkDownRight,
+              resourceTypeId: unit.resourceTypeId ?? null,
+              productTypeId: unit.productTypeId ?? null,
+              minPrice: unit.minPrice ?? null,
+              maxPrice: unit.maxPrice ?? null,
+              purchaseSource: unit.purchaseSource ?? null,
+              saleVisibility: unit.saleVisibility ?? null,
+              budget: unit.budget ?? null,
+              mediaHouseBuildingId: unit.mediaHouseBuildingId ?? null,
+              minQuality: unit.minQuality ?? null,
+              brandScope: unit.brandScope ?? null,
+              vendorLockCompanyId: unit.vendorLockCompanyId ?? null,
+            } satisfies MockBuildingUnit,
+          ]
         }),
       )
       const existingUnits = new Map((building.pendingConfiguration?.units ?? []).map((unit) => [`${unit.gridX},${unit.gridY}`, unit]))
       const existingRemovals = new Map((building.pendingConfiguration?.removals ?? []).map((removal) => [`${removal.gridX},${removal.gridY}`, removal]))
-      const allPositions = new Set<string>([
-        ...currentUnits.keys(),
-        ...desiredUnits.keys(),
-        ...existingUnits.keys(),
-        ...existingRemovals.keys(),
-      ])
+      const allPositions = new Set<string>([...currentUnits.keys(), ...desiredUnits.keys(), ...existingUnits.keys(), ...existingRemovals.keys()])
 
       const nextPendingUnits: MockBuildingConfigurationPlanUnit[] = []
       const nextPendingRemovals: MockBuildingConfigurationPlanRemoval[] = []
@@ -1600,16 +1673,19 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
 
       const planId = building.pendingConfiguration?.id ?? `plan-${Date.now()}`
 
-      building.pendingConfiguration = buildPlanSummary({
-        id: planId,
-        buildingId: building.id,
-        submittedAtUtc: new Date().toISOString(),
-        submittedAtTick: state.gameState.currentTick,
-        appliesAtTick: state.gameState.currentTick,
-        totalTicksRequired: 0,
-        units: nextPendingUnits.sort((left, right) => (left.gridY - right.gridY) || (left.gridX - right.gridX)),
-        removals: nextPendingRemovals,
-      }, state.gameState.currentTick)
+      building.pendingConfiguration = buildPlanSummary(
+        {
+          id: planId,
+          buildingId: building.id,
+          submittedAtUtc: new Date().toISOString(),
+          submittedAtTick: state.gameState.currentTick,
+          appliesAtTick: state.gameState.currentTick,
+          totalTicksRequired: 0,
+          units: nextPendingUnits.sort((left, right) => left.gridY - right.gridY || left.gridX - right.gridX),
+          removals: nextPendingRemovals,
+        },
+        state.gameState.currentTick,
+      )
 
       return route.fulfill({
         status: 200,
@@ -1630,7 +1706,11 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       }
 
       if (!building.pendingConfiguration) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This building does not have a pending configuration plan to cancel.', extensions: { code: 'NO_PENDING_CONFIGURATION' } }] }) })
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'This building does not have a pending configuration plan to cancel.', extensions: { code: 'NO_PENDING_CONFIGURATION' } }] }),
+        })
       }
 
       // Cancel by submitting the current active layout - creates reverting removals for pending units
@@ -1656,16 +1736,19 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       }
 
       const planId = building.pendingConfiguration.id
-      building.pendingConfiguration = buildPlanSummary({
-        id: planId,
-        buildingId: building.id,
-        submittedAtUtc: new Date().toISOString(),
-        submittedAtTick: state.gameState.currentTick,
-        appliesAtTick: state.gameState.currentTick,
-        totalTicksRequired: 0,
-        units: [],
-        removals: nextRemovals,
-      }, state.gameState.currentTick)
+      building.pendingConfiguration = buildPlanSummary(
+        {
+          id: planId,
+          buildingId: building.id,
+          submittedAtUtc: new Date().toISOString(),
+          submittedAtTick: state.gameState.currentTick,
+          appliesAtTick: state.gameState.currentTick,
+          totalTicksRequired: 0,
+          units: [],
+          removals: nextRemovals,
+        },
+        state.gameState.currentTick,
+      )
 
       return route.fulfill({
         status: 200,
@@ -1708,21 +1791,39 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building lot not found.' }] }) })
       }
       if (lot.ownerCompanyId) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.', extensions: { code: 'LOT_ALREADY_OWNED' } }] }) })
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'This lot has already been purchased.', extensions: { code: 'LOT_ALREADY_OWNED' } }] }),
+        })
       }
       const suitableTypes = lot.suitableTypes.split(',').map((s) => s.trim())
       if (!suitableTypes.includes(input.buildingType)) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: `Building type ${input.buildingType} is not suitable for this lot.`, extensions: { code: 'UNSUITABLE_BUILDING_TYPE' } }] }) })
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: `Building type ${input.buildingType} is not suitable for this lot.`, extensions: { code: 'UNSUITABLE_BUILDING_TYPE' } }] }),
+        })
       }
       if (company.cash < lot.price) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: `Insufficient funds. This lot costs $${lot.price.toLocaleString()} but you only have $${company.cash.toLocaleString()}.`, extensions: { code: 'INSUFFICIENT_FUNDS' } }] }) })
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            errors: [{ message: `Insufficient funds. This lot costs $${lot.price.toLocaleString()} but you only have $${company.cash.toLocaleString()}.`, extensions: { code: 'INSUFFICIENT_FUNDS' } }],
+          }),
+        })
       }
 
       company.cash -= lot.price
       const isPowerPlant = input.buildingType === 'POWER_PLANT'
       const plantType = input.powerPlantType ?? (isPowerPlant ? 'COAL' : null)
       const defaultOutputByType: Record<string, number> = {
-        COAL: 50, GAS: 40, SOLAR: 20, WIND: 25, NUCLEAR: 200,
+        COAL: 50,
+        GAS: 40,
+        SOLAR: 20,
+        WIND: 25,
+        NUCLEAR: 200,
       }
       const newBuilding: MockBuilding = {
         id: `building-lot-${Date.now()}`,
@@ -1780,20 +1881,31 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
 
       // Validate backend-authoritative condition: shop building must be tracked
       if (!player.onboardingShopBuildingId) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'No sales shop was found for this onboarding milestone.', extensions: { code: 'SHOP_NOT_FOUND' } }] }) })
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'No sales shop was found for this onboarding milestone.', extensions: { code: 'SHOP_NOT_FOUND' } }] }),
+        })
       }
 
       // Find the shop building and check it has a public-sales unit with a price
-      const shopBuilding = player.companies
-        .flatMap((c) => c.buildings)
-        .find((b) => b.id === player.onboardingShopBuildingId)
+      const shopBuilding = player.companies.flatMap((c) => c.buildings).find((b) => b.id === player.onboardingShopBuildingId)
 
-      const hasSalesUnit = shopBuilding?.units.some(
-        (u) => u.unitType === 'PUBLIC_SALES' && (u.minPrice ?? 0) > 0,
-      )
+      const hasSalesUnit = shopBuilding?.units.some((u) => u.unitType === 'PUBLIC_SALES' && (u.minPrice ?? 0) > 0)
 
       if (!hasSalesUnit) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Your sales shop is not yet configured. Please set up a public sales unit with a selling price and return here to complete the milestone.', extensions: { code: 'SHOP_NOT_CONFIGURED' } }] }) })
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            errors: [
+              {
+                message: 'Your sales shop is not yet configured. Please set up a public sales unit with a selling price and return here to complete the milestone.',
+                extensions: { code: 'SHOP_NOT_CONFIGURED' },
+              },
+            ],
+          }),
+        })
       }
 
       player.onboardingFirstSaleCompletedAtUtc = new Date().toISOString()
@@ -1820,8 +1932,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     if (query.includes('productTypes')) {
       const industry = body.variables?.industry
       const activePlayer = state.players.find((player) => player.id === state.currentUserId)
-      const hasActiveProSubscription = !!activePlayer?.proSubscriptionEndsAtUtc
-        && new Date(activePlayer.proSubscriptionEndsAtUtc).getTime() > Date.now()
+      const hasActiveProSubscription = !!activePlayer?.proSubscriptionEndsAtUtc && new Date(activePlayer.proSubscriptionEndsAtUtc).getTime() > Date.now()
       const filtered = industry ? state.productTypes.filter((p) => p.industry === industry) : state.productTypes
       return route.fulfill({
         status: 200,
@@ -1854,17 +1965,9 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
             quantity,
             capacity,
             fillPercent: capacity > 0 ? Math.min(quantity / capacity, 1) : 0,
-            averageQuality: quantity > 0
-              ? Number(
-                  (
-                    inventoryItems.reduce((total, item) => total + (item.quantity * item.quality), 0) / quantity
-                  ).toFixed(4),
-                )
-              : null,
+            averageQuality: quantity > 0 ? Number((inventoryItems.reduce((total, item) => total + item.quantity * item.quality, 0) / quantity).toFixed(4)) : null,
             totalSourcingCost: Number(inventoryItems.reduce((total, item) => total + item.sourcingCostTotal, 0).toFixed(2)),
-            sourcingCostPerUnit: quantity > 0
-              ? Number((inventoryItems.reduce((total, item) => total + item.sourcingCostTotal, 0) / quantity).toFixed(2))
-              : 0,
+            sourcingCostPerUnit: quantity > 0 ? Number((inventoryItems.reduce((total, item) => total + item.sourcingCostTotal, 0) / quantity).toFixed(2)) : 0,
           }
         })
         .filter((summary) => summary.capacity > 0 || summary.quantity > 0)
@@ -1883,8 +1986,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         .flatMap((company) => company.buildings)
         .find((candidate) => candidate.id === buildingId)
 
-      const buildingUnitInventories = (building?.units ?? [])
-        .flatMap((unit) => getMockUnitInventoryItems(unit))
+      const buildingUnitInventories = (building?.units ?? []).flatMap((unit) => getMockUnitInventoryItems(unit))
 
       return route.fulfill({
         status: 200,
@@ -1900,9 +2002,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         .flatMap((company) => company.buildings)
         .find((candidate) => candidate.id === buildingId)
 
-      const buildingUnitResourceHistories = (building?.units ?? [])
-        .flatMap((unit) => getMockUnitResourceHistory(unit))
-        .sort((left, right) => left.tick - right.tick)
+      const buildingUnitResourceHistories = (building?.units ?? []).flatMap((unit) => getMockUnitResourceHistory(unit)).sort((left, right) => left.tick - right.tick)
 
       return route.fulfill({
         status: 200,
@@ -1918,28 +2018,30 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       const resources = state.resourceTypes.filter((resource) => !resourceTypeId || resource.id === resourceTypeId)
 
       const globalExchangeOffers = destinationCity
-        ? state.cities.flatMap((city) =>
-            resources.map((resource) => {
-              const abundance = city.resources.find((entry) => entry.resourceType.id === resource.id)?.abundance ?? 0.05
-              const distanceKm = computeDistanceKm(city.latitude, city.longitude, destinationCity.latitude, destinationCity.longitude)
-              const exchangePricePerUnit = computeMockExchangePrice(resource.basePrice, abundance, city.averageRentPerSqm)
-              const transitCostPerUnit = computeMockTransitCost(resource.weightPerUnit, distanceKm)
-              return {
-                cityId: city.id,
-                cityName: city.name,
-                resourceTypeId: resource.id,
-                resourceName: resource.name,
-                resourceSlug: resource.slug,
-                unitSymbol: resource.unitSymbol,
-                localAbundance: abundance,
-                exchangePricePerUnit,
-                estimatedQuality: computeMockExchangeQuality(abundance),
-                transitCostPerUnit,
-                deliveredPricePerUnit: Number((exchangePricePerUnit + transitCostPerUnit).toFixed(2)),
-                distanceKm: Number(distanceKm.toFixed(1)),
-              }
-            }),
-          ).sort((left, right) => left.deliveredPricePerUnit - right.deliveredPricePerUnit)
+        ? state.cities
+            .flatMap((city) =>
+              resources.map((resource) => {
+                const abundance = city.resources.find((entry) => entry.resourceType.id === resource.id)?.abundance ?? 0.05
+                const distanceKm = computeDistanceKm(city.latitude, city.longitude, destinationCity.latitude, destinationCity.longitude)
+                const exchangePricePerUnit = computeMockExchangePrice(resource.basePrice, abundance, city.averageRentPerSqm)
+                const transitCostPerUnit = computeMockTransitCost(resource.weightPerUnit, distanceKm)
+                return {
+                  cityId: city.id,
+                  cityName: city.name,
+                  resourceTypeId: resource.id,
+                  resourceName: resource.name,
+                  resourceSlug: resource.slug,
+                  unitSymbol: resource.unitSymbol,
+                  localAbundance: abundance,
+                  exchangePricePerUnit,
+                  estimatedQuality: computeMockExchangeQuality(abundance),
+                  transitCostPerUnit,
+                  deliveredPricePerUnit: Number((exchangePricePerUnit + transitCostPerUnit).toFixed(2)),
+                  distanceKm: Number(distanceKm.toFixed(1)),
+                }
+              }),
+            )
+            .sort((left, right) => left.deliveredPricePerUnit - right.deliveredPricePerUnit)
         : []
 
       return route.fulfill({
@@ -1956,6 +2058,65 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { myCompanies: player?.companies ?? [] } }),
+      })
+    }
+
+    if (query.includes('companySettings')) {
+      const companyId = body.variables?.companyId
+      const player = state.players.find((candidate) => candidate.id === state.currentUserId)
+      const company = player?.companies.find((candidate) => candidate.id === companyId)
+
+      if (!company) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: { companySettings: null } }),
+        })
+      }
+
+      const baseValues: Record<string, number> = {
+        MINE: 250000,
+        FACTORY: 200000,
+        SALES_SHOP: 150000,
+        RESEARCH_DEVELOPMENT: 300000,
+        APARTMENT: 400000,
+        COMMERCIAL: 350000,
+        MEDIA_HOUSE: 500000,
+        BANK: 600000,
+        EXCHANGE: 450000,
+        POWER_PLANT: 350000,
+      }
+      const computeAssetValue = (candidate: MockCompany) => candidate.cash + candidate.buildings.reduce((sum, building) => sum + (baseValues[building.type] ?? 0) * building.level, 0)
+      const companyAssetValue = computeAssetValue(company)
+      const maxAssetValue = Math.max(...state.players.flatMap((candidate) => candidate.companies).map(computeAssetValue), 0)
+      const ageTicks = Math.max(state.gameState.currentTick - (company.foundedAtTick ?? 0), 0)
+      const overheadRate = Number((0.5 * Math.min(ageTicks / (TICKS_PER_YEAR * 2), 1) * (maxAssetValue > 0 ? companyAssetValue / maxAssetValue : 0)).toFixed(4))
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            companySettings: {
+              companyId: company.id,
+              companyName: company.name,
+              cash: company.cash,
+              foundedAtTick: company.foundedAtTick ?? 0,
+              administrationOverheadRate: overheadRate,
+              assetValue: companyAssetValue,
+              citySalarySettings: state.cities.map((city) => {
+                const salaryMultiplier = company.citySalaryMultipliers?.[city.id] ?? 1
+                return {
+                  cityId: city.id,
+                  cityName: city.name,
+                  baseSalaryPerManhour: city.baseSalaryPerManhour,
+                  salaryMultiplier,
+                  effectiveSalaryPerManhour: Number((city.baseSalaryPerManhour * salaryMultiplier).toFixed(2)),
+                }
+              }),
+            },
+          },
+        }),
       })
     }
 
@@ -2023,22 +2184,24 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       applyDueBuildingUpgrades(state)
       const player = state.players.find((p) => p.id === state.currentUserId)
       const currentTick = state.gameState.currentTick
-      const pendingActions = (player?.companies ?? []).flatMap((company) =>
-        company.buildings
-          .filter((building) => building.pendingConfiguration !== null && building.pendingConfiguration.appliesAtTick > currentTick)
-          .map((building) => ({
-            id: building.pendingConfiguration!.id,
-            actionType: 'BUILDING_UPGRADE',
-            buildingId: building.id,
-            buildingName: building.name,
-            buildingType: building.type,
-            submittedAtUtc: building.pendingConfiguration!.submittedAtUtc,
-            submittedAtTick: building.pendingConfiguration!.submittedAtTick,
-            appliesAtTick: building.pendingConfiguration!.appliesAtTick,
-            ticksRemaining: building.pendingConfiguration!.appliesAtTick - currentTick,
-            totalTicksRequired: building.pendingConfiguration!.totalTicksRequired,
-          })),
-      ).sort((a, b) => a.appliesAtTick - b.appliesAtTick)
+      const pendingActions = (player?.companies ?? [])
+        .flatMap((company) =>
+          company.buildings
+            .filter((building) => building.pendingConfiguration !== null && building.pendingConfiguration.appliesAtTick > currentTick)
+            .map((building) => ({
+              id: building.pendingConfiguration!.id,
+              actionType: 'BUILDING_UPGRADE',
+              buildingId: building.id,
+              buildingName: building.name,
+              buildingType: building.type,
+              submittedAtUtc: building.pendingConfiguration!.submittedAtUtc,
+              submittedAtTick: building.pendingConfiguration!.submittedAtTick,
+              appliesAtTick: building.pendingConfiguration!.appliesAtTick,
+              ticksRemaining: building.pendingConfiguration!.appliesAtTick - currentTick,
+              totalTicksRequired: building.pendingConfiguration!.totalTicksRequired,
+            })),
+        )
+        .sort((a, b) => a.appliesAtTick - b.appliesAtTick)
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -2126,19 +2289,13 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       const variables = body.variables as { slug?: string } | undefined
       const slug = variables?.slug ?? ''
       const resource = state.resourceTypes.find((r) => r.slug === slug) ?? null
-      const productsUsingResource = resource
-        ? state.productTypes.filter((p) =>
-            p.recipes.some((recipe) => recipe.resourceType?.slug === slug),
-          )
-        : []
+      const productsUsingResource = resource ? state.productTypes.filter((p) => p.recipes.some((recipe) => recipe.resourceType?.slug === slug)) : []
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           data: {
-            encyclopediaResource: resource
-              ? { resource, productsUsingResource }
-              : null,
+            encyclopediaResource: resource ? { resource, productsUsingResource } : null,
           },
         }),
       })
@@ -2225,10 +2382,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           EXCHANGE: 450000,
           POWER_PLANT: 350000,
         }
-        const buildingValue = company.buildings.reduce(
-          (sum, b) => sum + (baseValues[b.type] ?? 0) * b.level,
-          0,
-        )
+        const buildingValue = company.buildings.reduce((sum, b) => sum + (baseValues[b.type] ?? 0) * b.level, 0)
         const auto: MockLedgerSummary = {
           companyId: company.id,
           companyName: company.name,
@@ -2237,6 +2391,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           currentCash: company.cash,
           totalRevenue: 0,
           totalPurchasingCosts: 0,
+          totalLaborCosts: 0,
+          totalEnergyCosts: 0,
           totalMarketingCosts: 0,
           totalTaxPaid: 0,
           totalOtherCosts: 0,
@@ -2273,9 +2429,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       const companyId = body.variables?.companyId
       const category = body.variables?.category
       const gameYear = body.variables?.gameYear
-      const entries = state.drillDownData[`${companyId}:${category}:${gameYear}`]
-        ?? state.drillDownData[`${companyId}:${category}`]
-        ?? []
+      const entries = state.drillDownData[`${companyId}:${category}:${gameYear}`] ?? state.drillDownData[`${companyId}:${category}`] ?? []
       return route.fulfill({
         status: 200,
         contentType: 'application/json',

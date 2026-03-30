@@ -1,4 +1,5 @@
 using Api.Data.Entities;
+using Api.Utilities;
 
 namespace Api.Engine.Phases;
 
@@ -17,6 +18,11 @@ public sealed class ManufacturingPhase : ITickPhase
         if (!context.BuildingsByType.TryGetValue(BuildingType.Factory, out var factories))
             return Task.CompletedTask;
 
+        var maxCompanyAssetValue = context.CompaniesById.Keys
+            .Select(context.GetCompanyAssetValue)
+            .DefaultIfEmpty(0m)
+            .Max();
+
         foreach (var building in factories)
         {
             if (!context.UnitsByBuilding.TryGetValue(building.Id, out var units))
@@ -29,7 +35,7 @@ public sealed class ManufacturingPhase : ITickPhase
             foreach (var unit in units)
             {
                 if (unit.UnitType != UnitType.Manufacturing) continue;
-                ProcessManufacturingUnit(context, building, unit, efficiency);
+                ProcessManufacturingUnit(context, building, unit, efficiency, maxCompanyAssetValue);
             }
         }
 
@@ -40,7 +46,8 @@ public sealed class ManufacturingPhase : ITickPhase
         TickContext context,
         Building building,
         BuildingUnit unit,
-        decimal efficiency)
+        decimal efficiency,
+        decimal maxCompanyAssetValue)
     {
         if (!unit.ProductTypeId.HasValue) return;
         if (!context.ProductTypesById.TryGetValue(unit.ProductTypeId.Value, out var productType))
@@ -183,10 +190,70 @@ public sealed class ManufacturingPhase : ITickPhase
         var rdBonus = brand?.Quality ?? 0m;
         var quality = Math.Min(1m, baseQuality * 0.7m + rdBonus * 0.3m);
 
+        var manufacturingOperatingCost = 0m;
+        if (context.CompaniesById.TryGetValue(building.CompanyId, out var company)
+            && context.CitiesById.TryGetValue(building.CityId, out var city))
+        {
+            var salarySettings = context.CitySalarySettingsByCompany.GetValueOrDefault(company.Id, []);
+            var salaryMultiplier = CompanyEconomyCalculator.GetSalaryMultiplier(salarySettings, city.Id);
+            var hourlyWage = CompanyEconomyCalculator.GetEffectiveHourlyWage(city, salaryMultiplier);
+            var overheadRate = CompanyEconomyCalculator.ComputeAdministrationOverheadRate(
+                company,
+                context.GetCompanyAssetValue(company.Id),
+                maxCompanyAssetValue,
+                context.CurrentTick);
+
+            var laborCost = decimal.Round(
+                possibleBatches * productType.BasicLaborHours * hourlyWage * (1m + overheadRate),
+                2,
+                MidpointRounding.AwayFromZero);
+            var energyCost = decimal.Round(
+                possibleBatches * productType.EnergyConsumptionMwh * GameConstants.EnergyPricePerMwh,
+                2,
+                MidpointRounding.AwayFromZero);
+            manufacturingOperatingCost = laborCost + energyCost;
+
+            if (laborCost > 0m)
+            {
+                company.Cash -= laborCost;
+                context.Db.LedgerEntries.Add(new LedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyId = company.Id,
+                    BuildingId = building.Id,
+                    BuildingUnitId = unit.Id,
+                    Category = LedgerCategory.LaborCost,
+                    Description = $"Manufacturing labor for {productType.Name}",
+                    Amount = -laborCost,
+                    RecordedAtTick = context.CurrentTick,
+                    RecordedAtUtc = DateTime.UtcNow,
+                    ProductTypeId = productType.Id,
+                });
+            }
+
+            if (energyCost > 0m)
+            {
+                company.Cash -= energyCost;
+                context.Db.LedgerEntries.Add(new LedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyId = company.Id,
+                    BuildingId = building.Id,
+                    BuildingUnitId = unit.Id,
+                    Category = LedgerCategory.EnergyCost,
+                    Description = $"Manufacturing energy for {productType.Name}",
+                    Amount = -energyCost,
+                    RecordedAtTick = context.CurrentTick,
+                    RecordedAtUtc = DateTime.UtcNow,
+                    ProductTypeId = productType.Id,
+                });
+            }
+        }
+
         // Produce output.
         var output = context.GetOrCreateUnitInventory(
             building.Id, unit.Id, null, productType.Id);
-        context.AddInventory(output, outputQuantity, totalInputSourcingCost, quality);
+        context.AddInventory(output, outputQuantity, totalInputSourcingCost + manufacturingOperatingCost, quality);
         context.RecordUnitResourceHistory(
             building.Id,
             unit.Id,

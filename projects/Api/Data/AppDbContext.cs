@@ -15,6 +15,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     /// <summary>Companies owned by players.</summary>
     public DbSet<Company> Companies => Set<Company>();
 
+    /// <summary>Per-city salary settings selected by company owners.</summary>
+    public DbSet<CompanyCitySalarySetting> CompanyCitySalarySettings => Set<CompanyCitySalarySetting>();
+
     /// <summary>Buildings placed on the game map.</summary>
     public DbSet<Building> Buildings => Set<Building>();
 
@@ -116,6 +119,22 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(c => c.Name).HasMaxLength(200);
             e.Property(c => c.Cash).HasPrecision(18, 2);
             e.HasOne(c => c.Player).WithMany(p => p.Companies).HasForeignKey(c => c.PlayerId);
+            e.HasMany(c => c.CitySalarySettings)
+                .WithOne(setting => setting.Company)
+                .HasForeignKey(setting => setting.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // CompanyCitySalarySetting
+        modelBuilder.Entity<CompanyCitySalarySetting>(e =>
+        {
+            e.HasKey(setting => setting.Id);
+            e.HasIndex(setting => new { setting.CompanyId, setting.CityId }).IsUnique();
+            e.Property(setting => setting.SalaryMultiplier).HasPrecision(8, 4);
+            e.HasOne(setting => setting.City)
+                .WithMany()
+                .HasForeignKey(setting => setting.CityId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Building
@@ -199,6 +218,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(c => c.Name).HasMaxLength(200);
             e.Property(c => c.CountryCode).HasMaxLength(2);
             e.Property(c => c.AverageRentPerSqm).HasPrecision(18, 2);
+            e.Property(c => c.BaseSalaryPerManhour).HasPrecision(18, 4);
         });
 
         // BuildingLot
@@ -256,6 +276,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(p => p.BasePrice).HasPrecision(18, 2);
             e.Property(p => p.OutputQuantity).HasPrecision(18, 4);
             e.Property(p => p.EnergyConsumptionMwh).HasPrecision(18, 4);
+            e.Property(p => p.BasicLaborHours).HasPrecision(18, 4);
             e.Property(p => p.UnitName).HasMaxLength(50);
             e.Property(p => p.UnitSymbol).HasMaxLength(20);
         });

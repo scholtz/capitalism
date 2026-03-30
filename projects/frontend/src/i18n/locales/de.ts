@@ -30,6 +30,7 @@ export default {
     leaderboard: 'Rangliste',
     encyclopedia: 'Enzyklopädie',
     cityMap: 'Stadtkarte',
+    companySettings: 'Unternehmenseinstellungen',
     gameTime: 'Spielzeit',
   },
   banners: {
@@ -153,7 +154,8 @@ export default {
     proCatalogNote: 'Ihr Startunternehmen nutzt den kostenlosen Katalog. Pro schaltet später mehr Produkte zum Herstellen und Verkaufen frei.',
     proCatalogUnlocked: 'Ihr Pro-Zugang ist aktiv. Erweiterte Produkte werden sofort in Enzyklopädie und Gebäudeplanung freigeschaltet.',
     guestCompletionTitle: '🚀 Ihre Imperiumsvorschau ist bereit!',
-    guestCompletionDesc: 'Sie haben Ihre Branche gewählt, eine Fabrik platziert und ein Produkt ausgesucht. Erstellen Sie ein kostenloses Konto, um Ihren Fortschritt zu speichern und richtig loszulegen.',
+    guestCompletionDesc:
+      'Sie haben Ihre Branche gewählt, eine Fabrik platziert und ein Produkt ausgesucht. Erstellen Sie ein kostenloses Konto, um Ihren Fortschritt zu speichern und richtig loszulegen.',
     guestCompanyPlaceholder: 'Ihr Unternehmen',
     guestShopPlaceholder: 'Ihr Laden',
     guestSaveTitle: 'Fortschritt speichern',
@@ -214,6 +216,7 @@ export default {
     founded: 'Gegr\u00fcndet',
     viewBuilding: 'Details anzeigen',
     viewLedger: 'Hauptbuch anzeigen',
+    companySettings: 'Einstellungen',
   },
   leaderboard: {
     eyebrow: 'Wettbewerbliche Rangliste',
@@ -260,6 +263,7 @@ export default {
     weight: 'Gewicht',
     craftTime: 'Fertigungs-Ticks',
     energy: 'Chargenenergie',
+    basicLaborHours: 'Grundarbeit',
     output: 'Chargenausstoß',
     recipe: 'Rezept',
     compositionTitle: 'Anforderungszusammensetzung',
@@ -396,14 +400,16 @@ export default {
       body: 'Diese Fabrik hat noch keine konfigurierten Einheiten. Wenden Sie das Starter-Layout an, um mit der Produktion zu beginnen, und passen Sie die Einheiten dann an Ihre Strategie an.',
       applyStarter: 'Starter-Layout anwenden',
       starterLayoutDesc: 'Starter-Layout: Einkauf (0,0) → Fertigung (1,0) → Lager (2,0) — die Mindestkette zum Kauf von Ressourcen, Herstellung von Waren und Lagerhaltung.',
-      whatNext: 'Nach dem Speichern dieses Layouts werden die Einheiten in den nächsten Ticks gebaut. Konfigurieren Sie dann jede Einheit mit einer Ressource, einem Produkt und einem Preis, um Ihre erste Produktionskette zu vervollständigen.',
+      whatNext:
+        'Nach dem Speichern dieses Layouts werden die Einheiten in den nächsten Ticks gebaut. Konfigurieren Sie dann jede Einheit mit einer Ressource, einem Produkt und einem Preis, um Ihre erste Produktionskette zu vervollständigen.',
     },
     shopStarterSetup: {
       title: 'Neues Ladengeschäft — Bereit für Ihr erstes Produkt',
       body: 'Dieses Ladengeschäft hat noch keine konfigurierten Einheiten. Wenden Sie das Starter-Layout an, um mit dem Verkauf zu beginnen, und konfigurieren Sie dann Ihr Produkt und den öffentlichen Verkaufspreis.',
       applyStarter: 'Starter-Laden-Layout anwenden',
       starterLayoutDesc: 'Starter-Layout: Einkauf (0,0) → Öffentlicher Verkauf (1,0) — die Mindestkette zum Auffüllen von Produkten aus der Fabrik und deren direktem Verkauf an die Öffentlichkeit.',
-      whatNext: 'Nach dem Speichern dieses Layouts konfigurieren Sie die Einkaufseinheit mit Ihrem Produkt und die Öffentliche-Verkauf-Einheit mit einem Produkt und einem Mindestverkaufspreis, um Ihren ersten Verkaufskreislauf zu vervollständigen.',
+      whatNext:
+        'Nach dem Speichern dieses Layouts konfigurieren Sie die Einkaufseinheit mit Ihrem Produkt und die Öffentliche-Verkauf-Einheit mit einem Produkt und einem Mindestverkaufspreis, um Ihren ersten Verkaufskreislauf zu vervollständigen.',
     },
     salesChain: {
       title: 'Verkaufskreislauf-Status',
@@ -479,8 +485,10 @@ export default {
       inputItem: 'Eingangsartikel',
       outputProduct: 'Ausgabeprodukt',
       outputProductHelp: 'Hier werden nur Produkte angezeigt, die durch die aktuell verknüpften Vorprodukte unterstützt werden.',
-      factoryPurchaseGuide: 'Wählen Sie den Rohstoff, den diese Fabrik vom Markt kaufen soll. Der ausgewählte Rohstoff wird direkt an Ihre Fertigungseinheit geliefert, um daraus ein Fertigprodukt herzustellen.',
-      factoryManufacturingGuide: 'Wählen Sie das Produkt, das diese Fabrik herstellen soll. Es werden nur Produkte angezeigt, deren Rezeptur mit dem von der Einkaufseinheit gelieferten Rohstoff übereinstimmt. Die fertigen Waren werden in Ihrer Lagereinheit zum Verkauf bereitgestellt.',
+      factoryPurchaseGuide:
+        'Wählen Sie den Rohstoff, den diese Fabrik vom Markt kaufen soll. Der ausgewählte Rohstoff wird direkt an Ihre Fertigungseinheit geliefert, um daraus ein Fertigprodukt herzustellen.',
+      factoryManufacturingGuide:
+        'Wählen Sie das Produkt, das diese Fabrik herstellen soll. Es werden nur Produkte angezeigt, deren Rezeptur mit dem von der Einkaufseinheit gelieferten Rohstoff übereinstimmt. Die fertigen Waren werden in Ihrer Lagereinheit zum Verkauf bereitgestellt.',
       outputResource: 'Ausgaberohstoff',
       resourceType: 'Rohstofftyp',
       productType: 'Produkttyp',
@@ -560,7 +568,8 @@ export default {
       blockedMinQuality: 'Unter Ihrer Mindestqualität ({minQuality})',
       noValidOffers: 'Keine Angebote erfüllen Ihre Preis- und Qualitätsbeschränkungen. Lockern Sie die Grenzen oder wählen Sie eine andere Quelle.',
       bestOffer: 'Bester Lieferpreis',
-      selectionHint: 'Das System wählt das Angebot mit dem niedrigsten Lieferpreis, das Ihren Qualitäts- und Preisbeschränkungen entspricht. Ein naher Lieferant mit höherem Katalogpreis kann einen entfernten mit niedrigerem Katalogpreis schlagen, wenn Transportkosten berücksichtigt werden.',
+      selectionHint:
+        'Das System wählt das Angebot mit dem niedrigsten Lieferpreis, das Ihren Qualitäts- und Preisbeschränkungen entspricht. Ein naher Lieferant mit höherem Katalogpreis kann einen entfernten mit niedrigerem Katalogpreis schlagen, wenn Transportkosten berücksichtigt werden.',
     },
     selector: {
       rawMaterials: 'Rohstoffe',
@@ -587,7 +596,8 @@ export default {
       manufacturingNotLinked: 'Fertigungseinheit bei ({x}, {y}) ist nicht verbunden.',
       miningNotLinked: 'Bergbaueinheit bei ({x}, {y}) ist nicht verbunden.',
       storageNotLinked: 'Lagereinheit bei ({x}, {y}) ist nicht verbunden.',
-      recipeMismatch: 'Fertigungseinheit bei ({x}, {y}) produziert "{product}", aber keine Einkaufseinheit liefert den benötigten Input. Aktualisieren Sie die Einkaufseinheit oder wählen Sie ein kompatibles Produkt.',
+      recipeMismatch:
+        'Fertigungseinheit bei ({x}, {y}) produziert "{product}", aber keine Einkaufseinheit liefert den benötigten Input. Aktualisieren Sie die Einkaufseinheit oder wählen Sie ein kompatibles Produkt.',
     },
     layouts: {
       title: 'Gespeicherte Layouts',
@@ -655,7 +665,8 @@ export default {
     postPurchaseTitle: 'Gebäude erworben — Fabrikeinrichtung beginnen',
     postPurchaseBody: 'Ihr Gebäude wurde auf dem Grundstück platziert. Konfigurieren Sie Einheiten, um wirtschaftlichen Wert zu produzieren.',
     populationIndex: 'Bevölkerungsindex',
-    populationIndexHint: 'Höherer Index = mehr Anwohner und Pendler = stärkere Nachfrage nach Einzelhandel und Dienstleistungen. Fabriken und Kraftwerke funktionieren unabhängig vom Bevölkerungsindex gleich.',
+    populationIndexHint:
+      'Höherer Index = mehr Anwohner und Pendler = stärkere Nachfrage nach Einzelhandel und Dienstleistungen. Fabriken und Kraftwerke funktionieren unabhängig vom Bevölkerungsindex gleich.',
     populationIndexVeryHigh: 'Sehr hoch',
     populationIndexHigh: 'Hoch',
     populationIndexMedium: 'Mittel',
@@ -730,6 +741,8 @@ export default {
     buildingsPerformance: 'Gebäudeleistung',
     revenue: 'Umsatz',
     purchasingCosts: 'Einkaufskosten',
+    laborCosts: 'Arbeitskosten',
+    energyCosts: 'Energiekosten',
     marketingCosts: 'Marketingkosten',
     taxPaid: 'Bezahlte Steuern',
     taxableIncome: 'Zu versteuerndes Einkommen',
@@ -766,12 +779,34 @@ export default {
     category: {
       REVENUE: 'Umsatz',
       PURCHASING_COST: 'Einkauf',
+      LABOR_COST: 'Arbeit',
+      ENERGY_COST: 'Energie',
       PROPERTY_PURCHASE: 'Immobilienkauf',
       UNIT_UPGRADE: 'Einheit-Upgrade',
       MARKETING: 'Marketing',
       TAX: 'Steuer',
       OTHER: 'Sonstiges',
     },
+  },
+  companySettings: {
+    eyebrow: 'Unternehmensprofil',
+    title: 'Unternehmenseinstellungen',
+    loadFailed: 'Unternehmenseinstellungen konnten nicht geladen werden',
+    saveFailed: 'Unternehmenseinstellungen konnten nicht gespeichert werden',
+    saved: 'Unternehmenseinstellungen gespeichert.',
+    notFound: 'Unternehmenseinstellungen nicht gefunden oder Zugriff verweigert',
+    overviewTitle: 'Betriebsübersicht',
+    profileTitle: 'Profil und Stadtlöhne',
+    companyName: 'Firmenname',
+    city: 'Stadt',
+    cash: 'Bargeld',
+    assetValue: 'Vermögensbewertung',
+    foundedTick: 'Gegründet bei Tick',
+    administrationOverhead: 'Verwaltungsaufschlag',
+    overheadHelp: 'Der Verwaltungsaufschlag erhöht die Arbeitskosten der Fertigung, wenn Ihr Unternehmen im Vergleich zu den größten Firmen im Spiel altert und wächst.',
+    baseSalary: 'Grundlohn / Stunde',
+    salaryMultiplier: 'Lohnmultiplikator',
+    effectiveSalary: 'Effektiver Lohn / Stunde',
   },
   powerGrid: {
     title: 'Städtisches Stromnetz',

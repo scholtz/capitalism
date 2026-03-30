@@ -66,6 +66,9 @@ public static class GameConstants
     /// <summary>Base demand per capita per product per tick.</summary>
     public const decimal BaseDemandPerCapita = 0.001m;
 
+    /// <summary>Standard cost of electricity used by unit operations and manufacturing.</summary>
+    public const decimal EnergyPricePerMwh = 55m;
+
     /// <summary>Minimum number of purchasable lands maintained per building type and city.</summary>
     public const int MinimumAvailableLotsPerBuildingType = 10;
 

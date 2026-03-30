@@ -1,11 +1,14 @@
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Api.Data;
 using Api.Data.Entities;
 using Api.Engine;
+using Api.Types;
 using Api.Tests.Infrastructure;
 using Api.Utilities;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -881,6 +884,34 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task CreateCompany_Authenticated_SetsFoundedAtTickFromGameState()
+    {
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var gameState = await db.GameStates.FindAsync(1);
+            Assert.NotNull(gameState);
+            gameState!.CurrentTick = 321;
+            await db.SaveChangesAsync();
+        }
+
+        var token = await RegisterAndGetTokenAsync("founded-tick@test.com", "Founded Tick User");
+
+        var result = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id name } }",
+            new { input = new { name = "Tick Corp" } },
+            token);
+
+        var companyId = Guid.Parse(result.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!);
+
+        await using var verifyScope = _factory.Services.CreateAsyncScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var company = await verifyDb.Companies.SingleAsync(candidate => candidate.Id == companyId);
+
+        Assert.Equal(321, company.FoundedAtTick);
+    }
+
+    [Fact]
     public async Task CreateCompany_Unauthenticated_ReturnsError()
     {
         var result = await ExecuteGraphQlAsync(
@@ -892,6 +923,220 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             new { input = new { name = "Fail Corp" } });
 
         Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task UpdateCompanySettings_Authenticated_UpdatesNameAndSalaryMultiplier()
+    {
+        await RegisterAndGetTokenAsync("company-settings@test.com", "Settings Owner");
+
+        Guid companyId;
+        Guid cityId;
+        Guid playerId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(candidate => candidate.Email == "company-settings@test.com");
+            playerId = player.Id;
+            cityId = await db.Cities.OrderBy(candidate => candidate.Name).Select(candidate => candidate.Id).FirstAsync();
+
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Starter Name",
+                Cash = 1_000_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        await using (var mutationScope = _factory.Services.CreateAsyncScope())
+        {
+            var db = mutationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var mutation = new Mutation();
+            var httpContextAccessor = new HttpContextAccessor
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(
+                    [
+                        new Claim(ClaimTypes.NameIdentifier, playerId.ToString())
+                    ],
+                    "TestAuth"))
+                }
+            };
+
+            var updatedCompany = await mutation.UpdateCompanySettings(
+                new UpdateCompanySettingsInput
+                {
+                    CompanyId = companyId,
+                    Name = "Renamed Company",
+                    CitySalarySettings =
+                    [
+                        new CompanyCitySalarySettingInput
+                        {
+                            CityId = cityId,
+                            SalaryMultiplier = 2m,
+                        }
+                    ]
+                },
+                db,
+                httpContextAccessor);
+
+            Assert.Equal("Renamed Company", updatedCompany.Name);
+        }
+
+        await using var verifyScope = _factory.Services.CreateAsyncScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var persistedCompany = await verifyDb.Companies
+            .Include(candidate => candidate.CitySalarySettings)
+            .SingleAsync(candidate => candidate.Id == companyId);
+                var persistedSetting = persistedCompany.CitySalarySettings
+                        .Single(candidate => candidate.CityId == cityId);
+
+                Assert.Equal("Renamed Company", persistedCompany.Name);
+                Assert.Equal(2m, persistedSetting.SalaryMultiplier);
+    }
+
+    [Fact]
+    public async Task UpdateCompanySettings_NonOwner_ReturnsCompanyNotFoundError()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync("settings-owner@test.com", "Settings Owner");
+        var intruderToken = await RegisterAndGetTokenAsync("settings-intruder@test.com", "Settings Intruder");
+
+        var createResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Owner Company" } },
+            ownerToken);
+
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        Guid cityId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            cityId = await db.Cities.OrderBy(candidate => candidate.Name).Select(candidate => candidate.Id).FirstAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdateCompanySettings($input: UpdateCompanySettingsInput!) {
+              updateCompanySettings(input: $input) { id name }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    companyId,
+                    name = "Hijacked Company",
+                    citySalarySettings = new[]
+                    {
+                        new { cityId, salaryMultiplier = 2 }
+                    }
+                }
+            },
+            intruderToken);
+
+        var error = result.GetProperty("errors")[0];
+
+        Assert.Equal("COMPANY_NOT_FOUND", error.GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CompanyLedger_IncludesLaborAndEnergyTotals()
+    {
+        var token = await RegisterAndGetTokenAsync("ledger-costs@test.com", "Ledger Costs User");
+
+        Guid companyId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(candidate => candidate.Email == "ledger-costs@test.com");
+
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Ledger Cost Corp",
+                Cash = 250_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+
+            db.Companies.Add(company);
+            db.LedgerEntries.AddRange(
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue,
+                    Description = "Sales revenue",
+                    Amount = 1000m,
+                    RecordedAtTick = 10,
+                    RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyId = company.Id,
+                    Category = LedgerCategory.PurchasingCost,
+                    Description = "Material purchase",
+                    Amount = -200m,
+                    RecordedAtTick = 10,
+                    RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyId = company.Id,
+                    Category = LedgerCategory.LaborCost,
+                    Description = "Operating labor",
+                    Amount = -150m,
+                    RecordedAtTick = 10,
+                    RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyId = company.Id,
+                    Category = LedgerCategory.EnergyCost,
+                    Description = "Operating energy",
+                    Amount = -50m,
+                    RecordedAtTick = 10,
+                    RecordedAtUtc = DateTime.UtcNow,
+                });
+
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetCompanyLedger($companyId: UUID!) {
+              companyLedger(companyId: $companyId) {
+                totalRevenue
+                totalPurchasingCosts
+                totalLaborCosts
+                totalEnergyCosts
+                taxableIncome
+              }
+            }
+            """,
+            new { companyId },
+            token);
+
+        var ledger = result.GetProperty("data").GetProperty("companyLedger");
+
+        Assert.Equal(1000m, ledger.GetProperty("totalRevenue").GetDecimal());
+        Assert.Equal(200m, ledger.GetProperty("totalPurchasingCosts").GetDecimal());
+        Assert.Equal(150m, ledger.GetProperty("totalLaborCosts").GetDecimal());
+        Assert.Equal(50m, ledger.GetProperty("totalEnergyCosts").GetDecimal());
+        Assert.Equal(600m, ledger.GetProperty("taxableIncome").GetDecimal());
     }
 
     [Fact]

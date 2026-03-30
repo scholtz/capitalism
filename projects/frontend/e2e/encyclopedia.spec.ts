@@ -23,6 +23,7 @@ const electronicTableProduct = {
   baseCraftTicks: 6,
   outputQuantity: 1,
   energyConsumptionMwh: 2,
+  basicLaborHours: 3.5,
   unitName: 'Piece',
   unitSymbol: 'pcs',
   isProOnly: false,
@@ -42,6 +43,7 @@ const electronicComponents = {
   baseCraftTicks: 3,
   outputQuantity: 16,
   energyConsumptionMwh: 1.2,
+  basicLaborHours: 1.25,
   unitName: 'Pack',
   unitSymbol: 'packs',
   isProOnly: false,
@@ -67,6 +69,10 @@ test.describe('Manufacturing encyclopedia', () => {
 
     await expect(page).toHaveURL('/encyclopedia/resources/electronic-table')
     await expect(page.getByRole('heading', { name: 'Electronic Table', level: 1 })).toBeVisible()
+    await expect(page.locator('.resource-meta')).toContainText('Batch energy')
+    await expect(page.locator('.resource-meta')).toContainText('2 MWh')
+    await expect(page.locator('.resource-meta')).toContainText('Basic labor')
+    await expect(page.locator('.resource-meta')).toContainText('3.5 h')
     await expect(page.getByRole('heading', { name: 'Requirement composition' })).toBeVisible()
     await expect(page.locator('.composition-node.ingredient').first()).toContainText('1 t')
     await expect(page.locator('.composition-node.ingredient').nth(1)).toContainText('10 packs')
@@ -106,6 +112,7 @@ test.describe('Manufacturing encyclopedia', () => {
           baseCraftTicks: 4,
           outputQuantity: 4,
           energyConsumptionMwh: 1.6,
+          basicLaborHours: 2.8,
           unitName: 'Desk',
           unitSymbol: 'desks',
           isProOnly: true,
@@ -155,6 +162,7 @@ test.describe('Manufacturing encyclopedia', () => {
           baseCraftTicks: 4,
           outputQuantity: 4,
           energyConsumptionMwh: 1.6,
+          basicLaborHours: 2.8,
           unitName: 'Desk',
           unitSymbol: 'desks',
           isProOnly: true,
@@ -301,9 +309,7 @@ test.describe('Resource detail page', () => {
       productTypes: [
         {
           ...electronicTableProduct,
-          recipes: [
-            { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', unitName: 'Ton', unitSymbol: 't' }, inputProductType: null, quantity: 1 },
-          ],
+          recipes: [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', unitName: 'Ton', unitSymbol: 't' }, inputProductType: null, quantity: 1 }],
         },
       ],
     })

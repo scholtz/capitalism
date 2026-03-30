@@ -45,37 +45,26 @@ const showProProducts = computed({
 
 const selectedSlug = computed(() => String(route.params.slug ?? ''))
 
-const visibleProducts = computed(() =>
-  showProProducts.value ? products.value : products.value.filter((product) => !product.isProOnly),
-)
+const visibleProducts = computed(() => (showProProducts.value ? products.value : products.value.filter((product) => !product.isProOnly)))
 
-const selectedResource = computed(() =>
-  resources.value.find((resource) => resource.slug === selectedSlug.value) ?? null,
-)
+const selectedResource = computed(() => resources.value.find((resource) => resource.slug === selectedSlug.value) ?? null)
 
 const hiddenProduct = computed(() => {
   const product = products.value.find((candidate) => candidate.slug === selectedSlug.value) ?? null
   return product?.isProOnly && !showProProducts.value ? product : null
 })
 
-const selectedProduct = computed(() =>
-  visibleProducts.value.find((product) => product.slug === selectedSlug.value) ?? null,
-)
+const selectedProduct = computed(() => visibleProducts.value.find((product) => product.slug === selectedSlug.value) ?? null)
 
 const relatedProducts = computed(() => {
   if (selectedResource.value) {
-    return visibleProducts.value.filter((product) =>
-      product.recipes.some((recipe) => recipe.resourceType?.slug === selectedResource.value?.slug),
-    )
+    return visibleProducts.value.filter((product) => product.recipes.some((recipe) => recipe.resourceType?.slug === selectedResource.value?.slug))
   }
 
   if (selectedProduct.value) {
     const selectedProductValue = selectedProduct.value
 
-    return visibleProducts.value.filter((product) =>
-      product.id !== selectedProductValue.id
-      && product.recipes.some((recipe) => recipe.inputProductType?.slug === selectedProductValue.slug),
-    )
+    return visibleProducts.value.filter((product) => product.id !== selectedProductValue.id && product.recipes.some((recipe) => recipe.inputProductType?.slug === selectedProductValue.slug))
   }
 
   return []
@@ -117,6 +106,7 @@ watch(
             baseCraftTicks
             outputQuantity
             energyConsumptionMwh
+            basicLaborHours
             unitName
             unitSymbol
             isProOnly
@@ -263,9 +253,7 @@ function goBack() {
 <template>
   <div class="resource-detail-view container">
     <nav class="breadcrumb">
-      <button type="button" class="back-link" @click="goBack">
-        ← {{ t('resourceDetail.backToEncyclopedia') }}
-      </button>
+      <button type="button" class="back-link" @click="goBack">← {{ t('resourceDetail.backToEncyclopedia') }}</button>
       <label class="filter-toggle">
         <input v-model="showProProducts" type="checkbox" />
         <span>{{ t('encyclopedia.showProProducts') }}</span>
@@ -284,23 +272,14 @@ function goBack() {
 
     <template v-else>
       <header class="resource-hero">
-        <img
-          v-if="getSelectedImageUrl()"
-          :src="getSelectedImageUrl() ?? undefined"
-          :alt="getSelectedTitle()"
-          class="resource-hero-image"
-        />
+        <img v-if="getSelectedImageUrl()" :src="getSelectedImageUrl() ?? undefined" :alt="getSelectedTitle()" class="resource-hero-image" />
         <div class="resource-hero-body">
           <div class="resource-badges">
             <span v-if="selectedResource" class="badge badge--category">{{ getLocalizedCategory(selectedResource.category, locale) }}</span>
             <span v-if="selectedResource" class="badge badge--unit">{{ getLocalizedUnitName(selectedResource.unitName, locale) }} ({{ selectedResource.unitSymbol }})</span>
             <span v-if="selectedProduct" class="badge badge--category">{{ getLocalizedIndustry(selectedProduct.industry, locale) }}</span>
             <span v-if="selectedProduct" class="badge badge--unit">{{ getLocalizedUnitName(selectedProduct.unitName, locale) }} ({{ selectedProduct.unitSymbol }})</span>
-            <span
-              v-if="selectedProduct?.isProOnly"
-              class="product-access-badge"
-              :class="{ locked: isProductLocked(selectedProduct), unlocked: !isProductLocked(selectedProduct) }"
-            >
+            <span v-if="selectedProduct?.isProOnly" class="product-access-badge" :class="{ locked: isProductLocked(selectedProduct), unlocked: !isProductLocked(selectedProduct) }">
               {{ getProductAccessText(selectedProduct) }}
             </span>
           </div>
@@ -324,7 +303,11 @@ function goBack() {
             </div>
             <div v-if="selectedProduct" class="meta-item">
               <span class="meta-label">{{ t('encyclopedia.energy') }}</span>
-              <strong class="meta-value">{{ selectedProduct.energyConsumptionMwh }} MW</strong>
+              <strong class="meta-value">{{ selectedProduct.energyConsumptionMwh }} MWh</strong>
+            </div>
+            <div v-if="selectedProduct" class="meta-item">
+              <span class="meta-label">{{ t('encyclopedia.basicLaborHours') }}</span>
+              <strong class="meta-value">{{ selectedProduct.basicLaborHours }} h</strong>
             </div>
             <div v-if="selectedProduct" class="meta-item">
               <span class="meta-label">{{ t('resourceDetail.batchOutput') }}</span>
@@ -389,12 +372,18 @@ function goBack() {
         </p>
 
         <div v-else class="product-grid">
-          <article v-for="product in relatedProducts" :key="product.id" class="product-card clickable" role="link" tabindex="0" :aria-label="t('encyclopedia.viewDetail') + ': ' + getLocalizedProductName(product, locale)" @click="navigateToEntry(product.slug)" @keydown.enter="navigateToEntry(product.slug)" @keydown.space.prevent="navigateToEntry(product.slug)">
-            <img
-              :src="getProductImage(product)"
-              :alt="getLocalizedProductName(product, locale)"
-              class="product-image"
-            />
+          <article
+            v-for="product in relatedProducts"
+            :key="product.id"
+            class="product-card clickable"
+            role="link"
+            tabindex="0"
+            :aria-label="t('encyclopedia.viewDetail') + ': ' + getLocalizedProductName(product, locale)"
+            @click="navigateToEntry(product.slug)"
+            @keydown.enter="navigateToEntry(product.slug)"
+            @keydown.space.prevent="navigateToEntry(product.slug)"
+          >
+            <img :src="getProductImage(product)" :alt="getLocalizedProductName(product, locale)" class="product-image" />
             <div class="product-body">
               <div class="product-heading">
                 <div>
@@ -636,7 +625,9 @@ function goBack() {
 
 .composition-node.clickable {
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .composition-node.clickable:hover,

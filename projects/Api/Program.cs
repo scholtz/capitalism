@@ -134,6 +134,7 @@ builder.Services.AddScoped<ITickPhase, LandMarketPhase>();
 builder.Services.AddScoped<ITickPhase, PublicSalesPhase>();
 builder.Services.AddScoped<ITickPhase, ResourceMovementPhase>();
 builder.Services.AddScoped<ITickPhase, ManufacturingPhase>();
+builder.Services.AddScoped<ITickPhase, OperatingCostPhase>();
 builder.Services.AddScoped<ITickPhase, MiningPhase>();
 builder.Services.AddScoped<ITickPhase, PurchasingPhase>();
 builder.Services.AddScoped<ITickPhase, MarketingPhase>();

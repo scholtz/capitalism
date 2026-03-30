@@ -35,7 +35,26 @@ export interface Company {
   name: string
   cash: number
   foundedAtUtc: string
+  foundedAtTick?: number
   buildings: Building[]
+}
+
+export interface CompanyCitySalarySetting {
+  cityId: string
+  cityName: string
+  baseSalaryPerManhour: number
+  salaryMultiplier: number
+  effectiveSalaryPerManhour: number
+}
+
+export interface CompanySettings {
+  companyId: string
+  companyName: string
+  cash: number
+  foundedAtTick: number
+  administrationOverheadRate: number
+  assetValue: number
+  citySalarySettings: CompanyCitySalarySetting[]
 }
 
 /** Matches backend Building entity */
@@ -300,6 +319,7 @@ export interface City {
   latitude: number
   longitude: number
   population: number
+  baseSalaryPerManhour?: number
   resources: Resource[]
 }
 
@@ -331,6 +351,7 @@ export interface ProductType {
   baseCraftTicks: number
   outputQuantity: number
   energyConsumptionMwh: number
+  basicLaborHours: number
   unitName: string
   unitSymbol: string
   isProOnly: boolean
@@ -462,6 +483,8 @@ export interface CompanyLedgerSummary {
   currentCash: number
   totalRevenue: number
   totalPurchasingCosts: number
+  totalLaborCosts: number
+  totalEnergyCosts: number
   totalMarketingCosts: number
   totalTaxPaid: number
   totalOtherCosts: number
@@ -490,6 +513,8 @@ export interface CompanyLedgerHistoryYear {
   gameYear: number
   isCurrentGameYear: boolean
   totalRevenue: number
+  totalLaborCosts: number
+  totalEnergyCosts: number
   netIncome: number
   totalTaxPaid: number
   taxableIncome: number

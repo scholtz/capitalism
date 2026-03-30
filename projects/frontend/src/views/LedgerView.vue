@@ -25,12 +25,12 @@ const LEDGER_QUERY = `
   query GetCompanyLedger($companyId: UUID!, $gameYear: Int) {
     companyLedger(companyId: $companyId, gameYear: $gameYear) {
       companyId companyName gameYear isCurrentGameYear currentCash
-      totalRevenue totalPurchasingCosts totalMarketingCosts totalTaxPaid totalOtherCosts taxableIncome estimatedIncomeTax netIncome
+      totalRevenue totalPurchasingCosts totalLaborCosts totalEnergyCosts totalMarketingCosts totalTaxPaid totalOtherCosts taxableIncome estimatedIncomeTax netIncome
       propertyValue propertyAppreciation buildingValue inventoryValue totalAssets totalPropertyPurchases
       cashFromOperations cashFromInvestments firstRecordedTick lastRecordedTick
       incomeTaxDueAtTick incomeTaxDueGameTimeUtc incomeTaxDueGameYear isIncomeTaxSettled
       history {
-        gameYear isCurrentGameYear totalRevenue netIncome totalTaxPaid taxableIncome estimatedIncomeTax firstRecordedTick lastRecordedTick
+        gameYear isCurrentGameYear totalRevenue totalLaborCosts totalEnergyCosts netIncome totalTaxPaid taxableIncome estimatedIncomeTax firstRecordedTick lastRecordedTick
       }
       buildingSummaries { buildingId buildingName buildingType revenue costs }
     }
@@ -156,21 +156,15 @@ useTickRefresh(async () => {
         </div>
         <div class="kpi-card">
           <span class="kpi-label">{{ t('ledger.cash') }}</span>
-          <span class="kpi-value" :class="amountClass(ledger.currentCash)">{{
-            formatAmount(ledger.currentCash)
-          }}</span>
+          <span class="kpi-value" :class="amountClass(ledger.currentCash)">{{ formatAmount(ledger.currentCash) }}</span>
         </div>
         <div class="kpi-card">
           <span class="kpi-label">{{ t('ledger.netIncome') }}</span>
-          <span class="kpi-value" :class="amountClass(ledger.netIncome)">{{
-            formatAmount(ledger.netIncome)
-          }}</span>
+          <span class="kpi-value" :class="amountClass(ledger.netIncome)">{{ formatAmount(ledger.netIncome) }}</span>
         </div>
         <div class="kpi-card">
           <span class="kpi-label">{{ t('ledger.taxableIncome') }}</span>
-          <span class="kpi-value" :class="amountClass(ledger.taxableIncome)">{{
-            formatAmount(ledger.taxableIncome)
-          }}</span>
+          <span class="kpi-value" :class="amountClass(ledger.taxableIncome)">{{ formatAmount(ledger.taxableIncome) }}</span>
         </div>
         <div class="kpi-card">
           <span class="kpi-label">{{ t('ledger.estimatedIncomeTax') }}</span>
@@ -194,11 +188,7 @@ useTickRefresh(async () => {
         <div class="statement-card meta-card">
           <h2 class="statement-title">🧾 {{ t('ledger.incomeTaxSchedule') }}</h2>
           <p class="meta-copy">
-            {{
-              ledger.isIncomeTaxSettled
-                ? t('ledger.incomeTaxSettledAtTick', { tick: ledger.incomeTaxDueAtTick })
-                : t('ledger.incomeTaxDueAtTick', { tick: ledger.incomeTaxDueAtTick })
-            }}
+            {{ ledger.isIncomeTaxSettled ? t('ledger.incomeTaxSettledAtTick', { tick: ledger.incomeTaxDueAtTick }) : t('ledger.incomeTaxDueAtTick', { tick: ledger.incomeTaxDueAtTick }) }}
           </p>
           <p class="meta-copy">{{ t('ledger.incomeTaxDueAtTime', { time: formatGameTime(ledger.incomeTaxDueGameTimeUtc) }) }}</p>
           <p class="meta-copy">{{ t('ledger.incomeTaxDueYear', { year: ledger.incomeTaxDueGameYear }) }}</p>
@@ -234,12 +224,7 @@ useTickRefresh(async () => {
             <div class="statement-row">
               <span class="row-label">{{ t('ledger.revenue') }}</span>
               <span class="amount-positive">{{ formatAmount(ledger.totalRevenue) }}</span>
-              <button
-                class="drill-btn"
-                :class="{ active: drillCategory === 'REVENUE' }"
-                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.revenue')"
-                @click="toggleDrill('REVENUE')"
-              >
+              <button class="drill-btn" :class="{ active: drillCategory === 'REVENUE' }" :aria-label="t('ledger.drillDown') + ': ' + t('ledger.revenue')" @click="toggleDrill('REVENUE')">
                 {{ drillCategory === 'REVENUE' ? '▲' : '▼' }}
               </button>
             </div>
@@ -255,27 +240,31 @@ useTickRefresh(async () => {
                 {{ drillCategory === 'PURCHASING_COST' ? '▲' : '▼' }}
               </button>
             </div>
+            <div v-if="ledger.totalLaborCosts > 0" class="statement-row cost-row">
+              <span class="row-label">{{ t('ledger.laborCosts') }}</span>
+              <span class="amount-negative">{{ formatAmount(-ledger.totalLaborCosts) }}</span>
+              <button class="drill-btn" :class="{ active: drillCategory === 'LABOR_COST' }" :aria-label="t('ledger.drillDown') + ': ' + t('ledger.laborCosts')" @click="toggleDrill('LABOR_COST')">
+                {{ drillCategory === 'LABOR_COST' ? '▲' : '▼' }}
+              </button>
+            </div>
+            <div v-if="ledger.totalEnergyCosts > 0" class="statement-row cost-row">
+              <span class="row-label">{{ t('ledger.energyCosts') }}</span>
+              <span class="amount-negative">{{ formatAmount(-ledger.totalEnergyCosts) }}</span>
+              <button class="drill-btn" :class="{ active: drillCategory === 'ENERGY_COST' }" :aria-label="t('ledger.drillDown') + ': ' + t('ledger.energyCosts')" @click="toggleDrill('ENERGY_COST')">
+                {{ drillCategory === 'ENERGY_COST' ? '▲' : '▼' }}
+              </button>
+            </div>
             <div v-if="ledger.totalMarketingCosts > 0" class="statement-row cost-row">
               <span class="row-label">{{ t('ledger.marketingCosts') }}</span>
               <span class="amount-negative">{{ formatAmount(-ledger.totalMarketingCosts) }}</span>
-              <button
-                class="drill-btn"
-                :class="{ active: drillCategory === 'MARKETING' }"
-                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.marketingCosts')"
-                @click="toggleDrill('MARKETING')"
-              >
+              <button class="drill-btn" :class="{ active: drillCategory === 'MARKETING' }" :aria-label="t('ledger.drillDown') + ': ' + t('ledger.marketingCosts')" @click="toggleDrill('MARKETING')">
                 {{ drillCategory === 'MARKETING' ? '▲' : '▼' }}
               </button>
             </div>
             <div v-if="ledger.totalTaxPaid > 0" class="statement-row cost-row">
               <span class="row-label">{{ t('ledger.taxPaid') }}</span>
               <span class="amount-negative">{{ formatAmount(-ledger.totalTaxPaid) }}</span>
-              <button
-                class="drill-btn"
-                :class="{ active: drillCategory === 'TAX' }"
-                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.taxPaid')"
-                @click="toggleDrill('TAX')"
-              >
+              <button class="drill-btn" :class="{ active: drillCategory === 'TAX' }" :aria-label="t('ledger.drillDown') + ': ' + t('ledger.taxPaid')" @click="toggleDrill('TAX')">
                 {{ drillCategory === 'TAX' ? '▲' : '▼' }}
               </button>
             </div>
@@ -307,9 +296,7 @@ useTickRefresh(async () => {
             </div>
             <div class="statement-row">
               <span class="row-label">{{ t('ledger.propertyAppreciation') }}</span>
-              <span :class="amountClass(ledger.propertyAppreciation)">{{
-                formatAmount(ledger.propertyAppreciation)
-              }}</span>
+              <span :class="amountClass(ledger.propertyAppreciation)">{{ formatAmount(ledger.propertyAppreciation) }}</span>
             </div>
             <div class="statement-row">
               <span class="row-label">{{ t('ledger.buildingValue') }}</span>
@@ -331,15 +318,11 @@ useTickRefresh(async () => {
           <div class="statement-rows">
             <div class="statement-row">
               <span class="row-label">{{ t('ledger.cashFromOperations') }}</span>
-              <span :class="amountClass(ledger.cashFromOperations)">{{
-                formatAmount(ledger.cashFromOperations)
-              }}</span>
+              <span :class="amountClass(ledger.cashFromOperations)">{{ formatAmount(ledger.cashFromOperations) }}</span>
             </div>
             <div class="statement-row">
               <span class="row-label">{{ t('ledger.cashFromInvestments') }}</span>
-              <span :class="amountClass(ledger.cashFromInvestments)">{{
-                formatAmount(ledger.cashFromInvestments)
-              }}</span>
+              <span :class="amountClass(ledger.cashFromInvestments)">{{ formatAmount(ledger.cashFromInvestments) }}</span>
             </div>
           </div>
         </div>
@@ -350,7 +333,12 @@ useTickRefresh(async () => {
           <h3>{{ t('ledger.drillDown') }}: {{ t(`ledger.category.${drillCategory}`) }}</h3>
           <button
             class="btn btn-ghost btn-sm"
-            @click="drillCategory = null; drillEntries = []"
+            @click="
+              () => {
+                drillCategory = null
+                drillEntries = []
+              }
+            "
           >
             ✕ {{ t('common.close') }}
           </button>
@@ -375,11 +363,7 @@ useTickRefresh(async () => {
                 <td :class="amountClass(entry.amount)">{{ formatAmount(entry.amount) }}</td>
                 <td>{{ entry.recordedAtTick }}</td>
                 <td>
-                  <RouterLink
-                    v-if="entry.buildingId"
-                    :to="`/building/${entry.buildingId}`"
-                    class="link-btn"
-                  >
+                  <RouterLink v-if="entry.buildingId" :to="`/building/${entry.buildingId}`" class="link-btn">
                     {{ entry.buildingName ?? t('ledger.viewBuilding') }}
                   </RouterLink>
                   <span v-else>—</span>

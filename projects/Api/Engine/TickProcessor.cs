@@ -102,7 +102,13 @@ public sealed class TickProcessor(
             .ToListAsync(ct);
 
         var companies = await db.Companies.ToListAsync(ct);
+        var companySalarySettings = await db.CompanyCitySalarySettings
+            .Include(setting => setting.City)
+            .ToListAsync(ct);
         var cities = await db.Cities.ToListAsync(ct);
+        var lots = await db.BuildingLots
+            .Where(lot => lot.OwnerCompanyId.HasValue)
+            .ToListAsync(ct);
         var cityResources = await db.CityResources.ToListAsync(ct);
         var resourceTypes = await db.ResourceTypes.ToListAsync(ct);
         var productTypes = await db.ProductTypes.Include(p => p.Recipes).ToListAsync(ct);
@@ -130,7 +136,13 @@ public sealed class TickProcessor(
                 .GroupBy(i => i.BuildingId)
                 .ToDictionary(g => g.Key, g => g.ToList()),
             CompaniesById = companies.ToDictionary(c => c.Id),
+            CitySalarySettingsByCompany = companySalarySettings
+                .GroupBy(setting => setting.CompanyId)
+                .ToDictionary(g => g.Key, g => g.ToList()),
             CitiesById = cities.ToDictionary(c => c.Id),
+            LotsByCompany = lots
+                .GroupBy(lot => lot.OwnerCompanyId!.Value)
+                .ToDictionary(g => g.Key, g => g.ToList()),
             ResourcesByCity = cityResources
                 .GroupBy(cr => cr.CityId)
                 .ToDictionary(g => g.Key, g => g.ToList()),

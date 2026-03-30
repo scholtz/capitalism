@@ -1,6 +1,6 @@
 # Capitalism Roadmap
 
-Create a fun game on style of the capitalism II game. This game is economic simulation where players can experience price elasticity, resource scarcity, resource oversupply, different competition types, marketing, product quality, and other base economic factors.
+Create a fun game on style of the capitalism II game. This game is economic simulation where players can experience price elasticity, resource scarcity, resource oversupply, different competition types, marketing, product quality, difficulties with scaling up the companies, and other base economic factors.
 
 It will use real world map. The game will start in single city and later other cities will be added.
 
@@ -50,6 +50,18 @@ Appartment buildings and commercial buildings allows to set the price per m^2. A
 Media houses improve brand quality.
 
 Banks allows to borrow to player money. Player can configure the interest rate in the bank.
+
+## Company settings
+
+Special page will be dedicated to the company settings.
+
+The name of the company can be set by the player. Only the owner of the company can change the company name.
+
+In the company settings, player can choose the salaries level for each city. This will directly affect the costs for running the units.
+
+With bigger company there will be higher administration overhead. Show this information in the company profile.
+
+Administration overhead 50% is the maximum for 2 year old company with the highest asset equity.
 
 ## Land
 

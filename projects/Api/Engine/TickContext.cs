@@ -27,7 +27,9 @@ public sealed class TickContext
     public Dictionary<Guid, List<Inventory>> InventoryByUnit { get; init; } = [];
     public Dictionary<Guid, List<Inventory>> InventoryByBuilding { get; init; } = [];
     public Dictionary<Guid, Company> CompaniesById { get; init; } = [];
+    public Dictionary<Guid, List<CompanyCitySalarySetting>> CitySalarySettingsByCompany { get; init; } = [];
     public Dictionary<Guid, City> CitiesById { get; init; } = [];
+    public Dictionary<Guid, List<BuildingLot>> LotsByCompany { get; init; } = [];
     public Dictionary<Guid, List<CityResource>> ResourcesByCity { get; init; } = [];
     public Dictionary<Guid, ResourceType> ResourceTypesById { get; init; } = [];
     public Dictionary<Guid, ProductType> ProductTypesById { get; init; } = [];
@@ -372,6 +374,30 @@ public sealed class TickContext
         }
 
         return brands.FirstOrDefault(b => b.Scope == BrandScope.Company);
+    }
+
+    public decimal GetCompanyAssetValue(Guid companyId)
+    {
+        if (!CompaniesById.TryGetValue(companyId, out var company))
+        {
+            return 0m;
+        }
+
+        var companyBuildings = BuildingsById.Values
+            .Where(building => building.CompanyId == companyId)
+            .ToList();
+        var buildingValue = companyBuildings.Sum(Api.Utilities.WealthCalculator.GetBuildingValue);
+        var inventoryValue = companyBuildings.Sum(building =>
+            InventoryByBuilding.TryGetValue(building.Id, out var inventories)
+                ? inventories.Sum(inventory => inventory.Quantity * (inventory.ProductTypeId.HasValue
+                    ? ProductTypesById.GetValueOrDefault(inventory.ProductTypeId.Value)?.BasePrice ?? 0m
+                    : ResourceTypesById.GetValueOrDefault(inventory.ResourceTypeId ?? Guid.Empty)?.BasePrice ?? 0m))
+                : 0m);
+        var lotValue = LotsByCompany.TryGetValue(companyId, out var lots)
+            ? lots.Sum(Api.Utilities.WealthCalculator.GetLandValue)
+            : 0m;
+
+        return company.Cash + buildingValue + inventoryValue + lotValue;
     }
 
     /// <summary>Finds or creates a brand for a company and product.</summary>

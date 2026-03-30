@@ -36,6 +36,9 @@ public sealed class ProductType
     /// <summary>Electricity consumed by one manufacturing batch in MWh.</summary>
     public decimal EnergyConsumptionMwh { get; set; }
 
+    /// <summary>Base labor-hours consumed by one manufacturing batch.</summary>
+    public decimal BasicLaborHours { get; set; }
+
     /// <summary>Whether this product is available to Pro subscribers only.</summary>
     public bool IsProOnly { get; set; }
 

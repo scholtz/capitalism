@@ -11,6 +11,8 @@ public sealed class CompanyLedgerSummary
     // Income Statement
     public decimal TotalRevenue { get; set; }
     public decimal TotalPurchasingCosts { get; set; }
+    public decimal TotalLaborCosts { get; set; }
+    public decimal TotalEnergyCosts { get; set; }
     public decimal TotalMarketingCosts { get; set; }
     public decimal TotalTaxPaid { get; set; }
     public decimal TotalOtherCosts { get; set; }
@@ -42,6 +44,8 @@ public sealed class CompanyLedgerHistoryYear
     public int GameYear { get; set; }
     public bool IsCurrentGameYear { get; set; }
     public decimal TotalRevenue { get; set; }
+    public decimal TotalLaborCosts { get; set; }
+    public decimal TotalEnergyCosts { get; set; }
     public decimal NetIncome { get; set; }
     public decimal TotalTaxPaid { get; set; }
     public decimal TaxableIncome { get; set; }

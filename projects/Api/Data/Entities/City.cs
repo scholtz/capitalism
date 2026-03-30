@@ -31,6 +31,9 @@ public sealed class City
     /// <summary>Average rent price per m² in the city.</summary>
     public decimal AverageRentPerSqm { get; set; }
 
+    /// <summary>Base wage per labor-hour used to price company salary settings.</summary>
+    public decimal BaseSalaryPerManhour { get; set; }
+
     /// <summary>Buildings located in this city.</summary>
     public ICollection<Building> Buildings { get; set; } = [];
 

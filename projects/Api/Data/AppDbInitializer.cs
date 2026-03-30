@@ -121,9 +121,9 @@ public sealed class AppDbInitializer(
     private void SeedCities()
     {
         dbContext.Cities.AddRange(
-            new City { Id = CreateDeterministicGuid("city:bratislava"), Name = "Bratislava", CountryCode = "SK", Latitude = 48.1486, Longitude = 17.1077, Population = 475_000, AverageRentPerSqm = 14m },
-            new City { Id = CreateDeterministicGuid("city:prague"), Name = "Prague", CountryCode = "CZ", Latitude = 50.0755, Longitude = 14.4378, Population = 1_350_000, AverageRentPerSqm = 18m },
-            new City { Id = CreateDeterministicGuid("city:vienna"), Name = "Vienna", CountryCode = "AT", Latitude = 48.2082, Longitude = 16.3738, Population = 1_900_000, AverageRentPerSqm = 22m });
+            new City { Id = CreateDeterministicGuid("city:bratislava"), Name = "Bratislava", CountryCode = "SK", Latitude = 48.1486, Longitude = 17.1077, Population = 475_000, AverageRentPerSqm = 14m, BaseSalaryPerManhour = 18m },
+            new City { Id = CreateDeterministicGuid("city:prague"), Name = "Prague", CountryCode = "CZ", Latitude = 50.0755, Longitude = 14.4378, Population = 1_350_000, AverageRentPerSqm = 18m, BaseSalaryPerManhour = 22m },
+            new City { Id = CreateDeterministicGuid("city:vienna"), Name = "Vienna", CountryCode = "AT", Latitude = 48.2082, Longitude = 16.3738, Population = 1_900_000, AverageRentPerSqm = 22m, BaseSalaryPerManhour = 28m });
     }
 
     private void SeedProducts()
@@ -141,6 +141,7 @@ public sealed class AppDbInitializer(
             BaseCraftTicks = seed.BaseCraftTicks,
             OutputQuantity = seed.OutputQuantity,
             EnergyConsumptionMwh = seed.EnergyConsumptionMwh,
+            BasicLaborHours = seed.BasicLaborHours,
             IsProOnly = proOnlySlugs.Contains(seed.Slug),
             UnitName = seed.UnitName,
             UnitSymbol = seed.UnitSymbol,
@@ -412,7 +413,25 @@ public sealed class AppDbInitializer(
         => new(name, slug, category, basePrice, weightPerUnit, unitName, unitSymbol, description, icon, backgroundColor, accentColor);
 
     private static ProductSeed Product(string name, string slug, string industry, decimal basePrice, int baseCraftTicks, string description, string unitName, string unitSymbol, decimal outputQuantity, decimal energyConsumptionMwh, params RecipeSeed[] ingredients)
-        => new(name, slug, industry, basePrice, baseCraftTicks, description, unitName, unitSymbol, outputQuantity, energyConsumptionMwh, ingredients);
+        => new(
+            name,
+            slug,
+            industry,
+            basePrice,
+            baseCraftTicks,
+            description,
+            unitName,
+            unitSymbol,
+            outputQuantity,
+            energyConsumptionMwh,
+            ComputeBasicLaborHours(baseCraftTicks, energyConsumptionMwh, ingredients.Length),
+            ingredients);
+
+    private static decimal ComputeBasicLaborHours(int baseCraftTicks, decimal energyConsumptionMwh, int ingredientCount)
+    {
+        var labor = (baseCraftTicks * 0.55m) + (energyConsumptionMwh * 0.35m) + (ingredientCount * 0.15m);
+        return decimal.Round(Math.Max(0.25m, labor), 4, MidpointRounding.AwayFromZero);
+    }
 
     private static RecipeSeed ResourceIngredient(string resourceSlug, decimal quantity)
         => new(resourceSlug, null, quantity);
@@ -679,6 +698,7 @@ public sealed class AppDbInitializer(
         string UnitSymbol,
         decimal OutputQuantity,
         decimal EnergyConsumptionMwh,
+        decimal BasicLaborHours,
         IReadOnlyList<RecipeSeed> Ingredients);
 
     private sealed record RecipeSeed(string? ResourceSlug, string? ProductSlug, decimal Quantity);

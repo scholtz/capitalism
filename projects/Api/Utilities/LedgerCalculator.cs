@@ -10,6 +10,8 @@ public static class LedgerCalculator
     private static readonly HashSet<string> DeductibleCategories =
     [
         LedgerCategory.PurchasingCost,
+        LedgerCategory.LaborCost,
+        LedgerCategory.EnergyCost,
         LedgerCategory.Marketing,
         LedgerCategory.Other,
         LedgerCategory.UnitUpgrade,
@@ -33,6 +35,20 @@ public static class LedgerCalculator
     {
         return Math.Abs(entries
             .Where(entry => entry.Category == LedgerCategory.Marketing)
+            .Sum(entry => entry.Amount));
+    }
+
+    public static decimal GetTotalLaborCosts(IEnumerable<LedgerEntry> entries)
+    {
+        return Math.Abs(entries
+            .Where(entry => entry.Category == LedgerCategory.LaborCost)
+            .Sum(entry => entry.Amount));
+    }
+
+    public static decimal GetTotalEnergyCosts(IEnumerable<LedgerEntry> entries)
+    {
+        return Math.Abs(entries
+            .Where(entry => entry.Category == LedgerCategory.EnergyCost)
             .Sum(entry => entry.Amount));
     }
 

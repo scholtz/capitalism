@@ -59,15 +59,11 @@ const showProProducts = computed({
   },
 })
 
-const visibleProducts = computed(() =>
-  showProProducts.value ? products.value : products.value.filter((product) => !product.isProOnly),
-)
+const visibleProducts = computed(() => (showProProducts.value ? products.value : products.value.filter((product) => !product.isProOnly)))
 
 const industries = computed(() => ['ALL', ...new Set(visibleProducts.value.map((product) => product.industry))])
 
-const hiddenProProductCount = computed(() =>
-  showProProducts.value ? 0 : products.value.filter((product) => product.isProOnly).length,
-)
+const hiddenProProductCount = computed(() => (showProProducts.value ? 0 : products.value.filter((product) => product.isProOnly).length))
 
 const catalogEntries = computed<CatalogEntry[]>(() => {
   const query = search.value.trim().toLowerCase()
@@ -111,18 +107,14 @@ const catalogEntries = computed<CatalogEntry[]>(() => {
         badge: getLocalizedIndustry(product.industry, locale.value),
         meta: [
           `${t('encyclopedia.basePrice')}: $${product.basePrice}`,
-          `${t('encyclopedia.energy')}: ${product.energyConsumptionMwh} MW`,
+          `${t('encyclopedia.energy')}: ${product.energyConsumptionMwh} MWh`,
+          `${t('encyclopedia.basicLaborHours')}: ${product.basicLaborHours} h`,
           `${t('encyclopedia.output')}: ${product.outputQuantity} ${product.unitSymbol}`,
         ],
         industry: product.industry,
         accessText: product.isProOnly ? getProductAccessText(product) : null,
-        accessClass: product.isProOnly ? (isProductLocked(product) ? 'locked' as const : 'unlocked' as const) : null,
-        searchText: [
-          title,
-          description,
-          product.industry,
-          ...product.recipes.map((recipe) => getLocalizedRecipeIngredientName(recipe, locale.value)),
-        ].join(' ').toLowerCase(),
+        accessClass: product.isProOnly ? (isProductLocked(product) ? ('locked' as const) : ('unlocked' as const)) : null,
+        searchText: [title, description, product.industry, ...product.recipes.map((recipe) => getLocalizedRecipeIngredientName(recipe, locale.value))].join(' ').toLowerCase(),
       }
     }),
   ]
@@ -135,11 +127,15 @@ const catalogEntries = computed<CatalogEntry[]>(() => {
   })
 })
 
-watch(industries, (nextIndustries) => {
-  if (!nextIndustries.includes(industry.value)) {
-    industry.value = 'ALL'
-  }
-}, { immediate: true })
+watch(
+  industries,
+  (nextIndustries) => {
+    if (!nextIndustries.includes(industry.value)) {
+      industry.value = 'ALL'
+    }
+  },
+  { immediate: true },
+)
 
 onMounted(async () => {
   try {
@@ -169,6 +165,7 @@ onMounted(async () => {
           baseCraftTicks
           outputQuantity
           energyConsumptionMwh
+          basicLaborHours
           unitName
           unitSymbol
           isProOnly
@@ -282,11 +279,7 @@ function navigateToEntry(slug: string) {
               </div>
               <span class="resource-unit">{{ entry.pill }}</span>
             </div>
-            <span
-              v-if="entry.accessText"
-              class="product-access-badge"
-              :class="entry.accessClass ?? undefined"
-            >
+            <span v-if="entry.accessText" class="product-access-badge" :class="entry.accessClass ?? undefined">
               {{ entry.accessText }}
             </span>
             <p class="resource-description">{{ entry.description }}</p>
@@ -460,7 +453,9 @@ function navigateToEntry(slug: string) {
 
 .resource-card--link {
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 .resource-card--link:hover,

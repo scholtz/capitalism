@@ -2,6 +2,7 @@ using Api.Data;
 using Api.Data.Entities;
 using Api.Engine;
 using Api.Tests.Infrastructure;
+using Api.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -1311,8 +1312,14 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         Assert.True(inventory.Sum(i => i.Quantity) == 0m,
             "Purchase unit should not have bought anything when max price is too low.");
 
-        // Cash should be unchanged.
-        Assert.Equal(cashBefore, company.Cash);
+        var purchasingEntries = await db.LedgerEntries
+            .Where(entry => entry.CompanyId == companyId
+                && entry.BuildingUnitId == purchaseUnitId
+                && entry.Category == LedgerCategory.PurchasingCost)
+            .ToListAsync();
+
+        Assert.Empty(purchasingEntries);
+        Assert.True(company.Cash <= cashBefore);
     }
 
     [Fact]
@@ -1337,7 +1344,15 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
 
         Assert.True(inventory.Sum(i => i.Quantity) == 0m,
             "Purchase unit should not have bought anything when min quality requirement is unattainable.");
-        Assert.Equal(cashBefore, company.Cash);
+
+        var purchasingEntries = await db.LedgerEntries
+            .Where(entry => entry.CompanyId == companyId
+                && entry.BuildingUnitId == purchaseUnitId
+                && entry.Category == LedgerCategory.PurchasingCost)
+            .ToListAsync();
+
+        Assert.Empty(purchasingEntries);
+        Assert.True(company.Cash <= cashBefore);
     }
 
     [Fact]
@@ -1363,7 +1378,15 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         // LOCAL source with no player orders → no inventory filled.
         Assert.True(inventory.Sum(i => i.Quantity) == 0m,
             "LOCAL purchase source should not fill from global exchange.");
-        Assert.Equal(cashBefore, company.Cash);
+
+        var purchasingEntries = await db.LedgerEntries
+            .Where(entry => entry.CompanyId == companyId
+                && entry.BuildingUnitId == purchaseUnitId
+                && entry.Category == LedgerCategory.PurchasingCost)
+            .ToListAsync();
+
+        Assert.Empty(purchasingEntries);
+        Assert.True(company.Cash <= cashBefore);
     }
 
     [Fact]
@@ -1408,9 +1431,11 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         await processor.ProcessTickAsync();
 
         // Reload ledger entry to verify the price paid matches the calculator.
-        var ledgerEntry = await db.LedgerEntries
-            .Where(e => e.CompanyId == companyId && e.BuildingUnitId == purchaseUnitId)
-            .FirstOrDefaultAsync();
+        var ledgerEntries = await db.LedgerEntries
+            .Where(entry => entry.CompanyId == companyId && entry.BuildingUnitId == purchaseUnitId)
+            .ToListAsync();
+        var ledgerEntry = ledgerEntries
+            .SingleOrDefault(entry => entry.Category == LedgerCategory.PurchasingCost);
 
         Assert.NotNull(ledgerEntry);
         Assert.True(ledgerEntry!.Amount < 0m, "Purchasing cost should be negative in the ledger.");
@@ -1425,7 +1450,7 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         Assert.InRange(inventory.Quality, 0.35m, 0.95m);
 
         // Cash decrease must exactly match the ledger debit.
-        Assert.Equal(cashBefore + ledgerEntry.Amount, company.Cash);
+        Assert.Equal(cashBefore + ledgerEntries.Sum(entry => entry.Amount), company.Cash);
     }
 
     [Fact]
@@ -1441,16 +1466,19 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         await processor.ProcessTickAsync();
 
         var ledgerEntry = await db.LedgerEntries
-            .Where(entry => entry.CompanyId == companyId && entry.BuildingUnitId == purchaseUnitId)
+            .Where(entry => entry.CompanyId == companyId
+                && entry.BuildingUnitId == purchaseUnitId
+                && entry.Category == LedgerCategory.PurchasingCost)
             .SingleAsync();
 
-        var inventory = await db.Inventories
+        var inventories = await db.Inventories
             .Where(entry => entry.BuildingUnitId == purchaseUnitId && entry.Quantity > 0m)
-            .SingleAsync();
+            .ToListAsync();
 
-        Assert.True(inventory.SourcingCostTotal > 0m);
-        Assert.Equal(-ledgerEntry.Amount, inventory.SourcingCostTotal);
-        Assert.True(inventory.SourcingCostTotal / inventory.Quantity > 0m);
+        Assert.NotEmpty(inventories);
+        Assert.True(inventories.Sum(entry => entry.SourcingCostTotal) > 0m);
+        Assert.Equal(-ledgerEntry.Amount, inventories.Sum(entry => entry.SourcingCostTotal));
+        Assert.True(inventories.Sum(entry => entry.SourcingCostTotal) / inventories.Sum(entry => entry.Quantity) > 0m);
     }
 
     [Fact]
@@ -1471,6 +1499,11 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             .Where(entry => entry.BuildingUnitId == purchaseUnit.Id && entry.ResourceTypeId != null)
             .SingleAsync();
         purchaseInventory.SourcingCostTotal = 125m;
+
+        var factory = await db.Buildings.SingleAsync(candidate => candidate.Id == factoryId);
+        var manufacturingUnit = await db.BuildingUnits
+            .SingleAsync(unit => unit.BuildingId == factoryId && unit.UnitType == UnitType.Manufacturing);
+
         await db.SaveChangesAsync();
 
         var processor = await CreateProcessorAsync(scope);
@@ -1479,9 +1512,15 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         var productInventories = await db.Inventories
             .Where(entry => entry.BuildingId == factoryId && entry.ProductTypeId != null && entry.Quantity > 0m)
             .ToListAsync();
+        var manufacturingLedgerCosts = await db.LedgerEntries
+            .Where(entry => entry.BuildingUnitId == manufacturingUnit.Id
+                && (entry.Description.StartsWith("Manufacturing labor")
+                    || entry.Description.StartsWith("Manufacturing energy")))
+            .SumAsync(entry => -entry.Amount);
+        var expectedOutputSourcingCost = 12.5m + manufacturingLedgerCosts;
 
         Assert.NotEmpty(productInventories);
-        Assert.Equal(12.5m, productInventories.Sum(entry => entry.SourcingCostTotal));
+        Assert.Equal(expectedOutputSourcingCost, productInventories.Sum(entry => entry.SourcingCostTotal));
 
         var remainingRawInventories = await db.Inventories
             .Where(entry => entry.BuildingId == factoryId && entry.ResourceTypeId != null && entry.Quantity > 0m)

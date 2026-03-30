@@ -27,6 +27,12 @@ public sealed class Company
     /// <summary>UTC timestamp when the company was founded.</summary>
     public DateTime FoundedAtUtc { get; set; } = DateTime.UtcNow;
 
+    /// <summary>Authoritative in-game tick when the company was founded.</summary>
+    public long FoundedAtTick { get; set; }
+
     /// <summary>Buildings owned by this company.</summary>
-    public ICollection<Building> Buildings { get; set; } = [];
+    public ICollection<Building> Buildings { get; set; } = new List<Building>();
+
+    /// <summary>Per-city salary multipliers chosen by the player.</summary>
+    public ICollection<CompanyCitySalarySetting> CitySalarySettings { get; set; } = new List<CompanyCitySalarySetting>();
 }

@@ -113,6 +113,10 @@ public sealed class Mutation
         [Service] IHttpContextAccessor httpContextAccessor)
     {
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var currentTick = await db.GameStates
+            .AsNoTracking()
+            .Select(state => state.CurrentTick)
+            .FirstOrDefaultAsync();
 
         var company = new Company
         {
@@ -121,12 +125,80 @@ public sealed class Mutation
             Name = input.Name,
             Cash = 1_000_000m // Starting capital
             ,
-            FoundedAtUtc = DateTime.UtcNow
+            FoundedAtUtc = DateTime.UtcNow,
+            FoundedAtTick = currentTick
         };
 
         db.Companies.Add(company);
         await db.SaveChangesAsync();
 
+        return company;
+    }
+
+    /// <summary>Updates a company's display name and city salary settings.</summary>
+    [Authorize]
+    public async Task<Company> UpdateCompanySettings(
+        UpdateCompanySettingsInput input,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var company = await db.Companies
+            .Include(candidate => candidate.CitySalarySettings)
+            .FirstOrDefaultAsync(candidate => candidate.Id == input.CompanyId && candidate.PlayerId == userId)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Company not found or you don't own it.")
+                    .SetCode("COMPANY_NOT_FOUND")
+                    .Build());
+
+        var validCityIds = await db.Cities
+            .Select(city => city.Id)
+            .ToListAsync();
+        var validCityIdSet = validCityIds.ToHashSet();
+
+        foreach (var salarySetting in input.CitySalarySettings)
+        {
+            if (!validCityIdSet.Contains(salarySetting.CityId))
+            {
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetMessage("City not found.")
+                        .SetCode("CITY_NOT_FOUND")
+                        .Build());
+            }
+        }
+
+        company.Name = input.Name.Trim();
+
+        foreach (var salarySetting in input.CitySalarySettings
+                     .GroupBy(setting => setting.CityId)
+                     .Select(group => group.Last()))
+        {
+            var multiplier = CompanyEconomyCalculator.ClampSalaryMultiplier(salarySetting.SalaryMultiplier);
+            var existing = company.CitySalarySettings
+                .FirstOrDefault(setting => setting.CityId == salarySetting.CityId);
+
+            if (existing is null)
+            {
+                var newSetting = new CompanyCitySalarySetting
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyId = company.Id,
+                    CityId = salarySetting.CityId,
+                    SalaryMultiplier = multiplier,
+                };
+
+                db.CompanyCitySalarySettings.Add(newSetting);
+                company.CitySalarySettings.Add(newSetting);
+            }
+            else
+            {
+                existing.SalaryMultiplier = multiplier;
+            }
+        }
+
+        await db.SaveChangesAsync();
         return company;
     }
 
@@ -281,7 +353,8 @@ public sealed class Mutation
             PlayerId = userId,
             Name = input.CompanyName,
             Cash = 500_000m,
-            FoundedAtUtc = nowUtc
+            FoundedAtUtc = nowUtc,
+            FoundedAtTick = currentTick
         };
         db.Companies.Add(company);
 
@@ -399,7 +472,8 @@ public sealed class Mutation
             PlayerId = userId,
             Name = input.CompanyName,
             Cash = 500_000m,
-            FoundedAtUtc = nowUtc
+            FoundedAtUtc = nowUtc,
+            FoundedAtTick = await db.GameStates.AsNoTracking().Select(state => state.CurrentTick).FirstOrDefaultAsync()
         };
         db.Companies.Add(company);
 
