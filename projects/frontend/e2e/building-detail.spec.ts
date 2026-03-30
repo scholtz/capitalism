@@ -2850,3 +2850,189 @@ test.describe('Global exchange market', () => {
     await expect(page.locator('.offer-blocked-reason').first()).toContainText('Below your min quality')
   })
 })
+
+// ── Starter factory setup flow ────────────────────────────────────────────────
+
+test.describe('Starter factory setup banner', () => {
+  function makeEmptyFactoryPlayer() {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-1',
+          playerId: 'player-1',
+          name: 'Industrial Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-empty-factory',
+              companyId: 'company-1',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'New Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    return player
+  }
+
+  test('shows starter setup banner for an empty factory', async ({ page }) => {
+    const player = makeEmptyFactoryPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-empty-factory')
+
+    // Starter setup banner should be visible
+    await expect(page.getByRole('region', { name: /starter setup/i })).toBeVisible()
+    // Title and body text
+    await expect(page.getByText(/New Factory — Ready to Set Up/i)).toBeVisible()
+    await expect(page.getByText(/no units configured yet/i)).toBeVisible()
+    // Starter layout description
+    await expect(page.getByText(/Purchase.*Manufacturing.*Storage/i)).toBeVisible()
+    // Apply Starter Layout button
+    await expect(page.getByRole('button', { name: /Apply Starter Layout/i })).toBeVisible()
+  })
+
+  test('apply starter layout pre-populates the planning grid', async ({ page }) => {
+    const player = makeEmptyFactoryPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-empty-factory')
+
+    await expect(page.getByRole('button', { name: /Apply Starter Layout/i })).toBeVisible()
+    await page.getByRole('button', { name: /Apply Starter Layout/i }).click()
+
+    // Planning grid should now be visible (edit mode)
+    const planningSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(planningSection).toBeVisible()
+
+    // PURCHASE unit should appear at position (0,0)
+    const purchaseCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await expect(purchaseCell).toContainText('Purchase')
+
+    // MANUFACTURING unit at (1,0)
+    const manufacturingCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await expect(manufacturingCell).toContainText('Manufacturing')
+
+    // STORAGE unit at (2,0)
+    const storageCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(2)
+    await expect(storageCell).toContainText('Storage')
+
+    // Starter setup banner should no longer be visible (we are now in edit mode)
+    await expect(page.locator('.starter-setup-banner')).not.toBeVisible()
+  })
+
+  test('apply starter layout can be saved via Store Upgrade', async ({ page }) => {
+    const player = makeEmptyFactoryPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-empty-factory')
+
+    await page.getByRole('button', { name: /Apply Starter Layout/i }).click()
+
+    // Store Upgrade button should be enabled (draft has changes)
+    const storeBtn = page.getByRole('button', { name: /Store Upgrade/i })
+    await expect(storeBtn).toBeVisible()
+    await expect(storeBtn).toBeEnabled()
+    await storeBtn.click()
+
+    // After save, upgrade-in-progress banner should appear (pending configuration)
+    await expect(page.locator('.upgrade-banner')).toBeVisible()
+    // Starter setup banner should be gone
+    await expect(page.locator('.starter-setup-banner')).not.toBeVisible()
+  })
+
+  test('starter setup banner is hidden for a factory that already has units', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-1',
+          playerId: 'player-1',
+          name: 'Industrial Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-factory-with-units',
+              companyId: 'company-1',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Running Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [
+                {
+                  id: 'u-purchase',
+                  buildingId: 'building-factory-with-units',
+                  unitType: 'PURCHASE',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkRight: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                },
+              ],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-factory-with-units')
+
+    // Should NOT show the starter setup banner for a factory that already has units
+    await expect(page.locator('.starter-setup-banner')).not.toBeVisible()
+  })
+})

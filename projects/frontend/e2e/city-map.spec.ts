@@ -376,7 +376,7 @@ test.describe('City Map View', () => {
     await page.waitForURL(/\/city\//)
   })
 
-  test('post-purchase shows manage building link and navigates to building detail', async ({
+  test('post-purchase shows setup building CTA and navigates to building detail', async ({
     page,
   }) => {
     const { player } = setupAuthenticatedPlayer(page)
@@ -396,12 +396,67 @@ test.describe('City Map View', () => {
     await page.getByRole('complementary').locator('input[type="text"]').fill('Victory Factory')
     await page.getByRole('button', { name: /Confirm Purchase/i }).click()
 
-    // After purchase the lot is now ours — Manage Building link should appear
-    await expect(page.getByRole('link', { name: /Manage Building/i })).toBeVisible()
+    // After purchase the post-purchase banner should appear with "Set Up Your Building" CTA
+    await expect(page.getByRole('link', { name: /Set Up Your Building/i })).toBeVisible()
+    // Post-purchase guidance text should be visible
+    await expect(page.getByText(/Building acquired/i)).toBeVisible()
 
     // Clicking it navigates to the building detail page
-    await page.getByRole('link', { name: /Manage Building/i }).click()
+    await page.getByRole('link', { name: /Set Up Your Building/i }).click()
     await page.waitForURL(/\/building\//)
+  })
+
+  test('previously owned lot shows manage building link (not post-purchase banner)', async ({
+    page,
+  }) => {
+    const lots = makeDefaultBuildingLots()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-1',
+          playerId: 'player-1',
+          name: 'Test Empire',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-owned',
+              companyId: 'company-1',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Old Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    // Mark the first lot as already owned by the player
+    lots[0]!.ownerCompanyId = 'company-1'
+    lots[0]!.buildingId = 'building-owned'
+    lots[0]!.ownerCompany = { id: 'company-1', name: 'Test Empire' }
+    lots[0]!.building = { id: 'building-owned', name: 'Old Factory', type: 'FACTORY' }
+
+    const state = setupMockApi(page, { players: [player], buildingLots: lots })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    // Already-owned lot shows "Manage Building" (not the post-purchase banner)
+    await expect(page.getByRole('link', { name: /Manage Building/i })).toBeVisible()
+    await expect(page.locator('.post-purchase-banner')).not.toBeVisible()
   })
 
   test('shows insufficient funds error when company cash is too low', async ({ page }) => {

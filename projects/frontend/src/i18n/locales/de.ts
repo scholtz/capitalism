@@ -382,6 +382,13 @@ export default {
     addUnit: 'Einheit hinzuf\u00fcgen',
     upgradeUnit: 'Verbessern',
     removeUnit: 'Entfernen',
+    starterSetup: {
+      title: 'Neue Fabrik — Bereit zur Einrichtung',
+      body: 'Diese Fabrik hat noch keine konfigurierten Einheiten. Wenden Sie das Starter-Layout an, um mit der Produktion zu beginnen, und passen Sie die Einheiten dann an Ihre Strategie an.',
+      applyStarter: 'Starter-Layout anwenden',
+      starterLayoutDesc: 'Starter-Layout: Einkauf (0,0) → Fertigung (1,0) → Lager (2,0) — die Mindestkette zum Kauf von Ressourcen, Herstellung von Waren und Lagerhaltung.',
+      whatNext: 'Nach dem Speichern dieses Layouts werden die Einheiten in den nächsten Ticks gebaut. Konfigurieren Sie dann jede Einheit mit einer Ressource, einem Produkt und einem Preis, um Ihre erste Produktionskette zu vervollständigen.',
+    },
     unitTypes: {
       MINING: 'Bergbau',
       STORAGE: 'Lager',
@@ -598,6 +605,9 @@ export default {
     building: 'Gebäude',
     company: 'Unternehmen',
     manageBuilding: 'Gebäude verwalten',
+    setupBuilding: 'Gebäude einrichten',
+    postPurchaseTitle: 'Gebäude erworben — Fabrikeinrichtung beginnen',
+    postPurchaseBody: 'Ihr Gebäude wurde auf dem Grundstück platziert. Konfigurieren Sie Einheiten, um wirtschaftlichen Wert zu produzieren.',
     populationIndex: 'Bevölkerungsindex',
     populationIndexHint: 'Höherer Index = mehr Anwohner und Pendler = stärkere Nachfrage nach Einzelhandel und Dienstleistungen. Fabriken und Kraftwerke funktionieren unabhängig vom Bevölkerungsindex gleich.',
     populationIndexVeryHigh: 'Sehr hoch',

@@ -382,6 +382,13 @@ export default {
     addUnit: 'Prida\u0165 jednotku',
     upgradeUnit: 'Vylep\u0161i\u0165',
     removeUnit: 'Odstr\u00e1ni\u0165',
+    starterSetup: {
+      title: 'Nová továreň — pripravená na nastavenie',
+      body: 'Táto továreň zatiaľ nemá nakonfigurované jednotky. Použite základné rozloženie a začnite produkovať, potom prispôsobte jednotky svojej stratégii.',
+      applyStarter: 'Použiť základné rozloženie',
+      starterLayoutDesc: 'Základné rozloženie: Nákup (0,0) → Výroba (1,0) → Sklad (2,0) — minimálny reťazec na nákup surovín, výrobu tovaru a uchovanie zásob.',
+      whatNext: 'Po uložení tohto rozloženia sa jednotky postavia v priebehu niekoľkých tickov. Potom nakonfigurujte každú jednotku so surovinou, produktom a cenou na dokončenie prvého výrobného reťazca.',
+    },
     unitTypes: {
       MINING: '\u0164a\u017eba',
       STORAGE: 'Sklad',
@@ -598,6 +605,9 @@ export default {
     building: 'Budova',
     company: 'Spoločnosť',
     manageBuilding: 'Spravovať budovu',
+    setupBuilding: 'Nastaviť svoju budovu',
+    postPurchaseTitle: 'Budova získaná — začnite nastavenie továrne',
+    postPurchaseBody: 'Vaša budova je umiestnená na pozemku. Nakonfigurujte jednotky a začnite produkovať ekonomickú hodnotu.',
     populationIndex: 'Index osídlenia',
     populationIndexHint: 'Vyšší index = viac obyvateľov a pendlerov v okolí = silnejší dopyt po maloobchode a službách. Továrne a elektrárne fungujú rovnako bez ohľadu na index osídlenia.',
     populationIndexVeryHigh: 'Veľmi vysoký',

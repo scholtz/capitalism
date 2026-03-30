@@ -164,6 +164,13 @@ const allowedUnits = computed(() => {
   if (!building.value) return []
   return allowedUnitsMap[building.value.type] || []
 })
+const showStarterSetupBanner = computed(
+  () =>
+    building.value?.type === 'FACTORY' &&
+    activeUnits.value.length === 0 &&
+    pendingConfiguration.value === null &&
+    !isEditing.value,
+)
 const intermediateProductIds = computed(() => {
   const ids = new Set<string>()
   for (const product of productTypes.value) {
@@ -401,6 +408,95 @@ function cancelEditing() {
   setDraftUnitsFrom(sourceUnits)
   setEditBaselineFrom(sourceUnits)
   isEditing.value = false
+  selectedCell.value = null
+  showUnitPicker.value = false
+}
+
+function applyStarterLayout() {
+  // Pre-populate the draft with a PURCHASE → MANUFACTURING → STORAGE chain at y=0
+  const starterUnits: EditableGridUnit[] = [
+    {
+      id: 'draft-starter-0-0',
+      unitType: 'PURCHASE',
+      gridX: 0,
+      gridY: 0,
+      level: 1,
+      linkUp: false,
+      linkDown: false,
+      linkLeft: false,
+      linkRight: true,
+      linkUpLeft: false,
+      linkUpRight: false,
+      linkDownLeft: false,
+      linkDownRight: false,
+      resourceTypeId: null,
+      productTypeId: null,
+      minPrice: null,
+      maxPrice: null,
+      purchaseSource: null,
+      saleVisibility: null,
+      budget: null,
+      mediaHouseBuildingId: null,
+      minQuality: null,
+      brandScope: null,
+      vendorLockCompanyId: null,
+    },
+    {
+      id: 'draft-starter-1-0',
+      unitType: 'MANUFACTURING',
+      gridX: 1,
+      gridY: 0,
+      level: 1,
+      linkUp: false,
+      linkDown: false,
+      linkLeft: false,
+      linkRight: true,
+      linkUpLeft: false,
+      linkUpRight: false,
+      linkDownLeft: false,
+      linkDownRight: false,
+      resourceTypeId: null,
+      productTypeId: null,
+      minPrice: null,
+      maxPrice: null,
+      purchaseSource: null,
+      saleVisibility: null,
+      budget: null,
+      mediaHouseBuildingId: null,
+      minQuality: null,
+      brandScope: null,
+      vendorLockCompanyId: null,
+    },
+    {
+      id: 'draft-starter-2-0',
+      unitType: 'STORAGE',
+      gridX: 2,
+      gridY: 0,
+      level: 1,
+      linkUp: false,
+      linkDown: false,
+      linkLeft: false,
+      linkRight: false,
+      linkUpLeft: false,
+      linkUpRight: false,
+      linkDownLeft: false,
+      linkDownRight: false,
+      resourceTypeId: null,
+      productTypeId: null,
+      minPrice: null,
+      maxPrice: null,
+      purchaseSource: null,
+      saleVisibility: null,
+      budget: null,
+      mediaHouseBuildingId: null,
+      minQuality: null,
+      brandScope: null,
+      vendorLockCompanyId: null,
+    },
+  ]
+  setDraftUnitsFrom(starterUnits)
+  setEditBaselineFrom([])
+  isEditing.value = true
   selectedCell.value = null
   showUnitPicker.value = false
 }
@@ -1955,6 +2051,21 @@ watch(
         </ul>
       </div>
 
+      <!-- Starter factory setup banner (shown for empty factories with no pending plan) -->
+      <div v-if="showStarterSetupBanner" class="starter-setup-banner" role="region" aria-label="starter setup">
+        <div class="starter-setup-content">
+          <h2 class="starter-setup-title">🏭 {{ t('buildingDetail.starterSetup.title') }}</h2>
+          <p class="starter-setup-body">{{ t('buildingDetail.starterSetup.body') }}</p>
+          <p class="starter-setup-desc">{{ t('buildingDetail.starterSetup.starterLayoutDesc') }}</p>
+          <p class="starter-setup-whatnext">{{ t('buildingDetail.starterSetup.whatNext') }}</p>
+        </div>
+        <div class="starter-setup-actions">
+          <button class="btn btn-primary" @click="applyStarterLayout">
+            {{ t('buildingDetail.starterSetup.applyStarter') }}
+          </button>
+        </div>
+      </div>
+
       <div v-if="isUpgradeInProgress" class="upgrade-banner" role="status">
         <div>
           <strong>{{ t('buildingDetail.upgradeQueuedTitle') }}</strong>
@@ -3171,6 +3282,57 @@ watch(
   border: 1px solid rgba(255, 109, 0, 0.3);
   border-radius: var(--radius-lg);
   background: rgba(255, 109, 0, 0.08);
+}
+
+.starter-setup-banner {
+  margin-bottom: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid rgba(0, 200, 83, 0.3);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(0, 200, 83, 0.07), rgba(19, 127, 236, 0.05));
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.starter-setup-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.starter-setup-title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--color-secondary);
+  margin: 0;
+}
+
+.starter-setup-body {
+  font-size: 0.9375rem;
+  margin: 0;
+}
+
+.starter-setup-desc {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid rgba(0, 200, 83, 0.4);
+  margin: 0;
+  background: rgba(0, 200, 83, 0.04);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.starter-setup-whatnext {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.starter-setup-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .upgrade-banner p {

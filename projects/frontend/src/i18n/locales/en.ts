@@ -384,6 +384,13 @@ export default {
     addUnit: 'Add Unit',
     upgradeUnit: 'Upgrade',
     removeUnit: 'Remove',
+    starterSetup: {
+      title: 'New Factory — Ready to Set Up',
+      body: 'This factory has no units configured yet. Apply the starter layout to begin producing, then customise units to match your strategy.',
+      applyStarter: 'Apply Starter Layout',
+      starterLayoutDesc: 'Starter layout: Purchase (0,0) → Manufacturing (1,0) → Storage (2,0) — the minimum chain to buy resources, manufacture goods, and hold stock.',
+      whatNext: 'After saving this layout, the units will be built over the next few ticks. Then configure each unit with a resource, product, and price to complete your first production chain.',
+    },
     unitTypes: {
       MINING: 'Mining',
       STORAGE: 'Storage',
@@ -599,6 +606,9 @@ export default {
     building: 'Building',
     company: 'Company',
     manageBuilding: 'Manage Building',
+    setupBuilding: 'Set Up Your Building',
+    postPurchaseTitle: 'Building acquired — begin your factory setup',
+    postPurchaseBody: 'Your building is placed on the lot. Configure units to start producing economic value.',
     populationIndex: 'Population Index',
     populationIndexHint: 'Higher index = more nearby residents and commuters = stronger demand for retail and services. Factories and power plants perform equally regardless of population index.',
     populationIndexVeryHigh: 'Very High',

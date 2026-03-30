@@ -40,6 +40,7 @@ const selectedCompanyId = ref('')
 const purchasing = ref(false)
 const purchaseError = ref<string | null>(null)
 const purchaseSuccess = ref<string | null>(null)
+const justPurchasedBuildingId = ref<string | null>(null)
 
 // Map reference
 const mapContainer = ref<HTMLDivElement | null>(null)
@@ -230,6 +231,7 @@ function selectLot(lot: BuildingLot) {
   purchaseMode.value = false
   purchaseError.value = null
   purchaseSuccess.value = null
+  justPurchasedBuildingId.value = null
   selectedBuildingType.value = ''
   buildingName.value = ''
 
@@ -292,6 +294,7 @@ async function confirmPurchase() {
     }
 
     purchaseSuccess.value = t('cityMap.purchaseSuccess')
+    justPurchasedBuildingId.value = data.purchaseLot.building.id
     purchaseMode.value = false
     updateMarkers()
   } catch (e: unknown) {
@@ -554,8 +557,6 @@ watch(viewMode, async (mode) => {
             </div>
 
             <template v-if="canPurchase">
-              <div v-if="purchaseSuccess" class="success-message">{{ purchaseSuccess }}</div>
-
               <div v-if="!purchaseMode" class="purchase-actions">
                 <button class="btn btn-primary" @click="startPurchase()">
                   {{ t('cityMap.purchase') }}
@@ -612,8 +613,22 @@ watch(viewMode, async (mode) => {
             </template>
           </template>
 
-          <!-- Already owned by player -->
-          <div v-if="isOwnedByPlayer && selectedLot.buildingId" class="your-building-actions">
+          <!-- Post-purchase setup guidance (shown immediately after a successful purchase) -->
+          <div v-if="justPurchasedBuildingId && isOwnedByPlayer" class="post-purchase-banner" role="status">
+            <div class="post-purchase-body">
+              <strong class="post-purchase-title">🏭 {{ t('cityMap.postPurchaseTitle') }}</strong>
+              <p class="post-purchase-text">{{ t('cityMap.postPurchaseBody') }}</p>
+            </div>
+            <RouterLink
+              :to="`/building/${justPurchasedBuildingId}`"
+              class="btn btn-primary"
+            >
+              {{ t('cityMap.setupBuilding') }} →
+            </RouterLink>
+          </div>
+
+          <!-- Already owned by player (standard manage link) -->
+          <div v-else-if="isOwnedByPlayer && selectedLot.buildingId" class="your-building-actions">
             <RouterLink
               :to="`/building/${selectedLot.buildingId}`"
               class="btn btn-primary"
@@ -1001,6 +1016,34 @@ watch(viewMode, async (mode) => {
 
 .your-building-actions {
   margin-top: 1rem;
+}
+
+.post-purchase-banner {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(0, 200, 83, 0.07);
+  border: 1px solid rgba(0, 200, 83, 0.25);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.post-purchase-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.post-purchase-title {
+  font-size: 0.9375rem;
+  color: var(--color-secondary);
+}
+
+.post-purchase-text {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  margin: 0;
 }
 
 .population-index-item {
