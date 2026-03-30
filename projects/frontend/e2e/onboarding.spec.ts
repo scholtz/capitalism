@@ -1149,6 +1149,26 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     await expect(page.getByText('Current simulation tick: 42.')).toBeVisible()
   })
 
+  test('configure-guide tick step shows next-tick processing steps', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboarding(page, 'Tick Process Corp')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The tick step should also show next-tick process items
+    await expect(page.locator('.next-tick-process-list')).toBeVisible()
+    await expect(page.locator('.next-tick-process-list')).toContainText('Raw materials are purchased')
+    await expect(page.locator('.next-tick-process-list')).toContainText('Your product is manufactured')
+    await expect(page.locator('.next-tick-process-list')).toContainText('offers the product publicly')
+  })
+
   test('completion screen shows Configure My Sales Shop CTA linking to shop building', async ({
     page,
   }) => {
@@ -1284,7 +1304,7 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     await expect(page.getByRole('button', { name: /My Shop is Ready/i })).toBeVisible()
   })
 
-  test('milestone "My Shop is Ready" button calls completeFirstSaleMilestone and redirects to dashboard', async ({
+  test('milestone "My Shop is Ready" button shows business-live panel and then navigates to dashboard', async ({
     page,
   }) => {
     const shopBuildingId = 'building-shop-milestone-test'
@@ -1344,9 +1364,96 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     // Click the milestone button
     await page.getByRole('button', { name: /My Shop is Ready/i }).click()
 
+    // Should show the business-live panel (not immediately navigate)
+    await expect(
+      page.getByRole('heading', { name: /Your Business is Now Operational/i }),
+    ).toBeVisible()
+    await expect(page.locator('.business-live-panel')).toBeVisible()
+
+    // Click "Go to Dashboard" on the business-live panel
+    await page.getByRole('button', { name: /Go to Dashboard/i }).click()
+
     // Should redirect to dashboard
     await page.waitForURL('/dashboard')
     await expect(page).toHaveURL('/dashboard')
+  })
+
+  test('business-live panel shows tick info and next-tick process steps', async ({ page }) => {
+    const shopBuildingId = 'building-shop-live-test'
+    const player = makePlayer({
+      onboardingCompletedAtUtc: new Date().toISOString(),
+      onboardingShopBuildingId: shopBuildingId,
+      onboardingFirstSaleCompletedAtUtc: null,
+      companies: [
+        {
+          id: 'comp-live',
+          playerId: 'player-1',
+          name: 'Live Corp',
+          cash: 300000,
+          foundedAtUtc: new Date().toISOString(),
+          buildings: [
+            {
+              id: shopBuildingId,
+              companyId: 'comp-live',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Live Corp Shop',
+              latitude: 48.145,
+              longitude: 17.107,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              units: [
+                {
+                  id: 'unit-live-ps-1',
+                  buildingId: shopBuildingId,
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkDown: false,
+                  linkDiagonal: false,
+                  minPrice: 45,
+                },
+              ],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 55
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // Click the milestone button
+    await page.getByRole('button', { name: /My Shop is Ready/i }).click()
+
+    // Business-live panel should be visible
+    await expect(page.locator('.business-live-panel')).toBeVisible()
+
+    // Should show tick info mentioning the current tick
+    await expect(page.locator('.business-live-panel')).toContainText('55')
+
+    // Should show the next-tick process steps
+    await expect(page.locator('.business-live-panel')).toContainText('Raw materials are purchased')
+    await expect(page.locator('.business-live-panel')).toContainText(
+      'Your product is manufactured',
+    )
+    await expect(page.locator('.business-live-panel')).toContainText('offers the product publicly')
+
+    // Configure-guide should no longer be visible
+    await expect(
+      page.getByRole('heading', { name: 'Configure Your First Business' }),
+    ).toBeHidden()
   })
 
   test('delayed-result: milestone shows error when shop has no configured sales unit', async ({

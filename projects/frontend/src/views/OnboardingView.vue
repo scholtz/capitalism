@@ -150,6 +150,7 @@ const offerMessage = ref<string | null>(null)
 const onboardingCompanyCash = ref<number | null>(null)
 const milestoneLoading = ref(false)
 const milestoneError = ref<string | null>(null)
+const milestoneCompleted = ref(false)
 
 // Guest mode state
 const isGuestMode = computed(() => !auth.isAuthenticated)
@@ -1008,13 +1009,17 @@ async function markMilestoneComplete() {
       }`,
     )
     await auth.fetchMe()
-    stopTickCountdown()
-    router.push('/dashboard')
+    milestoneCompleted.value = true
   } catch (e: unknown) {
     milestoneError.value = e instanceof Error ? e.message : t('onboarding.milestoneError')
   } finally {
     milestoneLoading.value = false
   }
+}
+
+function navigateToDashboard() {
+  stopTickCountdown()
+  router.push('/dashboard')
 }
 
 function formatTimeRemaining(expiresAtUtc: string): string {
@@ -1330,7 +1335,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="step === 5 && (completionResult || isResumingConfigureStep || isGuestMode)" class="step-content completion-step">
+      <div v-if="step === 5 && (completionResult || isResumingConfigureStep || isGuestMode || milestoneCompleted)" class="step-content completion-step">
         <div class="completion-hero">
           <h2 class="completion-title">{{ t(isGuestMode ? 'onboarding.guestCompletionTitle' : 'onboarding.completionTitle') }}</h2>
           <p class="completion-desc">{{ t(isGuestMode ? 'onboarding.guestCompletionDesc' : 'onboarding.completionDesc') }}</p>
@@ -1565,7 +1570,7 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <section v-if="!isGuestMode" class="configure-guide" aria-labelledby="configure-guide-title">
+        <section v-if="!isGuestMode && !milestoneCompleted" class="configure-guide" aria-labelledby="configure-guide-title">
           <h3 id="configure-guide-title">{{ t('onboarding.configureShopTitle') }}</h3>
           <p class="configure-guide-desc">{{ t('onboarding.configureShopDesc') }}</p>
 
@@ -1607,6 +1612,11 @@ onUnmounted(() => {
               <div class="configure-step-body">
                 <strong>{{ t('onboarding.configureStepTick') }}</strong>
                 <p>{{ t('onboarding.configureStepTickDesc') }}</p>
+                <ol class="next-tick-process-list">
+                  <li>{{ t('onboarding.nextTickProcessStep1') }}</li>
+                  <li>{{ t('onboarding.nextTickProcessStep2') }}</li>
+                  <li>{{ t('onboarding.nextTickProcessStep3') }}</li>
+                </ol>
                 <p v-if="gameState" class="tick-status">
                   {{ t('onboarding.configureStepTickStatus', { tick: formatNumber(gameState.currentTick) }) }}
                 </p>
@@ -1636,7 +1646,42 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <div v-if="!isGuestMode" class="completion-next">
+        <!-- Business live panel: shown after marking milestone complete -->
+        <section v-if="!isGuestMode && milestoneCompleted" class="business-live-panel" aria-labelledby="business-live-title">
+          <div class="business-live-header">
+            <span class="business-live-icon">🎉</span>
+            <div>
+              <h3 id="business-live-title">{{ t('onboarding.businessLiveTitle') }}</h3>
+              <p>{{ t('onboarding.businessLiveDesc') }}</p>
+            </div>
+          </div>
+
+          <div v-if="gameState" class="business-live-tick">
+            <p class="tick-status">{{ t('onboarding.businessLiveTickInfo', { tick: formatNumber(gameState.currentTick) }) }}</p>
+            <p v-if="tickCountdown" class="tick-countdown" role="timer">{{ tickCountdown }}</p>
+          </div>
+
+          <div class="business-live-process">
+            <h4>{{ t('onboarding.nextTickProcessTitle') }}</h4>
+            <ol class="next-tick-process-list">
+              <li>{{ t('onboarding.nextTickProcessStep1') }}</li>
+              <li>{{ t('onboarding.nextTickProcessStep2') }}</li>
+              <li>{{ t('onboarding.nextTickProcessStep3') }}</li>
+            </ol>
+          </div>
+
+          <div class="business-live-actions">
+            <button class="btn btn-primary btn-lg" @click="navigateToDashboard">
+              {{ t('onboarding.businessLiveDashboardCta') }}
+              <span class="btn-arrow">→</span>
+            </button>
+            <RouterLink to="/leaderboard" class="btn btn-secondary">
+              {{ t('onboarding.completionViewLeaderboard') }}
+            </RouterLink>
+          </div>
+        </section>
+
+        <div v-if="!isGuestMode && !milestoneCompleted" class="completion-next">
           <h3>{{ t('onboarding.completionNextSteps') }}</h3>
           <div class="completion-actions">
             <RouterLink to="/dashboard" class="btn btn-secondary">
@@ -2394,6 +2439,71 @@ onUnmounted(() => {
   font-size: 0.9rem;
   color: var(--color-error, #ff4757);
   margin: 0;
+}
+
+/* Next-tick process list inside configure-step */
+.next-tick-process-list {
+  margin: 0.5rem 0 0 1.25rem;
+  padding: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+/* Business live panel: shown after marking milestone complete */
+.business-live-panel {
+  background: linear-gradient(135deg, rgba(0, 200, 83, 0.08) 0%, rgba(0, 71, 255, 0.04) 100%);
+  border: 1px solid rgba(0, 200, 83, 0.4);
+  border-radius: 12px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.business-live-header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.business-live-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.business-live-header h3 {
+  margin: 0 0 0.4rem;
+  color: var(--color-text);
+  font-size: 1.1rem;
+}
+
+.business-live-header p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.business-live-tick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.business-live-process h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.business-live-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 /* Guest mode styles */
