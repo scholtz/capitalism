@@ -364,6 +364,118 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         }
     }
 
+    [Fact]
+    public async Task FinishOnboarding_FoodProcessingSupplyChainFeedsShopAndMakesFirstSale()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"finish-onboarding-food-{Guid.NewGuid():N}@test.com");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "Bread Factory Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+
+        var result = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(result.TryGetProperty("errors", out _), "FinishOnboarding failed for FOOD_PROCESSING");
+
+        var payload = result.GetProperty("data").GetProperty("finishOnboarding");
+        var shopId = Guid.Parse(payload.GetProperty("salesShop").GetProperty("id").GetString()!);
+        var productGuid = Guid.Parse(productId);
+
+        await ProcessTicksAsync(4);
+
+        await using (var verificationScope = _factory.Services.CreateAsyncScope())
+        {
+            var db = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var shopPurchaseUnit = await db.BuildingUnits
+                .SingleAsync(unit => unit.BuildingId == shopId && unit.UnitType == UnitType.Purchase);
+            var purchasedInventory = await db.Inventories
+                .Where(entry => entry.BuildingUnitId == shopPurchaseUnit.Id && entry.ProductTypeId == productGuid)
+                .ToListAsync();
+
+            Assert.True(
+                purchasedInventory.Sum(entry => entry.Quantity) > 0m,
+                "FOOD_PROCESSING starter shop purchase unit should fill from the factory output after ticks.");
+        }
+
+        await ProcessTicksAsync(2);
+
+        await using (var verificationScope = _factory.Services.CreateAsyncScope())
+        {
+            var db = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var salesRecords = await db.PublicSalesRecords
+                .Where(record => record.BuildingId == shopId && record.ProductTypeId == productGuid && record.QuantitySold > 0m)
+                .ToListAsync();
+
+            Assert.NotEmpty(salesRecords);
+        }
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_HealthcareSupplyChainFeedsShopAndMakesFirstSale()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"finish-onboarding-health-{Guid.NewGuid():N}@test.com");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "Pharma Factory Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+
+        var result = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(result.TryGetProperty("errors", out _), "FinishOnboarding failed for HEALTHCARE");
+
+        var payload = result.GetProperty("data").GetProperty("finishOnboarding");
+        var shopId = Guid.Parse(payload.GetProperty("salesShop").GetProperty("id").GetString()!);
+        var productGuid = Guid.Parse(productId);
+
+        await ProcessTicksAsync(4);
+
+        await using (var verificationScope = _factory.Services.CreateAsyncScope())
+        {
+            var db = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var shopPurchaseUnit = await db.BuildingUnits
+                .SingleAsync(unit => unit.BuildingId == shopId && unit.UnitType == UnitType.Purchase);
+            var purchasedInventory = await db.Inventories
+                .Where(entry => entry.BuildingUnitId == shopPurchaseUnit.Id && entry.ProductTypeId == productGuid)
+                .ToListAsync();
+
+            Assert.True(
+                purchasedInventory.Sum(entry => entry.Quantity) > 0m,
+                "HEALTHCARE starter shop purchase unit should fill from the factory output after ticks.");
+        }
+
+        await ProcessTicksAsync(2);
+
+        await using (var verificationScope = _factory.Services.CreateAsyncScope())
+        {
+            var db = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var salesRecords = await db.PublicSalesRecords
+                .Where(record => record.BuildingId == shopId && record.ProductTypeId == productGuid && record.QuantitySold > 0m)
+                .ToListAsync();
+
+            Assert.NotEmpty(salesRecords);
+        }
+    }
+
     #endregion
 
     #region Authentication
@@ -3000,7 +3112,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         Assert.Equal(0, factoryPurchase.GetProperty("gridX").GetInt32());
         Assert.Equal(starterResourceId, factoryPurchase.GetProperty("resourceTypeId").GetString());
-        Assert.Equal(basePrice, factoryPurchase.GetProperty("maxPrice").GetDecimal());
+        // maxPrice is intentionally null for the starter factory purchase unit so it can always
+        // buy raw materials from the exchange regardless of the product's base price.
+        Assert.Equal(JsonValueKind.Null, factoryPurchase.GetProperty("maxPrice").ValueKind);
         Assert.Equal("OPTIMAL", factoryPurchase.GetProperty("purchaseSource").GetString());
         Assert.True(factoryPurchase.GetProperty("linkRight").GetBoolean());
 

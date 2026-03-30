@@ -691,7 +691,11 @@ public sealed class Mutation
     {
         db.BuildingUnits.RemoveRange(factory.Units);
         db.BuildingUnits.AddRange(
-            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Purchase, GridX = 0, GridY = 0, Level = 1, LinkRight = true, ResourceTypeId = starterResourceId, PurchaseSource = "OPTIMAL", MaxPrice = product.BasePrice },
+            // MaxPrice is intentionally left null so the starter factory can always purchase
+            // raw materials from the global exchange regardless of the product's base price.
+            // (e.g. Bread base price 3m < Grain exchange price ~6m — setting MaxPrice to the
+            // product base would prevent the purchase unit from ever buying any input.)
+            new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Purchase, GridX = 0, GridY = 0, Level = 1, LinkRight = true, ResourceTypeId = starterResourceId, PurchaseSource = "OPTIMAL" },
             new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Manufacturing, GridX = 1, GridY = 0, Level = 1, LinkRight = true, ProductTypeId = product.Id },
             new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Storage, GridX = 2, GridY = 0, Level = 1, LinkRight = true },
             new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.B2BSales, GridX = 3, GridY = 0, Level = 1, ProductTypeId = product.Id, MinPrice = product.BasePrice, SaleVisibility = "COMPANY" }

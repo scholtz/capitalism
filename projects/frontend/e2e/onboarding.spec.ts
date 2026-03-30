@@ -444,6 +444,80 @@ test.describe('Guest onboarding wizard', () => {
     await expect(page.getByRole('button', { name: 'Save & Launch' })).toBeVisible()
   })
 
+  test('guest can complete wizard with Food Processing industry (Bread)', async ({ page }) => {
+    // AC2: The user can choose one of the three roadmap-defined starter industries.
+    // AC7: Guest progress is handled in a temporary way and not permanently stored before sign-up.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Step 1: Select Food Processing
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+    await page.locator('.industry-card', { hasText: 'Food Processing' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Choose city
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: Choose factory lot (no backend call in guest mode)
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Bread Factory Guest')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Choose Bread product and shop lot
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Bread' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: Guest save-progress screen with Bread in the profit preview
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Save & Launch' })).toBeVisible()
+  })
+
+  test('guest can complete wizard with Healthcare industry (Basic Medicine)', async ({ page }) => {
+    // AC2: The user can choose one of the three roadmap-defined starter industries.
+    // AC7: Guest progress is handled in a temporary way and not permanently stored before sign-up.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Step 1: Select Healthcare
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+    await page.locator('.industry-card', { hasText: 'Healthcare' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Choose city
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: Choose factory lot (no backend call in guest mode)
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Pharma Guest Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Choose Basic Medicine product and shop lot
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Basic Medicine' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: Guest save-progress screen with Basic Medicine in the profit preview
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Save & Launch' })).toBeVisible()
+  })
+
   test('guest save-progress form shows register and login tabs', async ({ page }) => {
     setupMockApi(page)
     await page.goto('/onboarding')
