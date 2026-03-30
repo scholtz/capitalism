@@ -3598,8 +3598,9 @@ test.describe('Production chain configuration', () => {
     // by re-clicking PURCHASE and switching to Wood
     await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
     await expect(page.getByText('Input Item')).toBeVisible()
-    // Clear the current selection and pick Wood instead
-    await page.locator('.selected-chip').click() // deselect Grain
+    // Clear the current selection (scope to the config panel to avoid strict-mode issues
+    // when multiple chips exist across the sidebar and the planned grid cells).
+    await page.locator('.unit-config-fields .selected-chip').click() // deselect Grain
     await page.getByPlaceholder(/Search/i).fill('Wood')
     await page.getByRole('button', { name: /^Wood/ }).first().click()
 

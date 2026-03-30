@@ -110,7 +110,9 @@ const building = ref<Building | null>(null)
 const currentTick = ref(0)
 const loading = ref(true)
 const saving = ref(false)
+/** Page-level error (building not found, load failed). Shown as a full-page error state. */
 const error = ref<string | null>(null)
+/** Inline save error (e.g. RECIPE_INPUT_MISMATCH). Shown within the planning section. */
 const saveError = ref<string | null>(null)
 const companyCash = ref<number | null>(null)
 const isEditing = ref(false)
