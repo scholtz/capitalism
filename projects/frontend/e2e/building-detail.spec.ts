@@ -2849,6 +2849,210 @@ test.describe('Global exchange market', () => {
     await expect(page.locator('.offer-blocked-reason').first()).toBeVisible()
     await expect(page.locator('.offer-blocked-reason').first()).toContainText('Below your min quality')
   })
+
+  test('shows "best delivered price" badge on the offer with the lowest delivered price', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-best-badge',
+      playerId: player.id,
+      name: 'Best Badge Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-best-badge',
+          companyId: 'company-best-badge',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Best Badge Factory',
+          latitude: 48.1486,
+          longitude: 17.1077,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-best-badge',
+              buildingId: 'building-best-badge',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              purchaseSource: 'EXCHANGE',
+              maxPrice: 999,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-best-badge')
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // The "Best delivered price" badge must appear exactly once (on the best offer)
+    const bestBadge = page.locator('.offer-best-badge')
+    await expect(bestBadge).toHaveCount(1)
+    await expect(bestBadge).toContainText('Best delivered price')
+
+    // The badge must be inside the Bratislava offer (same-city = 0 transit = lowest delivered)
+    const bratislavaOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Bratislava' })
+    await expect(bratislavaOffer.locator('.offer-best-badge')).toBeVisible()
+
+    // The selection hint explaining the logic must also be visible
+    await expect(page.getByText(/lowest delivered price/)).toBeVisible()
+  })
+
+  test('nearby supplier with higher sticker price wins over far supplier due to transit cost', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    // Bratislava is the destination city. Override city abundances so Prague has a lower exchange
+    // price (high abundance) than Bratislava, but Prague's transit cost still makes its delivered
+    // price higher. This proves that the cheapest sticker price is NOT always the best choice.
+    const cities = [
+      {
+        id: 'city-ba',
+        name: 'Bratislava',
+        countryCode: 'SK',
+        latitude: 48.1486,
+        longitude: 17.1077,
+        population: 475000,
+        averageRentPerSqm: 14,
+        resources: [
+          // Wood: standard abundance → standard exchange price (~$11.17/t), 0 transit (same city)
+          // Delivered = $11.17 → WINS despite higher sticker than Prague
+          { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.7 },
+        ],
+      },
+      {
+        id: 'city-cz',
+        name: 'Prague',
+        countryCode: 'CZ',
+        latitude: 50.0755,
+        longitude: 14.4378,
+        population: 1350000,
+        averageRentPerSqm: 18,
+        resources: [
+          // Wood: very high abundance → cheapest sticker price (~$9.46/t), but ~300 km away
+          // Transit = ~3.75/t, Delivered = ~$13.21/t → LOSES despite cheaper sticker
+          { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.95 },
+        ],
+      },
+    ]
+
+    player.companies.push({
+      id: 'company-nearby-wins',
+      playerId: player.id,
+      name: 'Nearby Wins Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-nearby-wins',
+          companyId: 'company-nearby-wins',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Nearby Wins Factory',
+          latitude: 48.1486,
+          longitude: 17.1077,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-nearby-wins',
+              buildingId: 'building-nearby-wins',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              purchaseSource: 'EXCHANGE',
+              maxPrice: 999,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    // Override cities so Prague has cheap sticker but high transit
+    state.cities = cities as typeof state.cities
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-nearby-wins')
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    const offersList = page.locator('.exchange-offers-list')
+    await expect(offersList).toBeVisible()
+
+    // Both cities must be listed
+    await expect(offersList.getByText('Bratislava')).toBeVisible()
+    await expect(offersList.getByText('Prague')).toBeVisible()
+
+    // Bratislava offer must carry the "best" badge (0 transit wins despite higher sticker)
+    const bratislavaOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Bratislava' })
+    await expect(bratislavaOffer.locator('.offer-best-badge')).toBeVisible()
+
+    // Prague must NOT have the best badge
+    const pragueOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Prague' })
+    await expect(pragueOffer.locator('.offer-best-badge')).toHaveCount(0)
+
+    // Prague transit cost must be positive (it's far away)
+    const pragueTransitText = await pragueOffer.getByText(/Transit:/).textContent()
+    expect(pragueTransitText).not.toContain('$0')
+
+    // Bratislava must show $0 transit (same city as destination)
+    await expect(bratislavaOffer.getByText(/Transit: \$0/)).toBeVisible()
+  })
 })
 
 // ── Starter factory setup flow ────────────────────────────────────────────────

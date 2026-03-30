@@ -559,6 +559,8 @@ export default {
       blockedMaxPrice: 'Over your max price (${maxPrice}/{unit})',
       blockedMinQuality: 'Below your min quality ({minQuality})',
       noValidOffers: 'No offers meet your price and quality constraints. Relax the limits or choose a different source.',
+      bestOffer: 'Best delivered price',
+      selectionHint: 'The system selects the offer with the lowest delivered price that meets your quality and price constraints. A nearby supplier with a higher sticker price can win over a distant one with lower sticker price when transit costs are considered.',
     },
     selector: {
       rawMaterials: 'Raw Materials',

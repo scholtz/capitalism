@@ -558,6 +558,8 @@ export default {
       blockedMaxPrice: 'Nad vašou max cenou (${maxPrice}/{unit})',
       blockedMinQuality: 'Pod vašou min kvalitou ({minQuality})',
       noValidOffers: 'Žiadne ponuky nespĺňajú vaše cenové a kvalitatívne obmedzenia. Uvoľnite limity alebo zvoľte iný zdroj.',
+      bestOffer: 'Najlepšia dodacia cena',
+      selectionHint: 'Systém vyberie ponuku s najnižšou dodacou cenou, ktorá spĺňa vaše kvalitatívne a cenové obmedzenia. Blízky dodávateľ s vyššou katalógovou cenou môže poraziť vzdialeného s nižšou katalógovou cenou, ak sa zohľadnia náklady na dopravu.',
     },
     selector: {
       rawMaterials: 'Suroviny',

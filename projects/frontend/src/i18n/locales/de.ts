@@ -558,6 +558,8 @@ export default {
       blockedMaxPrice: 'Über Ihrem Maxpreis (${maxPrice}/{unit})',
       blockedMinQuality: 'Unter Ihrer Mindestqualität ({minQuality})',
       noValidOffers: 'Keine Angebote erfüllen Ihre Preis- und Qualitätsbeschränkungen. Lockern Sie die Grenzen oder wählen Sie eine andere Quelle.',
+      bestOffer: 'Bester Lieferpreis',
+      selectionHint: 'Das System wählt das Angebot mit dem niedrigsten Lieferpreis, das Ihren Qualitäts- und Preisbeschränkungen entspricht. Ein naher Lieferant mit höherem Katalogpreis kann einen entfernten mit niedrigerem Katalogpreis schlagen, wenn Transportkosten berücksichtigt werden.',
     },
     selector: {
       rawMaterials: 'Rohstoffe',
