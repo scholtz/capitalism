@@ -3343,6 +3343,22 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task StartOnboardingCompany_Unauthenticated_ReturnsError()
+    {
+        // Guest mode front-end skips backend calls; this test verifies that an unauthenticated
+        // caller cannot directly invoke the mutation (authorization boundary).
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId = Guid.NewGuid(), companyName = "Ghost Co", factoryLotId = Guid.NewGuid() } });
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
     public async Task StartOnboardingCompany_WhenAlreadyCompleted_ReturnsError()
     {
         var token = await RegisterAndGetTokenAsync($"onboard-already-done-{Guid.NewGuid()}@test.com", "AlreadyDone");
