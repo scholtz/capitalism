@@ -602,6 +602,60 @@ test.describe('Guest onboarding wizard', () => {
     await page.waitForURL(/\/dashboard/)
     expect(state.currentUserId).toBe(completedPlayer.id)
   })
+
+  test('guest can start onboarding from home page Get Started button', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/')
+
+    // Click Get Started — should go to /onboarding, not /login (unauthenticated guest entry point)
+    const getStartedLink = page.getByRole('link', { name: 'Get Started' })
+    await expect(getStartedLink).toBeVisible()
+    await getStartedLink.click()
+    await page.waitForURL(/\/onboarding/)
+
+    // Should land on step 1 with no auth required
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+    await expect(page).not.toHaveURL(/\/login/)
+  })
+
+  test('guest completion screen shows simulated first-profit preview', async ({ page }) => {
+    // No auth setup — tests that the guest (unauthenticated) flow shows the profit preview on step 5
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Step 5 is the guest save-progress screen (no auth required to reach it)
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+
+    // Profit preview panel should be visible after completing all guest steps
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+    await expect(page.getByText('First-Tick Profit Preview')).toBeVisible()
+    await expect(page.getByText('Estimated revenue')).toBeVisible()
+    await expect(page.getByText('Estimated materials cost')).toBeVisible()
+    await expect(page.getByText('Projected net profit')).toBeVisible()
+
+    // Revenue should be a positive dollar amount
+    const revenueEl = page.locator('.profit-stat-revenue')
+    await expect(revenueEl).toBeVisible()
+    const revenueText = await revenueEl.textContent()
+    expect(revenueText).toMatch(/\$\d/)
+  })
+
+  test('guest completion screen shows tick panel explaining simulation time', async ({ page }) => {
+    // No auth setup — tests that the guest (unauthenticated) flow shows tick info on step 5
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Step 5 is the guest save-progress screen (no auth required to reach it)
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+
+    // Tick panel should explain time progression
+    await expect(page.locator('.guest-tick-panel')).toBeVisible()
+    await expect(page.getByText('Wait for the next tick')).toBeVisible()
+    // Current tick should be displayed — use a regex so the test is resilient to mock data changes
+    await expect(page.getByText(/Current simulation tick: \d+\./)).toBeVisible()
+  })
 })
 
 test.describe('Dashboard', () => {
@@ -685,6 +739,36 @@ test.describe('Full onboarding journey', () => {
     // Verify dashboard has company
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
     await expect(page.locator('.company-card').first().getByRole('heading', { name: 'Journey Corp' })).toBeVisible()
+  })
+
+  test('guest → home page Get Started → complete wizard → register → empire launched', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+
+    // Start at home page as unauthenticated visitor
+    await page.goto('/')
+    // Click Get Started — now routes to /onboarding (guest mode entry)
+    await page.getByRole('link', { name: 'Get Started' }).click()
+    await page.waitForURL(/\/onboarding/)
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+
+    // Complete steps 1-4 as guest (no auth)
+    await completeGuestSteps1to4(page, 'Home Guest Corp')
+
+    // Step 5: save-progress screen with profit preview and registration form
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Register to save progress
+    await page.locator('#guestEmail').fill('homeguest@test.com')
+    await page.locator('#guestDisplayName').fill('Home Guest')
+    await page.locator('#guestPassword').fill('TestPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Migration completes → authenticated completion screen
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
   })
 })
 

@@ -355,3 +355,17 @@ Root-cause of a quality failure (March 2026, PR #48 / global exchange):
 4. **Labels without `for` attributes cannot be found with `getByLabel`.** Scope using `.locator('.config-field').filter({ has: page.getByText('Label Text') }).locator('input')` instead.
 5. **After placing a unit via the picker (`placeUnit`), `selectedCell` is reset to null.** The cell must be clicked again before the config panel is visible.
 6. **Always run the targeted spec before `report_progress`:** `npx playwright test --project=chromium e2e/<spec>.ts`. Only then run the full suite.
+
+## Minimal-change PR quality — prove the gap, don't just fix the symptom
+
+Root-cause of a quality failure (March 2026, PR #63 onboarding routing fix):
+- The actual fix was correct (route "Get Started" to /onboarding instead of /login) and all tests passed.
+- However, the PR did not include E2E tests that explicitly exercised the new routing path from the home page (starting at `/`, clicking "Get Started", landing on `/onboarding` as an unauthenticated guest).
+- The product owner saw a minimal diff without proof of the guest journey working end-to-end, and concluded the implementation was incomplete.
+
+**When fixing a single gap in a fully-implemented feature:**
+1. **Always add a test that specifically exercises the fixed behavior.** If you route "Get Started" to `/onboarding`, add an E2E test that starts at `/`, clicks "Get Started", and verifies `/onboarding` is reached without auth.
+2. **Add tests that prove the end-to-end user journey works from the entry point you changed.** The home page CTA test should continue through the onboarding wizard steps, not just assert the URL.
+3. **Include at least one golden-path E2E test that covers the full flow affected by the fix.** For this routing fix: home → guest onboarding → register → empire launched.
+4. **Explain in the PR description what the gap was and how the test proves it is fixed.** Link to the acceptance criterion it satisfies.
+5. **Do not consider a routing-only fix "done" without E2E proof.** Routing changes are easy to regress; tests are the safety net.
