@@ -3112,8 +3112,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         Assert.Equal(0, factoryPurchase.GetProperty("gridX").GetInt32());
         Assert.Equal(starterResourceId, factoryPurchase.GetProperty("resourceTypeId").GetString());
-        // maxPrice is intentionally null for the starter factory purchase unit so it can always
-        // buy raw materials from the exchange regardless of the product's base price.
+        // Null maxPrice allows market-rate raw-material purchases — see ConfigureStarterFactory comment.
         Assert.Equal(JsonValueKind.Null, factoryPurchase.GetProperty("maxPrice").ValueKind);
         Assert.Equal("OPTIMAL", factoryPurchase.GetProperty("purchaseSource").GetString());
         Assert.True(factoryPurchase.GetProperty("linkRight").GetBoolean());

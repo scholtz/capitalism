@@ -693,8 +693,9 @@ public sealed class Mutation
         db.BuildingUnits.AddRange(
             // MaxPrice is intentionally left null so the starter factory can always purchase
             // raw materials from the global exchange regardless of the product's base price.
-            // (e.g. Bread base price 3m < Grain exchange price ~6m — setting MaxPrice to the
-            // product base would prevent the purchase unit from ever buying any input.)
+            // Example: Bread (base price 3 coins) requires Grain whose exchange price is ~6 coins
+            // in Bratislava — capping MaxPrice to product.BasePrice would permanently block the
+            // purchase unit from buying any input material for that industry.
             new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Purchase, GridX = 0, GridY = 0, Level = 1, LinkRight = true, ResourceTypeId = starterResourceId, PurchaseSource = "OPTIMAL" },
             new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Manufacturing, GridX = 1, GridY = 0, Level = 1, LinkRight = true, ProductTypeId = product.Id },
             new BuildingUnit { Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Storage, GridX = 2, GridY = 0, Level = 1, LinkRight = true },
