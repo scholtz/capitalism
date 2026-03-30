@@ -3439,4 +3439,180 @@ test.describe('Production chain configuration', () => {
     // It should show "Configuration Needed" since pending units have no resource/product
     await expect(page.getByRole('region', { name: /production chain status/i }).getByText(/Configuration Needed/i)).toBeVisible()
   })
+
+  test('full end-to-end: apply starter layout, configure both units, save, see chain complete', async ({ page }) => {
+    // Start with a completely empty factory — simulates the player journey after
+    // purchasing a lot and landing on the building detail page for the first time.
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-e2e',
+          playerId: 'player-1',
+          name: 'E2E Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-e2e-factory',
+              companyId: 'company-e2e',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'E2E Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = await setupChainTest(page, player)
+    await page.goto('/building/building-e2e-factory')
+
+    // Step 1: Starter setup banner should be visible for an empty factory
+    await expect(page.getByRole('region', { name: /starter setup/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Apply Starter Layout/i })).toBeVisible()
+
+    // Step 2: Apply starter layout — enters edit mode with PURCHASE/MANUFACTURING/STORAGE
+    await page.getByRole('button', { name: /Apply Starter Layout/i }).click()
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)).toContainText('Purchase')
+    await expect(plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)).toContainText('Manufacturing')
+    await expect(plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(2)).toContainText('Storage')
+
+    // Step 3: Configure the PURCHASE unit — choose Wood as input resource
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+    await expect(page.getByText('Input Item')).toBeVisible()
+    // Onboarding guide should be visible for FACTORY PURCHASE unit
+    await expect(page.getByText(/raw material this factory will buy/i)).toBeVisible()
+    await page.getByPlaceholder(/Search/i).fill('Wood')
+    await page.getByRole('button', { name: /^Wood/ }).first().click()
+    await expect(page.locator('.selected-chip')).toContainText('Wood')
+
+    // Step 4: Configure the MANUFACTURING unit — Wooden Chair should appear (Wood recipe matches)
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+    await expect(page.getByText('Output Product')).toBeVisible()
+    // Factory-specific manufacturing onboarding guide
+    await expect(page.getByText(/product this factory will manufacture/i)).toBeVisible()
+    await expect(page.getByRole('button', { name: /Wooden Chair/ })).toBeVisible()
+    await page.getByRole('button', { name: /Wooden Chair/ }).click()
+    await expect(page.locator('.selected-chip')).toContainText('Wooden Chair')
+
+    // Step 5: Save the configuration (Store Upgrade)
+    const storeBtn = page.getByRole('button', { name: /Store Upgrade/i })
+    await expect(storeBtn).toBeEnabled()
+    await storeBtn.click()
+
+    // Step 6: After save, edit mode exits; upgrade banner should appear
+    await expect(page.locator('.upgrade-banner')).toBeVisible()
+    // Starter setup banner should be gone
+    await expect(page.locator('.starter-setup-banner')).toBeHidden()
+
+    // Step 7: Production chain panel should show with the saved resource and product
+    await expect(page.locator('.production-chain-panel')).toBeVisible()
+    const panel = page.getByRole('region', { name: /production chain status/i })
+    // Pending units now have Wood and Wooden Chair configured
+    const pendingUnits = state.players[0].companies[0].buildings[0].pendingConfiguration?.units ?? []
+    expect(pendingUnits.find((u) => u.unitType === 'PURCHASE')?.resourceTypeId).toBe('res-wood')
+    expect(pendingUnits.find((u) => u.unitType === 'MANUFACTURING')?.productTypeId).toBe('prod-chair')
+
+    // Panel should reflect "Chain Ready" since both purchase and manufacturing are configured
+    await expect(panel.getByText(/Chain Ready/i)).toBeVisible()
+  })
+
+  test('failure path: save with incompatible resource/product combination shows inline error', async ({ page }) => {
+    // Start with starter layout units where PURCHASE has Grain configured.
+    // The player tries to override the MANUFACTURING unit with Wooden Chair
+    // (which requires Wood, not Grain). The save should fail with RECIPE_INPUT_MISMATCH
+    // and the error should be shown inline without destroying the edit session.
+    const player = makeFactoryWithStarterUnits({ purchaseResourceId: 'res-grain' })
+    const state = await setupChainTest(page, player)
+
+    // Override product types so Wooden Chair requires Wood (not Grain)
+    state.productTypes = [
+      makeChairProduct(), // requires Wood (res-wood)
+      {
+        id: 'prod-bread',
+        name: 'Bread',
+        slug: 'bread',
+        industry: 'FOOD_PROCESSING',
+        basePrice: 3,
+        baseCraftTicks: 1,
+        outputQuantity: 12,
+        energyConsumptionMwh: 0.5,
+        unitName: 'Loaf',
+        unitSymbol: 'loaves',
+        isProOnly: false,
+        description: 'Basic wheat bread.',
+        recipes: [
+          {
+            resourceType: { id: 'res-grain', name: 'Grain', slug: 'grain', unitName: 'Ton', unitSymbol: 't' },
+            inputProductType: null,
+            quantity: 1,
+          },
+        ],
+      },
+    ]
+    state.resourceTypes = [
+      { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC', basePrice: 10, weightPerUnit: 5, unitName: 'Ton', unitSymbol: 't', description: 'Wood', imageUrl: null },
+      { id: 'res-grain', name: 'Grain', slug: 'grain', category: 'ORGANIC', basePrice: 5, weightPerUnit: 2, unitName: 'Ton', unitSymbol: 't', description: 'Grain', imageUrl: null },
+    ]
+
+    await page.goto('/building/building-chain-factory')
+
+    // Enter edit mode
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    // Click the PURCHASE unit and verify it shows Grain (already configured)
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    // Click on the MANUFACTURING cell and force-add Wooden Chair via API
+    // We do this by directly patching the draft via mock: we POST StoreBuildingConfiguration
+    // with PURCHASE(Grain) + MANUFACTURING(Wooden Chair) which should fail.
+    // To simulate this, we just click Store Upgrade directly — the mock will detect the mismatch.
+
+    // The draft already has PURCHASE(Grain) from the factory's active units.
+    // We need to add a product to MANUFACTURING to trigger the incompatibility.
+    // Since the selector filters prevent selecting Wooden Chair via UI (only Bread shows),
+    // we verify the save-failure path by directly crafting the submit action.
+
+    // Click MANUFACTURING cell and select Bread (compatible with Grain)
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+    await expect(page.getByText('Output Product')).toBeVisible()
+    await page.getByRole('button', { name: /Bread/ }).click()
+
+    // Now change the Purchase back to Wood to create an incompatible state
+    // by re-clicking PURCHASE and switching to Wood
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+    await expect(page.getByText('Input Item')).toBeVisible()
+    // Clear the current selection and pick Wood instead
+    await page.locator('.selected-chip').click() // deselect Grain
+    await page.getByPlaceholder(/Search/i).fill('Wood')
+    await page.getByRole('button', { name: /^Wood/ }).first().click()
+
+    // Now PURCHASE has Wood but MANUFACTURING has Bread (which requires Grain) — incompatible!
+    // Click Store Upgrade — the mock should return RECIPE_INPUT_MISMATCH
+    await page.getByRole('button', { name: /Store Upgrade/i }).click()
+
+    // The save error banner should appear inline WITHOUT losing the edit session
+    await expect(page.locator('.save-error-banner')).toBeVisible()
+    await expect(page.locator('.save-error-banner')).toContainText(/MANUFACTURING|Purchase|recipe|requires|input/i)
+
+    // The player should still be in edit mode (draft grid visible, not exited)
+    await expect(plannedSection).toBeVisible()
+    await expect(page.getByRole('button', { name: /Store Upgrade/i })).toBeVisible()
+  })
 })

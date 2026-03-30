@@ -451,6 +451,8 @@ export default {
       inputItem: 'Vstupná položka',
       outputProduct: 'Výstupný produkt',
       outputProductHelp: 'Zobrazujú sa len produkty podporované aktuálne prepojenými vstupmi.',
+      factoryPurchaseGuide: 'Vyberte surovinu, ktorú bude táto továreň nakupovať na trhu. Vybraná surovina bude priamo dodávaná do výrobnej jednotky na premenu na hotový produkt.',
+      factoryManufacturingGuide: 'Vyberte produkt, ktorý bude táto továreň vyrábať. Zobrazujú sa len produkty, ktorých receptúra zodpovedá surovine dodávanej nákupnou jednotkou. Hotové výrobky sa uskladnia v skladovacej jednotke.',
       outputResource: 'Výstupná surovina',
       resourceType: 'Typ suroviny',
       productType: 'Typ produktu',

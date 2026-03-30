@@ -452,6 +452,8 @@ export default {
       inputItem: 'Input Item',
       outputProduct: 'Output Product',
       outputProductHelp: 'Only products supported by the currently linked upstream resources and intermediate inputs are shown here.',
+      factoryPurchaseGuide: 'Choose the raw material this factory will buy from the market. The selected resource will feed directly into your Manufacturing unit to be turned into a finished product.',
+      factoryManufacturingGuide: 'Choose the product this factory will manufacture. Only products whose recipe ingredients match what your Purchase unit supplies are shown. The finished goods will be stored in your Storage unit ready for sale.',
       outputResource: 'Output Resource',
       resourceType: 'Resource Type',
       productType: 'Product Type',

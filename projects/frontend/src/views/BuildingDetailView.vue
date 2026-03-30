@@ -111,6 +111,7 @@ const currentTick = ref(0)
 const loading = ref(true)
 const saving = ref(false)
 const error = ref<string | null>(null)
+const saveError = ref<string | null>(null)
 const companyCash = ref<number | null>(null)
 const isEditing = ref(false)
 const selectedCell = ref<{ x: number; y: number } | null>(null)
@@ -451,6 +452,7 @@ function cancelEditing() {
   isEditing.value = false
   selectedCell.value = null
   showUnitPicker.value = false
+  saveError.value = null
 }
 
 function applyStarterLayout() {
@@ -838,7 +840,7 @@ function storeConfiguration() {
   if (!building.value || saving.value || !hasDraftChanges.value) return
 
   saving.value = true
-  error.value = null
+  saveError.value = null
 
   gqlRequest<{
     storeBuildingConfiguration: {
@@ -889,7 +891,7 @@ function storeConfiguration() {
       return loadBuilding()
     })
     .catch((reason: unknown) => {
-      error.value = reason instanceof Error ? reason.message : t('buildingDetail.storeUpgradeFailed')
+      saveError.value = reason instanceof Error ? reason.message : t('buildingDetail.storeUpgradeFailed')
     })
     .finally(() => {
       saving.value = false
@@ -2412,6 +2414,12 @@ watch(
               </div>
             </div>
 
+            <!-- Inline save error (e.g. RECIPE_INPUT_MISMATCH, PRO_SUBSCRIPTION_REQUIRED) -->
+            <div v-if="saveError" class="save-error-banner" role="alert">
+              ⚠️ {{ saveError }}
+              <button class="btn btn-ghost btn-sm" @click="saveError = null">{{ t('common.close') }}</button>
+            </div>
+
             <div class="upgrade-summary">
               <span class="upgrade-summary-pill">{{ t('buildingDetail.currentTickLabel', { tick: currentTick }) }}</span>
               <span class="upgrade-summary-pill">{{ t('buildingDetail.totalUpgradeTicks', { ticks: draftTotalTicks }) }}</span>
@@ -2614,6 +2622,10 @@ watch(
 
                 <!-- Purchase unit config -->
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'PURCHASE'">
+                  <!-- Factory-specific onboarding guide for the Purchase unit -->
+                  <p v-if="building?.type === 'FACTORY'" class="config-onboarding-hint">
+                    {{ t('buildingDetail.config.factoryPurchaseGuide') }}
+                  </p>
                   <div class="config-field">
                     <AdvancedItemSelector
                       :model-value="getItemSelection(getDraftUnitAt(selectedCell.x, selectedCell.y))"
@@ -2646,6 +2658,10 @@ watch(
 
                 <!-- Manufacturing unit config -->
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'MANUFACTURING'">
+                  <!-- Factory-specific onboarding guide for the Manufacturing unit -->
+                  <p v-if="building?.type === 'FACTORY'" class="config-onboarding-hint">
+                    {{ t('buildingDetail.config.factoryManufacturingGuide') }}
+                  </p>
                   <div class="config-field">
                     <AdvancedItemSelector
                       :model-value="getItemSelection(getDraftUnitAt(selectedCell.x, selectedCell.y))"
@@ -3457,6 +3473,21 @@ watch(
   background: rgba(220, 38, 38, 0.08);
   color: #dc2626;
   font-size: 0.875rem;
+}
+
+.save-error-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  border-radius: var(--radius-lg);
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+  font-size: 0.875rem;
+  line-height: 1.4;
 }
 
 .pro-access-banner {
@@ -4334,6 +4365,17 @@ watch(
   margin: -0.25rem 0 0;
   font-size: 0.75rem;
   color: var(--color-text-secondary);
+}
+
+.config-onboarding-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  border-left: 3px solid #60a5fa;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
 }
 
 .unit-config-readonly-details {

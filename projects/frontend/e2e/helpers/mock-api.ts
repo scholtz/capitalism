@@ -1271,6 +1271,47 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         }
       }
 
+      // Recipe compatibility validation: if a MANUFACTURING unit specifies a product,
+      // and at least one PURCHASE unit has a resource explicitly configured, verify
+      // that the resource satisfies the product's recipe.
+      if (building.type === 'FACTORY') {
+        const purchaseResourceIds = (input.units ?? [])
+          .filter((u: MockBuildingUnit) => u.unitType === 'PURCHASE' && u.resourceTypeId)
+          .map((u: MockBuildingUnit) => u.resourceTypeId!)
+
+        const purchaseProductIds = (input.units ?? [])
+          .filter((u: MockBuildingUnit) => u.unitType === 'PURCHASE' && u.productTypeId)
+          .map((u: MockBuildingUnit) => u.productTypeId!)
+
+        if (purchaseResourceIds.length > 0 || purchaseProductIds.length > 0) {
+          for (const unit of (input.units ?? [])) {
+            if (unit.unitType !== 'MANUFACTURING' || !unit.productTypeId) continue
+
+            const product = state.productTypes.find((p) => p.id === unit.productTypeId)
+            if (!product || product.recipes.length === 0) continue
+
+            const anyRecipeSatisfied = product.recipes.some(
+              (recipe: { resourceType: { id: string } | null; inputProductType: { id: string } | null }) =>
+                (recipe.resourceType?.id && purchaseResourceIds.includes(recipe.resourceType.id))
+                || (recipe.inputProductType?.id && purchaseProductIds.includes(recipe.inputProductType.id)),
+            )
+
+            if (!anyRecipeSatisfied) {
+              return route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                  errors: [{
+                    message: `The Manufacturing unit's product '${product.name}' requires an input that no configured Purchase unit in this plan supplies. Update the Purchase unit to supply a resource or product required by this product's recipe.`,
+                    extensions: { code: 'RECIPE_INPUT_MISMATCH' },
+                  }],
+                }),
+              })
+            }
+          }
+        }
+      }
+
       const currentUnits = new Map(building.units.map((unit) => [`${unit.gridX},${unit.gridY}`, unit]))
       const desiredUnits = new Map(
         (input.units ?? []).map((unit: MockBuildingUnit, index: number) => {

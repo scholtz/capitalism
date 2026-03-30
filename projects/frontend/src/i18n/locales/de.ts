@@ -451,6 +451,8 @@ export default {
       inputItem: 'Eingangsartikel',
       outputProduct: 'Ausgabeprodukt',
       outputProductHelp: 'Hier werden nur Produkte angezeigt, die durch die aktuell verknüpften Vorprodukte unterstützt werden.',
+      factoryPurchaseGuide: 'Wählen Sie den Rohstoff, den diese Fabrik vom Markt kaufen soll. Der ausgewählte Rohstoff wird direkt an Ihre Fertigungseinheit geliefert, um daraus ein Fertigprodukt herzustellen.',
+      factoryManufacturingGuide: 'Wählen Sie das Produkt, das diese Fabrik herstellen soll. Es werden nur Produkte angezeigt, deren Rezeptur mit dem von der Einkaufseinheit gelieferten Rohstoff übereinstimmt. Die fertigen Waren werden in Ihrer Lagereinheit zum Verkauf bereitgestellt.',
       outputResource: 'Ausgaberohstoff',
       resourceType: 'Rohstofftyp',
       productType: 'Produkttyp',
