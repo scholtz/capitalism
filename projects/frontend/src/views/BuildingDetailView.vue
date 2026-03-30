@@ -285,6 +285,53 @@ const showProductionChainPanel = computed(
     !showStarterSetupBanner.value,
 )
 
+/**
+ * Mirrors showStarterSetupBanner but for SALES_SHOP buildings.
+ */
+const showSalesShopStarterBanner = computed(
+  () =>
+    building.value?.type === 'SALES_SHOP' &&
+    activeUnits.value.length === 0 &&
+    pendingConfiguration.value === null &&
+    !isEditing.value,
+)
+
+const shopChainDisplayUnits = computed(() => {
+  const units = activeUnits.value.length > 0 ? activeUnits.value : pendingUnits.value
+  return {
+    purchase: units.find((u) => u.unitType === 'PURCHASE') ?? null,
+    publicSales: units.find((u) => u.unitType === 'PUBLIC_SALES') ?? null,
+  }
+})
+
+const shopChainStatus = computed(() => {
+  const { purchase, publicSales } = shopChainDisplayUnits.value
+  const isPurchaseConfigured = !!(purchase && (purchase.resourceTypeId || purchase.productTypeId))
+  const isPublicSalesConfigured = !!(
+    publicSales &&
+    publicSales.productTypeId &&
+    publicSales.minPrice !== null &&
+    publicSales.minPrice !== undefined
+  )
+  return {
+    isPurchaseConfigured,
+    isPublicSalesConfigured,
+    isChainComplete: isPurchaseConfigured && isPublicSalesConfigured,
+  }
+})
+
+/**
+ * Shows the sales-chain status panel for a sales shop that already has units
+ * saved (active or pending) but is not currently in edit mode.
+ */
+const showSalesChainPanel = computed(
+  () =>
+    !isEditing.value &&
+    building.value?.type === 'SALES_SHOP' &&
+    (activeUnits.value.length > 0 || pendingConfiguration.value !== null) &&
+    !showSalesShopStarterBanner.value,
+)
+
 type LinkChangeSummaryEntry = {
   description: string
   changeType: 'added' | 'removed'
@@ -540,6 +587,68 @@ function applyStarterLayout() {
     },
   ]
   setDraftUnitsFrom(starterUnits)
+  setEditBaselineFrom([])
+  isEditing.value = true
+  selectedCell.value = null
+  showUnitPicker.value = false
+}
+
+function applyShopStarterLayout() {
+  const shopStarterUnits: EditableGridUnit[] = [
+    {
+      id: 'draft-shop-starter-0-0',
+      unitType: 'PURCHASE',
+      gridX: 0,
+      gridY: 0,
+      level: 1,
+      linkUp: false,
+      linkDown: false,
+      linkLeft: false,
+      linkRight: true,
+      linkUpLeft: false,
+      linkUpRight: false,
+      linkDownLeft: false,
+      linkDownRight: false,
+      resourceTypeId: null,
+      productTypeId: null,
+      minPrice: null,
+      maxPrice: null,
+      purchaseSource: null,
+      saleVisibility: null,
+      budget: null,
+      mediaHouseBuildingId: null,
+      minQuality: null,
+      brandScope: null,
+      vendorLockCompanyId: null,
+    },
+    {
+      id: 'draft-shop-starter-1-0',
+      unitType: 'PUBLIC_SALES',
+      gridX: 1,
+      gridY: 0,
+      level: 1,
+      linkUp: false,
+      linkDown: false,
+      linkLeft: false,
+      linkRight: false,
+      linkUpLeft: false,
+      linkUpRight: false,
+      linkDownLeft: false,
+      linkDownRight: false,
+      resourceTypeId: null,
+      productTypeId: null,
+      minPrice: null,
+      maxPrice: null,
+      purchaseSource: null,
+      saleVisibility: null,
+      budget: null,
+      mediaHouseBuildingId: null,
+      minQuality: null,
+      brandScope: null,
+      vendorLockCompanyId: null,
+    },
+  ]
+  setDraftUnitsFrom(shopStarterUnits)
   setEditBaselineFrom([])
   isEditing.value = true
   selectedCell.value = null
@@ -2146,6 +2255,26 @@ watch(
         </div>
       </div>
 
+      <!-- Starter sales-shop setup banner (shown for empty sales shops with no pending plan) -->
+      <div
+        v-if="showSalesShopStarterBanner"
+        class="starter-setup-banner starter-setup-banner--shop"
+        role="region"
+        aria-label="shop starter setup"
+      >
+        <div class="starter-setup-content">
+          <h2 class="starter-setup-title">🏪 {{ t('buildingDetail.shopStarterSetup.title') }}</h2>
+          <p class="starter-setup-body">{{ t('buildingDetail.shopStarterSetup.body') }}</p>
+          <p class="starter-setup-desc">{{ t('buildingDetail.shopStarterSetup.starterLayoutDesc') }}</p>
+          <p class="starter-setup-whatnext">{{ t('buildingDetail.shopStarterSetup.whatNext') }}</p>
+        </div>
+        <div class="starter-setup-actions">
+          <button class="btn btn-primary" @click="applyShopStarterLayout">
+            {{ t('buildingDetail.shopStarterSetup.applyStarter') }}
+          </button>
+        </div>
+      </div>
+
       <div v-if="isUpgradeInProgress" class="upgrade-banner" role="status">
         <div>
           <strong>{{ t('buildingDetail.upgradeQueuedTitle') }}</strong>
@@ -2282,6 +2411,94 @@ watch(
             }}
           </p>
           <p class="chain-next-step">{{ t('buildingDetail.productionChain.nextStep') }}</p>
+        </div>
+      </div>
+
+      <!-- Sales chain status panel: shown for sales shops with units saved -->
+      <div
+        v-if="showSalesChainPanel"
+        class="production-chain-panel"
+        role="region"
+        aria-label="sales chain status"
+      >
+        <div class="chain-panel-header">
+          <h3 class="chain-panel-title">🏪 {{ t('buildingDetail.salesChain.title') }}</h3>
+          <span
+            v-if="shopChainStatus.isChainComplete"
+            class="chain-status-badge chain-status-badge--complete"
+            >✅ {{ t('buildingDetail.salesChain.chainComplete') }}</span
+          >
+          <span v-else class="chain-status-badge chain-status-badge--incomplete"
+            >⚠️ {{ t('buildingDetail.salesChain.chainIncomplete') }}</span
+          >
+        </div>
+
+        <div class="chain-flow" role="list" aria-label="sales chain steps">
+          <!-- PURCHASE step -->
+          <div
+            class="chain-step"
+            :class="shopChainStatus.isPurchaseConfigured ? 'chain-step--configured' : 'chain-step--missing'"
+            role="listitem"
+          >
+            <div class="chain-step-icon">🛒</div>
+            <div class="chain-step-type">{{ t('buildingDetail.unitTypes.PURCHASE') }}</div>
+            <div v-if="shopChainStatus.isPurchaseConfigured" class="chain-step-value">
+              {{
+                shopChainDisplayUnits.purchase?.resourceTypeId
+                  ? getResourceName(shopChainDisplayUnits.purchase.resourceTypeId)
+                  : getProductName(shopChainDisplayUnits.purchase?.productTypeId ?? null)
+              }}
+            </div>
+            <div v-else class="chain-step-missing-label">
+              {{ t('buildingDetail.salesChain.notConfigured') }}
+            </div>
+          </div>
+
+          <div class="chain-arrow" aria-hidden="true">→</div>
+
+          <!-- PUBLIC_SALES step -->
+          <div
+            class="chain-step"
+            :class="shopChainStatus.isPublicSalesConfigured ? 'chain-step--configured' : 'chain-step--missing'"
+            role="listitem"
+          >
+            <div class="chain-step-icon">💲</div>
+            <div class="chain-step-type">{{ t('buildingDetail.unitTypes.PUBLIC_SALES') }}</div>
+            <div v-if="shopChainStatus.isPublicSalesConfigured" class="chain-step-value">
+              {{ getProductName(shopChainDisplayUnits.publicSales?.productTypeId ?? null) }}
+              · ${{ shopChainDisplayUnits.publicSales?.minPrice?.toFixed(2) }}
+            </div>
+            <div v-else class="chain-step-missing-label">
+              {{ t('buildingDetail.salesChain.notConfigured') }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Guidance when chain is incomplete -->
+        <div v-if="!shopChainStatus.isChainComplete" class="chain-guidance">
+          <h4 class="chain-guidance-title">{{ t('buildingDetail.salesChain.whatRemains') }}</h4>
+          <ul class="chain-todo">
+            <li v-if="!shopChainStatus.isPurchaseConfigured">
+              {{ t('buildingDetail.salesChain.todoPurchaseProduct') }}
+            </li>
+            <li v-if="!shopChainStatus.isPublicSalesConfigured">
+              {{ t('buildingDetail.salesChain.todoPublicSalesPrice') }}
+            </li>
+          </ul>
+          <p class="chain-action-hint">{{ t('buildingDetail.salesChain.editHint') }}</p>
+        </div>
+
+        <!-- Chain complete celebration -->
+        <div v-else class="chain-complete-message">
+          <p>
+            {{
+              t('buildingDetail.salesChain.chainCompleteDesc', {
+                product: getProductName(shopChainDisplayUnits.publicSales?.productTypeId ?? null),
+                price: shopChainDisplayUnits.publicSales?.minPrice?.toFixed(2) ?? '0.00',
+              })
+            }}
+          </p>
+          <p class="chain-next-step">{{ t('buildingDetail.salesChain.nextStep') }}</p>
         </div>
       </div>
 

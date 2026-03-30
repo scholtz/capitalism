@@ -3617,3 +3617,333 @@ test.describe('Production chain configuration', () => {
     await expect(page.getByRole('button', { name: /Store Upgrade/i })).toBeVisible()
   })
 })
+
+// ── Starter sales-shop setup banner ─────────────────────────────────────────
+
+test.describe('Starter sales-shop setup banner', () => {
+  function makeEmptySalesShopPlayer() {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-shop',
+          playerId: 'player-1',
+          name: 'Retail Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-empty-shop',
+              companyId: 'company-shop',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'New Sales Shop',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    return player
+  }
+
+  test('shows starter setup banner for an empty sales shop', async ({ page }) => {
+    const player = makeEmptySalesShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-empty-shop')
+
+    // Shop starter setup banner should be visible
+    await expect(page.getByRole('region', { name: /shop starter setup/i })).toBeVisible()
+    // Title and body text
+    await expect(page.getByText(/New Sales Shop — Ready for Your First Product/i)).toBeVisible()
+    await expect(page.getByText(/no units configured yet/i)).toBeVisible()
+    // Starter layout description (scope to the desc paragraph to avoid strict mode issues)
+    await expect(page.locator('.starter-setup-desc').filter({ hasText: /Purchase.*Public Sales/i })).toBeVisible()
+    // Apply Starter Shop Layout button
+    await expect(page.getByRole('button', { name: /Apply Starter Shop Layout/i })).toBeVisible()
+  })
+
+  test('apply starter shop layout pre-populates PURCHASE and PUBLIC_SALES units', async ({
+    page,
+  }) => {
+    const player = makeEmptySalesShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-empty-shop')
+
+    await expect(page.getByRole('button', { name: /Apply Starter Shop Layout/i })).toBeVisible()
+    await page.getByRole('button', { name: /Apply Starter Shop Layout/i }).click()
+
+    // Planning grid should now be visible (edit mode)
+    const planningSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(planningSection).toBeVisible()
+
+    // PURCHASE unit should appear at position (0,0)
+    const purchaseCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await expect(purchaseCell).toContainText('Purchase')
+
+    // PUBLIC_SALES unit should appear at position (1,0)
+    const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await expect(publicSalesCell).toContainText('Public Sales')
+
+    // Shop starter setup banner should no longer be visible (we are now in edit mode)
+    await expect(page.locator('.starter-setup-banner--shop')).toBeHidden()
+  })
+
+  test('apply starter shop layout can be saved via Store Upgrade', async ({ page }) => {
+    const player = makeEmptySalesShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-empty-shop')
+
+    await page.getByRole('button', { name: /Apply Starter Shop Layout/i }).click()
+
+    // Store Upgrade button should be enabled
+    const storeBtn = page.getByRole('button', { name: /Store Upgrade/i })
+    await expect(storeBtn).toBeVisible()
+    await expect(storeBtn).toBeEnabled()
+    await storeBtn.click()
+
+    // After save, upgrade-in-progress banner should appear (pending configuration)
+    await expect(page.locator('.upgrade-banner')).toBeVisible()
+    // Starter setup banner should be gone
+    await expect(page.locator('.starter-setup-banner--shop')).toBeHidden()
+  })
+
+  test('starter shop banner is hidden for a sales shop that already has units', async ({
+    page,
+  }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-shop-units',
+          playerId: 'player-1',
+          name: 'Retail Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-shop-with-units',
+              companyId: 'company-shop-units',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Running Shop',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [
+                {
+                  id: 'u-public-sales',
+                  buildingId: 'building-shop-with-units',
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkRight: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                },
+              ],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-shop-with-units')
+
+    // Should NOT show the starter setup banner for a shop that already has units
+    await expect(page.locator('.starter-setup-banner--shop')).toBeHidden()
+  })
+})
+
+// ── Sales chain status panel ─────────────────────────────────────────────────
+
+test.describe('Sales chain status panel', () => {
+  function makeShopWithUnits({
+    purchaseProductId = null as string | null,
+    publicSalesProductId = null as string | null,
+    publicSalesMinPrice = null as number | null,
+  } = {}) {
+    return makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-sales-chain',
+          playerId: 'player-1',
+          name: 'Sales Chain Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-sales-chain-shop',
+              companyId: 'company-sales-chain',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'My Sales Shop',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [
+                {
+                  id: 'u-shop-purchase',
+                  buildingId: 'building-sales-chain-shop',
+                  unitType: 'PURCHASE',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkRight: true,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: purchaseProductId,
+                },
+                {
+                  id: 'u-shop-public-sales',
+                  buildingId: 'building-sales-chain-shop',
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkRight: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: publicSalesProductId,
+                  minPrice: publicSalesMinPrice,
+                },
+              ],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+  }
+
+  async function loginAndGoto(page: Parameters<typeof test>[0]['page'], player: ReturnType<typeof makePlayer>, url: string) {
+    const state = setupMockApi(page, { players: [player], products: [makeChairProduct()] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto(url)
+    return state
+  }
+
+  test('shows sales chain panel with incomplete status when units are unconfigured', async ({
+    page,
+  }) => {
+    const player = makeShopWithUnits()
+    await loginAndGoto(page, player, '/building/building-sales-chain-shop')
+
+    // Sales chain panel should be visible
+    await expect(page.getByRole('region', { name: /sales chain status/i })).toBeVisible()
+    // Status badge: incomplete
+    await expect(page.getByText(/Setup Required/i)).toBeVisible()
+    // Both steps should show "not configured"
+    const panel = page.getByRole('region', { name: /sales chain status/i })
+    await expect(panel.getByText(/Not configured yet/i).first()).toBeVisible()
+    // Guidance should appear
+    await expect(page.getByText(/What still needs to be configured/i)).toBeVisible()
+    await expect(page.getByText(/Purchase unit and select the product/i)).toBeVisible()
+    await expect(page.getByText(/Public Sales unit.*minimum selling price/i)).toBeVisible()
+  })
+
+  test('shows partial completion when only purchase is configured', async ({ page }) => {
+    const player = makeShopWithUnits({ purchaseProductId: 'prod-chair' })
+    await loginAndGoto(page, player, '/building/building-sales-chain-shop')
+
+    const panel = page.getByRole('region', { name: /sales chain status/i })
+    await expect(panel).toBeVisible()
+    // Status badge: still incomplete
+    await expect(panel.getByText(/Setup Required/i)).toBeVisible()
+    // Purchase is configured - shows product name
+    await expect(panel.getByText(/Wooden Chair/i)).toBeVisible()
+    // Only the public sales todo should remain
+    await expect(page.getByText(/Public Sales unit.*minimum selling price/i)).toBeVisible()
+  })
+
+  test('shows Ready to Sell when both purchase and public sales are fully configured', async ({
+    page,
+  }) => {
+    const player = makeShopWithUnits({
+      purchaseProductId: 'prod-chair',
+      publicSalesProductId: 'prod-chair',
+      publicSalesMinPrice: 49.99,
+    })
+    await loginAndGoto(page, player, '/building/building-sales-chain-shop')
+
+    const panel = page.getByRole('region', { name: /sales chain status/i })
+    await expect(panel).toBeVisible()
+    // Status badge: complete
+    await expect(panel.getByText(/Ready to Sell/i)).toBeVisible()
+    // Chain complete description mentions product and price
+    await expect(panel.locator('.chain-complete-message').getByText(/Wooden Chair/i)).toBeVisible()
+    await expect(panel.locator('.chain-complete-message').getByText(/49\.99/i)).toBeVisible()
+    // Next step hint
+    await expect(panel.getByText(/customers in the city can discover and buy/i)).toBeVisible()
+    // No guidance section (chain is complete)
+    await expect(page.getByText(/What still needs to be configured/i)).toBeHidden()
+  })
+})
