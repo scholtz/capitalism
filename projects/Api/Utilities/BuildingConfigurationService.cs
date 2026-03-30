@@ -750,11 +750,11 @@ public static class BuildingConfigurationService
                 }
             }
 
-            if ((unit.UnitType == UnitType.PublicSales || unit.UnitType == UnitType.B2BSales) && unit.MinPrice.HasValue && unit.MinPrice < 0)
+            if ((unit.UnitType == UnitType.PublicSales || unit.UnitType == UnitType.B2BSales) && unit.MinPrice.HasValue && unit.MinPrice <= 0)
             {
                 throw new GraphQLException(
                     ErrorBuilder.New()
-                        .SetMessage("Minimum price must be zero or greater.")
+                        .SetMessage("Minimum price must be greater than zero.")
                         .SetCode("INVALID_MIN_PRICE")
                         .Build());
             }

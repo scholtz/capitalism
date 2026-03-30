@@ -1312,20 +1312,22 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         }
       }
 
-      // Negative price validation: PUBLIC_SALES and B2B_SALES units must not have a negative minPrice
+      // Zero/negative price validation: PUBLIC_SALES and B2B_SALES units must have a positive minPrice.
+      // The runtime engine (PublicSalesPhase) silently replaces price <= 0 with base price, so
+      // accepting 0 would misrepresent the actual selling price to the player.
       for (const unit of (input.units ?? [])) {
         if (
           (unit.unitType === 'PUBLIC_SALES' || unit.unitType === 'B2B_SALES') &&
           unit.minPrice !== null &&
           unit.minPrice !== undefined &&
-          unit.minPrice < 0
+          unit.minPrice <= 0
         ) {
           return route.fulfill({
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify({
               errors: [{
-                message: 'Minimum price must be zero or greater.',
+                message: 'Minimum price must be greater than zero.',
                 extensions: { code: 'INVALID_MIN_PRICE' },
               }],
             }),

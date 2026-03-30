@@ -4133,4 +4133,52 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
     await expect(planningSection).toBeVisible()
     await expect(page.getByRole('button', { name: /Store Upgrade/i })).toBeVisible()
   })
+
+  test('zero price rejected — save error shown, shop not treated as ready', async ({ page }) => {
+    // The runtime engine silently replaces price <= 0 with base price, so we must block 0
+    // up front and honestly tell the player that pricing is a real decision.
+    const chair = makeChairProduct()
+    const player = makeEmptySalesShopForPricing()
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-pricing-shop')
+
+    // Apply starter shop layout
+    await page.getByRole('button', { name: /Apply Starter Shop Layout/i }).click()
+
+    const planningSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await publicSalesCell.click()
+
+    const productTypeField = page.locator('.config-field').filter({ has: page.getByText('Product Type', { exact: true }) }).first()
+    await expect(productTypeField.locator('select')).toBeVisible()
+    await productTypeField.locator('select').selectOption({ label: 'Wooden Chair' })
+
+    // Set price to exactly 0
+    const minPriceField = page.locator('.config-field').filter({ has: page.getByText('Min Price', { exact: true }) }).first()
+    await minPriceField.locator('input').fill('0')
+
+    await page.getByRole('button', { name: /Store Upgrade/i }).click()
+
+    // Backend (mocked) must reject price = 0 with INVALID_MIN_PRICE
+    await expect(page.locator('.save-error-banner')).toBeVisible()
+    await expect(page.locator('.save-error-banner')).toContainText(/INVALID_MIN_PRICE|price|minimum/i)
+
+    // Chain should NOT show "Ready to Sell" — shop remains unconfigured
+    await expect(page.getByText(/Ready to Sell/i)).toBeHidden()
+
+    // Player remains in edit mode
+    await expect(planningSection).toBeVisible()
+    await expect(page.getByRole('button', { name: /Store Upgrade/i })).toBeVisible()
+  })
 })

@@ -2901,7 +2901,7 @@ watch(
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'B2B_SALES'">
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.minPrice') }}</label>
-                    <input type="number" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.minPrice" @input="updateSelectedUnitConfig('minPrice', ($event.target as HTMLInputElement).valueAsNumber || null)" min="0" step="0.01" />
+                    <input type="number" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.minPrice" @input="updateSelectedUnitConfig('minPrice', ($event.target as HTMLInputElement).value !== '' ? ($event.target as HTMLInputElement).valueAsNumber : null)" min="0.01" step="0.01" />
                   </div>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.saleVisibility') }}</label>
@@ -2933,7 +2933,7 @@ watch(
                   <p class="config-help">{{ t('buildingDetail.proAccessHint') }}</p>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.minPrice') }}</label>
-                    <input type="number" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.minPrice" @input="updateSelectedUnitConfig('minPrice', ($event.target as HTMLInputElement).valueAsNumber || null)" min="0" step="0.01" />
+                    <input type="number" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.minPrice" @input="updateSelectedUnitConfig('minPrice', ($event.target as HTMLInputElement).value !== '' ? ($event.target as HTMLInputElement).valueAsNumber : null)" min="0.01" step="0.01" />
                   </div>
                 </template>
 
