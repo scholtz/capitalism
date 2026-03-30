@@ -1312,6 +1312,27 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         }
       }
 
+      // Negative price validation: PUBLIC_SALES and B2B_SALES units must not have a negative minPrice
+      for (const unit of (input.units ?? [])) {
+        if (
+          (unit.unitType === 'PUBLIC_SALES' || unit.unitType === 'B2B_SALES') &&
+          unit.minPrice !== null &&
+          unit.minPrice !== undefined &&
+          unit.minPrice < 0
+        ) {
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              errors: [{
+                message: 'Minimum price must be zero or greater.',
+                extensions: { code: 'INVALID_MIN_PRICE' },
+              }],
+            }),
+          })
+        }
+      }
+
       const currentUnits = new Map(building.units.map((unit) => [`${unit.gridX},${unit.gridY}`, unit]))
       const desiredUnits = new Map(
         (input.units ?? []).map((unit: MockBuildingUnit, index: number) => {

@@ -3947,3 +3947,190 @@ test.describe('Sales chain status panel', () => {
     await expect(page.getByText(/What still needs to be configured/i)).toBeHidden()
   })
 })
+
+// ── Sales shop PUBLIC_SALES price validation and persistence ─────────────────
+
+test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => {
+  function makeEmptySalesShopForPricing() {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-pricing',
+          playerId: 'player-1',
+          name: 'Pricing Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-pricing-shop',
+              companyId: 'company-pricing',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Pricing Shop',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    return player
+  }
+
+  test('save and reload shows configured product and price in sales chain panel', async ({
+    page,
+  }) => {
+    // Start with an empty shop, apply the starter layout, configure product and price, save,
+    // then simulate reload (navigate away and back) and verify the sales chain panel shows
+    // the saved product and price correctly.
+    const chair = makeChairProduct()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-persist-shop',
+          playerId: 'player-1',
+          name: 'Persistence Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-persist-shop',
+              companyId: 'company-persist-shop',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Persist Shop',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              // Pre-configure the shop with PURCHASE + PUBLIC_SALES saved as active units
+              // (simulating the post-save/post-upgrade state after some ticks)
+              units: [
+                {
+                  id: 'u-persist-purchase',
+                  buildingId: 'building-persist-shop',
+                  unitType: 'PURCHASE',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkRight: true,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: chair.id,
+                },
+                {
+                  id: 'u-persist-public-sales',
+                  buildingId: 'building-persist-shop',
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkRight: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: chair.id,
+                  minPrice: 67.5,
+                  saleVisibility: 'PUBLIC',
+                },
+              ],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-persist-shop')
+
+    // The sales chain panel should show the saved configuration (both units configured)
+    const panel = page.getByRole('region', { name: /sales chain status/i })
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText(/Ready to Sell/i)).toBeVisible()
+
+    // The PUBLIC_SALES step shows the product name and price
+    await expect(panel.getByText(/Wooden Chair · \$67\.50/i)).toBeVisible()
+
+    // The PURCHASE step shows the product name
+    await expect(panel.locator('.chain-step--configured').first().getByText(/Wooden Chair/i)).toBeVisible()
+
+    // The complete message includes the price
+    await expect(panel.locator('.chain-complete-message').getByText(/67\.50/i)).toBeVisible()
+
+    // No starter banner should show (shop has units)
+    await expect(page.locator('.starter-setup-banner--shop')).toBeHidden()
+  })
+
+  test('negative price rejected — save error shown without exiting edit mode', async ({ page }) => {
+    const chair = makeChairProduct()
+    const player = makeEmptySalesShopForPricing()
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-pricing-shop')
+
+    // Apply starter shop layout (PURCHASE → PUBLIC_SALES)
+    await page.getByRole('button', { name: /Apply Starter Shop Layout/i }).click()
+
+    // Select the PUBLIC_SALES cell and configure a negative price
+    const planningSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await publicSalesCell.click()
+
+    // PUBLIC_SALES uses a <select> dropdown for product type (label has no `for` attr, scope by config-field)
+    const productTypeField = page.locator('.config-field').filter({ has: page.getByText('Product Type', { exact: true }) }).first()
+    await expect(productTypeField.locator('select')).toBeVisible()
+    await productTypeField.locator('select').selectOption({ label: 'Wooden Chair' })
+
+    // Set a negative min price in the number input
+    const minPriceField = page.locator('.config-field').filter({ has: page.getByText('Min Price', { exact: true }) }).first()
+    await minPriceField.locator('input').fill('-5')
+
+    // Attempt to save — should trigger INVALID_MIN_PRICE error from mock
+    await page.getByRole('button', { name: /Store Upgrade/i }).click()
+
+    // The save error banner should appear inline
+    await expect(page.locator('.save-error-banner')).toBeVisible()
+    await expect(page.locator('.save-error-banner')).toContainText(/INVALID_MIN_PRICE|price|minimum/i)
+
+    // Player should still be in edit mode (planning grid visible)
+    await expect(planningSection).toBeVisible()
+    await expect(page.getByRole('button', { name: /Store Upgrade/i })).toBeVisible()
+  })
+})

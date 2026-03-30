@@ -2052,6 +2052,206 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal("BUILDING_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString());
     }
 
+    [Fact]
+    public async Task StoreBuildingConfiguration_SalesShop_PersistsPublicSalesProductAndPrice()
+    {
+        var token = await RegisterAndGetTokenAsync($"shop-persist-{Guid.NewGuid()}@test.com", "Shop Persist");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Shop Persist Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "SALES_SHOP", name = "Starter Shop" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // Get a non-Pro product type to configure (wooden-chair is always free)
+        var productsResult = await ExecuteGraphQlAsync(
+            """
+            query {
+              productTypes(industry: "FURNITURE") {
+                id
+                slug
+                basePrice
+                isProOnly
+              }
+            }
+            """);
+        var chairProduct = productsResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .First(p => p.GetProperty("slug").GetString() == "wooden-chair");
+        var productId = chairProduct.GetProperty("id").GetString();
+        var basePrice = chairProduct.GetProperty("basePrice").GetDecimal();
+        var sellingPrice = basePrice * 1.5m;
+
+        // Configure the sales shop with PURCHASE (0,0) → PUBLIC_SALES (1,0)
+        var configResult = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) {
+                id
+                units {
+                  unitType
+                  gridX
+                  productTypeId
+                  minPrice
+                  saleVisibility
+                }
+              }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, productTypeId = productId, minPrice = (decimal?)null },
+                        new { unitType = "PUBLIC_SALES", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, productTypeId = productId, minPrice = (decimal?)sellingPrice }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(configResult.TryGetProperty("errors", out _), "Sales shop configuration should succeed");
+
+        // Read back the configuration to verify persistence
+        var companiesResult = await ExecuteGraphQlAsync(
+            """
+            {
+              myCompanies {
+                buildings {
+                  type
+                  pendingConfiguration {
+                    units {
+                      unitType
+                      gridX
+                      productTypeId
+                      minPrice
+                    }
+                  }
+                }
+              }
+            }
+            """,
+            token: token);
+
+        var buildings = companiesResult.GetProperty("data").GetProperty("myCompanies")[0]
+            .GetProperty("buildings").EnumerateArray().ToList();
+        var shop = buildings.Single(building => building.GetProperty("type").GetString() == "SALES_SHOP");
+        var pendingUnits = shop.GetProperty("pendingConfiguration").GetProperty("units").EnumerateArray().ToList();
+
+        var publicSales = pendingUnits.Single(unit => unit.GetProperty("unitType").GetString() == "PUBLIC_SALES");
+        Assert.Equal(productId, publicSales.GetProperty("productTypeId").GetString());
+        Assert.Equal(sellingPrice, publicSales.GetProperty("minPrice").GetDecimal());
+
+        var purchase = pendingUnits.Single(unit => unit.GetProperty("unitType").GetString() == "PURCHASE");
+        Assert.Equal(productId, purchase.GetProperty("productTypeId").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_SalesShop_NegativeMinPriceRejected()
+    {
+        var token = await RegisterAndGetTokenAsync($"shop-negprice-{Guid.NewGuid()}@test.com", "Shop NegPrice");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "NegPrice Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "SALES_SHOP", name = "Price Test Shop" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var productsResult = await ExecuteGraphQlAsync("{ productTypes(industry: \"FURNITURE\") { id slug } }");
+        var productId = productsResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .First(p => p.GetProperty("slug").GetString() == "wooden-chair")
+            .GetProperty("id").GetString();
+
+        // Attempt to configure PUBLIC_SALES unit with a negative minimum price
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PUBLIC_SALES", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, productTypeId = productId, minPrice = (decimal?)-10m }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_MIN_PRICE", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_SalesShop_UnauthorizedPlayerCannotConfigure()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync($"shop-owner-{Guid.NewGuid()}@test.com", "Shop Owner");
+        var intruderToken = await RegisterAndGetTokenAsync($"shop-intruder-{Guid.NewGuid()}@test.com", "Intruder");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Owner Shop Corp" } },
+            ownerToken);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "SALES_SHOP", name = "Owner Sales Shop" } },
+            ownerToken);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // The intruder tries to configure the owner's sales shop
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PUBLIC_SALES", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            intruderToken);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("BUILDING_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
     #endregion
 
     #region CancelBuildingConfiguration
