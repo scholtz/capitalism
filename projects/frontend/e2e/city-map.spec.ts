@@ -728,4 +728,82 @@ test.describe('City Map — invalid and stale selection paths', () => {
     const detailPanel = page.getByRole('complementary')
     await expect(detailPanel.getByText(/80,000|80000/)).toBeVisible()
   })
+
+  test('lot detail shows appraised value and asking price separately', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    // Industrial lot has basePrice=76000 and price=80000
+    const detailPanel = page.getByRole('complementary')
+    // Appraised value label shows base land value
+    await expect(detailPanel.getByText(/Appraised Value/i)).toBeVisible()
+    // Both values are shown
+    await expect(detailPanel.getByTestId('appraised-value')).toBeVisible()
+    await expect(detailPanel.getByTestId('asking-price')).toBeVisible()
+  })
+
+  test('mine lot with raw material shows resource premium badge on asking price', async ({
+    page,
+  }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    // Industrial Plot A1 has Iron Ore (resourceType set) + price > basePrice
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    const detailPanel = page.getByRole('complementary')
+    // The resource premium badge is shown next to the asking price
+    await expect(detailPanel.locator('.resource-premium-badge')).toBeVisible()
+  })
+
+  test('non-resource lot does NOT show resource premium badge', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    // High Street Retail Space has no resourceType (null)
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+
+    const detailPanel = page.getByRole('complementary')
+    // No resource premium badge for non-extraction lots
+    await expect(detailPanel.locator('.resource-premium-badge')).toHaveCount(0)
+  })
+
+  test('population index hint explains retail demand to player', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    const detailPanel = page.getByRole('complementary')
+    // The population index educational hint text is shown
+    await expect(
+      detailPanel.getByText(/Higher index.*more nearby residents/i, { exact: false }),
+    ).toBeVisible()
+  })
+
+  test('placement guidance panel shows transport cost note', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    const detailPanel = page.getByRole('complementary')
+    // Transport cost note is shown in the placement guidance panel
+    await expect(detailPanel.getByTestId('placement-guidance-panel')).toBeVisible()
+    await expect(
+      detailPanel.getByText(/Distance from your other buildings/i, { exact: false }),
+    ).toBeVisible()
+  })
 })

@@ -262,13 +262,14 @@ dotnet test ../Api.Tests  # Run integration tests
 
 ## City map conventions
 - `CityMapView.vue` lives at route `/city/:id`. It uses the `leaflet` package with OpenStreetMap tiles and `L.divIcon` for color-coded lot markers (green = available, blue = yours, gray = other owner).
-- `BuildingLot` entity (`projects/Api/Data/Entities/BuildingLot.cs`) stores purchasable locations with `Latitude`, `Longitude`, `District`, `Price`, and comma-separated `SuitableTypes`. 14 lots are seeded for Bratislava in `AppDbInitializer.cs`.
+- `BuildingLot` entity (`projects/Api/Data/Entities/BuildingLot.cs`) stores purchasable locations with `Latitude`, `Longitude`, `District`, `Price`, `BasePrice`, and comma-separated `SuitableTypes`. Also has `ResourceTypeId`, `MaterialQuality`, `MaterialQuantity` for raw material deposits. 14 lots are seeded for Bratislava in `AppDbInitializer.cs`.
 - GraphQL: `cityLots(cityId)` is a **public query** (no auth required) so unauthenticated visitors can browse. `lot(id)` is also public. `purchaseLot` mutation requires auth and uses optimistic concurrency via `ConcurrencyToken`.
 - A building placed via `purchaseLot` inherits the lot's `Latitude`/`Longitude` exactly.
 - All city map UI strings use the `cityMap.*` i18n namespace, with district names under `cityMap.districts.*`. All three locales (en/sk/de) must have these keys.
 - `makeDefaultBuildingLots()` factory in `e2e/helpers/mock-api.ts` provides 4 mock lots (2 factory, 1 commercial, 1 residential) for E2E tests. Use `state.buildingLots` to customize lot ownership in tests.
 - When adding new city map E2E tests, always include `city-map.spec.ts` in the run; it is the canonical spec for the `/city/:id` route.
 - Bratislava coordinates (for validation): lat 47.8–48.4°N, lon 16.8–17.5°E.
+- The lot detail panel shows both `appraisedValue` (basePrice) and `price` (asking price) separately. When a lot has a raw material deposit and `price > basePrice`, a "resource premium" badge is shown next to the asking price. This implements the ROADMAP requirement: "The price to purchase the land includes also the base price for the raw material."
 - A PR titled `[WIP]` must not be left in that state. Drive every PR to a production-ready, fully-tested state before reporting complete.
 - Always confirm CI would pass by running the full local validation pipeline (backend Release build + tests, frontend lint + unit tests + build, full Playwright suite) before reporting completion.
 - Remove `[WIP]` from the PR title when all acceptance criteria are met, all tests pass, and the code has been reviewed.
@@ -359,9 +360,14 @@ Root-cause of a recurring CI failure (March 2026, PRs #89):
 - Never use `a[i]` or `a[key]` on a value typed as `unknown` — TypeScript will reject it at compile time even when ESLint passes.
 
 **At the start of every session:**
-1. Run `git fetch origin main && git merge origin/main` (or equivalent) before ANY local lint/build validation.
+1. Run `git fetch origin main:refs/remotes/origin/main && git merge refs/remotes/origin/main` before ANY local lint/build validation. Note: `git fetch origin main` then `git merge refs/remotes/origin/main` is the reliable two-step approach because `FETCH_HEAD` points to the fetched commit which may be the same as HEAD if the branch is already up-to-date.
 2. Run `npm run build:ssr` (not just `npm run build:client`) to exercise `vue-tsc` type checking — the client build does NOT fail on type errors, only the SSR build does.
 3. Use `npm run build:ssr` as the canonical type-check step, not `npm run build`.
+
+**When a merge conflict occurs in `utils.ts` or shared utility files:**
+- Both branches may have valid changes. If the logic is functionally equivalent, prefer the main version to minimize divergence.
+- After resolving conflicts, `git add` the file and run `GIT_EDITOR=true git merge --continue` to complete the merge without opening an editor.
+- Always re-run lint + build:ssr + tests after any merge to confirm no regressions.
 
 ## E2E test quality — preventing selector failures
 

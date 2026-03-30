@@ -535,8 +535,21 @@ watch(viewMode, async (mode) => {
               <span class="detail-value">{{ selectedLot.district }}</span>
             </div>
             <div class="detail-item">
+              <span class="detail-label">{{ t('cityMap.appraisedValue') }}</span>
+              <span class="detail-value" data-testid="appraised-value">{{ formatCurrency(selectedLot.basePrice) }}</span>
+            </div>
+            <div class="detail-item">
               <span class="detail-label">{{ t('cityMap.price') }}</span>
-              <span class="detail-value price">{{ formatCurrency(selectedLot.price) }}</span>
+              <span class="detail-value price" data-testid="asking-price">
+                {{ formatCurrency(selectedLot.price) }}
+                <span
+                  v-if="selectedLot.resourceType && selectedLot.price > selectedLot.basePrice"
+                  class="resource-premium-badge"
+                  :title="t('cityMap.resourcePremiumTooltip')"
+                >
+                  {{ t('cityMap.resourcePremium') }}
+                </span>
+              </span>
             </div>
             <div class="detail-item full-width population-index-item">
               <span class="detail-label">{{ t('cityMap.populationIndex') }}</span>
@@ -1023,6 +1036,19 @@ watch(viewMode, async (mode) => {
   border-radius: var(--radius-sm);
   font-size: 0.75rem;
   font-weight: 500;
+}
+
+.resource-premium-badge {
+  display: inline-block;
+  margin-left: 0.375rem;
+  padding: 0.125rem 0.375rem;
+  background: rgba(139, 92, 246, 0.12);
+  color: #7c3aed;
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+  cursor: help;
 }
 
 .owner-info,
