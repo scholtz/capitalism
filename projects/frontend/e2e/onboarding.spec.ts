@@ -1253,10 +1253,35 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     // All four guidance steps should be visible
     await expect(page.getByText('Review your cash')).toBeVisible()
     await expect(page.getByText('Set a selling price', { exact: true })).toBeVisible()
-    await expect(page.getByText('Start near the base market price of $45.')).toBeVisible()
+    await expect(
+      page.getByText('The market benchmark is $45.', { exact: false }),
+    ).toBeVisible()
     await expect(page.getByText('Enable public sales')).toBeVisible()
     await expect(page.getByText('Wait for the next tick')).toBeVisible()
     await expect(page.getByText('Current simulation tick: 42.')).toBeVisible()
+  })
+
+  test('configure-guide price step explains margin and demand trade-offs', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboarding(page, 'Margin Corp')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The price step should explain margin (higher price = more margin per unit)
+    // and demand trade-off (higher price = fewer buyers, lower = more volume)
+    const priceStep = page.locator('.configure-step').filter({ hasText: 'Set a selling price' })
+    await expect(priceStep).toBeVisible()
+    await expect(priceStep).toContainText('margin')
+    await expect(priceStep).toContainText('demand')
+    // Should reference the concrete base price from the product
+    await expect(priceStep).toContainText('$45')
   })
 
   test('configure-guide tick step shows next-tick processing steps', async ({ page }) => {
