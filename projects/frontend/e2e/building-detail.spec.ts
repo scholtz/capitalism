@@ -3331,10 +3331,11 @@ test.describe('Production chain configuration', () => {
     await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
     await expect(page.getByText('Output Product')).toBeVisible()
 
-    // The manufacturing selector should NOT show Wooden Chair because it requires Wood, not Grain
-    // (getManufacturingSelectableItems filters by reachable inputs from linked Purchase units)
+    // `getManufacturingSelectableItems` filters products by reachable inputs from linked Purchase
+    // units. Since PURCHASE is configured with Grain (res-grain) and Wooden Chair requires Wood,
+    // the selector must NOT offer Wooden Chair — asserting count 0 verifies this filtering.
     await expect(page.getByRole('button', { name: /Wooden Chair/ })).toHaveCount(0)
-    // It SHOULD show Bread (requires Grain which is what's in the Purchase unit)
+    // Bread requires Grain, so it SHOULD appear as an available output.
     await expect(page.getByRole('button', { name: /Bread/ })).toBeVisible()
   })
 

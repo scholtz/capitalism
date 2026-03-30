@@ -1070,7 +1070,7 @@ const configWarnings = computed<ValidationWarning[]>(() => {
         .map((pu) => pu.productTypeId!)
 
       if (configuredPurchaseResourceIds.length === 0 && configuredPurchaseProductIds.length === 0) {
-        continue // Incomplete (not incompatible) — handled by separate purchaseNoItem warning
+        continue // Incomplete (not incompatible) — missing resource is surfaced by the purchaseNoItem warning above
       }
 
       const anyRecipeSupplied = product.recipes.some(
