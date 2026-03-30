@@ -4760,6 +4760,38 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GlobalExchangeOffers_IsPublicQuery_WorksWithoutAuthentication()
+    {
+        // The globalExchangeOffers query is market-data and must not require auth.
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var woodId = (await ExecuteGraphQlAsync("{ resourceTypes { id slug } }"))
+            .GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray().First(r => r.GetProperty("slug").GetString() == "wood")
+            .GetProperty("id").GetString()!;
+
+        // Execute without a token — should succeed and return offers.
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                cityName
+                exchangePricePerUnit
+                transitCostPerUnit
+                deliveredPricePerUnit
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId, resourceTypeId = woodId },
+            token: null);
+
+        Assert.False(result.TryGetProperty("errors", out _), "globalExchangeOffers should be publicly accessible without authentication");
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers");
+        Assert.Equal(3, offers.GetArrayLength());
+        Assert.All(offers.EnumerateArray(), offer =>
+            Assert.True(offer.GetProperty("exchangePricePerUnit").GetDecimal() > 0m));
+    }
+
+    [Fact]
     public async Task StoreBuildingConfiguration_PurchaseUnit_PersistsExchangeSourceAndConstraints()
     {
         var email = $"exchange-cfg-{Guid.NewGuid():N}@test.com";

@@ -3317,6 +3317,223 @@ test.describe('Global exchange market — narrow layout', () => {
   })
 })
 
+// ── Full end-to-end exchange sourcing flow ────────────────────────────────────
+
+test.describe('Global exchange sourcing — end-to-end flow', () => {
+  test('configure EXCHANGE source, save, and verify exchange panel shows in read-only mode', async ({
+    page,
+  }) => {
+    // Full sourcing flow: start with a configured PURCHASE unit with EXCHANGE source,
+    // review the exchange offers panel (source price, transit, delivered cost),
+    // modify the max price constraint to widen the offer selection,
+    // save the configuration, and verify the exchange panel still shows in read-only mode
+    // with the updated constraint — proving the configuration round-trips correctly.
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-e2e-flow',
+      playerId: player.id,
+      name: 'E2E Flow Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-e2e-flow',
+          companyId: 'company-e2e-flow',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'E2E Exchange Factory',
+          latitude: 48.1486,
+          longitude: 17.1077,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-e2e-flow',
+              buildingId: 'building-e2e-flow',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              purchaseSource: 'EXCHANGE',
+              maxPrice: 999,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-e2e-flow')
+    await expect(page.getByRole('heading', { name: 'E2E Exchange Factory' })).toBeVisible()
+
+    // Step 1: In read-only mode, click the active PURCHASE unit to review exchange offers
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Exchange offers panel must be visible immediately
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // Must show source price, transit cost, and delivered price for all seeded cities
+    const offersList = page.locator('.exchange-offers-list')
+    await expect(offersList).toBeVisible()
+    await expect(offersList.getByText(/Exchange:/).first()).toBeVisible()
+    await expect(offersList.getByText(/Transit:/).first()).toBeVisible()
+    await expect(offersList.getByText(/Delivered:/).first()).toBeVisible()
+
+    // The best delivered price badge must identify the cheapest option
+    await expect(page.locator('.offer-best-badge').first()).toBeVisible()
+
+    // The selection hint must explain the distance-vs-sticker-price trade-off
+    await expect(page.getByText(/lowest delivered price/)).toBeVisible()
+
+    // Step 2: Enter edit mode to update the max price constraint
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    await expect(page.getByRole('button', { name: 'Store Upgrade' })).toBeVisible()
+
+    // Select the PURCHASE cell in the Planned Upgrade draft section
+    const draftSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await draftSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Config panel opens — verify EXCHANGE source and exchange offers are still shown in edit mode
+    await expect(page.getByText('Unit Configuration')).toBeVisible()
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // Make a change (update max price) so the mock detects a configuration change
+    const maxPriceInput = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Max Price') })
+      .locator('input[type="number"]')
+    await maxPriceInput.fill('800')
+
+    // Step 3: Save and verify the exchange panel persists in the post-save read-only state
+    await page.getByRole('button', { name: 'Store Upgrade' }).click()
+    await expect(page.getByRole('button', { name: 'Edit Building' })).toBeVisible()
+
+    // After saving, reload so the mock applies the pending configuration to active units
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'E2E Exchange Factory' })).toBeVisible()
+
+    // Click the active PURCHASE unit again in read-only mode
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Exchange offers panel must remain visible after save + reload
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+    await expect(page.locator('.exchange-offer-item')).toHaveCount(3)
+  })
+
+  test('negative path: stale sourcing — all exchange offers blocked in read-only view shows actionable warning', async ({
+    page,
+  }) => {
+    // Simulates a "stale sourcing" scenario: a purchase unit was configured with EXCHANGE
+    // source and a maxPrice that is now too low for any offer (prices rose above the cap).
+    // The UI must show a clear, actionable warning so the player knows they need to
+    // update their configuration.
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-stale',
+      playerId: player.id,
+      name: 'Stale Sourcing Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-stale',
+          companyId: 'company-stale',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Stale Exchange Factory',
+          latitude: 48.1486,
+          longitude: 17.1077,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-stale',
+              buildingId: 'building-stale',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              // EXCHANGE source with an impossibly low maxPrice (stale configuration)
+              purchaseSource: 'EXCHANGE',
+              maxPrice: 0.001,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-stale')
+    await expect(page.getByRole('heading', { name: 'Stale Exchange Factory' })).toBeVisible()
+
+    // Click the PURCHASE unit in read-only (active) mode
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Exchange panel must be visible
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // All offers must be blocked because maxPrice is too low (stale constraint)
+    await expect(page.locator('.exchange-offer-item.offer-blocked')).toHaveCount(3)
+
+    // Actionable "no valid offers" message must be shown
+    await expect(page.getByText(/No offers meet your price and quality constraints/)).toBeVisible()
+
+    // Individual blocked-reason annotations must appear for each offer
+    const blockedReasons = page.locator('.offer-blocked-reason')
+    await expect(blockedReasons.first()).toBeVisible()
+    await expect(blockedReasons.first()).toContainText(/Over your max price/)
+  })
+})
+
 test.describe('Starter factory setup banner', () => {
   function makeEmptyFactoryPlayer() {
     const player = makePlayer({

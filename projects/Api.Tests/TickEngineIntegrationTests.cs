@@ -1482,6 +1482,76 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
     }
 
     [Fact]
+    public async Task PurchasingPhase_ExchangeSource_ForProductType_IsGracefullySkipped()
+    {
+        // In v1, the global exchange only supports raw-resource purchases.
+        // A PURCHASE unit configured with EXCHANGE source but a product type (not resource)
+        // should produce no inventory — the engine must skip the exchange path gracefully.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var product = await db.ProductTypes.FirstAsync();
+
+        var player = new Api.Data.Entities.Player
+        {
+            Id = Guid.NewGuid(),
+            Email = $"exchg-prod-{Guid.NewGuid():N}@test.com",
+            DisplayName = "Product Exchange Tester",
+            PasswordHash = "hash",
+            Role = Api.Data.Entities.PlayerRole.Player
+        };
+        db.Players.Add(player);
+
+        var company = new Api.Data.Entities.Company
+        {
+            Id = Guid.NewGuid(),
+            PlayerId = player.Id,
+            Name = "Product Exchange Corp",
+            Cash = 1_000_000m
+        };
+        db.Companies.Add(company);
+
+        var building = new Api.Data.Entities.Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory,
+            Name = "Product Exchange Factory",
+            Level = 1
+        };
+        db.Buildings.Add(building);
+
+        // PURCHASE unit targeting a product type with EXCHANGE source.
+        var purchaseUnit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ProductTypeId = product.Id,
+            ResourceTypeId = null,
+            MaxPrice = 9999m,
+            PurchaseSource = "EXCHANGE"
+        };
+        db.BuildingUnits.Add(purchaseUnit);
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        // No inventory should have been created — exchange does not serve product-type units.
+        var inventoryCount = await db.Inventories
+            .Where(entry => entry.BuildingUnitId == purchaseUnit.Id && entry.Quantity > 0m)
+            .CountAsync();
+
+        Assert.Equal(0, inventoryCount);
+    }
+
+    [Fact]
     public async Task ManufacturingPhase_CarriesConsumedSourcingCostsIntoOutputInventory()
     {
         await using var scope = _factory.Services.CreateAsyncScope();
