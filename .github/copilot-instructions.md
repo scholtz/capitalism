@@ -369,3 +369,27 @@ Root-cause of a quality failure (March 2026, PR #63 onboarding routing fix):
 3. **Include at least one golden-path E2E test that covers the full flow affected by the fix.** For this routing fix: home → guest onboarding → register → empire launched.
 4. **Explain in the PR description what the gap was and how the test proves it is fixed.** Link to the acceptance criterion it satisfies.
 5. **Do not consider a routing-only fix "done" without E2E proof.** Routing changes are easy to regress; tests are the safety net.
+
+## PR draft state and CI triggering — do not leave PRs in draft
+
+Root-cause of a quality failure (March 2026, PR #76 guest onboarding):
+- The PR was opened in draft state. Because it was draft, CI workflows did not trigger, so the product owner saw "no checks reported."
+- The agent had passing tests locally but the PR description only reflected the initial plan with one small backend test addition — not the full completed scope.
+- Product owner rejected the PR with: "no reported CI checks," "missing proof of completed implementation," "missing automated coverage."
+
+**How to prevent this:**
+1. **Never leave a PR in draft state when the implementation is complete.** A PR should be marked "ready for review" as part of delivery, not left for someone else to un-draft.
+2. **Pushing a non-empty commit triggers CI.** If CI is not running, verify the branch has pushed commits. Every `report_progress` call pushes, so CI should trigger automatically after the first code commit.
+3. **If CI fails with infrastructure errors (e.g., Docker registry "Username and password required"), that is not a code failure** — it is a secrets/credentials issue in the repository settings. Focus on fixing code failures; infrastructure credential failures are the repository owner's responsibility.
+4. **The PR description must explicitly link to the issue it resolves** using GitHub's `Fixes #N` or `Closes #N` syntax so reviewers can trace the PR back to the product requirement.
+5. **Always demonstrate the full scope of delivery in the PR description**, not just the last incremental change. Reviewers need to see what was already on main vs what this branch contributes — make both clear.
+6. **Respond to product-owner review comments by adding concrete proof** (test names, passing counts, screenshots) — never by just asserting "it works."
+
+## Guest onboarding temporary-state guarantee — clearProgress after migration
+
+Root-cause of a bug (March 2026, PR #76 guest onboarding follow-up):
+- `saveGuestProgress()` called `finishOnboarding` successfully, set `completionResult.value`, and showed the authenticated completion screen.
+- But no `clearProgress()` was called after the successful migration, so the reactive `saveProgress()` watch re-wrote the stale guest choices (step=5, lots, industry, city, etc.) back into localStorage.
+- A test asserting `localStorage.getItem('onboarding_progress') === null` after migration correctly caught this bug.
+
+**Rule: always call `clearProgress()` after a successful guest-to-authenticated migration** so the localStorage sandbox state is cleaned up. The watch-based `saveProgress()` will still fire on reactive updates, but the key insight is that after `clearProgress()` the authenticated code path will NOT re-write guest state because `isGuestMode` becomes false (the player is now authenticated).

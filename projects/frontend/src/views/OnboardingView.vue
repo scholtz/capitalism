@@ -824,7 +824,9 @@ async function saveGuestProgress() {
         if (startupPackOffer.value?.status === 'ELIGIBLE') {
           await markStartupPackOfferShown()
         }
-        // Stay on step 5 — now show authenticated completion UI
+        // Guest progress has been successfully persisted to the backend — clear local state
+        // so stale sandbox choices don't persist in localStorage or confuse future sessions.
+        clearProgress()
       } catch (migrationErr: unknown) {
         const code = migrationErr instanceof GraphQLError ? migrationErr.code : undefined
         if (code === 'LOT_ALREADY_OWNED') {

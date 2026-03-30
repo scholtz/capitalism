@@ -656,6 +656,116 @@ test.describe('Guest onboarding wizard', () => {
     // Current tick should be displayed — use a regex so the test is resilient to mock data changes
     await expect(page.getByText(/Current simulation tick: \d+\./)).toBeVisible()
   })
+
+  test('guest steps 1-4 make no backend mutation calls (progress is temporary)', async ({ page }) => {
+    // AC: "Guest progress is handled as temporary and is not incorrectly persisted as a permanent
+    // backend-owned company before authentication."
+    // This test intercepts all GraphQL requests during steps 1-4 and verifies that no
+    // StartOnboardingCompany or FinishOnboarding mutations are sent to the backend.
+    setupMockApi(page)
+
+    const mutationNames: string[] = []
+    page.on('request', (request) => {
+      if (request.url().includes('/graphql') && request.method() === 'POST') {
+        try {
+          const body = JSON.parse(request.postData() ?? '{}')
+          const query: string = body?.query ?? ''
+          if (query.includes('StartOnboardingCompany')) mutationNames.push('StartOnboardingCompany')
+          if (query.includes('FinishOnboarding')) mutationNames.push('FinishOnboarding')
+        } catch {
+          // ignore parse errors
+        }
+      }
+    })
+
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Must be on the save-progress screen (step 5)
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+
+    // No backend company-creation mutations should have fired during guest steps 1-4
+    expect(mutationNames).not.toContain('StartOnboardingCompany')
+    expect(mutationNames).not.toContain('FinishOnboarding')
+  })
+
+  test('localStorage progress is cleared after successful guest migration', async ({ page }) => {
+    // AC: "The product never silently drops guest progress without telling the player what happened."
+    // After a successful handoff the stale guest progress key must be removed from localStorage
+    // so the player starts fresh if they ever navigate back.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Confirm localStorage has onboarding progress saved before migration
+    const progressBefore = await page.evaluate(() => localStorage.getItem('onboarding_progress'))
+    expect(progressBefore).not.toBeNull()
+
+    // Register to trigger migration
+    await page.locator('#guestEmail').fill('clear@test.com')
+    await page.locator('#guestDisplayName').fill('Clear Test')
+    await page.locator('#guestPassword').fill('ClearPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Wait for migration to complete
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The onboarding_progress key should now be absent from localStorage
+    const progressAfter = await page.evaluate(() => localStorage.getItem('onboarding_progress'))
+    expect(progressAfter).toBeNull()
+  })
+
+  test('guest UI labels state as preview/temporary — not falsely implies saved', async ({ page }) => {
+    // AC: "The product never silently drops guest progress without telling the player what happened."
+    // and: "Avoid pretending that the guest already owns durable world assets before account creation."
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // The completion heading must use "Preview" language, not "Launched" (which implies persistence)
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    // The save-subtitle must explain that an account is needed to preserve progress
+    await expect(page.getByText(/Create a free account or log in to lock in your choices/i)).toBeVisible()
+    // "Your Empire Has Launched" should NOT appear yet — that heading is reserved for
+    // authenticated completion after the real backend handoff succeeds.
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeHidden()
+  })
+
+  test('guest progress survives page refresh and can still be migrated', async ({ page }) => {
+    // AC: "Support the minimum state required to complete the opening product loop."
+    // After a page refresh mid-onboarding as a guest, the player should be able to resume
+    // and migrate successfully — confirming the localStorage-based persistence works end-to-end.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Complete steps 1-3 only
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Refresh Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Refresh on step 4 as a guest — should resume at step 4
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+
+    // Complete step 4 and migrate
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await page.locator('#guestEmail').fill('refresh@test.com')
+    await page.locator('#guestDisplayName').fill('Refresh Player')
+    await page.locator('#guestPassword').fill('RefreshPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+  })
 })
 
 test.describe('Dashboard', () => {
