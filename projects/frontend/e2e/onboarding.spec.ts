@@ -1730,3 +1730,135 @@ test.describe('Onboarding skip and re-entry behavior', () => {
     await expect(page.locator('.company-card').first()).toBeVisible()
   })
 })
+
+test.describe('Onboarding on narrow/mobile layouts', () => {
+  // These tests verify the acceptance criterion: "Tests confirming onboarding remains usable
+  // on narrower layouts" (issue testing requirements). The onboarding wizard uses a single-column
+  // layout at ≤640px: industry/city/product cards stack vertically, step-actions go to column
+  // direction, and progress-labels are hidden. Core interactions must still work at 375px width.
+
+  test('industry cards are visible and selectable on a narrow (375px) viewport', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/onboarding')
+
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+
+    // All three industry cards must be visible even in single-column layout
+    await expect(page.locator('.industry-card', { hasText: 'Furniture' })).toBeVisible()
+    await expect(page.locator('.industry-card', { hasText: 'Food Processing' })).toBeVisible()
+    await expect(page.locator('.industry-card', { hasText: 'Healthcare' })).toBeVisible()
+
+    // Selecting a card and clicking Next must work on mobile
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+  })
+
+  test('city cards are visible and selectable on a narrow viewport', async ({ page }) => {
+    setupMockApi(page)
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/onboarding')
+
+    // Advance to step 2
+    await page.locator('.industry-card', { hasText: 'Healthcare' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await expect(page.locator('.city-card', { hasText: 'Bratislava' })).toBeVisible()
+
+    // City selection and navigation must work
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await expect(page.getByRole('button', { name: 'Next' })).toBeEnabled()
+
+    // Back button must also be accessible
+    await expect(page.getByRole('button', { name: 'Back' })).toBeVisible()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+  })
+
+  test('guest wizard completes all four steps on a narrow (375px) viewport', async ({ page }) => {
+    setupMockApi(page)
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/onboarding')
+
+    // Step 1
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: lot selection
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Mobile Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await expect(page.getByRole('button', { name: 'Purchase First Factory' })).toBeVisible()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: product + shop
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress screen
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    // CTA button must be reachable on mobile
+    await expect(page.getByRole('button', { name: 'Save & Launch' })).toBeVisible()
+  })
+
+  test('save-progress form is usable on a narrow viewport', async ({ page }) => {
+    setupMockApi(page)
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/onboarding')
+
+    // Inline the wizard steps at 375px to ensure the viewport is maintained throughout
+    // (avoids any helper that might silently reset viewport state).
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Mobile Save Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+
+    // Both register and login tabs must be visible and tappable on mobile
+    await expect(page.locator('.btn-tab', { hasText: 'Create Account' })).toBeVisible()
+    await expect(page.locator('.btn-tab', { hasText: 'Log In' })).toBeVisible()
+
+    // Toggle to login tab
+    await page.locator('.btn-tab', { hasText: 'Log In' }).click()
+    await expect(page.getByLabel('Email')).toBeVisible()
+    await expect(page.getByLabel('Password')).toBeVisible()
+  })
+
+  test('progress bar step numbers are visible and labels are hidden on narrow viewport', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/onboarding')
+
+    // Step numbers visible (only steps 1-4 shown; step 5 is completion)
+    await expect(page.locator('.progress-step').first()).toBeVisible()
+
+    // Progress labels should be hidden via CSS (display:none at ≤640px),
+    // but the elements still exist in the DOM. Verify the CSS hides them.
+    const progressLabel = page.locator('.progress-label').first()
+    await expect(progressLabel).toBeHidden()
+  })
+})
