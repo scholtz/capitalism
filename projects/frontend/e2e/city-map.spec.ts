@@ -617,3 +617,115 @@ test.describe('City Map View', () => {
     await expect(guidancePanel).toBeVisible()
   })
 })
+
+// ── Invalid/stale selection paths ────────────────────────────────────────────
+
+test.describe('City Map — invalid and stale selection paths', () => {
+  test('shows error when trying to purchase lot with unsuitable building type', async ({
+    page,
+  }) => {
+    // SALES_SHOP lot only allows SALES_SHOP,COMMERCIAL — not FACTORY
+    const lots = makeDefaultBuildingLots()
+    // Patch industrial lot to only accept MINE (so FACTORY is unsuitable)
+    lots[0]!.suitableTypes = 'MINE'
+
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-unsuitable',
+          playerId: 'player-1',
+          name: 'Wrong Type Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player], buildingLots: lots })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    // The select only shows suitable types — MINE should be in it, FACTORY should not
+    const select = page.locator('.form-select')
+    await expect(select.locator('option[value="MINE"]')).toBeAttached()
+    await expect(select.locator('option[value="FACTORY"]')).not.toBeAttached()
+  })
+
+  test('shows stale-lot error when lot was claimed by another player before purchase completes', async ({
+    page,
+  }) => {
+    // Player selects a lot, another player claims it, then the first player submits purchase
+    const lots = makeDefaultBuildingLots()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-stale',
+          playerId: 'player-1',
+          name: 'Slow Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player], buildingLots: lots })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    // Another player claims the lot between selection and purchase
+    lots[0]!.ownerCompanyId = 'other-company-99'
+
+    // Now submit the purchase
+    await page.locator('.form-select').selectOption('FACTORY')
+    await page.locator('.form-input').fill('Too Late Factory')
+    await page.getByRole('button', { name: /Confirm Purchase/i }).click()
+
+    // Should show stale lot / already owned error message
+    await expect(
+      page.getByText(/just claimed by another player/i, { exact: false }),
+    ).toBeVisible()
+    // Should prompt the player to choose a different lot
+    await expect(page.getByText(/select a different available lot/i, { exact: false })).toBeVisible()
+  })
+
+  test('lot detail shows district information to help player understand location context', async ({
+    page,
+  }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    // District name is shown (Industrial Zone for lot-industrial-1)
+    await expect(page.getByRole('complementary').getByText(/Industrial Zone/i)).toBeVisible()
+  })
+
+  test('lot detail shows price to help player understand land valuation', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    // Price is visible (Industrial lot has price 80000 in mock data)
+    const detailPanel = page.getByRole('complementary')
+    await expect(detailPanel.getByText(/80,000|80000/)).toBeVisible()
+  })
+})

@@ -343,8 +343,25 @@ Root-cause of a quality failure (March 2026, PR #52 after rebasing with `main`):
 
 **When your branch is rebased or merged with `main`:**
 1. Re-open `src/types/index.ts` (and any other shared type files touched by the merge) and scan for duplicated properties or merge leftovers before assuming the branch is still green.
-2. Re-run the clean frontend pipeline (`npm ci`, `npm run lint`, `npm run test:unit`, `npm run build`) after the merge/rebase, even if the branch was green before.
+2. Re-run the clean frontend pipeline (`npm ci`, `npm run lint`, `npm run test:unit`, `npm run build:ssr`) after the merge/rebase, even if the branch was green before.
 3. Treat any new CI type-check failure after a merge/rebase as a real regression in the merged branch head and fix that head state directly.
+
+## Frontend merge parity — main can advance between sessions
+
+Root-cause of a recurring CI failure (March 2026, PRs #89):
+- A new commit landed on `main` while the branch was in review (`0bd706a` added `src/lib/utils.ts` with `deepEqual(a: any, b: any)`). This violated the ESLint `@typescript-eslint/no-explicit-any` rule.
+- The branch appeared locally clean but CI ran the PR against the HEAD of `main` and caught the violation.
+- Fixing the lint error by replacing `any` with `unknown` then caused `vue-tsc` to fail because `unknown` does not support array indexing or string key access without explicit type narrowing.
+
+**Correct fix for `unknown`-typed generic deep-equality functions:**
+- Use `Array.isArray(a) && Array.isArray(b)` (both must be narrowed) before accessing array indices.
+- Cast to `Record<string, unknown>` after confirming the type is a non-array object before accessing string keys.
+- Never use `a[i]` or `a[key]` on a value typed as `unknown` — TypeScript will reject it at compile time even when ESLint passes.
+
+**At the start of every session:**
+1. Run `git fetch origin main && git merge origin/main` (or equivalent) before ANY local lint/build validation.
+2. Run `npm run build:ssr` (not just `npm run build:client`) to exercise `vue-tsc` type checking — the client build does NOT fail on type errors, only the SSR build does.
+3. Use `npm run build:ssr` as the canonical type-check step, not `npm run build`.
 
 ## E2E test quality — preventing selector failures
 
