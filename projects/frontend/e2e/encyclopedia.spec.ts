@@ -84,7 +84,7 @@ test.describe('Manufacturing encyclopedia', () => {
     })
 
     await page.goto('/encyclopedia')
-    await page.getByLabel('Language').selectOption('sk')
+    await page.locator('#language-select').selectOption('sk')
 
     await expect(page.getByRole('heading', { name: 'Výrobná encyklopédia' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Drevo/ })).toBeVisible()
@@ -308,7 +308,7 @@ test.describe('Resource detail page', () => {
     })
 
     await page.goto('/encyclopedia/resources/wood')
-    await page.getByLabel('Language').selectOption('sk')
+    await page.locator('#language-select').selectOption('sk')
 
     await expect(page.getByRole('heading', { name: 'Drevo', level: 1 })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Späť na encyklopédiu' })).toBeVisible()

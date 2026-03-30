@@ -477,4 +477,192 @@ public sealed class PowerGridIntegrationTests : IClassFixture<ApiWebApplicationF
         Assert.Equal(-7m, balance.GetProperty("reserveMw").GetDecimal());
         Assert.Equal("CONSTRAINED", balance.GetProperty("status").GetString());
     }
+
+    [Fact]
+    public async Task CityPowerBalance_Query_IsPublic_NoAuthRequired()
+    {
+        // cityPowerBalance is a public query — no token should be required.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync();
+
+        // Execute WITHOUT a bearer token.
+        var result = await ExecuteGraphQlAsync(
+            "query CityPowerBalance($cityId: UUID!) { cityPowerBalance(cityId: $cityId) { cityId totalSupplyMw totalDemandMw status } }",
+            new { cityId = city.Id.ToString() }); // no token argument
+
+        Assert.False(result.TryGetProperty("errors", out _), "cityPowerBalance should be accessible without auth");
+        var balance = result.GetProperty("data").GetProperty("cityPowerBalance");
+        Assert.Equal(city.Id.ToString(), balance.GetProperty("cityId").GetString());
+    }
+
+    [Fact]
+    public async Task CityPowerBalance_Query_ShowsCriticalStatus_WhenSupplyBelow50Percent()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync();
+        var city = new City
+        {
+            Id = Guid.NewGuid(), Name = $"CritCity_{Guid.NewGuid():N}"[..20], CountryCode = "XX",
+            Latitude = 50.4, Longitude = 15.4, Population = 100_000, AverageRentPerSqm = 10m
+        };
+        db.Cities.Add(city);
+        var company = new Company { Id = Guid.NewGuid(), Name = "Critical Corp", Cash = 1_000_000m, PlayerId = player.Id, FoundedAtUtc = DateTime.UtcNow };
+        db.Companies.Add(company);
+
+        // 2 MW supply / 15 MW demand = 13% → CRITICAL (below 50%).
+        var powerPlant = new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = BuildingType.PowerPlant, Name = "Tiny Wind Plant",
+            Latitude = city.Latitude, Longitude = city.Longitude, Level = 1,
+            PowerPlantType = "WIND", PowerOutput = 2m, PowerConsumption = 0m,
+            BuiltAtUtc = DateTime.UtcNow
+        };
+        var factories = Enumerable.Range(1, 3).Select(i => new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = BuildingType.Factory, Name = $"Critical Factory {i}",
+            Latitude = city.Latitude, Longitude = city.Longitude, Level = 1,
+            PowerConsumption = 5m, BuiltAtUtc = DateTime.UtcNow
+        }).ToList();
+        db.Buildings.Add(powerPlant);
+        db.Buildings.AddRange(factories);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query CityPowerBalance($cityId: UUID!) { cityPowerBalance(cityId: $cityId) { totalSupplyMw totalDemandMw status } }",
+            new { cityId = city.Id.ToString() });
+
+        var balance = result.GetProperty("data").GetProperty("cityPowerBalance");
+        Assert.Equal("CRITICAL", balance.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task PowerDistribution_WithCriticalShortage_BuildingsGoOffline()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync();
+        var city = new City
+        {
+            Id = Guid.NewGuid(), Name = $"CritOff_{Guid.NewGuid():N}"[..20], CountryCode = "XX",
+            Latitude = 50.5, Longitude = 15.5, Population = 100_000, AverageRentPerSqm = 10m
+        };
+        db.Cities.Add(city);
+        var company = new Company { Id = Guid.NewGuid(), Name = "Critical Offline Corp", Cash = 1_000_000m, PlayerId = player.Id, FoundedAtUtc = DateTime.UtcNow };
+        db.Companies.Add(company);
+
+        // 2 MW supply / 20 MW demand = 10% → all consumers OFFLINE.
+        var powerPlant = new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = BuildingType.PowerPlant, Name = "Nano Plant",
+            Latitude = city.Latitude, Longitude = city.Longitude, Level = 1,
+            PowerPlantType = "SOLAR", PowerOutput = 2m, PowerConsumption = 0m,
+            BuiltAtUtc = DateTime.UtcNow
+        };
+        var factories = Enumerable.Range(1, 4).Select(i => new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = BuildingType.Factory, Name = $"OffFactory {i}",
+            Latitude = city.Latitude, Longitude = city.Longitude, Level = 1,
+            PowerConsumption = 5m, BuiltAtUtc = DateTime.UtcNow
+        }).ToList();
+        db.Buildings.Add(powerPlant);
+        db.Buildings.AddRange(factories);
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        foreach (var f in factories) await db.Entry(f).ReloadAsync();
+        foreach (var f in factories)
+        {
+            Assert.True(f.PowerStatus == PowerStatus.Offline,
+                $"{f.Name} should be OFFLINE when supply is below 50% of demand, but was {f.PowerStatus}");
+        }
+    }
+
+    [Fact]
+    public async Task PurchasePowerPlantLot_WithNuclearType_SetsHighOutput()
+    {
+        var token = await RegisterAndGetTokenAsync($"nuc_{Guid.NewGuid():N}@test.com");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Nuclear Corp" } }, token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync();
+        var lot = new BuildingLot
+        {
+            Id = Guid.NewGuid(), CityId = city.Id, Name = "Nuclear Test Lot", Description = "Test lot",
+            District = "Energy Zone", Latitude = city.Latitude + 0.04, Longitude = city.Longitude + 0.04,
+            Price = 80_000m, SuitableTypes = "POWER_PLANT", ConcurrencyToken = Guid.NewGuid()
+        };
+        db.BuildingLots.Add(lot);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) {
+                building { powerOutput powerPlantType }
+              }
+            }
+            """,
+            new { input = new { companyId, lotId = lot.Id.ToString(), buildingType = "POWER_PLANT", buildingName = "Nuclear Station", powerPlantType = "NUCLEAR" } },
+            token);
+
+        var building = result.GetProperty("data").GetProperty("purchaseLot").GetProperty("building");
+        Assert.Equal("NUCLEAR", building.GetProperty("powerPlantType").GetString());
+        Assert.Equal(200m, building.GetProperty("powerOutput").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Building_PowerStatus_IsReturnedInBuildingQuery()
+    {
+        // Verify that powerStatus is part of the building GraphQL type and returned via myCompanies.
+        var email = $"ps_{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email);
+
+        // Create company via mutation (ensures the right player owns it).
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Status Corp" } }, token);
+        var companyId = Guid.Parse(companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!);
+
+        // Add a building directly to the DB so we can assert on powerStatus.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync();
+        var building = new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = companyId, CityId = city.Id,
+            Type = BuildingType.Factory, Name = "Status Factory",
+            Latitude = city.Latitude, Longitude = city.Longitude, Level = 1,
+            PowerConsumption = 5m, PowerStatus = PowerStatus.Powered, BuiltAtUtc = DateTime.UtcNow
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query { myCompanies { buildings { id powerStatus } } }",
+            token: token);
+
+        var companies = result.GetProperty("data").GetProperty("myCompanies").EnumerateArray().ToList();
+        Assert.NotEmpty(companies);
+        var buildings = companies
+            .SelectMany(c => c.GetProperty("buildings").EnumerateArray())
+            .ToList();
+        var testBuilding = buildings.FirstOrDefault(b => b.GetProperty("id").GetString() == building.Id.ToString());
+        Assert.True(testBuilding.ValueKind != JsonValueKind.Undefined, "Test building should appear in myCompanies result");
+        Assert.Equal("POWERED", testBuilding.GetProperty("powerStatus").GetString());
+    }
 }
