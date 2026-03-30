@@ -19,11 +19,13 @@ public sealed class AppDbInitializer(
     IOptions<SeedDataOptions> seedOptions)
 {
     /// <summary>
-    /// Ensures the schema exists and seeds initial data if missing.
+    /// Ensures the schema is up to date (applies any pending EF migrations) and seeds initial
+    /// data if missing. Using MigrateAsync ensures the schema evolves safely across deployments
+    /// without requiring a database recreate.
     /// </summary>
     public async Task InitializeAsync()
     {
-        await dbContext.Database.EnsureCreatedAsync();
+        await dbContext.Database.MigrateAsync();
 
         if (!await dbContext.Players.AnyAsync(p => p.Email == seedOptions.Value.AdminEmail))
         {
@@ -477,7 +479,13 @@ public sealed class AppDbInitializer(
 
         // Bratislava building lots across different districts.
         // Coordinates are spread around the city center (48.1486, 17.1077).
-        dbContext.BuildingLots.AddRange(
+        //
+        // BasePrice is the pure land anchor value (no resource premium).
+        // LandService.RefreshLandState is called below to compute the dynamic PopulationIndex
+        // and the final Price = ComputeAppraisedPrice(basePrice, populationIndex) + resourcePremium.
+        // This means mine lots with raw-material deposits will always have Price > BasePrice.
+        var lotsToSeed = new List<BuildingLot>
+        {
             // ── Industrial Zone (eastern outskirts) ──
             // Low population index: these lots are near logistics hubs but away from residential areas.
             new BuildingLot
@@ -485,14 +493,15 @@ public sealed class AppDbInitializer(
                 Id = CreateDeterministicGuid("lot:ba-industrial-1"),
                 CityId = bratislava.Id,
                 Name = "Industrial Plot A1",
-                Description = "Large industrial plot near the eastern logistics corridor. Excellent for manufacturing operations.",
+                Description = "Large industrial plot near the eastern logistics corridor. Sits above an Iron Ore deposit (18,000t at 72% quality).",
                 District = "Industrial Zone",
                 Latitude = 48.1520, Longitude = 17.1250,
                 PopulationIndex = 0.65m,
-                BasePrice = 80_000m,
-                Price = 80_000m,
+                BasePrice = 75_000m,
+                Price = 75_000m,  // will be recomputed below
                 SuitableTypes = "FACTORY,MINE",
                 ResourceTypeId = resources.TryGetValue("iron-ore", out var ironOre) ? ironOre.Id : null,
+                ResourceType = resources.TryGetValue("iron-ore", out var ironOreNav) ? ironOreNav : null,
                 MaterialQuality = 0.72m,
                 MaterialQuantity = 18_000m
             },
@@ -501,14 +510,15 @@ public sealed class AppDbInitializer(
                 Id = CreateDeterministicGuid("lot:ba-industrial-2"),
                 CityId = bratislava.Id,
                 Name = "Industrial Plot A2",
-                Description = "Adjacent to major rail freight terminal. Ideal for heavy industry and raw material processing.",
+                Description = "Adjacent to major rail freight terminal. Sits above a Chemical Minerals deposit (12,000t at 55% quality).",
                 District = "Industrial Zone",
                 Latitude = 48.1540, Longitude = 17.1280,
                 PopulationIndex = 0.60m,
-                BasePrice = 75_000m,
-                Price = 75_000m,
+                BasePrice = 65_000m,
+                Price = 65_000m,  // will be recomputed below
                 SuitableTypes = "FACTORY,MINE",
                 ResourceTypeId = resources.TryGetValue("chemical-minerals", out var chem) ? chem.Id : null,
+                ResourceType = resources.TryGetValue("chemical-minerals", out var chemNav) ? chemNav : null,
                 MaterialQuality = 0.55m,
                 MaterialQuantity = 12_000m
             },
@@ -665,7 +675,23 @@ public sealed class AppDbInitializer(
                 Price = 100_000m,
                 SuitableTypes = "POWER_PLANT,FACTORY"
             }
-        );
+        };
+
+        dbContext.BuildingLots.AddRange(lotsToSeed);
+
+        // Apply resource premium: Price = appraised land value + resource deposit premium.
+        // This runs in the seeder so every fresh database starts with correct prices.
+        // The tick engine recalculates prices on every tick using the same formula.
+        foreach (var lot in lotsToSeed)
+        {
+            var resourcePremium = LandService.ComputeResourcePremium(
+                lot.ResourceType, lot.MaterialQuality, lot.MaterialQuantity);
+            if (resourcePremium > 0m)
+            {
+                var appraisedLandValue = LandService.ComputeAppraisedPrice(lot.BasePrice, lot.PopulationIndex);
+                lot.Price = appraisedLandValue + resourcePremium;
+            }
+        }
     }
 
     private static Guid CreateDeterministicGuid(string key)

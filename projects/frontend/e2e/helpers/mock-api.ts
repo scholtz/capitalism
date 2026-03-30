@@ -782,13 +782,14 @@ export function makeDefaultBuildingLots(): MockBuildingLot[] {
       id: 'lot-industrial-1',
       cityId: 'city-ba',
       name: 'Industrial Plot A1',
-      description: 'Large industrial plot near the eastern logistics corridor.',
+      description:
+        'Large industrial plot near the eastern logistics corridor. Sits above an Iron Ore deposit (18,000t at 72% quality).',
       district: 'Industrial Zone',
       latitude: 48.152,
       longitude: 17.125,
-      populationIndex: 0.78,
-      basePrice: 76000,
-      price: 80000,
+      populationIndex: 0.65,
+      basePrice: 75000, // Base land value (no resource premium)
+      price: 96900, // = appraised land (75000 * 0.86 = 64500) + resource premium (18000t * $25/t * 0.72 * 0.10 = 32400)
       suitableTypes: 'FACTORY,MINE',
       ownerCompanyId: null,
       buildingId: null,

@@ -14,6 +14,14 @@ public static class LandService
     private const decimal MaxPopulationIndex = 1.85m;
     private const double NeighborhoodRadiusKm = 1.5d;
 
+    /// <summary>
+    /// Land capture rate: the fraction of the quality-discounted total extractable resource value
+    /// that is added to the asking price as a raw-material deposit premium.
+    /// Rationale: a mine owner captures ongoing extraction benefit, so land price reflects
+    /// a portion (10%) of the discounted resource value rather than the full reserve.
+    /// </summary>
+    public const decimal ResourcePremiumCaptureRate = 0.10m;
+
     public static async Task EnsureMinimumAvailableLotsAsync(
         AppDbContext db,
         long currentTick,
@@ -26,6 +34,7 @@ public static class LandService
             .ToListAsync();
 
         var lots = await db.BuildingLots
+            .Include(lot => lot.ResourceType)
             .Where(lot => cityIdSet == null || cityIdSet.Contains(lot.CityId))
             .ToListAsync();
 
@@ -98,7 +107,30 @@ public static class LandService
         }
 
         lot.PopulationIndex = ComputePopulationIndex(lot, city, cityBuildings, currentTick);
-        lot.Price = ComputeAppraisedPrice(lot.BasePrice, lot.PopulationIndex);
+        // Price = appraised land value + raw-material deposit premium (when applicable).
+        // The land component fluctuates with population index; the resource premium is fixed
+        // by the deposit characteristics and gives mine lots a price above the base land value.
+        lot.Price = ComputeAppraisedPrice(lot.BasePrice, lot.PopulationIndex)
+                  + ComputeResourcePremium(lot.ResourceType, lot.MaterialQuality, lot.MaterialQuantity);
+    }
+
+    /// <summary>
+    /// Computes the resource-deposit premium added to the asking price of a lot.
+    /// Formula: quantity × resourceBasePrice × quality × <see cref="ResourcePremiumCaptureRate"/>.
+    /// Returns zero when any required value is missing or non-positive.
+    /// </summary>
+    public static decimal ComputeResourcePremium(
+        ResourceType? resourceType,
+        decimal? materialQuality,
+        decimal? materialQuantity)
+    {
+        if (resourceType is null || materialQuality is null or <= 0m || materialQuantity is null or <= 0m)
+        {
+            return 0m;
+        }
+
+        var premium = materialQuantity.Value * resourceType.BasePrice * materialQuality.Value * ResourcePremiumCaptureRate;
+        return decimal.Round(premium, 2, MidpointRounding.AwayFromZero);
     }
 
     public static decimal ComputePopulationIndex(

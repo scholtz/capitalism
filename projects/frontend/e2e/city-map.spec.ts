@@ -89,7 +89,7 @@ test.describe('City Map View', () => {
       page.getByRole('complementary').getByText('Industrial Zone'),
     ).toBeVisible()
     await expect(
-      page.getByRole('complementary').getByText('$80,000'),
+      page.getByRole('complementary').getByText(/96,900|96900/),
     ).toBeVisible()
     await expect(page.locator('.type-tag', { hasText: 'Factory' })).toBeVisible()
   })
@@ -299,16 +299,16 @@ test.describe('City Map View', () => {
 
     await page.goto('/city/city-ba')
 
-    // Switch to list view and select an industrial lot (low pop index = 0.78x in mock data)
+    // Switch to list view and select an industrial lot (low pop index = 0.65x in mock data)
     await page.getByRole('button', { name: /List View/i }).click()
     await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
 
     // The detail panel should show Population Index label and a numeric value
     const panel = page.getByRole('complementary')
     await expect(panel.getByText('Population Index', { exact: true })).toBeVisible()
-    // Mock data has populationIndex: 0.78 → formatted as "0.78x"
-    await expect(panel.getByText('0.78x')).toBeVisible()
-    // Should show a tier label (Low for 0.78)
+    // Mock data has populationIndex: 0.65 → formatted as "0.65x"
+    await expect(panel.getByText('0.65x')).toBeVisible()
+    // Should show a tier label (Low for 0.65)
     await expect(panel.getByText('Low', { exact: true })).toBeVisible()
     // Should show the explanatory hint about why location matters
     await expect(panel.getByText(/stronger demand for retail/i)).toBeVisible()
@@ -724,9 +724,9 @@ test.describe('City Map — invalid and stale selection paths', () => {
     await page.getByRole('button', { name: /List View/i }).click()
     await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
 
-    // Price is visible (Industrial lot has price 80000 in mock data)
+    // Price is visible (Industrial lot has price=96900 with Iron Ore resource premium in mock data)
     const detailPanel = page.getByRole('complementary')
-    await expect(detailPanel.getByText(/80,000|80000/)).toBeVisible()
+    await expect(detailPanel.getByText(/96,900|96900/)).toBeVisible()
   })
 
   test('lot detail shows appraised value and asking price separately', async ({ page }) => {
@@ -737,7 +737,7 @@ test.describe('City Map — invalid and stale selection paths', () => {
     await page.getByRole('button', { name: /List View/i }).click()
     await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
 
-    // Industrial lot has basePrice=76000 and price=80000
+    // Industrial lot has basePrice=75000 and price=96900 (includes Iron Ore resource premium)
     const detailPanel = page.getByRole('complementary')
     // Appraised value label shows base land value
     await expect(detailPanel.getByText(/Appraised Value/i)).toBeVisible()

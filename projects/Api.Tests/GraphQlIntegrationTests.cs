@@ -5080,6 +5080,51 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             "lot(id) on a seeded MINE lot should include materialQuantity");
     }
 
+    [Fact]
+    public async Task CityLots_MineLotsHaveResourcePremiumInPrice()
+    {
+        // ROADMAP: "The price to purchase the land includes also the base price for the
+        // raw material." Mine lots with resource deposits must have Price > BasePrice so
+        // the resource-premium badge and valuation transparency UI render correctly.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) {
+                id name district suitableTypes basePrice price
+                resourceType { id name }
+              }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        Assert.False(result.TryGetProperty("errors", out _), "cityLots should not return errors");
+
+        var lots = result.GetProperty("data").GetProperty("cityLots").EnumerateArray().ToList();
+
+        // Every seeded lot with a raw-material resource MUST have price > basePrice
+        var resourceLots = lots
+            .Where(l => l.GetProperty("resourceType").ValueKind != JsonValueKind.Null)
+            .ToList();
+
+        Assert.True(resourceLots.Count > 0,
+            "Expected at least one seeded lot with a raw material resource");
+
+        foreach (var lot in resourceLots)
+        {
+            var name = lot.GetProperty("name").GetString();
+            var basePrice = lot.GetProperty("basePrice").GetDecimal();
+            var price = lot.GetProperty("price").GetDecimal();
+
+            Assert.True(price > basePrice,
+                $"Mine lot '{name}' must have Price ({price}) > BasePrice ({basePrice}) because the land price includes the raw-material deposit premium.");
+        }
+    }
+
     #endregion
 
     #region First-sale milestone
