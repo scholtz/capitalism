@@ -1528,10 +1528,10 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       }
       const suitableTypes = lot.suitableTypes.split(',').map((s) => s.trim())
       if (!suitableTypes.includes(input.buildingType)) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: `Building type ${input.buildingType} is not suitable for this lot.` }] }) })
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: `Building type ${input.buildingType} is not suitable for this lot.`, extensions: { code: 'UNSUITABLE_BUILDING_TYPE' } }] }) })
       }
       if (company.cash < lot.price) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: `Insufficient funds. This lot costs $${lot.price.toLocaleString()} but you only have $${company.cash.toLocaleString()}.` }] }) })
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: `Insufficient funds. This lot costs $${lot.price.toLocaleString()} but you only have $${company.cash.toLocaleString()}.`, extensions: { code: 'INSUFFICIENT_FUNDS' } }] }) })
       }
 
       company.cash -= lot.price

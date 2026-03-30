@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
-import { gqlRequest } from '@/lib/graphql'
+import { gqlRequest, GraphQLError } from '@/lib/graphql'
 import {
   getLotStatus as lotStatusFromOwnership,
   getLotMarkerColor as markerColorFromStatus,
@@ -295,7 +295,44 @@ async function confirmPurchase() {
     purchaseMode.value = false
     updateMarkers()
   } catch (e: unknown) {
-    purchaseError.value = e instanceof Error ? e.message : t('cityMap.purchaseError')
+    if (e instanceof GraphQLError) {
+      if (e.code === 'LOT_ALREADY_OWNED') {
+        // Stale lot: another player claimed this lot after the player opened the form.
+        // Re-fetch just this single lot so the UI reflects new ownership immediately
+        // without fetching the full city list.
+        purchaseError.value = t('cityMap.purchaseErrorAlreadyOwned')
+        purchaseMode.value = false
+        try {
+          const refreshedLot = await gqlRequest<{ lot: BuildingLot | null }>(
+            `query GetLot($id: UUID!) {
+              lot(id: $id) {
+                id cityId name description district latitude longitude price suitableTypes
+                ownerCompanyId buildingId
+                ownerCompany { id name }
+                building { id name type }
+              }
+            }`,
+            { id: selectedLot.value?.id },
+          )
+          if (refreshedLot.lot) {
+            const idx = lots.value.findIndex((l) => l.id === refreshedLot.lot!.id)
+            if (idx >= 0) lots.value[idx] = refreshedLot.lot
+            selectedLot.value = refreshedLot.lot
+            updateMarkers()
+          }
+        } catch {
+          // Silently ignore refresh errors; the stale-lot error message is already shown
+        }
+      } else if (e.code === 'INSUFFICIENT_FUNDS') {
+        purchaseError.value = t('cityMap.purchaseErrorInsufficientFunds')
+      } else if (e.code === 'UNSUITABLE_BUILDING_TYPE') {
+        purchaseError.value = t('cityMap.purchaseErrorUnsuitable')
+      } else {
+        purchaseError.value = e.message
+      }
+    } else {
+      purchaseError.value = e instanceof Error ? e.message : t('cityMap.purchaseError')
+    }
   } finally {
     purchasing.value = false
   }
@@ -510,62 +547,69 @@ watch(viewMode, async (mode) => {
           <div v-else-if="companies.length === 0" class="purchase-notice">
             {{ t('cityMap.noCompany') }}
           </div>
-          <template v-else-if="canPurchase">
-            <div v-if="purchaseSuccess" class="success-message">{{ purchaseSuccess }}</div>
-
-            <div v-if="!purchaseMode" class="purchase-actions">
-              <button class="btn btn-primary" @click="startPurchase()">
-                {{ t('cityMap.purchase') }}
-              </button>
+          <template v-else>
+            <!-- Stale-lot / general purchase error shown regardless of current lot availability -->
+            <div v-if="purchaseError && !purchaseMode" class="error-message purchase-error-notice" role="alert" aria-live="polite">
+              {{ purchaseError }}
             </div>
 
-            <div v-else class="purchase-form">
-              <div class="form-group">
-                <label>{{ t('cityMap.buildingType') }}</label>
-                <select v-model="selectedBuildingType" class="form-select">
-                  <option value="">{{ t('cityMap.selectBuildingType') }}</option>
-                  <option v-for="type in suitableTypesForLot" :key="type" :value="type">
-                    {{ formatBuildingType(type) }}
-                  </option>
-                </select>
-              </div>
+            <template v-if="canPurchase">
+              <div v-if="purchaseSuccess" class="success-message">{{ purchaseSuccess }}</div>
 
-              <div class="form-group">
-                <label>{{ t('cityMap.buildingName') }}</label>
-                <input
-                  v-model="buildingName"
-                  type="text"
-                  class="form-input"
-                  :placeholder="t('cityMap.buildingNamePlaceholder')"
-                />
-              </div>
-
-              <div v-if="companies.length > 1" class="form-group">
-                <label>{{ t('cityMap.company') }}</label>
-                <select v-model="selectedCompanyId" class="form-select">
-                  <option v-for="c in companies" :key="c.id" :value="c.id">
-                    {{ c.name }} ({{ formatCurrency(c.cash) }})
-                  </option>
-                </select>
-              </div>
-
-              <div v-if="purchaseError" class="error-message" role="alert">
-                {{ purchaseError }}
-              </div>
-
-              <div class="purchase-actions">
-                <button class="btn btn-secondary" @click="purchaseMode = false">
-                  {{ t('common.cancel') }}
-                </button>
-                <button
-                  class="btn btn-primary"
-                  :disabled="!canSubmitPurchase"
-                  @click="confirmPurchase()"
-                >
-                  {{ purchasing ? t('cityMap.purchasing') : t('cityMap.confirmPurchase') }}
+              <div v-if="!purchaseMode" class="purchase-actions">
+                <button class="btn btn-primary" @click="startPurchase()">
+                  {{ t('cityMap.purchase') }}
                 </button>
               </div>
-            </div>
+
+              <div v-else class="purchase-form">
+                <div class="form-group">
+                  <label>{{ t('cityMap.buildingType') }}</label>
+                  <select v-model="selectedBuildingType" class="form-select">
+                    <option value="">{{ t('cityMap.selectBuildingType') }}</option>
+                    <option v-for="type in suitableTypesForLot" :key="type" :value="type">
+                      {{ formatBuildingType(type) }}
+                    </option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label>{{ t('cityMap.buildingName') }}</label>
+                  <input
+                    v-model="buildingName"
+                    type="text"
+                    class="form-input"
+                    :placeholder="t('cityMap.buildingNamePlaceholder')"
+                  />
+                </div>
+
+                <div v-if="companies.length > 1" class="form-group">
+                  <label>{{ t('cityMap.company') }}</label>
+                  <select v-model="selectedCompanyId" class="form-select">
+                    <option v-for="c in companies" :key="c.id" :value="c.id">
+                      {{ c.name }} ({{ formatCurrency(c.cash) }})
+                    </option>
+                  </select>
+                </div>
+
+                <div v-if="purchaseError" class="error-message" role="alert">
+                  {{ purchaseError }}
+                </div>
+
+                <div class="purchase-actions">
+                  <button class="btn btn-secondary" @click="purchaseMode = false">
+                    {{ t('common.cancel') }}
+                  </button>
+                  <button
+                    class="btn btn-primary"
+                    :disabled="!canSubmitPurchase"
+                    @click="confirmPurchase()"
+                  >
+                    {{ purchasing ? t('cityMap.purchasing') : t('cityMap.confirmPurchase') }}
+                  </button>
+                </div>
+              </div>
+            </template>
           </template>
 
           <!-- Already owned by player -->

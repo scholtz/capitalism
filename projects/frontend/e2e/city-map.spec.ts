@@ -227,13 +227,18 @@ test.describe('City Map View', () => {
     // Now mark the lot as owned before form submission to simulate race condition
     const lot = state.buildingLots.find((l) => l.id === 'lot-commercial-1')!
     lot.ownerCompanyId = 'other-company'
+    lot.ownerCompany = { id: 'other-company', name: 'Rival Corp' }
 
     await page.locator('.form-select').selectOption('SALES_SHOP')
     await page.locator('.form-input').fill('My Shop')
     await page.getByRole('button', { name: /Confirm Purchase/i }).click()
 
-    // Should show error message
-    await expect(page.getByText(/already been purchased/i)).toBeVisible()
+    // Should show actionable guidance — stale lot, not just a generic error
+    await expect(page.getByText(/just claimed by another player/i)).toBeVisible()
+    await expect(page.getByText(/select a different available lot/i)).toBeVisible()
+
+    // Purchase form should be dismissed; lot should now show as Owned
+    await expect(page.locator('.status-badge.owned')).toBeVisible()
   })
 
   test('filter toggle shows only available lots', async ({ page }) => {
@@ -427,7 +432,8 @@ test.describe('City Map View', () => {
     await page.locator('.form-input').fill('Bankrupt Factory')
     await page.getByRole('button', { name: /Confirm Purchase/i }).click()
 
-    // Should show insufficient funds error
-    await expect(page.getByText(/Insufficient funds/i)).toBeVisible()
+    // Should show actionable insufficient funds guidance
+    await expect(page.getByText(/does not have enough cash/i)).toBeVisible()
+    await expect(page.getByText(/Review your finances/i)).toBeVisible()
   })
 })
