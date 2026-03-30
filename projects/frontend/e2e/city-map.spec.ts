@@ -370,4 +370,64 @@ test.describe('City Map View', () => {
     await cityMapLink.click()
     await page.waitForURL(/\/city\//)
   })
+
+  test('post-purchase shows manage building link and navigates to building detail', async ({
+    page,
+  }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+
+    // Switch to list view and select an available lot
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    // Open purchase form
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    // Fill in and submit
+    await page.getByRole('complementary').locator('select').selectOption('FACTORY')
+    await page.getByRole('complementary').locator('input[type="text"]').fill('Victory Factory')
+    await page.getByRole('button', { name: /Confirm Purchase/i }).click()
+
+    // After purchase the lot is now ours — Manage Building link should appear
+    await expect(page.getByRole('link', { name: /Manage Building/i })).toBeVisible()
+
+    // Clicking it navigates to the building detail page
+    await page.getByRole('link', { name: /Manage Building/i }).click()
+    await page.waitForURL(/\/building\//)
+  })
+
+  test('shows insufficient funds error when company cash is too low', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-1',
+          playerId: 'player-1',
+          name: 'Broke Corp',
+          cash: 0, // no money
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    await page.locator('.form-select').selectOption('FACTORY')
+    await page.locator('.form-input').fill('Bankrupt Factory')
+    await page.getByRole('button', { name: /Confirm Purchase/i }).click()
+
+    // Should show insufficient funds error
+    await expect(page.getByText(/Insufficient funds/i)).toBeVisible()
+  })
 })

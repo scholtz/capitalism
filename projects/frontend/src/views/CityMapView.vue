@@ -4,6 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
+import {
+  getLotStatus as lotStatusFromOwnership,
+  getLotMarkerColor as markerColorFromStatus,
+  formatPopulationIndex,
+  populationIndexClass,
+  canPurchaseLot as isPurchasable,
+  canSubmitPurchaseForm as isFormSubmittable,
+} from '@/lib/cityMapHelpers'
 import type { City, BuildingLot, Company, PurchaseLotResult } from '@/types'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -55,35 +63,34 @@ const isOwnedByPlayer = computed(() => {
   return companies.value.some((c) => c.id === selectedLot.value?.ownerCompanyId)
 })
 
-const canPurchase = computed(() => {
-  return (
-    auth.isAuthenticated &&
-    companies.value.length > 0 &&
-    selectedLot.value &&
-    !selectedLot.value.ownerCompanyId
-  )
-})
+const canPurchase = computed(() =>
+  selectedLot.value
+    ? isPurchasable(
+        auth.isAuthenticated,
+        companies.value.length,
+        selectedLot.value.ownerCompanyId,
+      )
+    : false,
+)
 
-const canSubmitPurchase = computed(() => {
-  return (
-    selectedBuildingType.value &&
-    buildingName.value.trim() &&
-    selectedCompanyId.value &&
-    !purchasing.value
-  )
-})
+const canSubmitPurchase = computed(() =>
+  isFormSubmittable(
+    selectedBuildingType.value,
+    buildingName.value,
+    selectedCompanyId.value,
+    purchasing.value,
+  ),
+)
 
 function getLotStatus(lot: BuildingLot): 'available' | 'owned' | 'yours' {
-  if (!lot.ownerCompanyId) return 'available'
-  if (companies.value.some((c) => c.id === lot.ownerCompanyId)) return 'yours'
-  return 'owned'
+  return lotStatusFromOwnership(
+    lot.ownerCompanyId,
+    companies.value.map((c) => c.id),
+  )
 }
 
 function getLotMarkerColor(lot: BuildingLot): string {
-  const status = getLotStatus(lot)
-  if (status === 'available') return '#00C853'
-  if (status === 'yours') return '#0047FF'
-  return '#6B7280'
+  return markerColorFromStatus(getLotStatus(lot))
 }
 
 function formatCurrency(value: number): string {
@@ -97,22 +104,11 @@ function formatBuildingType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function formatPopulationIndex(value: number): string {
-  return value.toFixed(2) + 'x'
-}
-
 function populationIndexLabel(value: number): string {
   if (value >= 1.8) return t('cityMap.populationIndexVeryHigh')
   if (value >= 1.3) return t('cityMap.populationIndexHigh')
   if (value >= 0.9) return t('cityMap.populationIndexMedium')
   return t('cityMap.populationIndexLow')
-}
-
-function populationIndexClass(value: number): string {
-  if (value >= 1.8) return 'pop-very-high'
-  if (value >= 1.3) return 'pop-high'
-  if (value >= 0.9) return 'pop-medium'
-  return 'pop-low'
 }
 
 async function fetchData() {

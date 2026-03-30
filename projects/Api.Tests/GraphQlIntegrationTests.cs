@@ -3680,6 +3680,93 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task PurchaseLot_Unauthenticated_Fails()
+    {
+        // purchaseLot mutation requires authentication; an unauthenticated call must fail.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var lotsResult = await ExecuteGraphQlAsync(
+            "query CityLots($cityId: UUID!) { cityLots(cityId: $cityId) { id suitableTypes } }",
+            new { cityId = bratislavaId });
+
+        var lot = lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .First(l => l.GetProperty("suitableTypes").GetString()!.Contains("FACTORY"));
+        var lotId = lot.GetProperty("id").GetString();
+
+        // Call without an auth token
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { lot { id } }
+            }
+            """,
+            new { input = new { companyId = Guid.NewGuid().ToString(), lotId, buildingType = "FACTORY", buildingName = "Unauth Factory" } });
+
+        Assert.True(result.TryGetProperty("errors", out _), "unauthenticated purchaseLot should return an error");
+    }
+
+    [Fact]
+    public async Task PurchaseLot_CityLotsQueryReflectsOwnershipAfterPurchase()
+    {
+        // After a successful purchaseLot, the cityLots query must immediately return
+        // the lot with the correct ownerCompanyId and buildingId.
+        var token = await RegisterAndGetTokenAsync($"lot-reflect-{Guid.NewGuid()}@test.com");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Reflect Check Co");
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var lotsResult = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id suitableTypes ownerCompanyId buildingId }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var availableLot = lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .First(l => l.GetProperty("suitableTypes").GetString()!.Contains("FACTORY")
+                     && l.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null);
+        var lotId = availableLot.GetProperty("id").GetString();
+
+        // Purchase the lot
+        var purchaseResult = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) {
+                lot { id ownerCompanyId buildingId }
+                building { id }
+              }
+            }
+            """,
+            new { input = new { companyId, lotId, buildingType = "FACTORY", buildingName = "Reflect Factory" } },
+            token);
+
+        var purchasedBuildingId = purchaseResult.GetProperty("data").GetProperty("purchaseLot")
+            .GetProperty("building").GetProperty("id").GetString();
+
+        // Query cityLots again — ownership must be reflected immediately
+        var lotsAfter = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id ownerCompanyId buildingId }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var lotAfter = lotsAfter.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .First(l => l.GetProperty("id").GetString() == lotId);
+
+        Assert.Equal(companyId, lotAfter.GetProperty("ownerCompanyId").GetString());
+        Assert.Equal(purchasedBuildingId, lotAfter.GetProperty("buildingId").GetString());
+    }
+
+    [Fact]
     public async Task GlobalExchangeOffers_ReturnTransitAndDeliveredPricing()
     {
         var bratislavaId = await GetCityIdByNameAsync("Bratislava");
