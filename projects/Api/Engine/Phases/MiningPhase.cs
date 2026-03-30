@@ -22,6 +22,10 @@ public sealed class MiningPhase : ITickPhase
             if (!context.UnitsByBuilding.TryGetValue(building.Id, out var units))
                 continue;
 
+            // Skip buildings with no power.
+            var efficiency = TickContext.GetPowerEfficiency(building);
+            if (efficiency <= 0m) continue;
+
             // Get city resource abundances.
             context.ResourcesByCity.TryGetValue(building.CityId, out var cityResources);
             var abundanceMap = cityResources?
@@ -36,7 +40,7 @@ public sealed class MiningPhase : ITickPhase
                 var abundance = abundanceMap.GetValueOrDefault(unit.ResourceTypeId.Value, 0m);
                 if (abundance <= 0m) continue;
 
-                var production = GameConstants.MiningRate(unit.Level) * abundance;
+                var production = GameConstants.MiningRate(unit.Level) * abundance * efficiency;
                 var space = context.GetUnitFreeSpace(unit);
                 var actual = Math.Min(production, space);
                 if (actual <= 0m) continue;

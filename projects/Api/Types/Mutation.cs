@@ -183,7 +183,7 @@ public sealed class Mutation
             lotId,
             input.Type,
             input.Name,
-            1m,
+            Engine.GameConstants.PowerDemandMw(input.Type, 1),
             DateTime.UtcNow,
             city.Id);
 
@@ -292,7 +292,7 @@ public sealed class Mutation
             factoryLotId,
             BuildingType.Factory,
             $"{input.CompanyName} Factory",
-            2m,
+            Engine.GameConstants.PowerDemandMw(BuildingType.Factory, 1),
             nowUtc,
             city.Id);
         ConfigureStarterFactory(db, factory, product, starterResourceId.Value);
@@ -304,7 +304,7 @@ public sealed class Mutation
             shopLotId,
             BuildingType.SalesShop,
             $"{input.CompanyName} Shop",
-            1m,
+            Engine.GameConstants.PowerDemandMw(BuildingType.SalesShop, 1),
             nowUtc,
             city.Id);
         AddStarterShop(db, company.Id, shop.Id, product);
@@ -409,7 +409,7 @@ public sealed class Mutation
             input.FactoryLotId,
             BuildingType.Factory,
             $"{input.CompanyName} Factory",
-            2m,
+            Engine.GameConstants.PowerDemandMw(BuildingType.Factory, 1),
             nowUtc,
             input.CityId);
 
@@ -547,7 +547,7 @@ public sealed class Mutation
             input.ShopLotId,
             BuildingType.SalesShop,
             $"{company.Name} Shop",
-            1m,
+            Engine.GameConstants.PowerDemandMw(BuildingType.SalesShop, 1),
             nowUtc,
             onboardingCityId);
 
@@ -640,7 +640,8 @@ public sealed class Mutation
         string buildingName,
         decimal powerConsumption,
         DateTime builtAtUtc,
-        Guid? expectedCityId = null)
+        Guid? expectedCityId = null,
+        string? powerPlantType = null)
     {
         var lot = await db.BuildingLots
             .Include(candidate => candidate.City)
@@ -714,6 +715,10 @@ public sealed class Mutation
             Longitude = lot.Longitude,
             Level = 1,
             PowerConsumption = powerConsumption,
+            PowerPlantType = buildingType == BuildingType.PowerPlant ? (powerPlantType ?? Data.Entities.PowerPlantType.Coal) : null,
+            PowerOutput = buildingType == BuildingType.PowerPlant
+                ? Engine.GameConstants.DefaultPowerOutputMw(powerPlantType ?? Data.Entities.PowerPlantType.Coal)
+                : null,
             BuiltAtUtc = builtAtUtc
         };
 
@@ -1202,8 +1207,9 @@ public sealed class Mutation
             input.LotId,
             input.BuildingType,
             input.BuildingName,
-            1m,
-            DateTime.UtcNow);
+            Engine.GameConstants.PowerDemandMw(input.BuildingType, 1),
+            DateTime.UtcNow,
+            powerPlantType: input.PowerPlantType);
 
         try
         {

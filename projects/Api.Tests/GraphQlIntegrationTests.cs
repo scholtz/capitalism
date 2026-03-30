@@ -5723,6 +5723,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     #endregion
+
 }
 
 /// <summary>
@@ -6065,15 +6066,16 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         string companyId,
         string lotId,
         string buildingType,
-        string buildingName)
+        string buildingName,
+        string? powerPlantType = null)
     {
         var result = await ExecuteGraphQlAsync(
             """
             mutation PurchaseLot($input: PurchaseLotInput!) {
-              purchaseLot(input: $input) { building { id } }
+              purchaseLot(input: $input) { building { id powerOutput powerPlantType powerConsumption } }
             }
             """,
-            new { input = new { companyId, lotId, buildingType, buildingName } },
+            new { input = new { companyId, lotId, buildingType, buildingName, powerPlantType } },
             token);
         return result.GetProperty("data").GetProperty("purchaseLot").GetProperty("building").GetProperty("id").GetString()!;
     }

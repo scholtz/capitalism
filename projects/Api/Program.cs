@@ -128,6 +128,7 @@ builder.Services
 
 // ── Game tick engine ──
 builder.Services.AddScoped<TickProcessor>();
+builder.Services.AddScoped<ITickPhase, PowerDistributionPhase>();
 builder.Services.AddScoped<ITickPhase, BuildingUpgradePhase>();
 builder.Services.AddScoped<ITickPhase, LandMarketPhase>();
 builder.Services.AddScoped<ITickPhase, PublicSalesPhase>();

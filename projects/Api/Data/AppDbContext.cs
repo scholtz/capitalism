@@ -130,6 +130,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(b => b.OccupancyPercent).HasPrecision(5, 2);
             e.Property(b => b.TotalAreaSqm).HasPrecision(18, 2);
             e.Property(b => b.PowerOutput).HasPrecision(18, 2);
+            e.Property(b => b.PowerStatus).HasMaxLength(20);
             e.Property(b => b.InterestRate).HasPrecision(5, 2);
             e.HasOne(b => b.Company).WithMany(c => c.Buildings).HasForeignKey(b => b.CompanyId);
             e.HasOne(b => b.City).WithMany(c => c.Buildings).HasForeignKey(b => b.CityId);

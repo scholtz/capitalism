@@ -33,11 +33,15 @@ public sealed class PublicSalesPhase : ITickPhase
             if (!context.CompaniesById.TryGetValue(building.CompanyId, out var company))
                 continue;
 
+            // Skip buildings with no power.
+            var efficiency = TickContext.GetPowerEfficiency(building);
+            if (efficiency <= 0m) continue;
+
             foreach (var unit in units)
             {
                 if (unit.UnitType != UnitType.PublicSales) continue;
                 lotsByBuildingId.TryGetValue(building.Id, out var lot);
-                ProcessSalesUnit(context, building, unit, city, company, lot);
+                ProcessSalesUnit(context, building, unit, city, company, lot, efficiency);
             }
         }
     }
@@ -48,12 +52,13 @@ public sealed class PublicSalesPhase : ITickPhase
         BuildingUnit unit,
         City city,
         Company company,
-        BuildingLot? lot)
+        BuildingLot? lot,
+        decimal efficiency)
     {
         if (!context.InventoryByUnit.TryGetValue(unit.Id, out var inventories))
             return;
 
-        var salesCapacity = GameConstants.SalesCapacity(unit.Level);
+        var salesCapacity = GameConstants.SalesCapacity(unit.Level) * efficiency;
         var totalSold = 0m;
 
         foreach (var inv in inventories)

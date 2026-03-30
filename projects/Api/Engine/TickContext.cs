@@ -281,6 +281,21 @@ public sealed class TickContext
         history.ProducedQuantity = RoundInventoryDecimal(history.ProducedQuantity + producedQuantity);
     }
 
+    /// <summary>
+    /// Returns the operational efficiency factor for a building based on its PowerStatus.
+    /// <list type="bullet">
+    /// <item>POWERED → 1.0 (full capacity)</item>
+    /// <item>CONSTRAINED → <see cref="GameConstants.ConstrainedEfficiencyFactor"/> (partial capacity)</item>
+    /// <item>OFFLINE → 0.0 (completely stopped)</item>
+    /// </list>
+    /// </summary>
+    public static decimal GetPowerEfficiency(Building building) => building.PowerStatus switch
+    {
+        Data.Entities.PowerStatus.Constrained => GameConstants.ConstrainedEfficiencyFactor,
+        Data.Entities.PowerStatus.Offline     => 0m,
+        _                                     => 1m
+    };
+
     /// <summary>Returns units that this unit pushes resources TO (outgoing links).</summary>
     public List<BuildingUnit> GetOutgoingLinkedUnits(BuildingUnit unit)
     {

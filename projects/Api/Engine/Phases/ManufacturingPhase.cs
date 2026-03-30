@@ -22,10 +22,14 @@ public sealed class ManufacturingPhase : ITickPhase
             if (!context.UnitsByBuilding.TryGetValue(building.Id, out var units))
                 continue;
 
+            // Skip buildings with no power.
+            var efficiency = TickContext.GetPowerEfficiency(building);
+            if (efficiency <= 0m) continue;
+
             foreach (var unit in units)
             {
                 if (unit.UnitType != UnitType.Manufacturing) continue;
-                ProcessManufacturingUnit(context, building, unit);
+                ProcessManufacturingUnit(context, building, unit, efficiency);
             }
         }
 
@@ -35,7 +39,8 @@ public sealed class ManufacturingPhase : ITickPhase
     private static void ProcessManufacturingUnit(
         TickContext context,
         Building building,
-        BuildingUnit unit)
+        BuildingUnit unit,
+        decimal efficiency)
     {
         if (!unit.ProductTypeId.HasValue) return;
         if (!context.ProductTypesById.TryGetValue(unit.ProductTypeId.Value, out var productType))
@@ -43,7 +48,7 @@ public sealed class ManufacturingPhase : ITickPhase
         if (!context.RecipesByProduct.TryGetValue(productType.Id, out var recipes) || recipes.Count == 0)
             return;
 
-        var maxBatches = GameConstants.ManufacturingBatches(unit.Level);
+        var maxBatches = (int)Math.Floor(GameConstants.ManufacturingBatches(unit.Level) * efficiency);
 
         // Collect available inputs from the manufacturing unit's own inventory
         // (filled by resource movement) AND from incoming-linked units.

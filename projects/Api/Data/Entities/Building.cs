@@ -65,6 +65,14 @@ public sealed class Building
     /// <summary>Power output in MW (only for power plants).</summary>
     public decimal? PowerOutput { get; set; }
 
+    /// <summary>
+    /// Power supply status set each tick by the PowerDistributionPhase.
+    /// Values: POWERED, CONSTRAINED, OFFLINE.
+    /// Power plants themselves are always POWERED (they produce, not consume).
+    /// </summary>
+    [MaxLength(20)]
+    public string PowerStatus { get; set; } = Entities.PowerStatus.Powered;
+
     /// <summary>Media type: NEWSPAPER, RADIO, TV (only for media houses).</summary>
     [MaxLength(20)]
     public string? MediaType { get; set; }

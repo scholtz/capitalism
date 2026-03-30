@@ -159,6 +159,13 @@ public sealed class PurchaseLotInput
     /// <summary>Display name for the new building.</summary>
     [Required, MaxLength(200)]
     public string BuildingName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Power plant subtype (COAL, GAS, SOLAR, WIND, NUCLEAR).
+    /// Required when BuildingType is POWER_PLANT; ignored otherwise.
+    /// </summary>
+    [MaxLength(20)]
+    public string? PowerPlantType { get; set; }
 }
 
 /// <summary>User-editable portion of a building unit configuration.</summary>

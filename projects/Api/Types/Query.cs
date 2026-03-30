@@ -800,6 +800,71 @@ public sealed class Query
             PriceHistory = priceHistory,
         };
     }
+
+    /// <summary>
+    /// Returns the city-level power balance: total supply from all power plants,
+    /// total demand from all consuming buildings, the reserve margin, and a
+    /// human-readable status string (BALANCED, CONSTRAINED, or CRITICAL).
+    ///
+    /// This query is public (no auth required) so players can assess a city
+    /// before purchasing a lot.
+    /// </summary>
+    public async Task<CityPowerBalance> GetCityPowerBalance(Guid cityId, [Service] AppDbContext db)
+    {
+        var buildings = await db.Buildings
+            .Where(b => b.CityId == cityId)
+            .ToListAsync();
+
+        var powerPlants = buildings.Where(b => b.Type == Data.Entities.BuildingType.PowerPlant).ToList();
+        var consumers = buildings.Where(b => b.Type != Data.Entities.BuildingType.PowerPlant).ToList();
+
+        var totalSupplyMw = powerPlants.Sum(plant =>
+            plant.PowerOutput > 0m
+                ? plant.PowerOutput!.Value
+                : GameConstants.DefaultPowerOutputMw(plant.PowerPlantType));
+
+        var totalDemandMw = consumers.Sum(building =>
+            building.PowerConsumption > 0m
+                ? building.PowerConsumption
+                : GameConstants.PowerDemandMw(building.Type, building.Level));
+
+        var reserveMw = totalSupplyMw - totalDemandMw;
+        var reservePercent = totalDemandMw > 0m
+            ? decimal.Round(reserveMw / totalDemandMw * 100m, 1, MidpointRounding.AwayFromZero)
+            : 100m;
+
+        string status;
+        if (totalDemandMw == 0m || reserveMw >= 0m)
+            status = "BALANCED";
+        else if (totalSupplyMw >= totalDemandMw * 0.5m)
+            status = "CONSTRAINED";
+        else
+            status = "CRITICAL";
+
+        var powerPlantSummaries = powerPlants.Select(p => new PowerPlantSummary
+        {
+            BuildingId = p.Id,
+            BuildingName = p.Name,
+            PlantType = p.PowerPlantType ?? Data.Entities.PowerPlantType.Coal,
+            OutputMw = p.PowerOutput > 0m
+                ? p.PowerOutput!.Value
+                : GameConstants.DefaultPowerOutputMw(p.PowerPlantType),
+            PowerStatus = p.PowerStatus,
+        }).ToList();
+
+        return new CityPowerBalance
+        {
+            CityId = cityId,
+            TotalSupplyMw = totalSupplyMw,
+            TotalDemandMw = totalDemandMw,
+            ReserveMw = reserveMw,
+            ReservePercent = reservePercent,
+            Status = status,
+            PowerPlants = powerPlantSummaries,
+            PowerPlantCount = powerPlants.Count,
+            ConsumerBuildingCount = consumers.Count,
+        };
+    }
 }
 
 /// <summary>Payload for player ranking.</summary>
@@ -911,4 +976,62 @@ public sealed class BuildingUnitInventorySummary
     public decimal? AverageQuality { get; set; }
     public decimal TotalSourcingCost { get; set; }
     public decimal SourcingCostPerUnit { get; set; }
+}
+
+/// <summary>
+/// City-level power balance snapshot.
+/// Computed on demand from current building data.
+/// </summary>
+public sealed class CityPowerBalance
+{
+    /// <summary>The city this balance applies to.</summary>
+    public Guid CityId { get; set; }
+
+    /// <summary>Total power output in MW from all power plants in the city.</summary>
+    public decimal TotalSupplyMw { get; set; }
+
+    /// <summary>Total power demand in MW from all consuming buildings in the city.</summary>
+    public decimal TotalDemandMw { get; set; }
+
+    /// <summary>Reserve capacity in MW (supply minus demand; negative means shortage).</summary>
+    public decimal ReserveMw { get; set; }
+
+    /// <summary>Reserve as a percentage of demand (negative means shortage).</summary>
+    public decimal ReservePercent { get; set; }
+
+    /// <summary>
+    /// Overall power status for the city:
+    /// BALANCED = supply &gt;= demand,
+    /// CONSTRAINED = supply &lt; demand but &gt;= 50%,
+    /// CRITICAL = supply &lt; 50% of demand.
+    /// </summary>
+    public string Status { get; set; } = "BALANCED";
+
+    /// <summary>Summary of each power plant in the city.</summary>
+    public List<PowerPlantSummary> PowerPlants { get; set; } = [];
+
+    /// <summary>Number of power plants in the city.</summary>
+    public int PowerPlantCount { get; set; }
+
+    /// <summary>Number of consuming buildings in the city.</summary>
+    public int ConsumerBuildingCount { get; set; }
+}
+
+/// <summary>Summary of a single power plant building for the city power balance view.</summary>
+public sealed class PowerPlantSummary
+{
+    /// <summary>Building identifier.</summary>
+    public Guid BuildingId { get; set; }
+
+    /// <summary>Building display name.</summary>
+    public string BuildingName { get; set; } = string.Empty;
+
+    /// <summary>Plant type: COAL, GAS, SOLAR, WIND, or NUCLEAR.</summary>
+    public string PlantType { get; set; } = string.Empty;
+
+    /// <summary>Current power output in MW.</summary>
+    public decimal OutputMw { get; set; }
+
+    /// <summary>Power supply status of this plant (always POWERED).</summary>
+    public string PowerStatus { get; set; } = Data.Entities.PowerStatus.Powered;
 }

@@ -1,3 +1,5 @@
+using Api.Data.Entities;
+
 namespace Api.Engine;
 
 /// <summary>
@@ -77,4 +79,45 @@ public static class GameConstants
 
     /// <summary>Rate at which occupancy adjusts per tick toward equilibrium.</summary>
     public const decimal OccupancyAdjustmentRate = 0.5m;
+
+    // ── Power grid constants ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Power demand in MW for a building of the given type and level.
+    /// Power plants themselves consume no power (they produce it).
+    /// </summary>
+    public static decimal PowerDemandMw(string buildingType, int level) => buildingType switch
+    {
+        Data.Entities.BuildingType.Mine               => 2m * level,
+        Data.Entities.BuildingType.Factory            => 5m * level,
+        Data.Entities.BuildingType.SalesShop          => 1m * level,
+        Data.Entities.BuildingType.ResearchDevelopment => 3m * level,
+        Data.Entities.BuildingType.Apartment          => 0.5m * level,
+        Data.Entities.BuildingType.Commercial         => 1m * level,
+        Data.Entities.BuildingType.MediaHouse         => 2m * level,
+        Data.Entities.BuildingType.Bank               => 1m * level,
+        Data.Entities.BuildingType.Exchange           => 1m * level,
+        Data.Entities.BuildingType.PowerPlant         => 0m,
+        _                                             => 1m * level
+    };
+
+    /// <summary>
+    /// Default power output in MW for a power plant by plant type.
+    /// Used when a power plant building is created without an explicit output.
+    /// </summary>
+    public static decimal DefaultPowerOutputMw(string? powerPlantType) => powerPlantType switch
+    {
+        PowerPlantType.Coal    => 50m,
+        PowerPlantType.Gas     => 40m,
+        PowerPlantType.Solar   => 20m,
+        PowerPlantType.Wind    => 25m,
+        PowerPlantType.Nuclear => 200m,
+        _                      => 30m
+    };
+
+    /// <summary>
+    /// Fraction of capacity a CONSTRAINED building operates at.
+    /// Applied to manufacturing batches, mining rate, and sales capacity.
+    /// </summary>
+    public const decimal ConstrainedEfficiencyFactor = 0.5m;
 }
