@@ -595,6 +595,12 @@ export default {
     building: 'Budova',
     company: 'Spoločnosť',
     manageBuilding: 'Spravovať budovu',
+    populationIndex: 'Index osídlenia',
+    populationIndexHint: 'Vyšší index = viac obyvateľov a pendlerov v okolí = silnejší dopyt po maloobchode a službách. Továrne a elektrárne fungujú rovnako bez ohľadu na index osídlenia.',
+    populationIndexVeryHigh: 'Veľmi vysoký',
+    populationIndexHigh: 'Vysoký',
+    populationIndexMedium: 'Stredný',
+    populationIndexLow: 'Nízky',
     districts: {
       'Industrial Zone': 'Priemyselná zóna',
       'Commercial District': 'Obchodná štvrť',

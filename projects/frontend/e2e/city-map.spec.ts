@@ -288,6 +288,43 @@ test.describe('City Map View', () => {
     await expect(page.getByText(/Log in to purchase/i)).toBeVisible()
   })
 
+  test('detail panel shows population index with contextual label', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+
+    // Switch to list view and select an industrial lot (low pop index = 0.78x in mock data)
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    // The detail panel should show Population Index label and a numeric value
+    const panel = page.getByRole('complementary')
+    await expect(panel.getByText('Population Index', { exact: true })).toBeVisible()
+    // Mock data has populationIndex: 0.78 → formatted as "0.78x"
+    await expect(panel.getByText('0.78x')).toBeVisible()
+    // Should show a tier label (Low for 0.78)
+    await expect(panel.getByText('Low', { exact: true })).toBeVisible()
+    // Should show the explanatory hint about why location matters
+    await expect(panel.getByText(/stronger demand for retail/i)).toBeVisible()
+  })
+
+  test('commercial lot shows high population index label', async ({ page }) => {
+    // Lot lot-commercial-1 has populationIndex: 1.42 in mock data → High
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+
+    const panel = page.getByRole('complementary')
+    await expect(panel.getByText('Population Index', { exact: true })).toBeVisible()
+    await expect(panel.getByText('1.42x')).toBeVisible()
+    // 1.42 is in the "High" band (>= 1.3, < 1.8)
+    await expect(panel.getByText('High', { exact: true })).toBeVisible()
+  })
+
   test('dashboard links to city map', async ({ page }) => {
     const player = makePlayer({
       onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',

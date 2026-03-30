@@ -595,6 +595,12 @@ export default {
     building: 'Gebäude',
     company: 'Unternehmen',
     manageBuilding: 'Gebäude verwalten',
+    populationIndex: 'Bevölkerungsindex',
+    populationIndexHint: 'Höherer Index = mehr Anwohner und Pendler = stärkere Nachfrage nach Einzelhandel und Dienstleistungen. Fabriken und Kraftwerke funktionieren unabhängig vom Bevölkerungsindex gleich.',
+    populationIndexVeryHigh: 'Sehr hoch',
+    populationIndexHigh: 'Hoch',
+    populationIndexMedium: 'Mittel',
+    populationIndexLow: 'Niedrig',
     districts: {
       'Industrial Zone': 'Industriegebiet',
       'Commercial District': 'Geschäftsviertel',

@@ -445,6 +445,7 @@ public sealed class AppDbInitializer(
         // Coordinates are spread around the city center (48.1486, 17.1077).
         dbContext.BuildingLots.AddRange(
             // ── Industrial Zone (eastern outskirts) ──
+            // Low population index: these lots are near logistics hubs but away from residential areas.
             new BuildingLot
             {
                 Id = CreateDeterministicGuid("lot:ba-industrial-1"),
@@ -453,6 +454,8 @@ public sealed class AppDbInitializer(
                 Description = "Large industrial plot near the eastern logistics corridor. Excellent for manufacturing operations.",
                 District = "Industrial Zone",
                 Latitude = 48.1520, Longitude = 17.1250,
+                PopulationIndex = 0.65m,
+                BasePrice = 80_000m,
                 Price = 80_000m,
                 SuitableTypes = "FACTORY,MINE"
             },
@@ -464,6 +467,8 @@ public sealed class AppDbInitializer(
                 Description = "Adjacent to major rail freight terminal. Ideal for heavy industry and raw material processing.",
                 District = "Industrial Zone",
                 Latitude = 48.1540, Longitude = 17.1280,
+                PopulationIndex = 0.60m,
+                BasePrice = 75_000m,
                 Price = 75_000m,
                 SuitableTypes = "FACTORY,MINE"
             },
@@ -475,10 +480,13 @@ public sealed class AppDbInitializer(
                 Description = "Modern industrial park with good power grid access. Suitable for energy-intensive production.",
                 District = "Industrial Zone",
                 Latitude = 48.1500, Longitude = 17.1300,
+                PopulationIndex = 0.72m,
+                BasePrice = 90_000m,
                 Price = 90_000m,
                 SuitableTypes = "FACTORY,POWER_PLANT"
             },
             // ── Commercial District (city center) ──
+            // High population index: these lots are in the heart of the city with dense foot traffic.
             new BuildingLot
             {
                 Id = CreateDeterministicGuid("lot:ba-commercial-1"),
@@ -487,6 +495,8 @@ public sealed class AppDbInitializer(
                 Description = "Prime storefront on the main pedestrian avenue. High foot traffic and visibility.",
                 District = "Commercial District",
                 Latitude = 48.1450, Longitude = 17.1070,
+                PopulationIndex = 1.85m,
+                BasePrice = 120_000m,
                 Price = 120_000m,
                 SuitableTypes = "SALES_SHOP,COMMERCIAL"
             },
@@ -498,6 +508,8 @@ public sealed class AppDbInitializer(
                 Description = "Corner lot facing the historic market square. Excellent for retail with tourist exposure.",
                 District = "Commercial District",
                 Latitude = 48.1440, Longitude = 17.1090,
+                PopulationIndex = 2.10m,
+                BasePrice = 150_000m,
                 Price = 150_000m,
                 SuitableTypes = "SALES_SHOP,COMMERCIAL"
             },
@@ -509,10 +521,13 @@ public sealed class AppDbInitializer(
                 Description = "Mid-range retail space on a busy commercial boulevard with steady local traffic.",
                 District = "Commercial District",
                 Latitude = 48.1460, Longitude = 17.1050,
+                PopulationIndex = 1.60m,
+                BasePrice = 100_000m,
                 Price = 100_000m,
                 SuitableTypes = "SALES_SHOP"
             },
             // ── Business Park (northern area) ──
+            // Moderate-to-high population index: professional district with daytime footfall.
             new BuildingLot
             {
                 Id = CreateDeterministicGuid("lot:ba-business-1"),
@@ -521,6 +536,8 @@ public sealed class AppDbInitializer(
                 Description = "Modern office complex in the technology business park. Perfect for R&D operations.",
                 District = "Business Park",
                 Latitude = 48.1560, Longitude = 17.1100,
+                PopulationIndex = 1.20m,
+                BasePrice = 130_000m,
                 Price = 130_000m,
                 SuitableTypes = "RESEARCH_DEVELOPMENT,BANK"
             },
@@ -532,10 +549,13 @@ public sealed class AppDbInitializer(
                 Description = "Premium office space in the financial district. Ideal for banking and exchange operations.",
                 District = "Business Park",
                 Latitude = 48.1570, Longitude = 17.1060,
+                PopulationIndex = 1.40m,
+                BasePrice = 200_000m,
                 Price = 200_000m,
                 SuitableTypes = "BANK,EXCHANGE"
             },
             // ── Residential Quarter (western area) ──
+            // Steady population index: consistent local demand from residents.
             new BuildingLot
             {
                 Id = CreateDeterministicGuid("lot:ba-residential-1"),
@@ -544,6 +564,8 @@ public sealed class AppDbInitializer(
                 Description = "Scenic residential plot overlooking the Danube. Strong rental demand from young professionals.",
                 District = "Residential Quarter",
                 Latitude = 48.1400, Longitude = 17.1000,
+                PopulationIndex = 1.05m,
+                BasePrice = 110_000m,
                 Price = 110_000m,
                 SuitableTypes = "APARTMENT"
             },
@@ -555,10 +577,13 @@ public sealed class AppDbInitializer(
                 Description = "Affordable residential lot in a growing suburban neighborhood. Good long-term rental potential.",
                 District = "Residential Quarter",
                 Latitude = 48.1380, Longitude = 17.0950,
+                PopulationIndex = 0.88m,
+                BasePrice = 70_000m,
                 Price = 70_000m,
                 SuitableTypes = "APARTMENT"
             },
             // ── Media & Cultural District (south-central) ──
+            // Moderate population index: near cultural venues with evening and weekend activity.
             new BuildingLot
             {
                 Id = CreateDeterministicGuid("lot:ba-media-1"),
@@ -567,10 +592,13 @@ public sealed class AppDbInitializer(
                 Description = "Purpose-built media complex near the cultural center. Ideal for newspaper, radio, or TV operations.",
                 District = "Media District",
                 Latitude = 48.1420, Longitude = 17.1120,
+                PopulationIndex = 1.25m,
+                BasePrice = 140_000m,
                 Price = 140_000m,
                 SuitableTypes = "MEDIA_HOUSE"
             },
             // ── Energy Zone (south-eastern outskirts) ──
+            // Low population index: far from residential areas; access to grid infrastructure.
             new BuildingLot
             {
                 Id = CreateDeterministicGuid("lot:ba-energy-1"),
@@ -579,6 +607,8 @@ public sealed class AppDbInitializer(
                 Description = "Large plot with grid connection capacity for power generation. Zoned for energy infrastructure.",
                 District = "Energy Zone",
                 Latitude = 48.1350, Longitude = 17.1200,
+                PopulationIndex = 0.52m,
+                BasePrice = 160_000m,
                 Price = 160_000m,
                 SuitableTypes = "POWER_PLANT"
             },
@@ -590,6 +620,8 @@ public sealed class AppDbInitializer(
                 Description = "Secondary energy plot suitable for smaller power plants or supplementary generation.",
                 District = "Energy Zone",
                 Latitude = 48.1360, Longitude = 17.1230,
+                PopulationIndex = 0.55m,
+                BasePrice = 100_000m,
                 Price = 100_000m,
                 SuitableTypes = "POWER_PLANT,FACTORY"
             }

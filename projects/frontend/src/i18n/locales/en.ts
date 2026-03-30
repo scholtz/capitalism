@@ -596,6 +596,12 @@ export default {
     building: 'Building',
     company: 'Company',
     manageBuilding: 'Manage Building',
+    populationIndex: 'Population Index',
+    populationIndexHint: 'Higher index = more nearby residents and commuters = stronger demand for retail and services. Factories and power plants perform equally regardless of population index.',
+    populationIndexVeryHigh: 'Very High',
+    populationIndexHigh: 'High',
+    populationIndexMedium: 'Medium',
+    populationIndexLow: 'Low',
     districts: {
       'Industrial Zone': 'Industrial Zone',
       'Commercial District': 'Commercial District',

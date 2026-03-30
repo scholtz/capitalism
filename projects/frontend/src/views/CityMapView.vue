@@ -97,6 +97,24 @@ function formatBuildingType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+function formatPopulationIndex(value: number): string {
+  return value.toFixed(2) + 'x'
+}
+
+function populationIndexLabel(value: number): string {
+  if (value >= 1.8) return t('cityMap.populationIndexVeryHigh')
+  if (value >= 1.3) return t('cityMap.populationIndexHigh')
+  if (value >= 0.9) return t('cityMap.populationIndexMedium')
+  return t('cityMap.populationIndexLow')
+}
+
+function populationIndexClass(value: number): string {
+  if (value >= 1.8) return 'pop-very-high'
+  if (value >= 1.3) return 'pop-high'
+  if (value >= 0.9) return 'pop-medium'
+  return 'pop-low'
+}
+
 async function fetchData() {
   loading.value = true
   error.value = null
@@ -113,7 +131,8 @@ async function fetchData() {
     const lotsData = await gqlRequest<{ cityLots: BuildingLot[] }>(
       `query CityLots($cityId: UUID!) {
         cityLots(cityId: $cityId) {
-          id cityId name description district latitude longitude price suitableTypes
+          id cityId name description district latitude longitude
+          populationIndex basePrice price suitableTypes
           ownerCompanyId buildingId
           ownerCompany { id name }
           building { id name type }
@@ -450,6 +469,16 @@ watch(viewMode, async (mode) => {
             <div class="detail-item">
               <span class="detail-label">{{ t('cityMap.price') }}</span>
               <span class="detail-value price">{{ formatCurrency(selectedLot.price) }}</span>
+            </div>
+            <div class="detail-item full-width population-index-item">
+              <span class="detail-label">{{ t('cityMap.populationIndex') }}</span>
+              <div class="population-index-display">
+                <span class="population-index-value">{{ formatPopulationIndex(selectedLot.populationIndex) }}</span>
+                <span class="population-index-tag" :class="populationIndexClass(selectedLot.populationIndex)">
+                  {{ populationIndexLabel(selectedLot.populationIndex) }}
+                </span>
+              </div>
+              <p class="population-index-hint">{{ t('cityMap.populationIndexHint') }}</p>
             </div>
             <div class="detail-item full-width">
               <span class="detail-label">{{ t('cityMap.suitableFor') }}</span>
@@ -932,6 +961,59 @@ watch(viewMode, async (mode) => {
 
 .your-building-actions {
   margin-top: 1rem;
+}
+
+.population-index-item {
+  margin-bottom: 0.25rem;
+}
+
+.population-index-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.population-index-value {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.population-index-tag {
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pop-very-high {
+  background: rgba(0, 200, 83, 0.15);
+  color: #00b84a;
+}
+
+.pop-high {
+  background: rgba(0, 150, 200, 0.12);
+  color: #0096c8;
+}
+
+.pop-medium {
+  background: rgba(255, 165, 0, 0.12);
+  color: #cc8800;
+}
+
+.pop-low {
+  background: rgba(107, 114, 128, 0.12);
+  color: var(--color-text-secondary);
+}
+
+.population-index-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  margin: 0;
+  font-style: italic;
 }
 
 .empty-state {

@@ -3926,6 +3926,83 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(woodId, unit.GetProperty("resourceTypeId").GetString());
     }
 
+    [Fact]
+    public async Task CityLots_ReturnsPopulationIndexForAllSeedLots()
+    {
+        // Every seeded lot must expose a non-zero populationIndex so the frontend
+        // detail panel can display strategic location context to the player.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id name district populationIndex price basePrice }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        Assert.False(result.TryGetProperty("errors", out _), "cityLots query returned GraphQL errors");
+        var lots = result.GetProperty("data").GetProperty("cityLots");
+        Assert.True(lots.GetArrayLength() > 0, "Expected seeded lots for Bratislava");
+
+        foreach (var lot in lots.EnumerateArray())
+        {
+            var name = lot.GetProperty("name").GetString();
+            var popIndex = lot.GetProperty("populationIndex").GetDecimal();
+            var price = lot.GetProperty("price").GetDecimal();
+            var basePrice = lot.GetProperty("basePrice").GetDecimal();
+
+            Assert.True(popIndex > 0, $"Lot '{name}' has zero or negative populationIndex");
+            Assert.True(price > 0, $"Lot '{name}' has zero or negative price");
+            Assert.True(basePrice > 0, $"Lot '{name}' has zero or negative basePrice");
+        }
+    }
+
+    [Fact]
+    public async Task CityLots_CommercialLotsHaveHigherPopulationIndexThanIndustrial()
+    {
+        // Commercial city-center lots should have a meaningfully higher population
+        // index than industrial lots on the outskirts — this is the strategic signal
+        // that makes the city map a real decision surface.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id name district suitableTypes populationIndex }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var lots = result.GetProperty("data").GetProperty("cityLots").EnumerateArray().ToList();
+
+        var commercialLots = lots
+            .Where(l => l.GetProperty("suitableTypes").GetString()!.Contains("SALES_SHOP"))
+            .Select(l => l.GetProperty("populationIndex").GetDecimal())
+            .ToList();
+
+        var industrialLots = lots
+            .Where(l => l.GetProperty("district").GetString() == "Industrial Zone")
+            .Select(l => l.GetProperty("populationIndex").GetDecimal())
+            .ToList();
+
+        Assert.True(commercialLots.Count > 0, "Expected at least one commercial lot");
+        Assert.True(industrialLots.Count > 0, "Expected at least one industrial lot");
+
+        var avgCommercial = commercialLots.Average();
+        var avgIndustrial = industrialLots.Average();
+
+        Assert.True(
+            avgCommercial > avgIndustrial,
+            $"Expected commercial avg population index ({avgCommercial:F2}) > industrial avg ({avgIndustrial:F2})");
+    }
+
     #endregion
 
     #region First-sale milestone
