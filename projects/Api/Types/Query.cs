@@ -289,6 +289,7 @@ public sealed class Query
         return await db.BuildingLots
             .Include(lot => lot.OwnerCompany)
             .Include(lot => lot.Building)
+            .Include(lot => lot.ResourceType)
             .Where(lot => lot.CityId == cityId)
             .OrderBy(lot => lot.District)
             .ThenBy(lot => lot.Name)
@@ -301,6 +302,7 @@ public sealed class Query
         return await db.BuildingLots
             .Include(lot => lot.OwnerCompany)
             .Include(lot => lot.Building)
+            .Include(lot => lot.ResourceType)
             .FirstOrDefaultAsync(lot => lot.Id == id);
     }
 

@@ -491,4 +491,129 @@ test.describe('City Map View', () => {
     await expect(page.getByText(/does not have enough cash/i)).toBeVisible()
     await expect(page.getByText(/Review your finances/i)).toBeVisible()
   })
+
+  // ── Raw Material & Placement Guidance ──────────────────────────────────────
+
+  test('shows raw material panel for MINE-eligible lots with resource data', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    // Industrial Plot A1 has iron ore raw material in makeDefaultBuildingLots
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    // Raw material panel should be visible
+    const panel = page.locator('[data-testid="raw-material-panel"]')
+    await expect(panel).toBeVisible()
+
+    // Should show the resource name
+    await expect(panel.getByText(/Iron Ore/i)).toBeVisible()
+    // Should show material quality
+    await expect(panel.getByText(/72%/)).toBeVisible()
+    // Should show material quantity
+    await expect(panel.getByText(/18[,.]?000/)).toBeVisible()
+  })
+
+  test('hides raw material panel for non-extraction lots', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    // Commercial lot has no raw material
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+
+    // Raw material panel should NOT be visible
+    await expect(page.locator('[data-testid="raw-material-panel"]')).toBeHidden()
+  })
+
+  test('shows placement guidance panel for selected lot', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    const guidancePanel = page.locator('[data-testid="placement-guidance-panel"]')
+    await expect(guidancePanel).toBeVisible()
+
+    // Should mention Factory guidance (Industrial Plot A1 has FACTORY,MINE suitableTypes)
+    await expect(guidancePanel.locator('.guidance-building-type').filter({ hasText: /Factory/i })).toBeVisible()
+    // Should mention Mine guidance
+    await expect(guidancePanel.locator('.guidance-building-type').filter({ hasText: /Mine/i })).toBeVisible()
+    // Should show transport cost note (scroll into view since panel may be long)
+    const transportNote = guidancePanel.locator('.transport-cost-note')
+    await transportNote.scrollIntoViewIfNeeded()
+    await expect(transportNote).toBeVisible()
+  })
+
+  test('shows retail-specific placement guidance for commercial lots', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+
+    const guidancePanel = page.locator('[data-testid="placement-guidance-panel"]')
+    await expect(guidancePanel).toBeVisible()
+    // Should mention retail-specific guidance (SALES_SHOP)
+    await expect(guidancePanel.getByText(/demand/i)).toBeVisible()
+  })
+
+  test('raw material quality badge shows correct label', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    // Customize lot to have excellent quality (0.85)
+    const lots = makeDefaultBuildingLots()
+    lots[0]!.materialQuality = 0.85
+    lots[0]!.materialQuantity = 25000
+    lots[0]!.resourceType = { id: 'res-gold', name: 'Gold', slug: 'gold' }
+
+    const state = setupMockApi(page, { players: [player], buildingLots: lots })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    const panel = page.locator('[data-testid="raw-material-panel"]')
+    await expect(panel).toBeVisible()
+    // 85% quality = Excellent
+    await expect(panel.getByText(/Excellent/i)).toBeVisible()
+    await expect(panel.getByText(/Gold/i)).toBeVisible()
+  })
+
+  test('placement guidance mine hint mentions resource extraction strategy', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    const guidancePanel = page.locator('[data-testid="placement-guidance-panel"]')
+    await expect(guidancePanel).toBeVisible()
+    // Mine guidance should mention exchange (transport cost vs exchange comparison)
+    await expect(guidancePanel.getByText(/exchange/i)).toBeVisible()
+  })
+
+  test('narrow viewport still shows raw material and placement guidance', async ({ page }) => {
+    page.setViewportSize({ width: 375, height: 812 })
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    // On narrow viewport the detail panel should still be scrollable/accessible
+    const rawMaterialPanel = page.locator('[data-testid="raw-material-panel"]')
+    const guidancePanel = page.locator('[data-testid="placement-guidance-panel"]')
+    await expect(rawMaterialPanel).toBeVisible()
+    await expect(guidancePanel).toBeVisible()
+  })
 })

@@ -454,6 +454,7 @@ public sealed class AppDbInitializer(
     private async Task SeedBuildingLotsAsync()
     {
         var bratislava = await dbContext.Cities.FirstAsync(c => c.Name == "Bratislava");
+        var resources = await dbContext.ResourceTypes.ToDictionaryAsync(r => r.Slug);
 
         // Bratislava building lots across different districts.
         // Coordinates are spread around the city center (48.1486, 17.1077).
@@ -471,7 +472,10 @@ public sealed class AppDbInitializer(
                 PopulationIndex = 0.65m,
                 BasePrice = 80_000m,
                 Price = 80_000m,
-                SuitableTypes = "FACTORY,MINE"
+                SuitableTypes = "FACTORY,MINE",
+                ResourceTypeId = resources.TryGetValue("iron-ore", out var ironOre) ? ironOre.Id : null,
+                MaterialQuality = 0.72m,
+                MaterialQuantity = 18_000m
             },
             new BuildingLot
             {
@@ -484,7 +488,10 @@ public sealed class AppDbInitializer(
                 PopulationIndex = 0.60m,
                 BasePrice = 75_000m,
                 Price = 75_000m,
-                SuitableTypes = "FACTORY,MINE"
+                SuitableTypes = "FACTORY,MINE",
+                ResourceTypeId = resources.TryGetValue("chemical-minerals", out var chem) ? chem.Id : null,
+                MaterialQuality = 0.55m,
+                MaterialQuantity = 12_000m
             },
             new BuildingLot
             {

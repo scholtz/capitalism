@@ -424,6 +424,12 @@ export interface BuildingLot {
   buildingId: string | null
   ownerCompany: { id: string; name: string } | null
   building: { id: string; name: string; type: string } | null
+  /** Raw material available for extraction — null when no resource on this lot */
+  resourceType: { id: string; name: string; slug: string } | null
+  /** Quality of the raw material (0.0–1.0); null when no resource */
+  materialQuality: number | null
+  /** Estimated extractable quantity in tonnes; null when no resource */
+  materialQuantity: number | null
 }
 
 /** Result of purchasing a building lot */

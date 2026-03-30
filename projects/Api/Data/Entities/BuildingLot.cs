@@ -69,6 +69,27 @@ public sealed class BuildingLot
     public Building? Building { get; set; }
 
     /// <summary>
+    /// Optional raw material available for extraction on this lot.
+    /// When set, a MINE building can extract this resource here.
+    /// </summary>
+    public Guid? ResourceTypeId { get; set; }
+
+    /// <summary>Navigation property for the raw material type (null if no resource on this lot).</summary>
+    public ResourceType? ResourceType { get; set; }
+
+    /// <summary>
+    /// Quality of the raw material on this lot (0.0 – 1.0, where 1.0 is highest grade).
+    /// Null when no resource is present.
+    /// </summary>
+    public decimal? MaterialQuality { get; set; }
+
+    /// <summary>
+    /// Estimated total extractable quantity of the raw material on this lot (in tonnes).
+    /// Null when no resource is present.
+    /// </summary>
+    public decimal? MaterialQuantity { get; set; }
+
+    /// <summary>
     /// Application-managed concurrency token that makes lot purchase atomic.
     /// Only one request may persist a transition from available to owned.
     /// </summary>

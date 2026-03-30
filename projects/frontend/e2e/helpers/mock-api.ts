@@ -254,6 +254,9 @@ export type MockBuildingLot = {
   buildingId: string | null
   ownerCompany: { id: string; name: string } | null
   building: { id: string; name: string; type: string } | null
+  resourceType: { id: string; name: string; slug: string } | null
+  materialQuality: number | null
+  materialQuantity: number | null
 }
 
 export type MockResourceType = {
@@ -788,6 +791,9 @@ export function makeDefaultBuildingLots(): MockBuildingLot[] {
       buildingId: null,
       ownerCompany: null,
       building: null,
+      resourceType: { id: 'res-iron-ore', name: 'Iron Ore', slug: 'iron-ore' },
+      materialQuality: 0.72,
+      materialQuantity: 18000,
     },
     {
       id: 'lot-commercial-1',
@@ -805,6 +811,9 @@ export function makeDefaultBuildingLots(): MockBuildingLot[] {
       buildingId: null,
       ownerCompany: null,
       building: null,
+      resourceType: null,
+      materialQuality: null,
+      materialQuantity: null,
     },
     {
       id: 'lot-residential-1',
@@ -822,6 +831,9 @@ export function makeDefaultBuildingLots(): MockBuildingLot[] {
       buildingId: null,
       ownerCompany: null,
       building: null,
+      resourceType: null,
+      materialQuality: null,
+      materialQuantity: null,
     },
     {
       id: 'lot-business-1',
@@ -839,6 +851,9 @@ export function makeDefaultBuildingLots(): MockBuildingLot[] {
       buildingId: null,
       ownerCompany: null,
       building: null,
+      resourceType: null,
+      materialQuality: null,
+      materialQuantity: null,
     },
   ]
 }

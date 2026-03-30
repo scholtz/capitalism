@@ -4676,6 +4676,165 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             $"Expected commercial avg population index ({avgCommercial:F2}) > industrial avg ({avgIndustrial:F2})");
     }
 
+    [Fact]
+    public async Task CityLots_MineLotsExposeRawMaterialAttributes()
+    {
+        // MINE-suitable lots seeded for Bratislava (Industrial Zone) should carry resourceType,
+        // materialQuality, and materialQuantity data so the frontend land panel
+        // can render the raw material strategic value.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) {
+                id name district suitableTypes
+                materialQuality materialQuantity
+                resourceType { id name slug }
+              }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        Assert.False(result.TryGetProperty("errors", out _), "cityLots should not return GraphQL errors");
+
+        var lots = result.GetProperty("data").GetProperty("cityLots").EnumerateArray().ToList();
+        // Only check seeded Industrial Zone lots (not dynamically created test lots)
+        var seededMineLots = lots
+            .Where(l => l.GetProperty("suitableTypes").GetString()!.Contains("MINE")
+                     && l.GetProperty("district").GetString() == "Industrial Zone")
+            .ToList();
+
+        Assert.True(seededMineLots.Count > 0, "Expected at least one seeded MINE lot in Industrial Zone");
+
+        // At least one seeded mine lot should have raw material data
+        var lotsWithMaterial = seededMineLots
+            .Where(l => l.GetProperty("resourceType").ValueKind != JsonValueKind.Null)
+            .ToList();
+        Assert.True(lotsWithMaterial.Count > 0,
+            "Expected at least one seeded Industrial Zone MINE lot to have resourceType data");
+
+        foreach (var lot in lotsWithMaterial)
+        {
+            var name = lot.GetProperty("name").GetString();
+            Assert.True(lot.GetProperty("materialQuality").ValueKind != JsonValueKind.Null,
+                $"MINE lot '{name}' with resourceType should have materialQuality");
+            Assert.True(lot.GetProperty("materialQuantity").ValueKind != JsonValueKind.Null,
+                $"MINE lot '{name}' with resourceType should have materialQuantity");
+
+            var quality = lot.GetProperty("materialQuality").GetDecimal();
+            Assert.True(quality > 0 && quality <= 1.0m,
+                $"MINE lot '{name}' materialQuality {quality} should be in range (0,1]");
+
+            var quantity = lot.GetProperty("materialQuantity").GetDecimal();
+            Assert.True(quantity > 0, $"MINE lot '{name}' materialQuantity should be positive");
+
+            var slug = lot.GetProperty("resourceType").GetProperty("slug").GetString();
+            Assert.False(string.IsNullOrEmpty(slug), $"MINE lot '{name}' resourceType.slug should not be empty");
+        }
+    }
+
+    [Fact]
+    public async Task CityLots_NonMineLotsHaveNoRawMaterialData()
+    {
+        // Non-extraction lots (commercial, residential, business park) must NOT expose
+        // raw material data to avoid confusing the frontend land detail panel.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) {
+                id name suitableTypes
+                materialQuality materialQuantity
+                resourceType { id name }
+              }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var lots = result.GetProperty("data").GetProperty("cityLots").EnumerateArray().ToList();
+        // SALES_SHOP / APARTMENT / MEDIA_HOUSE lots have no raw material
+        var retailLots = lots
+            .Where(l =>
+            {
+                var types = l.GetProperty("suitableTypes").GetString()!;
+                return (types.Contains("SALES_SHOP") || types.Contains("APARTMENT") || types.Contains("MEDIA_HOUSE"))
+                    && !types.Contains("MINE");
+            })
+            .ToList();
+
+        Assert.True(retailLots.Count > 0, "Expected at least one non-extraction lot");
+
+        foreach (var lot in retailLots)
+        {
+            var name = lot.GetProperty("name").GetString();
+            Assert.True(lot.GetProperty("resourceType").ValueKind == JsonValueKind.Null,
+                $"Non-MINE lot '{name}' should not have resourceType");
+            Assert.True(lot.GetProperty("materialQuality").ValueKind == JsonValueKind.Null,
+                $"Non-MINE lot '{name}' should not have materialQuality");
+            Assert.True(lot.GetProperty("materialQuantity").ValueKind == JsonValueKind.Null,
+                $"Non-MINE lot '{name}' should not have materialQuantity");
+        }
+    }
+
+    [Fact]
+    public async Task GetLot_ByIdIncludesRawMaterialData()
+    {
+        // The lot(id) single-lot query should also include raw material data
+        // so the detail panel can be populated from either endpoint.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        // Fetch cityLots with district to find a seeded lot with raw material data
+        var lotsResult = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id name district suitableTypes materialQuality }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        // Pick a seeded Industrial Zone MINE lot that already has material data
+        var mineLot = lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .FirstOrDefault(l =>
+                l.GetProperty("suitableTypes").GetString()!.Contains("MINE")
+                && l.GetProperty("district").GetString() == "Industrial Zone"
+                && l.GetProperty("materialQuality").ValueKind != JsonValueKind.Null);
+
+        Assert.NotEqual(default, mineLot);
+        var lotId = mineLot.GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetLot($id: UUID!) {
+              lot(id: $id) {
+                id name suitableTypes
+                materialQuality materialQuantity
+                resourceType { id name slug }
+              }
+            }
+            """,
+            new { id = lotId });
+
+        Assert.False(result.TryGetProperty("errors", out _), "lot(id) should not return errors");
+        var lot = result.GetProperty("data").GetProperty("lot");
+        Assert.True(lot.GetProperty("resourceType").ValueKind != JsonValueKind.Null,
+            "lot(id) on a seeded MINE lot should include resourceType");
+        Assert.True(lot.GetProperty("materialQuality").ValueKind != JsonValueKind.Null,
+            "lot(id) on a seeded MINE lot should include materialQuality");
+        Assert.True(lot.GetProperty("materialQuantity").ValueKind != JsonValueKind.Null,
+            "lot(id) on a seeded MINE lot should include materialQuantity");
+    }
+
     #endregion
 
     #region First-sale milestone

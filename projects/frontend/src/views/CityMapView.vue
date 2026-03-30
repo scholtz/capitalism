@@ -112,6 +112,36 @@ function populationIndexLabel(value: number): string {
   return t('cityMap.populationIndexLow')
 }
 
+function materialQualityLabel(quality: number): string {
+  if (quality >= 0.8) return t('cityMap.rawMaterialQualityExcellent')
+  if (quality >= 0.6) return t('cityMap.rawMaterialQualityGood')
+  if (quality >= 0.4) return t('cityMap.rawMaterialQualityFair')
+  return t('cityMap.rawMaterialQualityPoor')
+}
+
+function materialQualityClass(quality: number): string {
+  if (quality >= 0.8) return 'quality-excellent'
+  if (quality >= 0.6) return 'quality-good'
+  if (quality >= 0.4) return 'quality-fair'
+  return 'quality-poor'
+}
+
+function placementGuidanceKey(buildingType: string): string {
+  const map: Record<string, string> = {
+    SALES_SHOP: 'placementGuidanceSalesShop',
+    COMMERCIAL: 'placementGuidanceCommercial',
+    FACTORY: 'placementGuidanceFactory',
+    MINE: 'placementGuidanceMine',
+    APARTMENT: 'placementGuidanceApartment',
+    RESEARCH_DEVELOPMENT: 'placementGuidanceResearchDevelopment',
+    POWER_PLANT: 'placementGuidancePowerPlant',
+    BANK: 'placementGuidanceBank',
+    EXCHANGE: 'placementGuidanceExchange',
+    MEDIA_HOUSE: 'placementGuidanceMediaHouse',
+  }
+  return map[buildingType] ?? 'placementGuidanceGeneric'
+}
+
 async function fetchData() {
   loading.value = true
   error.value = null
@@ -133,6 +163,8 @@ async function fetchData() {
           ownerCompanyId buildingId
           ownerCompany { id name }
           building { id name type }
+          resourceType { id name slug }
+          materialQuality materialQuantity
         }
       }`,
       { cityId: cityId.value },
@@ -528,6 +560,58 @@ watch(viewMode, async (mode) => {
                 </span>
               </div>
             </div>
+          </div>
+
+          <!-- Raw material deposit panel (shown for MINE-eligible lots with resource data) -->
+          <div
+            v-if="selectedLot.resourceType && selectedLot.materialQuality != null && selectedLot.materialQuantity != null"
+            class="raw-material-panel"
+            data-testid="raw-material-panel"
+          >
+            <h3 class="raw-material-title">⛏ {{ t('cityMap.rawMaterialTitle') }}</h3>
+            <div class="raw-material-grid">
+              <div class="raw-material-item">
+                <span class="detail-label">{{ t('cityMap.rawMaterialResource') }}</span>
+                <span class="detail-value">{{ selectedLot.resourceType.name }}</span>
+              </div>
+              <div class="raw-material-item">
+                <span class="detail-label">{{ t('cityMap.rawMaterialQuality') }}</span>
+                <span
+                  class="quality-badge"
+                  :class="materialQualityClass(selectedLot.materialQuality)"
+                >
+                  {{ materialQualityLabel(selectedLot.materialQuality) }}
+                  ({{ Math.round(selectedLot.materialQuality * 100) }}%)
+                </span>
+              </div>
+              <div class="raw-material-item full-width">
+                <span class="detail-label">{{ t('cityMap.rawMaterialQuantity') }}</span>
+                <span class="detail-value">
+                  {{ selectedLot.materialQuantity.toLocaleString(locale) }}
+                  {{ t('cityMap.rawMaterialQuantityUnit') }}
+                </span>
+              </div>
+            </div>
+            <p class="raw-material-hint">{{ t('cityMap.rawMaterialHint') }}</p>
+          </div>
+
+          <!-- Placement guidance panel -->
+          <div class="placement-guidance-panel" data-testid="placement-guidance-panel">
+            <h3 class="guidance-title">{{ t('cityMap.placementGuidanceTitle') }}</h3>
+            <ul class="guidance-list">
+              <li
+                v-for="type in suitableTypesForLot"
+                :key="type"
+                class="guidance-item"
+              >
+                <span class="guidance-building-type">{{ formatBuildingType(type) }}</span>
+                <span class="guidance-text">{{ t(`cityMap.${placementGuidanceKey(type)}`) }}</span>
+              </li>
+            </ul>
+            <p class="transport-cost-note">
+              <span class="transport-icon">🚚</span>
+              {{ t('cityMap.transportCostNote') }}
+            </p>
           </div>
 
           <!-- Owner info for owned lots -->
@@ -944,6 +1028,138 @@ watch(viewMode, async (mode) => {
 .owner-info,
 .building-info {
   margin-bottom: 0.75rem;
+}
+
+/* Raw material panel */
+.raw-material-panel {
+  background: rgba(139, 92, 246, 0.06);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.raw-material-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+  color: var(--color-text);
+}
+
+.raw-material-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.raw-material-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.raw-material-item.full-width {
+  grid-column: span 2;
+}
+
+.raw-material-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin: 0;
+  border-top: 1px solid rgba(139, 92, 246, 0.15);
+  padding-top: 0.5rem;
+}
+
+.quality-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.quality-badge.quality-excellent {
+  background: rgba(0, 200, 83, 0.12);
+  color: var(--color-secondary);
+}
+
+.quality-badge.quality-good {
+  background: rgba(0, 71, 255, 0.1);
+  color: var(--color-primary);
+}
+
+.quality-badge.quality-fair {
+  background: rgba(255, 180, 0, 0.12);
+  color: #b45309;
+}
+
+.quality-badge.quality-poor {
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--color-text-secondary);
+}
+
+/* Placement guidance panel */
+.placement-guidance-panel {
+  background: rgba(0, 71, 255, 0.04);
+  border: 1px solid rgba(0, 71, 255, 0.12);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.guidance-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+  color: var(--color-text);
+}
+
+.guidance-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.guidance-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.guidance-building-type {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-primary);
+}
+
+.guidance-text {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.transport-cost-note {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin: 0;
+  border-top: 1px solid rgba(0, 71, 255, 0.1);
+  padding-top: 0.5rem;
+  display: flex;
+  gap: 0.375rem;
+  align-items: flex-start;
+}
+
+.transport-icon {
+  flex-shrink: 0;
+  font-size: 0.875rem;
 }
 
 .purchase-notice {

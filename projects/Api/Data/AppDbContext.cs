@@ -212,10 +212,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(lot => lot.BasePrice).HasPrecision(18, 2);
             e.Property(lot => lot.Price).HasPrecision(18, 2);
             e.Property(lot => lot.SuitableTypes).HasMaxLength(200);
+            e.Property(lot => lot.MaterialQuality).HasPrecision(5, 4);
+            e.Property(lot => lot.MaterialQuantity).HasPrecision(18, 2);
             e.Property(lot => lot.ConcurrencyToken).IsConcurrencyToken();
             e.HasOne(lot => lot.City).WithMany(c => c.Lots).HasForeignKey(lot => lot.CityId);
             e.HasOne(lot => lot.OwnerCompany).WithMany().HasForeignKey(lot => lot.OwnerCompanyId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(lot => lot.Building).WithMany().HasForeignKey(lot => lot.BuildingId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(lot => lot.ResourceType).WithMany().HasForeignKey(lot => lot.ResourceTypeId).OnDelete(DeleteBehavior.SetNull);
         });
 
         // CityResource
