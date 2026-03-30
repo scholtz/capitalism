@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { gqlRequest } from '@/lib/graphql'
+import { deepEqual } from '@/lib/utils'
 import type { Player, AuthPayload, StartupPackOffer } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -12,10 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => player.value?.role === 'ADMIN')
-  const isProSubscriber = computed(() =>
-    !!player.value?.proSubscriptionEndsAtUtc
-    && new Date(player.value.proSubscriptionEndsAtUtc).getTime() > Date.now(),
-  )
+  const isProSubscriber = computed(() => !!player.value?.proSubscriptionEndsAtUtc && new Date(player.value.proSubscriptionEndsAtUtc).getTime() > Date.now())
 
   function initFromStorage() {
     const stored = localStorage.getItem('auth_token')
@@ -156,8 +154,12 @@ export const useAuthStore = defineStore('auth', () => {
           }
         }`,
       )
-      player.value = data.me
-      startupPackOffer.value = data.startupPackOffer
+      if (!deepEqual(player.value, data.me)) {
+        player.value = data.me
+      }
+      if (!deepEqual(startupPackOffer.value, data.startupPackOffer)) {
+        startupPackOffer.value = data.startupPackOffer
+      }
     } catch {
       logout()
     } finally {

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
 import { useTickRefresh } from '@/composables/useTickRefresh'
+import { deepEqual } from '@/lib/utils'
 import type { PlayerRanking } from '@/types'
 
 const { t } = useI18n()
@@ -32,7 +33,9 @@ async function fetchRankings() {
   error.value = null
   try {
     const data = await gqlRequest<{ rankings: PlayerRanking[] }>(RANKINGS_QUERY)
-    rankings.value = data.rankings
+    if (!deepEqual(rankings.value, data.rankings)) {
+      rankings.value = data.rankings
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : t('leaderboard.loadFailed')
   } finally {
@@ -127,17 +130,11 @@ const currentPlayerId = computed(() => auth.player?.id ?? null)
           <div class="rank-wealth">
             <div class="total-wealth">{{ formatWealth(rank.totalWealth) }}</div>
             <div class="wealth-breakdown">
-              <span class="breakdown-item" :title="t('leaderboard.cashTooltip')">
-                💵 {{ formatWealth(rank.cashTotal) }}
-              </span>
+              <span class="breakdown-item" :title="t('leaderboard.cashTooltip')"> 💵 {{ formatWealth(rank.cashTotal) }} </span>
               <span class="breakdown-sep">·</span>
-              <span class="breakdown-item" :title="t('leaderboard.buildingsTooltip')">
-                🏗️ {{ formatWealth(rank.buildingValue) }}
-              </span>
+              <span class="breakdown-item" :title="t('leaderboard.buildingsTooltip')"> 🏗️ {{ formatWealth(rank.buildingValue) }} </span>
               <span class="breakdown-sep">·</span>
-              <span class="breakdown-item" :title="t('leaderboard.inventoryTooltip')">
-                📦 {{ formatWealth(rank.inventoryValue) }}
-              </span>
+              <span class="breakdown-item" :title="t('leaderboard.inventoryTooltip')"> 📦 {{ formatWealth(rank.inventoryValue) }} </span>
             </div>
           </div>
         </div>
@@ -147,9 +144,15 @@ const currentPlayerId = computed(() => auth.player?.id ?? null)
         <h3>{{ t('leaderboard.howItWorksTitle') }}</h3>
         <p>{{ t('leaderboard.howItWorksBody') }}</p>
         <ul class="formula-list">
-          <li>💵 <strong>{{ t('leaderboard.cashLabel') }}</strong> — {{ t('leaderboard.cashExplain') }}</li>
-          <li>🏗️ <strong>{{ t('leaderboard.buildingsLabel') }}</strong> — {{ t('leaderboard.buildingsExplain') }}</li>
-          <li>📦 <strong>{{ t('leaderboard.inventoryLabel') }}</strong> — {{ t('leaderboard.inventoryExplain') }}</li>
+          <li>
+            💵 <strong>{{ t('leaderboard.cashLabel') }}</strong> — {{ t('leaderboard.cashExplain') }}
+          </li>
+          <li>
+            🏗️ <strong>{{ t('leaderboard.buildingsLabel') }}</strong> — {{ t('leaderboard.buildingsExplain') }}
+          </li>
+          <li>
+            📦 <strong>{{ t('leaderboard.inventoryLabel') }}</strong> — {{ t('leaderboard.inventoryExplain') }}
+          </li>
         </ul>
       </div>
     </div>
@@ -162,7 +165,7 @@ const currentPlayerId = computed(() => auth.player?.id ?? null)
 }
 
 .leaderboard-hero {
-  background: linear-gradient(160deg, #0D1117 0%, rgba(0, 71, 255, 0.14) 100%);
+  background: linear-gradient(160deg, #0d1117 0%, rgba(0, 71, 255, 0.14) 100%);
   border-bottom: 1px solid var(--color-border);
   padding: 3rem 0 2.5rem;
   text-align: center;

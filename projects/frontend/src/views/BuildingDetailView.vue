@@ -4,21 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AdvancedItemSelector from '@/components/buildings/AdvancedItemSelector.vue'
 import UnitResourceHistoryPanel from '@/components/buildings/UnitResourceHistoryPanel.vue'
-import {
-  getInventorySourcingCostPerUnit,
-  getPlannedUnitConstructionCost,
-  getTotalInventorySourcingCost,
-  getUnitConstructionCost,
-  sumPlannedConfigurationCost,
-} from '@/lib/buildingUnitEconomics'
+import { getInventorySourcingCostPerUnit, getPlannedUnitConstructionCost, getTotalInventorySourcingCost, getUnitConstructionCost, sumPlannedConfigurationCost } from '@/lib/buildingUnitEconomics'
 import { isProductLocked } from '@/lib/productAccess'
-import {
-  formatPercent,
-  formatUnitQuantity,
-  getFillBucket,
-  getUnitConfiguredItemId,
-  getUnitPriceMetric,
-} from '@/lib/gridTileHelpers'
+import { formatPercent, formatUnitQuantity, getFillBucket, getUnitConfiguredItemId, getUnitPriceMetric } from '@/lib/gridTileHelpers'
 import {
   applyDiagonalLinkCycle,
   applyHorizontalLinkCycle,
@@ -30,14 +18,10 @@ import {
   getVerticalLinkArrow,
   getVerticalLinkState,
 } from '@/lib/linkHelpers'
-import {
-  getLocalizedProductDescription,
-  getLocalizedProductName,
-  getLocalizedResourceDescription,
-  getLocalizedResourceName,
-} from '@/lib/catalogPresentation'
+import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedResourceDescription, getLocalizedResourceName } from '@/lib/catalogPresentation'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { gqlRequest } from '@/lib/graphql'
+import { deepEqual } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 import { getUnitResourceHistoryItemKey, type UnitResourceHistoryItemOption } from '@/lib/unitResourceHistory'
 import type {
@@ -168,13 +152,7 @@ const allowedUnits = computed(() => {
   if (!building.value) return []
   return allowedUnitsMap[building.value.type] || []
 })
-const showStarterSetupBanner = computed(
-  () =>
-    building.value?.type === 'FACTORY' &&
-    activeUnits.value.length === 0 &&
-    pendingConfiguration.value === null &&
-    !isEditing.value,
-)
+const showStarterSetupBanner = computed(() => building.value?.type === 'FACTORY' && activeUnits.value.length === 0 && pendingConfiguration.value === null && !isEditing.value)
 const intermediateProductIds = computed(() => {
   const ids = new Set<string>()
   for (const product of productTypes.value) {
@@ -208,17 +186,11 @@ const allSelectableItems = computed<SelectorItem[]>(() => [
   })),
 ])
 const lockedConfiguredProducts = computed(() => {
-  const configuredProductIds = new Set(
-    [...activeUnits.value, ...pendingUnits.value]
-      .map((unit) => unit.productTypeId)
-      .filter((value): value is string => !!value),
-  )
+  const configuredProductIds = new Set([...activeUnits.value, ...pendingUnits.value].map((unit) => unit.productTypeId).filter((value): value is string => !!value))
 
   return productTypes.value.filter((product) => configuredProductIds.has(product.id) && isProductLocked(product))
 })
-const lockedConfiguredProductNames = computed(() =>
-  lockedConfiguredProducts.value.map((product) => getLocalizedProductName(product, locale.value)).join(', '),
-)
+const lockedConfiguredProductNames = computed(() => lockedConfiguredProducts.value.map((product) => getLocalizedProductName(product, locale.value)).join(', '))
 const isUpgradeInProgress = computed(() => pendingConfiguration.value !== null)
 const showPlanningSection = computed(() => isEditing.value)
 const remainingUpgradeTicks = computed(() => {
@@ -279,23 +251,13 @@ const chainStatus = computed(() => {
  * saved (active or pending) but is not currently in edit mode.
  */
 const showProductionChainPanel = computed(
-  () =>
-    !isEditing.value &&
-    building.value?.type === 'FACTORY' &&
-    (activeUnits.value.length > 0 || pendingConfiguration.value !== null) &&
-    !showStarterSetupBanner.value,
+  () => !isEditing.value && building.value?.type === 'FACTORY' && (activeUnits.value.length > 0 || pendingConfiguration.value !== null) && !showStarterSetupBanner.value,
 )
 
 /**
  * Mirrors showStarterSetupBanner but for SALES_SHOP buildings.
  */
-const showSalesShopStarterBanner = computed(
-  () =>
-    building.value?.type === 'SALES_SHOP' &&
-    activeUnits.value.length === 0 &&
-    pendingConfiguration.value === null &&
-    !isEditing.value,
-)
+const showSalesShopStarterBanner = computed(() => building.value?.type === 'SALES_SHOP' && activeUnits.value.length === 0 && pendingConfiguration.value === null && !isEditing.value)
 
 const shopChainDisplayUnits = computed(() => {
   const units = activeUnits.value.length > 0 ? activeUnits.value : pendingUnits.value
@@ -308,12 +270,7 @@ const shopChainDisplayUnits = computed(() => {
 const shopChainStatus = computed(() => {
   const { purchase, publicSales } = shopChainDisplayUnits.value
   const isPurchaseConfigured = !!(purchase && (purchase.resourceTypeId || purchase.productTypeId))
-  const isPublicSalesConfigured = !!(
-    publicSales &&
-    publicSales.productTypeId &&
-    publicSales.minPrice !== null &&
-    publicSales.minPrice !== undefined
-  )
+  const isPublicSalesConfigured = !!(publicSales && publicSales.productTypeId && publicSales.minPrice !== null && publicSales.minPrice !== undefined)
   return {
     isPurchaseConfigured,
     isPublicSalesConfigured,
@@ -326,11 +283,7 @@ const shopChainStatus = computed(() => {
  * saved (active or pending) but is not currently in edit mode.
  */
 const showSalesChainPanel = computed(
-  () =>
-    !isEditing.value &&
-    building.value?.type === 'SALES_SHOP' &&
-    (activeUnits.value.length > 0 || pendingConfiguration.value !== null) &&
-    !showSalesShopStarterBanner.value,
+  () => !isEditing.value && building.value?.type === 'SALES_SHOP' && (activeUnits.value.length > 0 || pendingConfiguration.value !== null) && !showSalesShopStarterBanner.value,
 )
 
 type LinkChangeSummaryEntry = {
@@ -367,8 +320,8 @@ const draftLinkChanges = computed<LinkChangeSummaryEntry[]>(() => {
 
     const [bx = 0, by = 0] = pos.split(',').map(Number)
     for (const { flag, dx, dy, labelKey } of linkDirs) {
-      const wasActive = !!(baseline?.[flag as keyof typeof baseline])
-      const isActive = !!(draft?.[flag as keyof typeof draft])
+      const wasActive = !!baseline?.[flag as keyof typeof baseline]
+      const isActive = !!draft?.[flag as keyof typeof draft]
       if (wasActive === isActive) continue
 
       const srcType = draft?.unitType ?? baseline?.unitType ?? '?'
@@ -396,7 +349,7 @@ const selectedDisplayUnit = computed<GridUnit | undefined>(() => {
 
   return getUnitAtFrom(activeUnits.value, selectedCell.value.x, selectedCell.value.y)
 })
-const selectedPurchaseUnit = computed(() => selectedDisplayUnit.value?.unitType === 'PURCHASE' ? selectedDisplayUnit.value : undefined)
+const selectedPurchaseUnit = computed(() => (selectedDisplayUnit.value?.unitType === 'PURCHASE' ? selectedDisplayUnit.value : undefined))
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
 
@@ -416,9 +369,7 @@ const exchangeOfferItems = computed<ExchangeOfferItem[]>(() => {
   })
 })
 
-const allExchangeOffersBlocked = computed(
-  () => exchangeOfferItems.value.length > 0 && exchangeOfferItems.value.every((o) => o.blocked),
-)
+const allExchangeOffersBlocked = computed(() => exchangeOfferItems.value.length > 0 && exchangeOfferItems.value.every((o) => o.blocked))
 
 const bestExchangeOfferCityId = computed<string | null>(() => {
   const best = exchangeOfferItems.value.find((o) => !o.blocked)
@@ -805,10 +756,7 @@ function canToggleVerticalLink(units: GridUnit[], x: number, y: number): boolean
 }
 
 function canToggleDiagonalLink(units: GridUnit[], x: number, y: number): boolean {
-  return !!getUnitAtFrom(units, x, y)
-    && !!getUnitAtFrom(units, x + 1, y)
-    && !!getUnitAtFrom(units, x, y + 1)
-    && !!getUnitAtFrom(units, x + 1, y + 1)
+  return !!getUnitAtFrom(units, x, y) && !!getUnitAtFrom(units, x + 1, y) && !!getUnitAtFrom(units, x, y + 1) && !!getUnitAtFrom(units, x + 1, y + 1)
 }
 
 function getDraftTicksForUnit(unit: EditableGridUnit): number {
@@ -835,30 +783,30 @@ function getDraftTicksForUnit(unit: EditableGridUnit): number {
   }
 
   if (
-    activeUnit.linkUp !== unit.linkUp
-    || activeUnit.linkDown !== unit.linkDown
-    || activeUnit.linkLeft !== unit.linkLeft
-    || activeUnit.linkRight !== unit.linkRight
-    || activeUnit.linkUpLeft !== unit.linkUpLeft
-    || activeUnit.linkUpRight !== unit.linkUpRight
-    || activeUnit.linkDownLeft !== unit.linkDownLeft
-    || activeUnit.linkDownRight !== unit.linkDownRight
+    activeUnit.linkUp !== unit.linkUp ||
+    activeUnit.linkDown !== unit.linkDown ||
+    activeUnit.linkLeft !== unit.linkLeft ||
+    activeUnit.linkRight !== unit.linkRight ||
+    activeUnit.linkUpLeft !== unit.linkUpLeft ||
+    activeUnit.linkUpRight !== unit.linkUpRight ||
+    activeUnit.linkDownLeft !== unit.linkDownLeft ||
+    activeUnit.linkDownRight !== unit.linkDownRight
   ) {
     return LINK_CHANGE_TICKS
   }
 
   if (
-    (activeUnit.resourceTypeId ?? null) !== (unit.resourceTypeId ?? null)
-    || (activeUnit.productTypeId ?? null) !== (unit.productTypeId ?? null)
-    || (activeUnit.minPrice ?? null) !== (unit.minPrice ?? null)
-    || (activeUnit.maxPrice ?? null) !== (unit.maxPrice ?? null)
-    || (activeUnit.purchaseSource ?? null) !== (unit.purchaseSource ?? null)
-    || (activeUnit.saleVisibility ?? null) !== (unit.saleVisibility ?? null)
-    || (activeUnit.budget ?? null) !== (unit.budget ?? null)
-    || (activeUnit.mediaHouseBuildingId ?? null) !== (unit.mediaHouseBuildingId ?? null)
-    || (activeUnit.minQuality ?? null) !== (unit.minQuality ?? null)
-    || (activeUnit.brandScope ?? null) !== (unit.brandScope ?? null)
-    || (activeUnit.vendorLockCompanyId ?? null) !== (unit.vendorLockCompanyId ?? null)
+    (activeUnit.resourceTypeId ?? null) !== (unit.resourceTypeId ?? null) ||
+    (activeUnit.productTypeId ?? null) !== (unit.productTypeId ?? null) ||
+    (activeUnit.minPrice ?? null) !== (unit.minPrice ?? null) ||
+    (activeUnit.maxPrice ?? null) !== (unit.maxPrice ?? null) ||
+    (activeUnit.purchaseSource ?? null) !== (unit.purchaseSource ?? null) ||
+    (activeUnit.saleVisibility ?? null) !== (unit.saleVisibility ?? null) ||
+    (activeUnit.budget ?? null) !== (unit.budget ?? null) ||
+    (activeUnit.mediaHouseBuildingId ?? null) !== (unit.mediaHouseBuildingId ?? null) ||
+    (activeUnit.minQuality ?? null) !== (unit.minQuality ?? null) ||
+    (activeUnit.brandScope ?? null) !== (unit.brandScope ?? null) ||
+    (activeUnit.vendorLockCompanyId ?? null) !== (unit.vendorLockCompanyId ?? null)
   ) {
     return LINK_CHANGE_TICKS
   }
@@ -906,34 +854,55 @@ function isUnitReverting(unit: GridUnit | undefined): boolean {
   return 'isReverting' in unit ? !!(unit as BuildingConfigurationPlanUnit | EditableGridUnit).isReverting : false
 }
 
-type UnitComparisonKeys = 'unitType' | 'gridX' | 'gridY' | 'linkUp' | 'linkDown' | 'linkLeft' | 'linkRight' | 'linkUpLeft' | 'linkUpRight' | 'linkDownLeft' | 'linkDownRight' | 'resourceTypeId' | 'productTypeId' | 'minPrice' | 'maxPrice' | 'purchaseSource' | 'saleVisibility' | 'budget' | 'mediaHouseBuildingId' | 'minQuality' | 'brandScope' | 'vendorLockCompanyId'
+type UnitComparisonKeys =
+  | 'unitType'
+  | 'gridX'
+  | 'gridY'
+  | 'linkUp'
+  | 'linkDown'
+  | 'linkLeft'
+  | 'linkRight'
+  | 'linkUpLeft'
+  | 'linkUpRight'
+  | 'linkDownLeft'
+  | 'linkDownRight'
+  | 'resourceTypeId'
+  | 'productTypeId'
+  | 'minPrice'
+  | 'maxPrice'
+  | 'purchaseSource'
+  | 'saleVisibility'
+  | 'budget'
+  | 'mediaHouseBuildingId'
+  | 'minQuality'
+  | 'brandScope'
+  | 'vendorLockCompanyId'
 
-function areUnitsEquivalent(
-  left: Pick<EditableGridUnit, UnitComparisonKeys>,
-  right: Pick<EditableGridUnit, UnitComparisonKeys>,
-): boolean {
-  return left.unitType === right.unitType
-    && left.gridX === right.gridX
-    && left.gridY === right.gridY
-    && left.linkUp === right.linkUp
-    && left.linkDown === right.linkDown
-    && left.linkLeft === right.linkLeft
-    && left.linkRight === right.linkRight
-    && left.linkUpLeft === right.linkUpLeft
-    && left.linkUpRight === right.linkUpRight
-    && left.linkDownLeft === right.linkDownLeft
-    && left.linkDownRight === right.linkDownRight
-    && (left.resourceTypeId ?? null) === (right.resourceTypeId ?? null)
-    && (left.productTypeId ?? null) === (right.productTypeId ?? null)
-    && (left.minPrice ?? null) === (right.minPrice ?? null)
-    && (left.maxPrice ?? null) === (right.maxPrice ?? null)
-    && (left.purchaseSource ?? null) === (right.purchaseSource ?? null)
-    && (left.saleVisibility ?? null) === (right.saleVisibility ?? null)
-    && (left.budget ?? null) === (right.budget ?? null)
-    && (left.mediaHouseBuildingId ?? null) === (right.mediaHouseBuildingId ?? null)
-    && (left.minQuality ?? null) === (right.minQuality ?? null)
-    && (left.brandScope ?? null) === (right.brandScope ?? null)
-    && (left.vendorLockCompanyId ?? null) === (right.vendorLockCompanyId ?? null)
+function areUnitsEquivalent(left: Pick<EditableGridUnit, UnitComparisonKeys>, right: Pick<EditableGridUnit, UnitComparisonKeys>): boolean {
+  return (
+    left.unitType === right.unitType &&
+    left.gridX === right.gridX &&
+    left.gridY === right.gridY &&
+    left.linkUp === right.linkUp &&
+    left.linkDown === right.linkDown &&
+    left.linkLeft === right.linkLeft &&
+    left.linkRight === right.linkRight &&
+    left.linkUpLeft === right.linkUpLeft &&
+    left.linkUpRight === right.linkUpRight &&
+    left.linkDownLeft === right.linkDownLeft &&
+    left.linkDownRight === right.linkDownRight &&
+    (left.resourceTypeId ?? null) === (right.resourceTypeId ?? null) &&
+    (left.productTypeId ?? null) === (right.productTypeId ?? null) &&
+    (left.minPrice ?? null) === (right.minPrice ?? null) &&
+    (left.maxPrice ?? null) === (right.maxPrice ?? null) &&
+    (left.purchaseSource ?? null) === (right.purchaseSource ?? null) &&
+    (left.saleVisibility ?? null) === (right.saleVisibility ?? null) &&
+    (left.budget ?? null) === (right.budget ?? null) &&
+    (left.mediaHouseBuildingId ?? null) === (right.mediaHouseBuildingId ?? null) &&
+    (left.minQuality ?? null) === (right.minQuality ?? null) &&
+    (left.brandScope ?? null) === (right.brandScope ?? null) &&
+    (left.vendorLockCompanyId ?? null) === (right.vendorLockCompanyId ?? null)
+  )
 }
 
 function areUnitCollectionsEqual(left: EditableGridUnit[], right: EditableGridUnit[]): boolean {
@@ -1054,14 +1023,38 @@ function getLinkedUnits(unit: EditableGridUnit, units: EditableGridUnit[]): Edit
   const linked: EditableGridUnit[] = []
   const byPos = new Map(units.map((u) => [`${u.gridX},${u.gridY}`, u]))
 
-  if (unit.linkUp) { const u = byPos.get(`${unit.gridX},${unit.gridY - 1}`); if (u) linked.push(u) }
-  if (unit.linkDown) { const u = byPos.get(`${unit.gridX},${unit.gridY + 1}`); if (u) linked.push(u) }
-  if (unit.linkLeft) { const u = byPos.get(`${unit.gridX - 1},${unit.gridY}`); if (u) linked.push(u) }
-  if (unit.linkRight) { const u = byPos.get(`${unit.gridX + 1},${unit.gridY}`); if (u) linked.push(u) }
-  if (unit.linkUpLeft) { const u = byPos.get(`${unit.gridX - 1},${unit.gridY - 1}`); if (u) linked.push(u) }
-  if (unit.linkUpRight) { const u = byPos.get(`${unit.gridX + 1},${unit.gridY - 1}`); if (u) linked.push(u) }
-  if (unit.linkDownLeft) { const u = byPos.get(`${unit.gridX - 1},${unit.gridY + 1}`); if (u) linked.push(u) }
-  if (unit.linkDownRight) { const u = byPos.get(`${unit.gridX + 1},${unit.gridY + 1}`); if (u) linked.push(u) }
+  if (unit.linkUp) {
+    const u = byPos.get(`${unit.gridX},${unit.gridY - 1}`)
+    if (u) linked.push(u)
+  }
+  if (unit.linkDown) {
+    const u = byPos.get(`${unit.gridX},${unit.gridY + 1}`)
+    if (u) linked.push(u)
+  }
+  if (unit.linkLeft) {
+    const u = byPos.get(`${unit.gridX - 1},${unit.gridY}`)
+    if (u) linked.push(u)
+  }
+  if (unit.linkRight) {
+    const u = byPos.get(`${unit.gridX + 1},${unit.gridY}`)
+    if (u) linked.push(u)
+  }
+  if (unit.linkUpLeft) {
+    const u = byPos.get(`${unit.gridX - 1},${unit.gridY - 1}`)
+    if (u) linked.push(u)
+  }
+  if (unit.linkUpRight) {
+    const u = byPos.get(`${unit.gridX + 1},${unit.gridY - 1}`)
+    if (u) linked.push(u)
+  }
+  if (unit.linkDownLeft) {
+    const u = byPos.get(`${unit.gridX - 1},${unit.gridY + 1}`)
+    if (u) linked.push(u)
+  }
+  if (unit.linkDownRight) {
+    const u = byPos.get(`${unit.gridX + 1},${unit.gridY + 1}`)
+    if (u) linked.push(u)
+  }
 
   return linked
 }
@@ -1180,13 +1173,9 @@ const configWarnings = computed<ValidationWarning[]>(() => {
       const product = productTypes.value.find((p) => p.id === mu.productTypeId)
       if (!product || product.recipes.length === 0) continue
 
-      const configuredPurchaseResourceIds = purchaseUnits
-        .filter((pu) => pu.resourceTypeId)
-        .map((pu) => pu.resourceTypeId!)
+      const configuredPurchaseResourceIds = purchaseUnits.filter((pu) => pu.resourceTypeId).map((pu) => pu.resourceTypeId!)
 
-      const configuredPurchaseProductIds = purchaseUnits
-        .filter((pu) => pu.productTypeId)
-        .map((pu) => pu.productTypeId!)
+      const configuredPurchaseProductIds = purchaseUnits.filter((pu) => pu.productTypeId).map((pu) => pu.productTypeId!)
 
       if (configuredPurchaseResourceIds.length === 0 && configuredPurchaseProductIds.length === 0) {
         continue // Incomplete (not incompatible) — missing resource is surfaced by the purchaseNoItem warning above
@@ -1383,10 +1372,7 @@ function getFactoryPurchaseSelectableItems(): SelectorItem[] {
     return allSelectableItems.value
   }
 
-  return [
-    ...allSelectableItems.value.filter((item) => item.kind === 'resource'),
-    ...allSelectableItems.value.filter((item) => item.kind === 'product' && intermediateProductIds.value.has(item.id)),
-  ]
+  return [...allSelectableItems.value.filter((item) => item.kind === 'resource'), ...allSelectableItems.value.filter((item) => item.kind === 'product' && intermediateProductIds.value.has(item.id))]
 }
 
 function getDirectlyConnectedUnits(unit: EditableGridUnit, units: EditableGridUnit[]): EditableGridUnit[] {
@@ -1452,15 +1438,17 @@ function getManufacturingSelectableItems(unit: EditableGridUnit | undefined): Se
   const reachableInputs = getReachableInputSelections(unit)
   return productTypes.value
     .filter((product) => product.recipes.length > 0)
-    .filter((product) => product.recipes.every((recipe) => {
-      if (recipe.resourceType?.id) {
-        return reachableInputs.has(`resource:${recipe.resourceType.id}`)
-      }
-      if (recipe.inputProductType?.id) {
-        return reachableInputs.has(`product:${recipe.inputProductType.id}`)
-      }
-      return false
-    }))
+    .filter((product) =>
+      product.recipes.every((recipe) => {
+        if (recipe.resourceType?.id) {
+          return reachableInputs.has(`resource:${recipe.resourceType.id}`)
+        }
+        if (recipe.inputProductType?.id) {
+          return reachableInputs.has(`product:${recipe.inputProductType.id}`)
+        }
+        return false
+      }),
+    )
     .map((product) => ({
       kind: 'product' as const,
       id: product.id,
@@ -1519,9 +1507,7 @@ function getUnitInventorySummary(unit: GridUnit | undefined): BuildingUnitInvent
   const directSummary = unitInventorySummaries.value.find((summary) => summary.buildingUnitId === unit.id)
   if (directSummary) return directSummary
 
-  const activeUnit = activeUnits.value.find(
-    (candidate) => candidate.gridX === unit.gridX && candidate.gridY === unit.gridY,
-  )
+  const activeUnit = activeUnits.value.find((candidate) => candidate.gridX === unit.gridX && candidate.gridY === unit.gridY)
 
   if (!activeUnit) return undefined
   return unitInventorySummaries.value.find((summary) => summary.buildingUnitId === activeUnit.id)
@@ -1534,28 +1520,21 @@ function getUnitInventories(unit: GridUnit | undefined): BuildingUnitInventory[]
     return [...directInventories].sort((left, right) => right.quantity - left.quantity)
   }
 
-  const activeUnit = activeUnits.value.find(
-    (candidate) => candidate.gridX === unit.gridX && candidate.gridY === unit.gridY,
-  )
+  const activeUnit = activeUnits.value.find((candidate) => candidate.gridX === unit.gridX && candidate.gridY === unit.gridY)
 
   if (!activeUnit) return []
-  return unitInventories.value
-    .filter((inventory) => inventory.buildingUnitId === activeUnit.id)
-    .sort((left, right) => right.quantity - left.quantity)
+  return unitInventories.value.filter((inventory) => inventory.buildingUnitId === activeUnit.id).sort((left, right) => right.quantity - left.quantity)
 }
 
 function getResolvedLiveUnitId(unit: GridUnit | undefined): string | null {
   if (!unit) return null
 
-  const hasDirectLiveData = unitInventories.value.some((inventory) => inventory.buildingUnitId === unit.id)
-    || unitResourceHistories.value.some((entry) => entry.buildingUnitId === unit.id)
+  const hasDirectLiveData = unitInventories.value.some((inventory) => inventory.buildingUnitId === unit.id) || unitResourceHistories.value.some((entry) => entry.buildingUnitId === unit.id)
   if (hasDirectLiveData) {
     return unit.id
   }
 
-  const activeUnit = activeUnits.value.find(
-    (candidate) => candidate.gridX === unit.gridX && candidate.gridY === unit.gridY,
-  )
+  const activeUnit = activeUnits.value.find((candidate) => candidate.gridX === unit.gridX && candidate.gridY === unit.gridY)
 
   return activeUnit?.id ?? unit.id
 }
@@ -1564,15 +1543,10 @@ function getUnitResourceHistory(unit: GridUnit | undefined): BuildingUnitResourc
   const resolvedUnitId = getResolvedLiveUnitId(unit)
   if (!resolvedUnitId) return []
 
-  return unitResourceHistories.value
-    .filter((entry) => entry.buildingUnitId === resolvedUnitId)
-    .sort((left, right) => left.tick - right.tick)
+  return unitResourceHistories.value.filter((entry) => entry.buildingUnitId === resolvedUnitId).sort((left, right) => left.tick - right.tick)
 }
 
-function getHistoryItemLabel(
-  resourceTypeId: string | null | undefined,
-  productTypeId: string | null | undefined,
-): string {
+function getHistoryItemLabel(resourceTypeId: string | null | undefined, productTypeId: string | null | undefined): string {
   if (resourceTypeId) {
     return getResourceName(resourceTypeId)
   }
@@ -1617,18 +1591,14 @@ function getUnitResourceHistoryItemOptions(unit: GridUnit | undefined): UnitReso
     order.set(key, nextOrder++)
   }
 
-  return Array.from(options.values()).sort(
-    (left, right) => (order.get(left.key) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.key) ?? Number.MAX_SAFE_INTEGER),
-  )
+  return Array.from(options.values()).sort((left, right) => (order.get(left.key) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.key) ?? Number.MAX_SAFE_INTEGER))
 }
 
 function getSelectedUnitResourceHistory(unit: GridUnit | undefined): BuildingUnitResourceHistoryPoint[] {
   const selectedKey = selectedHistoryItemKey.value
   if (!selectedKey) return []
 
-  return getUnitResourceHistory(unit).filter(
-    (entry) => getUnitResourceHistoryItemKey(entry.resourceTypeId, entry.productTypeId) === selectedKey,
-  )
+  return getUnitResourceHistory(unit).filter((entry) => getUnitResourceHistoryItemKey(entry.resourceTypeId, entry.productTypeId) === selectedKey)
 }
 
 function getUnitInventoryItemCount(unit: GridUnit | undefined): number {
@@ -1681,9 +1651,7 @@ function getUnitDisplayLabel(unit: GridUnit | undefined): string | null {
   if (primaryInventory) {
     const extraItems = getUnitInventoryItemCount(unit) - 1
     const primaryName = getInventoryItemName(primaryInventory)
-    return extraItems > 0
-      ? `${primaryName} ${t('buildingDetail.inventory.moreItems', { count: extraItems })}`
-      : primaryName
+    return extraItems > 0 ? `${primaryName} ${t('buildingDetail.inventory.moreItems', { count: extraItems })}` : primaryName
   }
 
   return getUnitConfiguredItemLabel(unit)
@@ -1736,11 +1704,8 @@ function getInventoryItemSourcingCostLabel(inventory: BuildingUnitInventory): st
 }
 
 function getInventoryItemSourcingCostPerUnitLabel(inventory: BuildingUnitInventory): string | null {
-  const sourcingCostPerUnit = inventory.sourcingCostPerUnit
-    ?? getInventorySourcingCostPerUnit(inventory.quantity, inventory.sourcingCostTotal)
-  return sourcingCostPerUnit == null
-    ? null
-    : t('buildingDetail.inventory.perUnit', { value: formatCurrency(sourcingCostPerUnit) })
+  const sourcingCostPerUnit = inventory.sourcingCostPerUnit ?? getInventorySourcingCostPerUnit(inventory.quantity, inventory.sourcingCostTotal)
+  return sourcingCostPerUnit == null ? null : t('buildingDetail.inventory.perUnit', { value: formatCurrency(sourcingCostPerUnit) })
 }
 
 function getUnitInventoryCost(unit: GridUnit | undefined): number | null {
@@ -2086,11 +2051,18 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
     ])
 
     currentTick.value = gameStateData.gameState?.currentTick ?? 0
-    resourceTypes.value = resourceData.resourceTypes ?? []
-    productTypes.value = productData.productTypes ?? []
+    if (!deepEqual(resourceTypes.value, resourceData.resourceTypes ?? [])) {
+      resourceTypes.value = resourceData.resourceTypes ?? []
+    }
+    if (!deepEqual(productTypes.value, productData.productTypes ?? [])) {
+      productTypes.value = productData.productTypes ?? []
+    }
 
     const allBuildings = companiesData.myCompanies.flatMap((company) => company.buildings)
-    building.value = allBuildings.find((candidate) => candidate.id === buildingId.value) || null
+    const newBuilding = allBuildings.find((candidate) => candidate.id === buildingId.value) || null
+    if (!deepEqual(building.value, newBuilding)) {
+      building.value = newBuilding
+    }
 
     if (!building.value) {
       companyCash.value = null
@@ -2098,7 +2070,10 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
       return
     }
 
-    companyCash.value = companiesData.myCompanies.find((company) => company.id === building.value?.companyId)?.cash ?? null
+    const newCompanyCash = companiesData.myCompanies.find((company) => company.id === building.value?.companyId)?.cash ?? null
+    if (companyCash.value !== newCompanyCash) {
+      companyCash.value = newCompanyCash
+    }
 
     if (!preserveDraft) {
       const sourceUnits = pendingConfiguration.value?.units ?? building.value.units
@@ -2109,11 +2084,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
       showUnitPicker.value = false
     }
 
-    await Promise.all([
-      loadUnitInventorySummaries(),
-      loadUnitInventories(),
-      loadUnitResourceHistories(),
-    ])
+    await Promise.all([loadUnitInventorySummaries(), loadUnitInventories(), loadUnitResourceHistories()])
     await loadGlobalExchangeOffers()
   } catch (reason: unknown) {
     error.value = reason instanceof Error ? reason.message : t('buildingDetail.loadFailed')
@@ -2176,9 +2147,7 @@ watch(
 <template>
   <div class="building-detail-view container">
     <div class="page-nav">
-      <RouterLink to="/dashboard" class="back-link">
-        <span>←</span> {{ t('buildingDetail.backToDashboard') }}
-      </RouterLink>
+      <RouterLink to="/dashboard" class="back-link"> <span>←</span> {{ t('buildingDetail.backToDashboard') }} </RouterLink>
     </div>
 
     <div v-if="loading" class="loading">{{ t('common.loading') }}</div>
@@ -2244,19 +2213,10 @@ watch(
             step="1000"
           />
           <div class="sale-dialog-actions">
-            <button
-              class="btn btn-primary"
-              :disabled="savingSale || !salePrice || salePrice <= 0"
-              @click="setBuildingForSale(true)"
-            >
+            <button class="btn btn-primary" :disabled="savingSale || !salePrice || salePrice <= 0" @click="setBuildingForSale(true)">
               {{ t('buildingDetail.listForSale') }}
             </button>
-            <button
-              v-if="building.isForSale"
-              class="btn btn-danger"
-              :disabled="savingSale"
-              @click="setBuildingForSale(false)"
-            >
+            <button v-if="building.isForSale" class="btn btn-danger" :disabled="savingSale" @click="setBuildingForSale(false)">
               {{ t('buildingDetail.cancelSale') }}
             </button>
           </div>
@@ -2289,12 +2249,7 @@ watch(
       </div>
 
       <!-- Starter sales-shop setup banner (shown for empty sales shops with no pending plan) -->
-      <div
-        v-if="showSalesShopStarterBanner"
-        class="starter-setup-banner starter-setup-banner--shop"
-        role="region"
-        aria-label="shop starter setup"
-      >
+      <div v-if="showSalesShopStarterBanner" class="starter-setup-banner starter-setup-banner--shop" role="region" aria-label="shop starter setup">
         <div class="starter-setup-content">
           <h2 class="starter-setup-title">🏪 {{ t('buildingDetail.shopStarterSetup.title') }}</h2>
           <p class="starter-setup-body">{{ t('buildingDetail.shopStarterSetup.body') }}</p>
@@ -2317,12 +2272,7 @@ watch(
           <div class="upgrade-pill">
             {{ t('buildingDetail.upgradeAppliesAt', { tick: pendingConfiguration!.appliesAtTick }) }}
           </div>
-          <button
-            v-if="!isEditing"
-            class="btn btn-danger btn-sm"
-            :disabled="cancellingPlan"
-            @click="cancelPlan"
-          >
+          <button v-if="!isEditing" class="btn btn-danger btn-sm" :disabled="cancellingPlan" @click="cancelPlan">
             {{ cancellingPlan ? t('common.loading') : t('buildingDetail.cancelPlan') }}
           </button>
         </div>
@@ -2341,38 +2291,20 @@ watch(
       </div>
 
       <!-- Production chain status panel: shown for factories with the starter layout saved -->
-      <div
-        v-if="showProductionChainPanel"
-        class="production-chain-panel"
-        role="region"
-        aria-label="production chain status"
-      >
+      <div v-if="showProductionChainPanel" class="production-chain-panel" role="region" aria-label="production chain status">
         <div class="chain-panel-header">
           <h3 class="chain-panel-title">⚙️ {{ t('buildingDetail.productionChain.title') }}</h3>
-          <span
-            v-if="chainStatus.isChainComplete"
-            class="chain-status-badge chain-status-badge--complete"
-          >✅ {{ t('buildingDetail.productionChain.chainComplete') }}</span>
-          <span v-else class="chain-status-badge chain-status-badge--incomplete"
-            >⚠️ {{ t('buildingDetail.productionChain.chainIncomplete') }}</span
-          >
+          <span v-if="chainStatus.isChainComplete" class="chain-status-badge chain-status-badge--complete">✅ {{ t('buildingDetail.productionChain.chainComplete') }}</span>
+          <span v-else class="chain-status-badge chain-status-badge--incomplete">⚠️ {{ t('buildingDetail.productionChain.chainIncomplete') }}</span>
         </div>
 
         <div class="chain-flow" role="list" aria-label="production chain steps">
           <!-- PURCHASE step -->
-          <div
-            class="chain-step"
-            :class="chainStatus.isPurchaseConfigured ? 'chain-step--configured' : 'chain-step--missing'"
-            role="listitem"
-          >
+          <div class="chain-step" :class="chainStatus.isPurchaseConfigured ? 'chain-step--configured' : 'chain-step--missing'" role="listitem">
             <div class="chain-step-icon">🛒</div>
             <div class="chain-step-type">{{ t('buildingDetail.unitTypes.PURCHASE') }}</div>
             <div v-if="chainStatus.isPurchaseConfigured" class="chain-step-value">
-              {{
-                chainDisplayUnits.purchase?.resourceTypeId
-                  ? getResourceName(chainDisplayUnits.purchase.resourceTypeId)
-                  : getProductName(chainDisplayUnits.purchase?.productTypeId ?? null)
-              }}
+              {{ chainDisplayUnits.purchase?.resourceTypeId ? getResourceName(chainDisplayUnits.purchase.resourceTypeId) : getProductName(chainDisplayUnits.purchase?.productTypeId ?? null) }}
             </div>
             <div v-else class="chain-step-missing-label">
               {{ t('buildingDetail.productionChain.notConfigured') }}
@@ -2382,11 +2314,7 @@ watch(
           <div class="chain-arrow" aria-hidden="true">→</div>
 
           <!-- MANUFACTURING step -->
-          <div
-            class="chain-step"
-            :class="chainStatus.isManufacturingConfigured ? 'chain-step--configured' : 'chain-step--missing'"
-            role="listitem"
-          >
+          <div class="chain-step" :class="chainStatus.isManufacturingConfigured ? 'chain-step--configured' : 'chain-step--missing'" role="listitem">
             <div class="chain-step-icon">🏭</div>
             <div class="chain-step-type">{{ t('buildingDetail.unitTypes.MANUFACTURING') }}</div>
             <div v-if="chainStatus.isManufacturingConfigured" class="chain-step-value">
@@ -2400,19 +2328,11 @@ watch(
           <div class="chain-arrow" aria-hidden="true">→</div>
 
           <!-- STORAGE step -->
-          <div
-            class="chain-step"
-            :class="chainStatus.isStoragePresent ? 'chain-step--configured' : 'chain-step--missing'"
-            role="listitem"
-          >
+          <div class="chain-step" :class="chainStatus.isStoragePresent ? 'chain-step--configured' : 'chain-step--missing'" role="listitem">
             <div class="chain-step-icon">📦</div>
             <div class="chain-step-type">{{ t('buildingDetail.unitTypes.STORAGE') }}</div>
             <div class="chain-step-value">
-              {{
-                chainStatus.isManufacturingConfigured
-                  ? getProductName(chainDisplayUnits.manufacturing?.productTypeId ?? null)
-                  : t('buildingDetail.productionChain.storageDesc')
-              }}
+              {{ chainStatus.isManufacturingConfigured ? getProductName(chainDisplayUnits.manufacturing?.productTypeId ?? null) : t('buildingDetail.productionChain.storageDesc') }}
             </div>
           </div>
         </div>
@@ -2437,9 +2357,7 @@ watch(
             {{
               t('buildingDetail.productionChain.chainCompleteDesc', {
                 product: getProductName(chainDisplayUnits.manufacturing?.productTypeId ?? null),
-                resource: chainDisplayUnits.purchase?.resourceTypeId
-                  ? getResourceName(chainDisplayUnits.purchase.resourceTypeId)
-                  : getProductName(chainDisplayUnits.purchase?.productTypeId ?? null),
+                resource: chainDisplayUnits.purchase?.resourceTypeId ? getResourceName(chainDisplayUnits.purchase.resourceTypeId) : getProductName(chainDisplayUnits.purchase?.productTypeId ?? null),
               })
             }}
           </p>
@@ -2448,38 +2366,21 @@ watch(
       </div>
 
       <!-- Sales chain status panel: shown for sales shops with units saved -->
-      <div
-        v-if="showSalesChainPanel"
-        class="production-chain-panel"
-        role="region"
-        aria-label="sales chain status"
-      >
+      <div v-if="showSalesChainPanel" class="production-chain-panel" role="region" aria-label="sales chain status">
         <div class="chain-panel-header">
           <h3 class="chain-panel-title">🏪 {{ t('buildingDetail.salesChain.title') }}</h3>
-          <span
-            v-if="shopChainStatus.isChainComplete"
-            class="chain-status-badge chain-status-badge--complete"
-            >✅ {{ t('buildingDetail.salesChain.chainComplete') }}</span
-          >
-          <span v-else class="chain-status-badge chain-status-badge--incomplete"
-            >⚠️ {{ t('buildingDetail.salesChain.chainIncomplete') }}</span
-          >
+          <span v-if="shopChainStatus.isChainComplete" class="chain-status-badge chain-status-badge--complete">✅ {{ t('buildingDetail.salesChain.chainComplete') }}</span>
+          <span v-else class="chain-status-badge chain-status-badge--incomplete">⚠️ {{ t('buildingDetail.salesChain.chainIncomplete') }}</span>
         </div>
 
         <div class="chain-flow" role="list" aria-label="sales chain steps">
           <!-- PURCHASE step -->
-          <div
-            class="chain-step"
-            :class="shopChainStatus.isPurchaseConfigured ? 'chain-step--configured' : 'chain-step--missing'"
-            role="listitem"
-          >
+          <div class="chain-step" :class="shopChainStatus.isPurchaseConfigured ? 'chain-step--configured' : 'chain-step--missing'" role="listitem">
             <div class="chain-step-icon">🛒</div>
             <div class="chain-step-type">{{ t('buildingDetail.unitTypes.PURCHASE') }}</div>
             <div v-if="shopChainStatus.isPurchaseConfigured" class="chain-step-value">
               {{
-                shopChainDisplayUnits.purchase?.resourceTypeId
-                  ? getResourceName(shopChainDisplayUnits.purchase.resourceTypeId)
-                  : getProductName(shopChainDisplayUnits.purchase?.productTypeId ?? null)
+                shopChainDisplayUnits.purchase?.resourceTypeId ? getResourceName(shopChainDisplayUnits.purchase.resourceTypeId) : getProductName(shopChainDisplayUnits.purchase?.productTypeId ?? null)
               }}
             </div>
             <div v-else class="chain-step-missing-label">
@@ -2490,11 +2391,7 @@ watch(
           <div class="chain-arrow" aria-hidden="true">→</div>
 
           <!-- PUBLIC_SALES step -->
-          <div
-            class="chain-step"
-            :class="shopChainStatus.isPublicSalesConfigured ? 'chain-step--configured' : 'chain-step--missing'"
-            role="listitem"
-          >
+          <div class="chain-step" :class="shopChainStatus.isPublicSalesConfigured ? 'chain-step--configured' : 'chain-step--missing'" role="listitem">
             <div class="chain-step-icon">💲</div>
             <div class="chain-step-type">{{ t('buildingDetail.unitTypes.PUBLIC_SALES') }}</div>
             <div v-if="shopChainStatus.isPublicSalesConfigured" class="chain-step-value">
@@ -2555,9 +2452,11 @@ watch(
                     <div
                       class="grid-cell readonly clickable"
                       :class="{ occupied: !!getUnitAtFrom(activeUnits, x, y), selected: selectedCell?.x === x && selectedCell?.y === y }"
-                      :style="getUnitAtFrom(activeUnits, x, y)
-                        ? { borderColor: getUnitColor(getUnitAtFrom(activeUnits, x, y)!.unitType), background: getUnitColor(getUnitAtFrom(activeUnits, x, y)!.unitType) + '18' }
-                        : {}"
+                      :style="
+                        getUnitAtFrom(activeUnits, x, y)
+                          ? { borderColor: getUnitColor(getUnitAtFrom(activeUnits, x, y)!.unitType), background: getUnitColor(getUnitAtFrom(activeUnits, x, y)!.unitType) + '18' }
+                          : {}
+                      "
                       role="button"
                       :tabindex="getUnitAtFrom(activeUnits, x, y) ? 0 : -1"
                       :aria-label="getGridCellAriaLabel(getUnitAtFrom(activeUnits, x, y))"
@@ -2570,17 +2469,14 @@ watch(
                           <span class="cell-level">Lv.{{ getUnitAtFrom(activeUnits, x, y)!.level }}</span>
                         </div>
                         <div v-if="getUnitDisplayLabel(getUnitAtFrom(activeUnits, x, y))" class="cell-item-block" aria-hidden="true">
-                          <img
-                            v-if="getUnitDisplayImageUrl(getUnitAtFrom(activeUnits, x, y))"
-                            class="cell-item-image"
-                            :src="getUnitDisplayImageUrl(getUnitAtFrom(activeUnits, x, y))!"
-                            alt=""
-                          />
+                          <img v-if="getUnitDisplayImageUrl(getUnitAtFrom(activeUnits, x, y))" class="cell-item-image" :src="getUnitDisplayImageUrl(getUnitAtFrom(activeUnits, x, y))!" alt="" />
                           <span v-else class="cell-item-avatar">{{ getUnitDisplayMonogram(getUnitAtFrom(activeUnits, x, y)) }}</span>
                           <div class="cell-item-copy">
                             <span class="cell-item">{{ getUnitDisplayLabel(getUnitAtFrom(activeUnits, x, y)) }}</span>
                             <span v-if="getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))" class="cell-stock">
-                              {{ formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.quantity) }}/{{ formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.capacity) }}
+                              {{ formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.quantity) }}/{{
+                                formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.capacity)
+                              }}
                             </span>
                           </div>
                         </div>
@@ -2590,11 +2486,7 @@ watch(
                         <span v-if="getUnitInventoryCostLabel(getUnitAtFrom(activeUnits, x, y))" class="cell-value" aria-hidden="true">
                           {{ t('buildingDetail.inventory.sourcingCostsShort', { value: getUnitInventoryCostLabel(getUnitAtFrom(activeUnits, x, y)) }) }}
                         </span>
-                        <div
-                          v-if="getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))?.capacity"
-                          class="cell-capacity"
-                          aria-hidden="true"
-                        >
+                        <div v-if="getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))?.capacity" class="cell-capacity" aria-hidden="true">
                           <span
                             class="cell-capacity-fill"
                             :data-fill="getFillBucket(getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))!.fillPercent)"
@@ -2611,10 +2503,15 @@ watch(
                       v-if="x < 3"
                       :key="`active-horizontal-${x}-${y}`"
                       class="link-toggle horizontal readonly"
-                      :class="[`link-state-${getHorizontalLinkStateFor(activeUnits, x, y)}`, { active: isHorizontalLinkActiveFor(activeUnits, x, y), disabled: !canToggleHorizontalLink(activeUnits, x, y) }]"
+                      :class="[
+                        `link-state-${getHorizontalLinkStateFor(activeUnits, x, y)}`,
+                        { active: isHorizontalLinkActiveFor(activeUnits, x, y), disabled: !canToggleHorizontalLink(activeUnits, x, y) },
+                      ]"
                     >
                       <span class="link-line"></span>
-                      <span v-if="getHorizontalLinkStateFor(activeUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{ getHorizontalLinkArrow(getHorizontalLinkStateFor(activeUnits, x, y)) }}</span>
+                      <span v-if="getHorizontalLinkStateFor(activeUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{
+                        getHorizontalLinkArrow(getHorizontalLinkStateFor(activeUnits, x, y))
+                      }}</span>
                     </div>
                   </template>
                 </div>
@@ -2626,7 +2523,9 @@ watch(
                       :class="[`link-state-${getVerticalLinkStateFor(activeUnits, x, y)}`, { active: isVerticalLinkActiveFor(activeUnits, x, y), disabled: !canToggleVerticalLink(activeUnits, x, y) }]"
                     >
                       <span class="link-line"></span>
-                      <span v-if="getVerticalLinkStateFor(activeUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{ getVerticalLinkArrow(getVerticalLinkStateFor(activeUnits, x, y)) }}</span>
+                      <span v-if="getVerticalLinkStateFor(activeUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{
+                        getVerticalLinkArrow(getVerticalLinkStateFor(activeUnits, x, y))
+                      }}</span>
                     </div>
 
                     <div
@@ -2656,11 +2555,7 @@ watch(
                 <button class="btn btn-secondary" @click="cancelEditing">
                   {{ t('buildingDetail.cancelEditing') }}
                 </button>
-                <button
-                  class="btn btn-primary"
-                  :disabled="saving || !hasDraftChanges"
-                  @click="storeConfiguration"
-                >
+                <button class="btn btn-primary" :disabled="saving || !hasDraftChanges" @click="storeConfiguration">
                   {{ saving ? t('common.loading') : t('buildingDetail.storeConfiguration') }}
                 </button>
               </div>
@@ -2684,12 +2579,7 @@ watch(
             <div v-if="draftLinkChanges.length > 0" class="link-changes-summary" role="region" :aria-label="t('buildingDetail.linkChangesSummaryTitle')">
               <h4 class="link-changes-title">{{ t('buildingDetail.linkChangesSummaryTitle') }}</h4>
               <ul class="link-changes-list">
-                <li
-                  v-for="(change, i) in draftLinkChanges"
-                  :key="i"
-                  class="link-change-item"
-                  :class="change.changeType === 'added' ? 'link-change-added' : 'link-change-removed'"
-                >
+                <li v-for="(change, i) in draftLinkChanges" :key="i" class="link-change-item" :class="change.changeType === 'added' ? 'link-change-added' : 'link-change-removed'">
                   <span class="link-change-badge" aria-hidden="true">{{ change.changeType === 'added' ? '+' : '−' }}</span>
                   <span>{{ change.description }}</span>
                 </li>
@@ -2708,9 +2598,11 @@ watch(
                         changed: !!getUnitAtFrom(plannedUnits, x, y) && getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) > 0,
                         reverting: isUnitReverting(getUnitAtFrom(plannedUnits, x, y)),
                       }"
-                      :style="getUnitAtFrom(plannedUnits, x, y)
-                        ? { borderColor: getUnitColor(getUnitAtFrom(plannedUnits, x, y)!.unitType), background: getUnitColor(getUnitAtFrom(plannedUnits, x, y)!.unitType) + '18' }
-                        : {}"
+                      :style="
+                        getUnitAtFrom(plannedUnits, x, y)
+                          ? { borderColor: getUnitColor(getUnitAtFrom(plannedUnits, x, y)!.unitType), background: getUnitColor(getUnitAtFrom(plannedUnits, x, y)!.unitType) + '18' }
+                          : {}
+                      "
                       :aria-label="getGridCellAriaLabel(getUnitAtFrom(plannedUnits, x, y))"
                       @click="clickDraftCell(x, y)"
                     >
@@ -2720,17 +2612,14 @@ watch(
                           <span class="cell-level">Lv.{{ getUnitAtFrom(plannedUnits, x, y)!.level }}</span>
                         </div>
                         <div v-if="getUnitDisplayLabel(getUnitAtFrom(plannedUnits, x, y))" class="cell-item-block" aria-hidden="true">
-                          <img
-                            v-if="getUnitDisplayImageUrl(getUnitAtFrom(plannedUnits, x, y))"
-                            class="cell-item-image"
-                            :src="getUnitDisplayImageUrl(getUnitAtFrom(plannedUnits, x, y))!"
-                            alt=""
-                          />
+                          <img v-if="getUnitDisplayImageUrl(getUnitAtFrom(plannedUnits, x, y))" class="cell-item-image" :src="getUnitDisplayImageUrl(getUnitAtFrom(plannedUnits, x, y))!" alt="" />
                           <span v-else class="cell-item-avatar">{{ getUnitDisplayMonogram(getUnitAtFrom(plannedUnits, x, y)) }}</span>
                           <div class="cell-item-copy">
                             <span class="cell-item">{{ getUnitDisplayLabel(getUnitAtFrom(plannedUnits, x, y)) }}</span>
                             <span v-if="getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))" class="cell-stock">
-                              {{ formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.quantity) }}/{{ formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.capacity) }}
+                              {{ formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.quantity) }}/{{
+                                formatUnitQuantity(getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.capacity)
+                              }}
                             </span>
                           </div>
                         </div>
@@ -2740,11 +2629,7 @@ watch(
                         <span v-if="getUnitInventoryCostLabel(getUnitAtFrom(plannedUnits, x, y))" class="cell-value" aria-hidden="true">
                           {{ t('buildingDetail.inventory.sourcingCostsShort', { value: getUnitInventoryCostLabel(getUnitAtFrom(plannedUnits, x, y)) }) }}
                         </span>
-                        <div
-                          v-if="getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))?.capacity"
-                          class="cell-capacity"
-                          aria-hidden="true"
-                        >
+                        <div v-if="getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))?.capacity" class="cell-capacity" aria-hidden="true">
                           <span
                             class="cell-capacity-fill"
                             :data-fill="getFillBucket(getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.fillPercent)"
@@ -2754,11 +2639,7 @@ watch(
                         <span v-if="getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) > 0" class="cell-pending" aria-hidden="true">
                           {{ t('buildingDetail.unitUnavailableFor', { ticks: getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) }) }}
                         </span>
-                        <span
-                          v-if="isUnitReverting(getUnitAtFrom(plannedUnits, x, y))"
-                          class="cell-reverting"
-                          aria-hidden="true"
-                        >{{ t('buildingDetail.reverting') }}</span>
+                        <span v-if="isUnitReverting(getUnitAtFrom(plannedUnits, x, y))" class="cell-reverting" aria-hidden="true">{{ t('buildingDetail.reverting') }}</span>
                       </template>
                       <template v-else>
                         <span class="cell-empty" aria-hidden="true">+</span>
@@ -2769,13 +2650,18 @@ watch(
                       v-if="x < 3"
                       :key="`planned-horizontal-${x}-${y}`"
                       class="link-toggle horizontal"
-                      :class="[`link-state-${getHorizontalLinkStateFor(plannedUnits, x, y)}`, { active: isHorizontalLinkActiveFor(plannedUnits, x, y), disabled: !canToggleHorizontalLink(plannedUnits, x, y) }]"
+                      :class="[
+                        `link-state-${getHorizontalLinkStateFor(plannedUnits, x, y)}`,
+                        { active: isHorizontalLinkActiveFor(plannedUnits, x, y), disabled: !canToggleHorizontalLink(plannedUnits, x, y) },
+                      ]"
                       :disabled="!canToggleHorizontalLink(plannedUnits, x, y)"
                       :aria-label="t('buildingDetail.linkHorizontalAriaLabel', { state: getHorizontalLinkStateFor(plannedUnits, x, y) })"
                       @click="toggleHorizontalLink(x, y)"
                     >
                       <span class="link-line"></span>
-                      <span v-if="getHorizontalLinkStateFor(plannedUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{ getHorizontalLinkArrow(getHorizontalLinkStateFor(plannedUnits, x, y)) }}</span>
+                      <span v-if="getHorizontalLinkStateFor(plannedUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{
+                        getHorizontalLinkArrow(getHorizontalLinkStateFor(plannedUnits, x, y))
+                      }}</span>
                     </button>
                   </template>
                 </div>
@@ -2784,13 +2670,18 @@ watch(
                   <template v-for="x in gridIndexes" :key="`planned-connector-${x}-${y}`">
                     <button
                       class="link-toggle vertical"
-                      :class="[`link-state-${getVerticalLinkStateFor(plannedUnits, x, y)}`, { active: isVerticalLinkActiveFor(plannedUnits, x, y), disabled: !canToggleVerticalLink(plannedUnits, x, y) }]"
+                      :class="[
+                        `link-state-${getVerticalLinkStateFor(plannedUnits, x, y)}`,
+                        { active: isVerticalLinkActiveFor(plannedUnits, x, y), disabled: !canToggleVerticalLink(plannedUnits, x, y) },
+                      ]"
                       :disabled="!canToggleVerticalLink(plannedUnits, x, y)"
                       :aria-label="t('buildingDetail.linkVerticalAriaLabel', { state: getVerticalLinkStateFor(plannedUnits, x, y) })"
                       @click="toggleVerticalLink(x, y)"
                     >
                       <span class="link-line"></span>
-                      <span v-if="getVerticalLinkStateFor(plannedUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{ getVerticalLinkArrow(getVerticalLinkStateFor(plannedUnits, x, y)) }}</span>
+                      <span v-if="getVerticalLinkStateFor(plannedUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{
+                        getVerticalLinkArrow(getVerticalLinkStateFor(plannedUnits, x, y))
+                      }}</span>
                     </button>
 
                     <button
@@ -2891,15 +2782,34 @@ watch(
                   <p class="config-help">{{ t('buildingDetail.proAccessHint') }}</p>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.maxPrice') }}</label>
-                    <input type="number" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.maxPrice" @input="updateSelectedUnitConfig('maxPrice', ($event.target as HTMLInputElement).valueAsNumber || null)" min="0" step="0.01" />
+                    <input
+                      type="number"
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.maxPrice"
+                      @input="updateSelectedUnitConfig('maxPrice', ($event.target as HTMLInputElement).valueAsNumber || null)"
+                      min="0"
+                      step="0.01"
+                    />
                   </div>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.minQuality') }}</label>
-                    <input type="number" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.minQuality" @input="updateSelectedUnitConfig('minQuality', ($event.target as HTMLInputElement).valueAsNumber || null)" min="0" max="1" step="0.01" />
+                    <input
+                      type="number"
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.minQuality"
+                      @input="updateSelectedUnitConfig('minQuality', ($event.target as HTMLInputElement).valueAsNumber || null)"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                    />
                   </div>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.purchaseSource') }}</label>
-                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.purchaseSource ?? ''" @change="updateSelectedUnitConfig('purchaseSource', ($event.target as HTMLSelectElement).value || null)">
+                    <select
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.purchaseSource ?? ''"
+                      @change="updateSelectedUnitConfig('purchaseSource', ($event.target as HTMLSelectElement).value || null)"
+                    >
                       <option value="">{{ t('buildingDetail.config.none') }}</option>
                       <option value="EXCHANGE">{{ t('buildingDetail.config.sourceExchange') }}</option>
                       <option value="LOCAL">{{ t('buildingDetail.config.sourceLocal') }}</option>
@@ -2934,11 +2844,22 @@ watch(
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'B2B_SALES'">
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.minPrice') }}</label>
-                    <input type="number" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.minPrice" @input="updateSelectedUnitConfig('minPrice', ($event.target as HTMLInputElement).value !== '' ? ($event.target as HTMLInputElement).valueAsNumber : null)" min="0.01" step="0.01" />
+                    <input
+                      type="number"
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.minPrice"
+                      @input="updateSelectedUnitConfig('minPrice', ($event.target as HTMLInputElement).value !== '' ? ($event.target as HTMLInputElement).valueAsNumber : null)"
+                      min="0.01"
+                      step="0.01"
+                    />
                   </div>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.saleVisibility') }}</label>
-                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.saleVisibility ?? ''" @change="updateSelectedUnitConfig('saleVisibility', ($event.target as HTMLSelectElement).value || null)">
+                    <select
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.saleVisibility ?? ''"
+                      @change="updateSelectedUnitConfig('saleVisibility', ($event.target as HTMLSelectElement).value || null)"
+                    >
                       <option value="">{{ t('buildingDetail.config.none') }}</option>
                       <option value="PUBLIC">{{ t('buildingDetail.config.visibilityPublic') }}</option>
                       <option value="COMPANY">{{ t('buildingDetail.config.visibilityCompany') }}</option>
@@ -2951,14 +2872,13 @@ watch(
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'PUBLIC_SALES'">
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.productType') }}</label>
-                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''" @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)">
+                    <select
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''"
+                      @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)"
+                    >
                       <option value="">{{ t('buildingDetail.config.none') }}</option>
-                      <option
-                        v-for="pt in productTypes"
-                        :key="pt.id"
-                        :value="pt.id"
-                        :disabled="isProductLocked(pt)"
-                      >
+                      <option v-for="pt in productTypes" :key="pt.id" :value="pt.id" :disabled="isProductLocked(pt)">
                         {{ getProductOptionLabel(pt) }}
                       </option>
                     </select>
@@ -2966,7 +2886,14 @@ watch(
                   <p class="config-help">{{ t('buildingDetail.proAccessHint') }}</p>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.minPrice') }}</label>
-                    <input type="number" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.minPrice" @input="updateSelectedUnitConfig('minPrice', ($event.target as HTMLInputElement).value !== '' ? ($event.target as HTMLInputElement).valueAsNumber : null)" min="0.01" step="0.01" />
+                    <input
+                      type="number"
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.minPrice"
+                      @input="updateSelectedUnitConfig('minPrice', ($event.target as HTMLInputElement).value !== '' ? ($event.target as HTMLInputElement).valueAsNumber : null)"
+                      min="0.01"
+                      step="0.01"
+                    />
                   </div>
                 </template>
 
@@ -2974,11 +2901,24 @@ watch(
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'MARKETING'">
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.budget') }}</label>
-                    <input type="number" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.budget" @input="updateSelectedUnitConfig('budget', ($event.target as HTMLInputElement).valueAsNumber || null)" min="0" step="100" />
+                    <input
+                      type="number"
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.budget"
+                      @input="updateSelectedUnitConfig('budget', ($event.target as HTMLInputElement).valueAsNumber || null)"
+                      min="0"
+                      step="100"
+                    />
                   </div>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.mediaHouse') }}</label>
-                    <input type="text" class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.mediaHouseBuildingId ?? ''" @input="updateSelectedUnitConfig('mediaHouseBuildingId', ($event.target as HTMLInputElement).value || null)" :placeholder="t('buildingDetail.config.mediaHousePlaceholder')" />
+                    <input
+                      type="text"
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.mediaHouseBuildingId ?? ''"
+                      @input="updateSelectedUnitConfig('mediaHouseBuildingId', ($event.target as HTMLInputElement).value || null)"
+                      :placeholder="t('buildingDetail.config.mediaHousePlaceholder')"
+                    />
                   </div>
                 </template>
 
@@ -2986,7 +2926,11 @@ watch(
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'BRANDING'">
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.brandScope') }}</label>
-                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.brandScope ?? ''" @change="updateSelectedUnitConfig('brandScope', ($event.target as HTMLSelectElement).value || null)">
+                    <select
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.brandScope ?? ''"
+                      @change="updateSelectedUnitConfig('brandScope', ($event.target as HTMLSelectElement).value || null)"
+                    >
                       <option value="">{{ t('buildingDetail.config.none') }}</option>
                       <option value="PRODUCT">{{ t('buildingDetail.config.scopeProduct') }}</option>
                       <option value="CATEGORY">{{ t('buildingDetail.config.scopeCategory') }}</option>
@@ -2998,14 +2942,13 @@ watch(
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'PRODUCT_QUALITY'">
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.researchProduct') }}</label>
-                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''" @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)">
+                    <select
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''"
+                      @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)"
+                    >
                       <option value="">{{ t('buildingDetail.config.none') }}</option>
-                      <option
-                        v-for="pt in productTypes"
-                        :key="pt.id"
-                        :value="pt.id"
-                        :disabled="isProductLocked(pt)"
-                      >
+                      <option v-for="pt in productTypes" :key="pt.id" :value="pt.id" :disabled="isProductLocked(pt)">
                         {{ getProductOptionLabel(pt) }}
                       </option>
                     </select>
@@ -3017,7 +2960,11 @@ watch(
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'BRAND_QUALITY'">
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.brandScope') }}</label>
-                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.brandScope ?? ''" @change="updateSelectedUnitConfig('brandScope', ($event.target as HTMLSelectElement).value || null)">
+                    <select
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.brandScope ?? ''"
+                      @change="updateSelectedUnitConfig('brandScope', ($event.target as HTMLSelectElement).value || null)"
+                    >
                       <option value="">{{ t('buildingDetail.config.none') }}</option>
                       <option value="PRODUCT">{{ t('buildingDetail.config.scopeProduct') }}</option>
                       <option value="CATEGORY">{{ t('buildingDetail.config.scopeCategory') }}</option>
@@ -3026,14 +2973,13 @@ watch(
                   </div>
                   <div v-if="['PRODUCT', 'CATEGORY'].includes(getDraftUnitAt(selectedCell.x, selectedCell.y)!.brandScope ?? '')" class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.researchAnchorProduct') }}</label>
-                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''" @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)">
+                    <select
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''"
+                      @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)"
+                    >
                       <option value="">{{ t('buildingDetail.config.none') }}</option>
-                      <option
-                        v-for="pt in productTypes"
-                        :key="pt.id"
-                        :value="pt.id"
-                        :disabled="isProductLocked(pt)"
-                      >
+                      <option v-for="pt in productTypes" :key="pt.id" :value="pt.id" :disabled="isProductLocked(pt)">
                         {{ getProductOptionLabel(pt) }}
                       </option>
                     </select>
@@ -3049,21 +2995,24 @@ watch(
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'STORAGE'">
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.resourceType') }}</label>
-                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.resourceTypeId ?? ''" @change="updateSelectedUnitConfig('resourceTypeId', ($event.target as HTMLSelectElement).value || null)">
+                    <select
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.resourceTypeId ?? ''"
+                      @change="updateSelectedUnitConfig('resourceTypeId', ($event.target as HTMLSelectElement).value || null)"
+                    >
                       <option value="">{{ t('buildingDetail.config.anyResource') }}</option>
                       <option v-for="rt in resourceTypes" :key="rt.id" :value="rt.id">{{ rt.name }}</option>
                     </select>
                   </div>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.productType') }}</label>
-                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''" @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)">
+                    <select
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''"
+                      @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)"
+                    >
                       <option value="">{{ t('buildingDetail.config.anyProduct') }}</option>
-                      <option
-                        v-for="pt in productTypes"
-                        :key="pt.id"
-                        :value="pt.id"
-                        :disabled="isProductLocked(pt)"
-                      >
+                      <option v-for="pt in productTypes" :key="pt.id" :value="pt.id" :disabled="isProductLocked(pt)">
                         {{ getProductOptionLabel(pt) }}
                       </option>
                     </select>
@@ -3073,7 +3022,11 @@ watch(
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'MINING'">
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.outputResource') }}</label>
-                    <select class="form-input" :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.resourceTypeId ?? ''" @change="updateSelectedUnitConfig('resourceTypeId', ($event.target as HTMLSelectElement).value || null)">
+                    <select
+                      class="form-input"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.resourceTypeId ?? ''"
+                      @change="updateSelectedUnitConfig('resourceTypeId', ($event.target as HTMLSelectElement).value || null)"
+                    >
                       <option value="">{{ t('buildingDetail.config.none') }}</option>
                       <option v-for="rt in resourceTypes" :key="rt.id" :value="rt.id">{{ rt.name }} ({{ rt.unitSymbol }})</option>
                     </select>
@@ -3083,9 +3036,15 @@ watch(
 
               <!-- Read-only unit details for non-editing mode -->
               <div class="unit-config-readonly" v-if="!isEditing && getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)">
-                <template v-if="getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!.unitType === 'PURCHASE' && ('resourceTypeId' in getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!)">
-                  <span class="stat" v-if="(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).resourceTypeId">{{ t('buildingDetail.config.resourceType') }}: {{ getResourceName((getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).resourceTypeId) }}</span>
-                  <span class="stat" v-if="(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).productTypeId">{{ t('buildingDetail.config.productType') }}: {{ getProductName((getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).productTypeId) }}</span>
+                <template
+                  v-if="getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!.unitType === 'PURCHASE' && 'resourceTypeId' in getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!"
+                >
+                  <span class="stat" v-if="(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).resourceTypeId"
+                    >{{ t('buildingDetail.config.resourceType') }}: {{ getResourceName((getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).resourceTypeId) }}</span
+                  >
+                  <span class="stat" v-if="(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).productTypeId"
+                    >{{ t('buildingDetail.config.productType') }}: {{ getProductName((getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).productTypeId) }}</span
+                  >
                 </template>
                 <template v-if="getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!.unitType === 'PRODUCT_QUALITY'">
                   <span class="stat" v-if="(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y) as EditableGridUnit).productTypeId">
@@ -3138,12 +3097,7 @@ watch(
                   </div>
                   <div v-for="inventory in getUnitInventories(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y))" :key="inventory.id" class="inventory-table-row">
                     <div class="inventory-col-item">
-                      <img
-                        v-if="getInventoryItemImageUrl(inventory)"
-                        class="inventory-item-image"
-                        :src="getInventoryItemImageUrl(inventory)!"
-                        :alt="getInventoryItemName(inventory)"
-                      />
+                      <img v-if="getInventoryItemImageUrl(inventory)" class="inventory-item-image" :src="getInventoryItemImageUrl(inventory)!" :alt="getInventoryItemName(inventory)" />
                       <span v-else class="inventory-item-avatar">{{ getInventoryItemMonogram(inventory) }}</span>
                       <div class="inventory-item-stack">
                         <span class="inventory-item-name">{{ getInventoryItemName(inventory) }}</span>
@@ -3180,10 +3134,7 @@ watch(
                 @update:selected-item-key="selectedHistoryItemKey = $event"
               />
 
-              <div
-                v-if="getDraftUnitConstructionCostLabel(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y))"
-                class="unit-insight-card"
-              >
+              <div v-if="getDraftUnitConstructionCostLabel(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y))" class="unit-insight-card">
                 <h5>{{ t('buildingDetail.costSummaryTitle') }}</h5>
                 <div class="unit-stats">
                   <span class="stat">
@@ -3193,7 +3144,9 @@ watch(
               </div>
 
               <div
-                v-if="selectedPurchaseUnit && 'resourceTypeId' in selectedPurchaseUnit && selectedPurchaseUnit.resourceTypeId && ['EXCHANGE', 'OPTIMAL'].includes(selectedPurchaseUnit.purchaseSource ?? '')"
+                v-if="
+                  selectedPurchaseUnit && 'resourceTypeId' in selectedPurchaseUnit && selectedPurchaseUnit.resourceTypeId && ['EXCHANGE', 'OPTIMAL'].includes(selectedPurchaseUnit.purchaseSource ?? '')
+                "
                 class="unit-insight-card"
               >
                 <h5>{{ t('buildingDetail.exchange.title') }}</h5>
@@ -3205,7 +3158,11 @@ watch(
                     {{ t('buildingDetail.exchange.noValidOffers') }}
                   </p>
                   <ul class="exchange-offers-list">
-                    <li v-for="offer in exchangeOfferItems" :key="`${offer.cityId}-${offer.resourceTypeId}`" :class="['exchange-offer-item', { 'offer-blocked': offer.blocked, 'offer-best': offer.cityId === bestExchangeOfferCityId }]">
+                    <li
+                      v-for="offer in exchangeOfferItems"
+                      :key="`${offer.cityId}-${offer.resourceTypeId}`"
+                      :class="['exchange-offer-item', { 'offer-blocked': offer.blocked, 'offer-best': offer.cityId === bestExchangeOfferCityId }]"
+                    >
                       <div class="exchange-offer-header">
                         <strong>{{ offer.cityName }}</strong>
                         <span class="offer-best-badge" v-if="offer.cityId === bestExchangeOfferCityId">{{ t('buildingDetail.exchange.bestOffer') }}</span>
@@ -3241,12 +3198,7 @@ watch(
               <h4>{{ t('buildingDetail.layouts.title') }}</h4>
             </div>
             <div class="layout-save">
-              <input
-                type="text"
-                class="form-input"
-                v-model="layoutName"
-                :placeholder="t('buildingDetail.layouts.namePlaceholder')"
-              />
+              <input type="text" class="form-input" v-model="layoutName" :placeholder="t('buildingDetail.layouts.namePlaceholder')" />
               <button class="btn btn-secondary btn-sm" :disabled="!layoutName.trim()" @click="saveLayout">
                 {{ t('buildingDetail.layouts.save') }}
               </button>
@@ -3340,12 +3292,7 @@ watch(
                   </div>
                   <div v-for="inventory in getUnitInventories(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))" :key="inventory.id" class="inventory-table-row">
                     <div class="inventory-col-item">
-                      <img
-                        v-if="getInventoryItemImageUrl(inventory)"
-                        class="inventory-item-image"
-                        :src="getInventoryItemImageUrl(inventory)!"
-                        :alt="getInventoryItemName(inventory)"
-                      />
+                      <img v-if="getInventoryItemImageUrl(inventory)" class="inventory-item-image" :src="getInventoryItemImageUrl(inventory)!" :alt="getInventoryItemName(inventory)" />
                       <span v-else class="inventory-item-avatar">{{ getInventoryItemMonogram(inventory) }}</span>
                       <div class="inventory-item-stack">
                         <span class="inventory-item-name">{{ getInventoryItemName(inventory) }}</span>
@@ -3382,7 +3329,9 @@ watch(
                 @update:selected-item-key="selectedHistoryItemKey = $event"
               />
               <div
-                v-if="selectedPurchaseUnit && 'resourceTypeId' in selectedPurchaseUnit && selectedPurchaseUnit.resourceTypeId && ['EXCHANGE', 'OPTIMAL'].includes(selectedPurchaseUnit.purchaseSource ?? '')"
+                v-if="
+                  selectedPurchaseUnit && 'resourceTypeId' in selectedPurchaseUnit && selectedPurchaseUnit.resourceTypeId && ['EXCHANGE', 'OPTIMAL'].includes(selectedPurchaseUnit.purchaseSource ?? '')
+                "
                 class="unit-insight-card"
               >
                 <h5>{{ t('buildingDetail.exchange.title') }}</h5>
@@ -3394,7 +3343,11 @@ watch(
                     {{ t('buildingDetail.exchange.noValidOffers') }}
                   </p>
                   <ul class="exchange-offers-list">
-                    <li v-for="offer in exchangeOfferItems" :key="`${offer.cityId}-${offer.resourceTypeId}`" :class="['exchange-offer-item', { 'offer-blocked': offer.blocked, 'offer-best': offer.cityId === bestExchangeOfferCityId }]">
+                    <li
+                      v-for="offer in exchangeOfferItems"
+                      :key="`${offer.cityId}-${offer.resourceTypeId}`"
+                      :class="['exchange-offer-item', { 'offer-blocked': offer.blocked, 'offer-best': offer.cityId === bestExchangeOfferCityId }]"
+                    >
                       <div class="exchange-offer-header">
                         <strong>{{ offer.cityName }}</strong>
                         <span class="offer-best-badge" v-if="offer.cityId === bestExchangeOfferCityId">{{ t('buildingDetail.exchange.bestOffer') }}</span>
@@ -4038,7 +3991,10 @@ watch(
   border-radius: 12px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(244, 247, 251, 0.92));
   color: var(--color-text);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 }
 
 .cell-heading {
@@ -4206,7 +4162,10 @@ watch(
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
   background: color-mix(in srgb, var(--color-surface-raised, var(--color-surface)) 94%, white 6%);
-  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .link-toggle:disabled,
@@ -4398,7 +4357,9 @@ watch(
   background: var(--color-bg);
   color: var(--color-text);
   text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .picker-option:hover {

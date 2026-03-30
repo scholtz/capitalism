@@ -9,6 +9,7 @@ import { gqlRequest } from '@/lib/graphql'
 import { trackStartupPackEvent } from '@/lib/startupPackAnalytics'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useTickCountdown } from '@/composables/useTickCountdown'
+import { deepEqual } from '@/lib/utils'
 import PendingActionsTimeline from '@/components/dashboard/PendingActionsTimeline.vue'
 import type { Company, GameState, ScheduledActionSummary, StartupPackOffer, CityPowerBalance } from '@/types'
 
@@ -84,7 +85,9 @@ async function loadDashboardData() {
     } }`,
   )
 
-  companies.value = companiesData.myCompanies
+  if (!deepEqual(companies.value, companiesData.myCompanies)) {
+    companies.value = companiesData.myCompanies
+  }
 }
 
 onMounted(async () => {
@@ -177,7 +180,9 @@ async function loadPendingActions() {
         submittedAtUtc submittedAtTick appliesAtTick ticksRemaining totalTicksRequired
       } }`,
     )
-    pendingActions.value = data.myPendingActions
+    if (!deepEqual(pendingActions.value, data.myPendingActions)) {
+      pendingActions.value = data.myPendingActions
+    }
   } catch {
     // best-effort — pending actions list is non-critical
   } finally {

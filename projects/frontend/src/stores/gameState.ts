@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { gqlRequest } from '@/lib/graphql'
+import { deepEqual } from '@/lib/utils'
 import type { GameState } from '@/types'
 
 const GAME_STATE_QUERY = `
@@ -47,12 +48,7 @@ export const useGameStateStore = defineStore('gameState', () => {
     }
 
     const state = gameState.value
-    const nextRefreshInMs = !state
-      ? 5000
-      : Math.max(
-          new Date(state.lastTickAtUtc).getTime() + state.tickIntervalSeconds * 1000 + 250 - Date.now(),
-          250,
-        )
+    const nextRefreshInMs = !state ? 5000 : Math.max(new Date(state.lastTickAtUtc).getTime() + state.tickIntervalSeconds * 1000 + 250 - Date.now(), 250)
 
     refreshTimer = setTimeout(() => {
       void refreshGameState()
@@ -70,7 +66,9 @@ export const useGameStateStore = defineStore('gameState', () => {
     inFlight = (async () => {
       try {
         const data = await gqlRequest<{ gameState: GameState | null }>(GAME_STATE_QUERY)
-        gameState.value = data.gameState
+        if (!deepEqual(gameState.value, data.gameState)) {
+          gameState.value = data.gameState
+        }
         return gameState.value
       } catch (reason: unknown) {
         error.value = reason instanceof Error ? reason.message : 'Failed to load game state'
