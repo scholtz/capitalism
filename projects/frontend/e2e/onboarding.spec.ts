@@ -2119,3 +2119,141 @@ test.describe('Onboarding budget coaching — guest cash visibility (AC 6)', () 
     expect(revenueText).toMatch(/\$\d/)
   })
 })
+
+test.describe('Guest conflict recovery — authenticated restart flow', () => {
+  // ROADMAP: "If there is error such as the building was meanwhile purchased by someone else ...
+  // make sure to create their profile with the name they chose and start the wizard again
+  // with the authenticated user and this time save everything."
+
+  test('after lot-conflict restart, now-authenticated player can complete wizard and launch empire', async ({
+    page,
+  }) => {
+    const state = setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Complete steps 1-4 as guest
+    await completeGuestSteps1to4(page, 'Conflict Recovery Corp')
+
+    // Mark the factory lot as taken so migration fails with LOT_ALREADY_OWNED
+    const factoryLot = state.buildingLots.find((l) => l.id === 'lot-industrial-1')!
+    factoryLot.ownerCompanyId = 'other-company'
+
+    // Register and trigger migration — account is created but wizard restarts
+    await page.locator('#guestEmail').fill('conflict-recover@test.com')
+    await page.locator('#guestDisplayName').fill('Conflict Player')
+    await page.locator('#guestPassword').fill('RecoverPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Wizard restarts at step 1 — player IS now authenticated
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+    await expect(
+      page.locator('.error-message, .error-global, [role="alert"]').filter({ hasText: /lots you chose was taken/i }),
+    ).toBeVisible()
+
+    // Restore the factory lot so the player can pick it again
+    factoryLot.ownerCompanyId = null
+    factoryLot.ownerCompany = null
+    factoryLot.buildingId = null
+    factoryLot.building = null
+
+    // Now complete the wizard as authenticated user — should reach empire launched
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Conflict Recovery Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Authenticated completion screen — not the guest preview
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
+    // Player remains authenticated throughout
+    expect(state.currentUserId).toBeTruthy()
+  })
+
+  test('after shop-lot-conflict restart, authenticated player can pick a different shop lot and complete', async ({
+    page,
+  }) => {
+    const state = setupMockApi(page)
+    // Add a second factory lot so the player can use it after the shop-lot conflict restart
+    // (the first factory lot gets owned by the new company during the first migration attempt)
+    state.buildingLots.push({
+      id: 'lot-industrial-2',
+      cityId: 'city-ba',
+      name: 'Industrial Plot A2',
+      description: 'Second industrial plot in the eastern logistics corridor.',
+      district: 'Industrial Zone',
+      latitude: 48.153,
+      longitude: 17.126,
+      populationIndex: 0.6,
+      basePrice: 75000,
+      price: 80000,
+      suitableTypes: 'FACTORY,MINE',
+      ownerCompanyId: null,
+      buildingId: null,
+      ownerCompany: null,
+      building: null,
+      resourceType: null,
+      materialQuality: null,
+      materialQuantity: null,
+    })
+
+    await page.goto('/onboarding')
+
+    // Complete steps 1-4 as guest
+    await completeGuestSteps1to4(page, 'Shop Conflict Corp')
+
+    // Mark the shop lot as taken so FinishOnboarding fails
+    const shopLot = state.buildingLots.find((l) => l.id === 'lot-commercial-1')!
+    shopLot.ownerCompanyId = 'other-company'
+
+    // Register — account created, startOnboardingCompany succeeds (factory lot A is fine),
+    // but finishOnboarding fails because shop lot B is taken → restart wizard at step 1
+    await page.locator('#guestEmail').fill('shop-conflict-recover@test.com')
+    await page.locator('#guestDisplayName').fill('Shop Conflict Player')
+    await page.locator('#guestPassword').fill('ShopConflict1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Wizard restarts at step 1 with lot-conflict error
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+    await expect(
+      page.locator('.error-message, .error-global, [role="alert"]').filter({ hasText: /lots you chose was taken/i }),
+    ).toBeVisible()
+
+    // Make backup lot suitable as a shop lot
+    const backupLot = state.buildingLots.find((l) => l.id === 'lot-business-1')!
+    backupLot.suitableTypes = 'SALES_SHOP,COMMERCIAL'
+
+    // Re-run wizard as authenticated user using the SECOND factory lot and backup shop lot
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Shop Conflict Corp 2')
+    await page.getByRole('button', { name: 'List View' }).click()
+    // Use the second factory lot (the first is now owned by the company from the first attempt)
+    await page.getByRole('button', { name: /Industrial Plot A2/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    // Choose the alternative lot instead of the taken one
+    await page.getByRole('button', { name: /Innovation Campus Office/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Empire launched with the alternative lots
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    expect(state.currentUserId).toBeTruthy()
+  })
+})
