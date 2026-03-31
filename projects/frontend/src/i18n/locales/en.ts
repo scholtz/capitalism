@@ -750,6 +750,8 @@ export default {
     placementGuidanceMediaHouse: 'Cultural and media district with high public visibility. A Media House here maximises reach and brand amplification.',
     placementGuidanceGeneric: 'This location supports the selected building type. Check population index and raw materials above to assess the full opportunity.',
     transportCostNote: 'Distance from your other buildings affects transport cost. Buildings closer together incur lower per-unit logistics overhead.',
+    coordinates: 'GPS Coordinates',
+    coordinatesHint: 'Coordinates are used for logistics and transit cost calculations between buildings.',
   },
   tickClock: {
     sectionTitle: 'World Clock',

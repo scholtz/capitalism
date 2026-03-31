@@ -749,6 +749,8 @@ export default {
     placementGuidanceMediaHouse: 'Kultúrna a mediálna štvrť s vysokou viditeľnosťou. Mediálny dom tu maximalizuje dosah.',
     placementGuidanceGeneric: 'Táto lokalita podporuje zvolený typ budovy. Skontrolujte index obyvateľstva a suroviny vyššie.',
     transportCostNote: 'Vzdialenosť od vašich ostatných budov ovplyvňuje náklady na dopravu. Budovy bližšie k sebe znižujú logistické náklady.',
+    coordinates: 'GPS súradnice',
+    coordinatesHint: 'Súradnice sa používajú na výpočet logistiky a prepravných nákladov medzi budovami.',
   },
   tickClock: {
     sectionTitle: 'Svetové hodiny',

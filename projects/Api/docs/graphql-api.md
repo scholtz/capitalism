@@ -118,29 +118,53 @@ Returns available industries for new player onboarding.
 ```
 
 ### `cityLots(cityId: UUID!)`
-Lists building lots for a city, including ownership and availability state.
+Lists building lots for a city, including ownership, availability state, population index, and raw material data. This query is public (no auth required).
 
 ```graphql
 query CityLots($cityId: UUID!) {
   cityLots(cityId: $cityId) {
-    id name description district latitude longitude price suitableTypes
+    id name description district
+    latitude longitude
+    populationIndex basePrice price
+    suitableTypes
     ownerCompanyId buildingId
     ownerCompany { id name }
     building { id name type }
+    resourceType { id name slug }
+    materialQuality
+    materialQuantity
   }
 }
 ```
 
+**Field descriptions:**
+| Field | Description |
+|-------|-------------|
+| `latitude` / `longitude` | GPS coordinates used for logistics and transit cost calculations |
+| `populationIndex` | Demand index (0.35–1.85): higher = stronger retail / public sales potential |
+| `basePrice` | Appraised land value before resource premium |
+| `price` | Asking price (may include resource premium for mining lots) |
+| `suitableTypes` | Comma-separated list of permitted building types (e.g. `"FACTORY,MINE"`) |
+| `resourceType` | Raw material available for mining; `null` if no deposit |
+| `materialQuality` | Deposit quality (0.0–1.0); `null` when no resource |
+| `materialQuantity` | Estimated extractable reserve in tonnes; `null` when no resource |
+
 ### `lot(id: UUID!)`
-Gets a single building lot by ID.
+Gets a single building lot by ID. Public query — no auth required.
 
 ```graphql
 query GetLot($id: UUID!) {
   lot(id: $id) {
-    id name description district latitude longitude price suitableTypes
+    id name description district
+    latitude longitude
+    populationIndex basePrice price
+    suitableTypes
     ownerCompanyId buildingId
     ownerCompany { id name }
     building { id name type }
+    resourceType { id name slug }
+    materialQuality
+    materialQuantity
   }
 }
 ```

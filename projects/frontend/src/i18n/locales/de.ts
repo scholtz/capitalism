@@ -754,6 +754,8 @@ export default {
     placementGuidanceMediaHouse: 'Kultur- und Medienbezirk mit hoher öffentlicher Sichtbarkeit. Ein Medienhaus maximiert hier Reichweite und Markenpräsenz.',
     placementGuidanceGeneric: 'Dieser Standort unterstützt den gewählten Gebäudetyp. Prüfen Sie Bevölkerungsindex und Rohstoffe für die vollständige Bewertung.',
     transportCostNote: 'Die Entfernung zu Ihren anderen Gebäuden beeinflusst die Transportkosten. Näher beieinanderliegende Gebäude verursachen geringere Logistikkosten.',
+    coordinates: 'GPS-Koordinaten',
+    coordinatesHint: 'Koordinaten werden für Logistik- und Transportkostenberechnungen zwischen Gebäuden verwendet.',
   },
   tickClock: {
     sectionTitle: 'Weltzeit',

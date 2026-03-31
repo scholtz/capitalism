@@ -573,6 +573,14 @@ watch(viewMode, async (mode) => {
                 </span>
               </div>
             </div>
+            <div class="detail-item full-width coordinates-item">
+              <span class="detail-label">{{ t('cityMap.coordinates') }}</span>
+              <span class="detail-value coordinates-value" data-testid="lot-coordinates">
+                {{ Math.abs(selectedLot.latitude).toFixed(5) }}°{{ selectedLot.latitude >= 0 ? 'N' : 'S' }},
+                {{ Math.abs(selectedLot.longitude).toFixed(5) }}°{{ selectedLot.longitude >= 0 ? 'E' : 'W' }}
+              </span>
+              <p class="coordinates-hint">{{ t('cityMap.coordinatesHint') }}</p>
+            </div>
           </div>
 
           <!-- Raw material deposit panel (shown for MINE-eligible lots with resource data) -->
@@ -1338,6 +1346,24 @@ watch(viewMode, async (mode) => {
   color: var(--color-text-secondary);
   line-height: 1.4;
   margin: 0;
+  font-style: italic;
+}
+
+.coordinates-item {
+  margin-top: 0.25rem;
+}
+
+.coordinates-value {
+  font-family: monospace;
+  font-size: 0.875rem;
+  letter-spacing: 0.02em;
+}
+
+.coordinates-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  margin: 0.25rem 0 0;
   font-style: italic;
 }
 

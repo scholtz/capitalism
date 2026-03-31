@@ -806,4 +806,28 @@ test.describe('City Map — invalid and stale selection paths', () => {
       detailPanel.getByText(/Distance from your other buildings/i, { exact: false }),
     ).toBeVisible()
   })
+
+  test('lot detail shows GPS coordinates for logistics context', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    // Industrial Plot A1 has latitude: 48.152, longitude: 17.125 in mock data
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    const detailPanel = page.getByRole('complementary')
+    // GPS coordinates section is visible
+    await expect(detailPanel.getByText('GPS Coordinates')).toBeVisible()
+    // Coordinate value matches the lot's actual lat/lon from mock data
+    const coordEl = detailPanel.getByTestId('lot-coordinates')
+    await expect(coordEl).toBeVisible()
+    await expect(coordEl).toContainText('48.15200°N')
+    await expect(coordEl).toContainText('17.12500°E')
+    // Logistics hint is shown
+    await expect(
+      detailPanel.getByText(/Coordinates are used for logistics/i, { exact: false }),
+    ).toBeVisible()
+  })
 })
+
