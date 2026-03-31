@@ -5903,6 +5903,150 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GlobalExchangeOffers_TwoCitiesHaveDifferentPricesOrQualityForSameResource()
+    {
+        // AC#7: exchange must demonstrate meaningful variation between at least two cities.
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var woodId = (await ExecuteGraphQlAsync("{ resourceTypes { id slug } }"))
+            .GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray().First(r => r.GetProperty("slug").GetString() == "wood")
+            .GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                cityName
+                exchangePricePerUnit
+                estimatedQuality
+                transitCostPerUnit
+                deliveredPricePerUnit
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId, resourceTypeId = woodId });
+
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers")
+            .EnumerateArray().ToList();
+
+        Assert.True(offers.Count >= 2, "Need at least 2 city offers to compare");
+
+        // At least two cities must differ in delivered price or quality, proving city differentiation.
+        var prices = offers.Select(o => o.GetProperty("deliveredPricePerUnit").GetDecimal()).Distinct().ToList();
+        var qualities = offers.Select(o => o.GetProperty("estimatedQuality").GetDecimal()).Distinct().ToList();
+
+        Assert.True(
+            prices.Count > 1 || qualities.Count > 1,
+            "At least two cities must have different delivered prices or quality for the same resource.");
+    }
+
+    [Fact]
+    public async Task GlobalExchangeOffers_CoversFurnitureInputResource_Wood()
+    {
+        // AC#10: backend tests cover starter-industry inputs for Furniture (Wood).
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var woodId = (await ExecuteGraphQlAsync("{ resourceTypes { id slug } }"))
+            .GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray().First(r => r.GetProperty("slug").GetString() == "wood")
+            .GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                resourceSlug
+                exchangePricePerUnit
+                deliveredPricePerUnit
+                estimatedQuality
+                transitCostPerUnit
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId, resourceTypeId = woodId });
+
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers").EnumerateArray().ToList();
+        Assert.True(offers.Count > 0, "Wood (Furniture input) must have exchange offers");
+        Assert.All(offers, o =>
+        {
+            Assert.Equal("wood", o.GetProperty("resourceSlug").GetString());
+            Assert.True(o.GetProperty("exchangePricePerUnit").GetDecimal() > 0m);
+            Assert.True(o.GetProperty("deliveredPricePerUnit").GetDecimal() >= o.GetProperty("exchangePricePerUnit").GetDecimal());
+            Assert.InRange(o.GetProperty("estimatedQuality").GetDecimal(), 0.35m, 0.95m);
+        });
+    }
+
+    [Fact]
+    public async Task GlobalExchangeOffers_CoversFoodProcessingInputResource_Grain()
+    {
+        // AC#10: backend tests cover starter-industry inputs for Food Processing (Grain).
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var grainId = (await ExecuteGraphQlAsync("{ resourceTypes { id slug } }"))
+            .GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray().First(r => r.GetProperty("slug").GetString() == "grain")
+            .GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                resourceSlug
+                exchangePricePerUnit
+                deliveredPricePerUnit
+                estimatedQuality
+                transitCostPerUnit
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId, resourceTypeId = grainId });
+
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers").EnumerateArray().ToList();
+        Assert.True(offers.Count > 0, "Grain (Food Processing input) must have exchange offers");
+        Assert.All(offers, o =>
+        {
+            Assert.Equal("grain", o.GetProperty("resourceSlug").GetString());
+            Assert.True(o.GetProperty("exchangePricePerUnit").GetDecimal() > 0m);
+            // Food Processing key validation: delivered price must always be reachable (null MaxPrice = no cap).
+            Assert.True(o.GetProperty("deliveredPricePerUnit").GetDecimal() > 0m);
+            Assert.InRange(o.GetProperty("estimatedQuality").GetDecimal(), 0.35m, 0.95m);
+        });
+    }
+
+    [Fact]
+    public async Task GlobalExchangeOffers_CoversHealthcareInputResource_ChemicalMinerals()
+    {
+        // AC#10: backend tests cover starter-industry inputs for Healthcare (Chemical Minerals).
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var chemId = (await ExecuteGraphQlAsync("{ resourceTypes { id slug } }"))
+            .GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray().First(r => r.GetProperty("slug").GetString() == "chemical-minerals")
+            .GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                resourceSlug
+                exchangePricePerUnit
+                deliveredPricePerUnit
+                estimatedQuality
+                transitCostPerUnit
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId, resourceTypeId = chemId });
+
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers").EnumerateArray().ToList();
+        Assert.True(offers.Count > 0, "Chemical Minerals (Healthcare input) must have exchange offers");
+        Assert.All(offers, o =>
+        {
+            Assert.Equal("chemical-minerals", o.GetProperty("resourceSlug").GetString());
+            Assert.True(o.GetProperty("exchangePricePerUnit").GetDecimal() > 0m);
+            Assert.True(o.GetProperty("deliveredPricePerUnit").GetDecimal() >= o.GetProperty("exchangePricePerUnit").GetDecimal());
+            Assert.InRange(o.GetProperty("estimatedQuality").GetDecimal(), 0.35m, 0.95m);
+        });
+    }
+
+    [Fact]
     public async Task StoreBuildingConfiguration_PurchaseUnit_PersistsExchangeSourceAndConstraints()
     {
         var email = $"exchange-cfg-{Guid.NewGuid():N}@test.com";

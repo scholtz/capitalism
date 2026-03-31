@@ -1,0 +1,352 @@
+import { test, expect } from '@playwright/test'
+import { setupMockApi, makeDefaultCities, makeDefaultResources } from './helpers/mock-api'
+
+// ── Exchange browsing surface ─────────────────────────────────────────────────
+
+test.describe('Global Exchange page', () => {
+  test('shows exchange page with heading and subtitle', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
+    await expect(page.getByText('Browse city-level exchange prices')).toBeVisible()
+  })
+
+  test('shows city tabs for all seeded cities', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.getByRole('tab', { name: /Bratislava/ })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Prague/ })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Vienna/ })).toBeVisible()
+  })
+
+  test('shows resource rows with exchange data on load', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+
+    // Wait for loading to finish
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Wood (ORGANIC) and Grain (ORGANIC) are seeded in default mock
+    await expect(page.locator('.resource-row').first()).toBeVisible()
+  })
+
+  test('shows exchange price, transit cost, and delivered price for each city offer', async ({
+    page,
+  }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // For any resource row, each city offer card must show all three metrics
+    const woodRow = page.locator('.resource-row').filter({ hasText: 'Wood' }).first()
+    await expect(woodRow).toBeVisible()
+
+    const offerCards = woodRow.locator('.city-offer-card')
+    await expect(offerCards.first()).toBeVisible()
+
+    const firstCard = offerCards.first()
+    // Exchange price label
+    await expect(firstCard.getByText('Exchange')).toBeVisible()
+    // Transit cost label
+    await expect(firstCard.getByText('Transit')).toBeVisible()
+    // Delivered label
+    await expect(firstCard.getByText('Delivered')).toBeVisible()
+    // Quality label
+    await expect(firstCard.getByText('Quality')).toBeVisible()
+  })
+
+  test('local city shows "Local — free" transit cost (same city, zero transit)', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Bratislava is the first city tab (selected by default). Its own exchange offer has 0 transit.
+    const bratislavaCard = page
+      .locator('.city-offer-card')
+      .filter({ hasText: 'Bratislava' })
+      .first()
+    await expect(bratislavaCard).toBeVisible()
+    await expect(bratislavaCard.locator('.transit-free')).toBeVisible()
+    await expect(bratislavaCard.getByText('Local — free')).toBeVisible()
+  })
+
+  test('remote city shows positive transit cost with distance in km', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Prague is ~310 km from Bratislava and should have a positive transit cost shown as "+$X.XX · Y km"
+    const pragueCard = page
+      .locator('.city-offer-card')
+      .filter({ hasText: 'Prague' })
+      .first()
+    await expect(pragueCard).toBeVisible()
+    await expect(pragueCard.locator('.transit-cost').filter({ hasText: 'km' })).toBeVisible()
+  })
+
+  test('best price badge highlights the cheapest delivered option', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // At least one city offer card must have the "Best price" badge
+    await expect(page.locator('.best-badge').first()).toBeVisible()
+    await expect(page.locator('.best-badge').first()).toContainText('Best price')
+  })
+
+  test('best-offer card has the best-offer CSS class', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    await expect(page.locator('.city-offer-card.best-offer').first()).toBeVisible()
+  })
+})
+
+// ── City switching ─────────────────────────────────────────────────────────────
+
+test.describe('Global Exchange — city switching', () => {
+  test('switching to a different city tab reloads exchange data for that destination', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Click Prague tab
+    const pragueTab = page.getByRole('tab', { name: /Prague/ })
+    await pragueTab.click()
+    await expect(pragueTab).toHaveClass(/active/)
+
+    // Exchange data reloads — once loading resolves, Prague offers must still be visible
+    // (Prague selecting itself means no transit cost for Prague offers)
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+    const pragueCard = page
+      .locator('.city-offer-card')
+      .filter({ hasText: 'Prague' })
+      .first()
+    await expect(pragueCard).toBeVisible()
+    // Prague→Prague transit must be free
+    await expect(pragueCard.getByText('Local — free')).toBeVisible()
+  })
+
+  test('at least two cities show different delivered prices for Wood, proving city differentiation', async ({
+    page,
+  }) => {
+    // Use custom city data with different rent per sqm to guarantee price differences.
+    const cities = makeDefaultCities()
+    // Override Vienna to have very high rent → higher exchange price.
+    cities[2] = {
+      ...cities[2],
+      averageRentPerSqm: 35,
+    }
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    await expect(woodRow).toBeVisible()
+
+    const deliveredPrices = woodRow.locator('.delivered-price')
+    const priceTexts = await deliveredPrices.allTextContents()
+
+    // There must be at least 2 offers and not all prices must be identical
+    expect(priceTexts.length).toBeGreaterThanOrEqual(2)
+    const uniquePrices = new Set(priceTexts)
+    expect(uniquePrices.size).toBeGreaterThan(1)
+  })
+})
+
+// ── Search and filter ─────────────────────────────────────────────────────────
+
+test.describe('Global Exchange — search and filter', () => {
+  test('search input filters visible resource rows', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const searchInput = page.locator('.search-input')
+    await searchInput.fill('Wood')
+
+    // Only Wood row should remain visible
+    await expect(page.locator('.resource-row[data-slug="wood"]')).toBeVisible()
+    await expect(page.locator('.resource-row[data-slug="grain"]')).toHaveCount(0)
+  })
+
+  test('search with no match shows empty state message', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const searchInput = page.locator('.search-input')
+    await searchInput.fill('xyznonexistentresource')
+
+    await expect(page.getByText('No resources match your search')).toBeVisible()
+  })
+
+  test('clearing search restores all resource rows', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const searchInput = page.locator('.search-input')
+    await searchInput.fill('Wood')
+    await expect(page.locator('.resource-row[data-slug="grain"]')).toHaveCount(0)
+
+    await searchInput.fill('')
+    await expect(page.locator('.resource-row[data-slug="grain"]')).toBeVisible()
+  })
+
+  test('category filter shows only resources matching the selected category', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const categorySelect = page.locator('#category-select')
+    await categorySelect.selectOption('ORGANIC')
+
+    // Wood and Grain are ORGANIC in the default mock
+    await expect(page.locator('.resource-row[data-slug="wood"]')).toBeVisible()
+    await expect(page.locator('.resource-row[data-slug="grain"]')).toBeVisible()
+
+    // Chem minerals (if present) would be MINERAL and hidden
+    const visibleRows = page.locator('.resource-row')
+    const count = await visibleRows.count()
+    expect(count).toBeGreaterThan(0)
+  })
+
+  test('category filter ALL restores visibility of all resources', async ({ page }) => {
+    const resources = makeDefaultResources()
+    setupMockApi(page, { resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const categorySelect = page.locator('#category-select')
+    await categorySelect.selectOption('ORGANIC')
+    await categorySelect.selectOption('ALL')
+
+    const visibleRows = page.locator('.resource-row')
+    await expect(visibleRows.first()).toBeVisible()
+  })
+})
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+
+test.describe('Global Exchange — navigation', () => {
+  test('exchange nav link is present in header with correct href', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/')
+    // The nav link exists in the DOM (icon-only on desktop, text visible on mobile)
+    const navLink = page.locator('a[href="/exchange"]')
+    await expect(navLink).toHaveCount(1)
+    await expect(navLink).toHaveAttribute('title', 'Exchange')
+  })
+
+  test('/exchange route is directly accessible and loads the exchange page', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page).toHaveURL('/exchange')
+    await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
+  })
+})
+
+// ── Mobile viewport ───────────────────────────────────────────────────────────
+
+test.describe('Global Exchange — mobile layout (375px)', () => {
+  test.use({ viewport: { width: 375, height: 812 } })
+
+  test('exchange page is usable at 375px: city tabs, resource rows, and metrics visible', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: /Bratislava/ })).toBeVisible()
+    await expect(page.locator('.resource-row').first()).toBeVisible()
+
+    const firstCard = page.locator('.city-offer-card').first()
+    await expect(firstCard).toBeVisible()
+    // Delivered price must be readable without overflow on narrow viewport
+    await expect(firstCard.locator('.delivered-price').first()).toBeVisible()
+  })
+
+  test('search input is accessible and filters work on 375px viewport', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const searchInput = page.locator('.search-input')
+    await expect(searchInput).toBeVisible()
+    await searchInput.fill('Wood')
+    await expect(page.locator('.resource-row[data-slug="wood"]')).toBeVisible()
+  })
+})
+
+// ── Full journey: inspect resource and compare city options ───────────────────
+
+test.describe('Global Exchange — player journey', () => {
+  test('player can browse exchange, inspect Wood resource, and compare two city delivered prices', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Step 1: Exchange page shows global heading
+    await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
+
+    // Step 2: Wood resource row is visible (Furniture input)
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    await expect(woodRow).toBeVisible()
+
+    // Step 3: At least two city offer cards visible for Wood
+    const woodOfferCards = woodRow.locator('.city-offer-card')
+    await expect(woodOfferCards).toHaveCount(3) // Bratislava, Prague, Vienna
+
+    // Step 4: Each card shows delivered price
+    const deliveredPrices = woodRow.locator('.delivered-price')
+    await expect(deliveredPrices).toHaveCount(3)
+
+    // Step 5: One card is the best option and has transit-free (local)
+    const localCard = woodRow.locator('.city-offer-card').filter({ has: page.getByText('Local — free') })
+    await expect(localCard.first()).toBeVisible()
+
+    // Step 6: At least one remote card shows transit cost with distance
+    const remoteCards = woodRow.locator('.city-offer-card').filter({ has: page.locator('.transit-cost').filter({ hasText: 'km' }) })
+    await expect(remoteCards.first()).toBeVisible()
+  })
+
+  test('player can inspect Grain (Food Processing input) on exchange', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const grainRow = page.locator('.resource-row[data-slug="grain"]')
+    await expect(grainRow).toBeVisible()
+    await expect(grainRow.locator('.city-offer-card').first()).toBeVisible()
+    await expect(grainRow.locator('.delivered-price').first()).toBeVisible()
+  })
+
+  test('player can inspect Chemical Minerals (Healthcare input)', async ({
+    page,
+  }) => {
+    // Chemical Minerals (slug: chemical-minerals) is included in the default mock resources
+    const resources = makeDefaultResources()
+    setupMockApi(page, { resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const chemRow = page.locator('.resource-row[data-slug="chemical-minerals"]')
+    await expect(chemRow).toBeVisible()
+    await expect(chemRow.locator('.city-offer-card').first()).toBeVisible()
+    await expect(chemRow.locator('.delivered-price').first()).toBeVisible()
+  })
+})

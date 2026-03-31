@@ -51,6 +51,9 @@ const closeMenu = () => {
         <RouterLink to="/encyclopedia" :title="t('nav.encyclopedia')" @click="closeMenu">
           <font-awesome-icon :icon="['fas', 'book']" class="mr-2" /> <span class="inline-block md:hidden">{{ t('nav.encyclopedia') }}</span>
         </RouterLink>
+        <RouterLink to="/exchange" :title="t('nav.exchange')" @click="closeMenu">
+          <font-awesome-icon :icon="['fas', 'chart-bar']" class="mr-2" /> <span class="inline-block md:hidden">{{ t('nav.exchange') }}</span>
+        </RouterLink>
       </nav>
       <div class="header-actions">
         <div v-if="gameState && formattedGameTime" class="game-time-chip" :title="t('nav.gameTime')">
