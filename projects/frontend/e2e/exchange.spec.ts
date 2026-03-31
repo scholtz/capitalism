@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { setupMockApi, makeDefaultCities, makeDefaultResources } from './helpers/mock-api'
+import { setupMockApi, makeDefaultCities, makeDefaultResources, makePlayer } from './helpers/mock-api'
 
 // ── Exchange browsing surface ─────────────────────────────────────────────────
 
@@ -365,5 +365,210 @@ test.describe('Global Exchange — player journey', () => {
     await expect(chemRow).toBeVisible()
     await expect(chemRow.locator('.city-offer-card').first()).toBeVisible()
     await expect(chemRow.locator('.delivered-price').first()).toBeVisible()
+  })
+})
+
+// ── Authenticated player post-onboarding discovery ────────────────────────────
+
+test.describe('Global Exchange — authenticated player discovery', () => {
+  test('authenticated player can access exchange post-onboarding', async ({ page }) => {
+    const player = makePlayer({ onboardingCompletedAtUtc: '2026-01-01T00:00:00Z' })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    // Post-onboarding player navigates directly to exchange
+    await page.goto('/exchange')
+    await expect(page).toHaveURL('/exchange')
+    await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
+
+    // Exchange must load resources for sourcing decisions
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+    await expect(page.locator('.resource-row').first()).toBeVisible()
+  })
+
+  test('exchange nav link exists in header with correct title for discovery', async ({ page }) => {
+    const player = makePlayer({ onboardingCompletedAtUtc: '2026-01-01T00:00:00Z' })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto('/')
+
+    // The exchange nav link must exist for players to discover the market
+    const exchangeNavLink = page.locator('a[href="/exchange"]')
+    await expect(exchangeNavLink).toHaveCount(1)
+    await expect(exchangeNavLink).toHaveAttribute('title', 'Exchange')
+  })
+
+  test('unauthenticated player can also browse exchange (public access)', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    // Exchange is public — no auth redirect expected
+    await expect(page).toHaveURL('/exchange')
+    await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+    await expect(page.locator('.resource-row').first()).toBeVisible()
+  })
+})
+
+// ── Error states ──────────────────────────────────────────────────────────────
+
+test.describe('Global Exchange — error and empty states', () => {
+  test('exchange shows explicit error state when API returns an error', async ({ page }) => {
+    // Override the mock to return a GraphQL error for globalExchangeOffers
+    setupMockApi(page)
+
+    await page.route('**/graphql', async (route) => {
+      const body = route.request().postDataJSON()
+      if (typeof body?.query === 'string' && body.query.includes('globalExchangeOffers')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            errors: [{ message: 'Exchange service temporarily unavailable' }],
+            data: null,
+          }),
+        })
+        return
+      }
+      await route.continue()
+    })
+
+    await page.goto('/exchange')
+    // Error message must be shown — not silent failure
+    await expect(page.locator('.exchange-error')).toBeVisible()
+  })
+
+  test('empty resource list shows no-match message when all resources are filtered out', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const searchInput = page.locator('.search-input')
+    await searchInput.fill('zzz_no_match_ever_999')
+
+    await expect(page.getByText('No resources match your search')).toBeVisible()
+    // Resource rows must be gone
+    await expect(page.locator('.resource-row')).toHaveCount(0)
+  })
+})
+
+// ── Quality and abundance display ─────────────────────────────────────────────
+
+test.describe('Global Exchange — quality and abundance data', () => {
+  test('exchange cards show local abundance percentage for each city offer', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Each city offer card must expose a local abundance metric
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    await expect(woodRow).toBeVisible()
+
+    const firstCard = woodRow.locator('.city-offer-card').first()
+    // Abundance label must appear in the offer card
+    await expect(firstCard.getByText('Local abundance')).toBeVisible()
+    // Abundance value must be a percentage string (e.g. "70%")
+    const abundanceValue = firstCard.locator('.metric-value').last()
+    await expect(abundanceValue).toContainText('%')
+  })
+
+  test('high-abundance resource has higher quality than low-abundance resource in same city', async ({
+    page,
+  }) => {
+    // Bratislava: Wood abundance=0.7 → quality ≈77%; ChemMinerals abundance=0.3 → quality ≈53%
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Get Bratislava quality for Wood (high abundance)
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    const braWoodCard = woodRow.locator('.city-offer-card').filter({ hasText: 'Bratislava' })
+    const woodQualityText = await braWoodCard.locator('.quality-value').textContent()
+
+    // Get Bratislava quality for Chemical Minerals (low abundance)
+    const chemRow = page.locator('.resource-row[data-slug="chemical-minerals"]')
+    const braChemCard = chemRow.locator('.city-offer-card').filter({ hasText: 'Bratislava' })
+    const chemQualityText = await braChemCard.locator('.quality-value').textContent()
+
+    const woodQuality = parseInt(woodQualityText?.replace('%', '') ?? '0', 10)
+    const chemQuality = parseInt(chemQualityText?.replace('%', '') ?? '0', 10)
+
+    // Wood (0.7 abundance) must have higher quality than ChemMinerals (0.3 abundance)
+    expect(woodQuality).toBeGreaterThan(chemQuality)
+  })
+
+  test('best-offer card selected by delivered price, not just exchange price', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    const bestCard = woodRow.locator('.city-offer-card.best-offer')
+    await expect(bestCard).toBeVisible()
+
+    // The best card must show the "Best price" badge
+    await expect(bestCard.locator('.best-badge')).toBeVisible()
+
+    // Best card's delivered price must not be higher than any other card's delivered price
+    const allDeliveredPrices = woodRow.locator('.delivered-price')
+    const priceTexts = await allDeliveredPrices.allTextContents()
+    const bestDeliveredText = await bestCard.locator('.delivered-price').textContent()
+    const bestDelivered = parseFloat(bestDeliveredText?.replace('$', '').split('/')[0] ?? '999')
+
+    for (const priceText of priceTexts) {
+      const price = parseFloat(priceText.replace('$', '').split('/')[0])
+      expect(bestDelivered).toBeLessThanOrEqual(price)
+    }
+  })
+})
+
+// ── Post-onboarding exchange CTA ──────────────────────────────────────────────
+
+test.describe('Global Exchange — post-onboarding context', () => {
+  test('player who just completed onboarding can access exchange immediately', async ({ page }) => {
+    const player = makePlayer({ onboardingCompletedAtUtc: '2026-01-01T00:00:00Z' })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    // Navigate directly to exchange after onboarding
+    await page.goto('/exchange')
+    await expect(page).toHaveURL('/exchange')
+    await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
+
+    // Exchange must load resources for sourcing decisions
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+    await expect(page.locator('.resource-row').first()).toBeVisible()
+
+    // Endless supply indicator confirms unlimited sourcing availability
+    await expect(page.locator('.exchange-supply-chip')).toBeVisible()
+  })
+
+  test('exchange subtitle explains sourcing purpose clearly', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+
+    // Subtitle should communicate price comparison and sourcing decision purpose
+    await expect(page.getByText('Browse city-level exchange prices')).toBeVisible()
   })
 })

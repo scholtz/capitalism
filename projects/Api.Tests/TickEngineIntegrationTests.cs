@@ -1552,6 +1552,64 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
     }
 
     [Fact]
+    public async Task PurchasingPhase_GlobalExchange_FillsInventory_ForGrain_FoodProcessingIndustry()
+    {
+        // AC coverage: All 3 starter industries should be able to source their raw input from the global exchange.
+        // Grain is the Food Processing raw material input (BasePrice=5, abundance=0.6 in Bratislava).
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var (companyId, _, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "EXCHANGE", resourceSlug: "grain");
+
+        var company = await db.Companies.FindAsync(companyId);
+        var cashBefore = company!.Cash;
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId)
+            .ToListAsync();
+
+        Assert.NotEmpty(inventory);
+        Assert.True(inventory.Sum(i => i.Quantity) > 0m,
+            "Food Processing (Grain) purchase unit should fill inventory from global exchange.");
+        Assert.True(company.Cash < cashBefore,
+            "Company cash should decrease after purchasing Grain from global exchange.");
+        Assert.All(inventory, inv => Assert.InRange(inv.Quality, 0.35m, 0.95m));
+    }
+
+    [Fact]
+    public async Task PurchasingPhase_GlobalExchange_FillsInventory_ForChemicalMinerals_HealthcareIndustry()
+    {
+        // AC coverage: All 3 starter industries should be able to source their raw input from the global exchange.
+        // Chemical Minerals is the Healthcare raw material input (BasePrice=30, abundance=0.3 in Bratislava).
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var (companyId, _, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "EXCHANGE", resourceSlug: "chemical-minerals");
+
+        var company = await db.Companies.FindAsync(companyId);
+        var cashBefore = company!.Cash;
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId)
+            .ToListAsync();
+
+        Assert.NotEmpty(inventory);
+        Assert.True(inventory.Sum(i => i.Quantity) > 0m,
+            "Healthcare (Chemical Minerals) purchase unit should fill inventory from global exchange.");
+        Assert.True(company.Cash < cashBefore,
+            "Company cash should decrease after purchasing Chemical Minerals from global exchange.");
+        Assert.All(inventory, inv => Assert.InRange(inv.Quality, 0.35m, 0.95m));
+    }
+
+    [Fact]
     public async Task ManufacturingPhase_CarriesConsumedSourcingCostsIntoOutputInventory()
     {
         await using var scope = _factory.Services.CreateAsyncScope();

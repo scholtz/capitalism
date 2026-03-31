@@ -6090,6 +6090,119 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GlobalExchangeOffers_SeedAbundance_ProducesHigherQualityForHighAbundanceResource()
+    {
+        // Bratislava seed: Wood abundance=0.7 → quality ≈0.77; ChemMinerals abundance=0.3 → quality ≈0.53
+        // This test validates the ROADMAP requirement: "each city has different resource pricing and quality".
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var resourceIds = await ExecuteGraphQlAsync("{ resourceTypes { id slug } }");
+        var slugToId = resourceIds.GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray()
+            .ToDictionary(
+                r => r.GetProperty("slug").GetString()!,
+                r => r.GetProperty("id").GetString()!);
+
+        // Fetch Wood offers for Bratislava
+        var woodResult = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                cityName estimatedQuality localAbundance
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId, resourceTypeId = slugToId["wood"] });
+        var braWoodQuality = woodResult.GetProperty("data").GetProperty("globalExchangeOffers")
+            .EnumerateArray()
+            .First(o => o.GetProperty("cityName").GetString() == "Bratislava")
+            .GetProperty("estimatedQuality").GetDecimal();
+
+        // Fetch ChemMinerals offers for Bratislava
+        var chemResult = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                cityName estimatedQuality localAbundance
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId, resourceTypeId = slugToId["chemical-minerals"] });
+        var braChemQuality = chemResult.GetProperty("data").GetProperty("globalExchangeOffers")
+            .EnumerateArray()
+            .First(o => o.GetProperty("cityName").GetString() == "Bratislava")
+            .GetProperty("estimatedQuality").GetDecimal();
+
+        // Wood (0.7 abundance) must have higher quality than ChemMinerals (0.3 abundance)
+        Assert.True(braWoodQuality > braChemQuality,
+            $"Bratislava Wood quality ({braWoodQuality}) must exceed ChemMinerals quality ({braChemQuality}) due to higher seed abundance.");
+    }
+
+    [Fact]
+    public async Task GlobalExchangeOffers_AllEightSeedResourceSlugsPresent_InExchangeListings()
+    {
+        // All 8 seeded raw-material resource types must appear in the global exchange listings.
+        // This validates the ROADMAP "never ending resource sale for every resource".
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!) {
+              globalExchangeOffers(destinationCityId: $destinationCityId) {
+                resourceSlug cityName
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId });
+
+        var slugsInOffers = result.GetProperty("data").GetProperty("globalExchangeOffers")
+            .EnumerateArray()
+            .Select(o => o.GetProperty("resourceSlug").GetString())
+            .Distinct()
+            .ToHashSet();
+
+        var expectedSlugs = new[] { "wood", "iron-ore", "coal", "gold", "chemical-minerals", "cotton", "grain", "silicon" };
+        foreach (var slug in expectedSlugs)
+        {
+            Assert.Contains(slug, slugsInOffers);
+        }
+        Assert.Equal(8, slugsInOffers.Count);
+    }
+
+    [Fact]
+    public async Task GlobalExchangeOffers_PriceReflectsCityRentMultiplier()
+    {
+        // Cities with different AverageRentPerSqm must produce different exchange prices for the same resource.
+        // Bratislava (AverageRentPerSqm=14) vs Vienna (AverageRentPerSqm=20) — different prices expected.
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var resourceIds = await ExecuteGraphQlAsync("{ resourceTypes { id slug } }");
+        var woodId = resourceIds.GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray()
+            .First(r => r.GetProperty("slug").GetString() == "wood")
+            .GetProperty("id").GetString()!;
+
+        // Query with Bratislava as destination — returns offers from all source cities
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+              globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                cityName exchangePricePerUnit transitCostPerUnit deliveredPricePerUnit
+              }
+            }
+            """,
+            new { destinationCityId = bratislavaId, resourceTypeId = woodId });
+
+        var offers = result.GetProperty("data").GetProperty("globalExchangeOffers")
+            .EnumerateArray().ToList();
+
+        Assert.True(offers.Count >= 2, "Must have at least 2 city offers to compare prices");
+
+        // Exchange prices must not all be identical — city rent multiplier drives differentiation
+        var exchangePrices = offers.Select(o => o.GetProperty("exchangePricePerUnit").GetDecimal()).Distinct().ToList();
+        Assert.True(exchangePrices.Count > 1,
+            "Different cities must produce different exchange prices for the same resource (city rent multiplier).");
+    }
+
+    [Fact]
     public async Task StoreBuildingConfiguration_PurchaseUnit_PersistsExchangeSourceAndConstraints()
     {
         var email = $"exchange-cfg-{Guid.NewGuid():N}@test.com";

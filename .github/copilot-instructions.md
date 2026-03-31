@@ -520,3 +520,18 @@ Root-cause of a quality failure (March 2026, PR #109):
 2. **Always add an E2E test for mobile viewport** (375px wide) when the ROADMAP or issue specifies that mobile/tablet layouts must be supported. The test should navigate to the key screen, interact with search/filter, and confirm relationship data is visible without horizontal overflow.
 3. **When a backend test uses `slug: "wood"` as the only example, it is not sufficient for ROADMAP alignment.** Add parallel tests for `grain` and `chemical-minerals` slugs to prove all starter industry chains are queryable.
 4. **The quality bar for "done" on a discovery feature is**: all starter industry chains are navigable (resource detail → downstream product detail) in both E2E and backend tests, mobile viewport is covered, and all 8 resource slugs are verified as present.
+
+## Exchange / market feature quality — cross-industry tick-engine coverage required
+
+Root-cause of a quality gap (March 2026, PR #115 city global exchange):
+- The exchange feature was already implemented on `main`. The initial agent session pushed only an "Initial plan" commit with NO code changes.
+- The agent correctly identified the implementation existed but failed to add meaningful new coverage: per-industry tick-engine tests for Grain (Food Processing) and Chemical Minerals (Healthcare) exchange purchasing were missing.
+- Backend tests only verified Wood purchasing from exchange; the other two starter industries had no tick-engine exchange tests.
+- E2E tests lacked: authenticated post-onboarding player discovery, error state visibility, abundance percentage display, quality-vs-abundance correlation, and best-offer selection by delivered price.
+
+**Rules to prevent recurrence:**
+1. **For any market or sourcing feature, add tick-engine tests for ALL three starter industries** (Wood/Furniture, Grain/Food Processing, Chemical Minerals/Healthcare). A single `resourceSlug: "wood"` test does not prove Grain or ChemMinerals work.
+2. **Always add E2E tests for**: authenticated player discovery (post-onboarding access), error state when API fails, data quality display (abundance/quality percentages), and city-level differentiation proofs.
+3. **Verify all 8 seed resource slugs appear in exchange listings** via a dedicated backend test — not just the 3 starter industry inputs.
+4. **Exchange quality must be tested against seed abundance data** — higher abundance resources (Wood at 0.7) must produce higher quality than lower abundance resources (ChemMinerals at 0.3) in the same city.
+5. **When the diff vs main is empty, do not report "done".** Instead, run targeted tests by feature area to find gaps, add tests for every missing variant, and only report done after new tests are committed and pass.
