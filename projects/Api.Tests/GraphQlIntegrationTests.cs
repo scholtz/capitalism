@@ -763,6 +763,31 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task ResourceTypes_AllHaveUniqueNonNullImageUrls()
+    {
+        // ROADMAP: "Every resource must have unique picture."
+        var result = await ExecuteGraphQlAsync(
+            "{ resourceTypes { slug imageUrl } }");
+
+        var resources = result.GetProperty("data").GetProperty("resourceTypes");
+        Assert.True(resources.GetArrayLength() >= 8);
+
+        var imageUrls = resources.EnumerateArray()
+            .Select(r => r.GetProperty("imageUrl").GetString())
+            .ToList();
+
+        // Every resource must have a non-empty image
+        foreach (var url in imageUrls)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(url), "A resource has a null or empty imageUrl");
+        }
+
+        // Every image URL must be unique (no two resources share the same picture)
+        var distinctCount = imageUrls.Distinct().Count();
+        Assert.Equal(imageUrls.Count, distinctCount);
+    }
+
+    [Fact]
     public async Task EncyclopediaResource_BySlug_ReturnsResourceWithMetadata()
     {
         var result = await ExecuteGraphQlAsync(
