@@ -493,3 +493,17 @@ Root-cause of a gap (March 2026, PR #107):
 2. **When the configure-guide or wizard teaches a price/margin concept, assert the concrete numeric value for each industry** — not just that "some price" is shown.
 3. **Backend `FinishOnboarding` result must include `selectedProduct.basePrice`** so the frontend configure-guide can show the industry-specific benchmark. Test this with a dedicated backend test covering all 3 industries.
 4. **For any ROADMAP teaching moment** (price configuration, tick explanation, cash display), add both a backend test validating the data is returned and an E2E test validating the data is displayed.
+
+## Encyclopedia / discovery-layer quality — cover all industry chains end-to-end
+
+Root-cause of a quality failure (March 2026, PR #109):
+- The manufacturing encyclopedia feature was already implemented on `main`. The agent verified all 240 E2E tests and 236 backend tests passed but did not add missing cross-industry coverage.
+- Existing backend tests covered only Wood (Furniture) and Silicon (Electronics) chains. No tests for Grain→Bread (Food Processing) or Chemical Minerals→Basic Medicine (Healthcare) chains existed.
+- Existing E2E tests covered only the Wood/Furniture chain for the "discovery journey" and lacked Food Processing and Healthcare journey tests and mobile viewport coverage.
+- The ROADMAP explicitly requires ALL production combinations to be visible. "All combinations" means every industry chain, not just the first one tested.
+
+**Rules to prevent recurrence:**
+1. **For any encyclopedia, catalog, or discovery feature: add backend and E2E tests for EVERY industry chain**, not just the first one you verify. Specifically for the starter industries: FURNITURE (Wood→Wooden Chair), FOOD_PROCESSING (Grain→Bread), and HEALTHCARE (Chemical Minerals→Basic Medicine).
+2. **Always add an E2E test for mobile viewport** (375px wide) when the ROADMAP or issue specifies that mobile/tablet layouts must be supported. The test should navigate to the key screen, interact with search/filter, and confirm relationship data is visible without horizontal overflow.
+3. **When a backend test uses `slug: "wood"` as the only example, it is not sufficient for ROADMAP alignment.** Add parallel tests for `grain` and `chemical-minerals` slugs to prove all starter industry chains are queryable.
+4. **The quality bar for "done" on a discovery feature is**: all starter industry chains are navigable (resource detail → downstream product detail) in both E2E and backend tests, mobile viewport is covered, and all 8 resource slugs are verified as present.

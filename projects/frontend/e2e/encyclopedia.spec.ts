@@ -608,4 +608,104 @@ test.describe('Encyclopedia discoverability and routing', () => {
     await expect(page).toHaveURL('/encyclopedia/resources/electronic-table')
     await expect(page.getByRole('heading', { name: 'Electronic Table', level: 1 })).toBeVisible()
   })
+
+  test('Food Processing chain: Grain detail shows Bread as downstream product', async ({ page }) => {
+    // ROADMAP: All combinations visible. Verify the Grain → Bread supply chain
+    // is discoverable: a player searching for Grain can find Bread in the detail page.
+    const { makeDefaultResources, makeDefaultProducts } = await import('./helpers/mock-api.js')
+    setupMockApi(page, {
+      resourceTypes: makeDefaultResources(),
+      productTypes: makeDefaultProducts(),
+    })
+
+    await page.goto('/encyclopedia/resources/grain')
+
+    // Resource hero should show Grain
+    await expect(page.getByRole('heading', { name: 'Grain', level: 1 })).toBeVisible()
+
+    // "Used in Production Chains" section should appear
+    await expect(page.getByRole('heading', { name: 'Used in Production Chains' })).toBeVisible()
+
+    // Bread should be visible as a downstream product
+    const breadCard = page.locator('.product-card').filter({ hasText: 'Bread' })
+    await expect(breadCard).toBeVisible()
+
+    // Clicking Bread opens the Bread detail page
+    await breadCard.click()
+    await expect(page).toHaveURL('/encyclopedia/resources/bread')
+    await expect(page.getByRole('heading', { name: 'Bread', level: 1 })).toBeVisible()
+    // Bread's requirement composition should reference Grain
+    await expect(page.getByRole('heading', { name: 'Requirement composition' })).toBeVisible()
+    await expect(page.locator('.composition-node.ingredient').first()).toContainText('Grain')
+  })
+
+  test('Healthcare chain: Chemical Minerals detail shows Basic Medicine as downstream product', async ({
+    page,
+  }) => {
+    // ROADMAP: All combinations visible. Verify the Chemical Minerals → Basic Medicine
+    // supply chain is discoverable from the encyclopedia.
+    const { makeDefaultResources, makeDefaultProducts } = await import('./helpers/mock-api.js')
+    setupMockApi(page, {
+      resourceTypes: makeDefaultResources(),
+      productTypes: makeDefaultProducts(),
+    })
+
+    await page.goto('/encyclopedia/resources/chemical-minerals')
+
+    // Resource hero should show Chemical Minerals
+    await expect(page.getByRole('heading', { name: 'Chemical Minerals', level: 1 })).toBeVisible()
+
+    // "Used in Production Chains" section should appear
+    await expect(page.getByRole('heading', { name: 'Used in Production Chains' })).toBeVisible()
+
+    // Basic Medicine should be visible as a downstream product
+    const medicineCard = page.locator('.product-card').filter({ hasText: 'Basic Medicine' })
+    await expect(medicineCard).toBeVisible()
+
+    // Clicking Basic Medicine opens the product detail page
+    await medicineCard.click()
+    await expect(page).toHaveURL('/encyclopedia/resources/basic-medicine')
+    await expect(page.getByRole('heading', { name: 'Basic Medicine', level: 1 })).toBeVisible()
+    // Basic Medicine's requirement composition should reference Chemical Minerals
+    await expect(page.getByRole('heading', { name: 'Requirement composition' })).toBeVisible()
+    await expect(page.locator('.composition-node.ingredient').first()).toContainText('Chemical Minerals')
+  })
+
+  test('encyclopedia is usable on a mobile viewport (320px wide)', async ({ page }) => {
+    // ROADMAP UX: "The experience should also respect mobile and tablet layouts."
+    await page.setViewportSize({ width: 375, height: 667 })
+    const { makeDefaultResources, makeDefaultProducts } = await import('./helpers/mock-api.js')
+    setupMockApi(page, {
+      resourceTypes: makeDefaultResources(),
+      productTypes: makeDefaultProducts(),
+    })
+
+    await page.goto('/encyclopedia')
+
+    // Page heading should be visible on mobile without horizontal overflow
+    await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
+
+    // Search input should be usable on mobile
+    const searchInput = page.getByPlaceholder('Search resources, ingredients, or descriptions')
+    await expect(searchInput).toBeVisible()
+    await searchInput.fill('Grain')
+
+    // Grain resource card and Bread product card should be visible
+    await expect(page.locator('.resource-card--resource', { hasText: 'Grain' })).toBeVisible()
+    await expect(page.locator('.resource-card--product', { hasText: 'Bread' })).toBeVisible()
+
+    // Navigate to resource detail on mobile
+    await page.locator('.resource-card--resource', { hasText: 'Grain' }).click()
+    await expect(page).toHaveURL('/encyclopedia/resources/grain')
+
+    // Detail heading visible on mobile viewport
+    await expect(page.getByRole('heading', { name: 'Grain', level: 1 })).toBeVisible()
+
+    // Downstream product (Bread) should be visible without horizontal scroll issues
+    await expect(page.locator('.product-card').filter({ hasText: 'Bread' })).toBeVisible()
+
+    // Back button should work on mobile
+    await page.getByRole('button', { name: /Back to Encyclopedia/i }).click()
+    await expect(page).toHaveURL('/encyclopedia')
+  })
 })

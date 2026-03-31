@@ -1113,6 +1113,203 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         }
     }
 
+    [Fact]
+    public async Task EncyclopediaResource_GrainHasDownstreamFoodProcessingProducts()
+    {
+        // ROADMAP: All combinations must be visible. Grain is the cornerstone raw material
+        // for FOOD_PROCESSING. Verify the encyclopedia detail for grain links to food products
+        // so a player can discover the Bread supply chain.
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              encyclopediaResource(slug: "grain") {
+                resource { slug category }
+                productsUsingResource { slug industry }
+              }
+            }
+            """);
+
+        var detail = result.GetProperty("data").GetProperty("encyclopediaResource");
+        Assert.False(detail.ValueKind == System.Text.Json.JsonValueKind.Null,
+            "grain resource should exist in the encyclopedia.");
+
+        var resource = detail.GetProperty("resource");
+        Assert.Equal("grain", resource.GetProperty("slug").GetString());
+        Assert.Equal("ORGANIC", resource.GetProperty("category").GetString());
+
+        var products = detail.GetProperty("productsUsingResource");
+        Assert.True(products.GetArrayLength() >= 1,
+            "Grain should be used by at least one FOOD_PROCESSING product (e.g. Bread, Flour).");
+
+        // Every product linked from the grain detail must actually belong to FOOD_PROCESSING
+        foreach (var product in products.EnumerateArray())
+        {
+            Assert.Equal("FOOD_PROCESSING", product.GetProperty("industry").GetString());
+        }
+
+        // Bread specifically must appear (it is the starter FOOD_PROCESSING product)
+        var hasBread = products.EnumerateArray()
+            .Any(p => p.GetProperty("slug").GetString() == "bread");
+        Assert.True(hasBread, "Bread must appear in the grain downstream products list.");
+    }
+
+    [Fact]
+    public async Task EncyclopediaResource_ChemicalMineralsHasDownstreamHealthcareProducts()
+    {
+        // ROADMAP: All combinations must be visible. Chemical Minerals is the cornerstone
+        // raw material for HEALTHCARE. Verify the encyclopedia detail links to medical products
+        // so a player can discover the Basic Medicine supply chain.
+        // Note: Chemical Minerals is also used by Battery Pack (ELECTRONICS), so the returned
+        // product list can include non-Healthcare products — we only assert Healthcare is present.
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              encyclopediaResource(slug: "chemical-minerals") {
+                resource { slug category }
+                productsUsingResource { slug industry }
+              }
+            }
+            """);
+
+        var detail = result.GetProperty("data").GetProperty("encyclopediaResource");
+        Assert.False(detail.ValueKind == System.Text.Json.JsonValueKind.Null,
+            "chemical-minerals resource should exist in the encyclopedia.");
+
+        var resource = detail.GetProperty("resource");
+        Assert.Equal("chemical-minerals", resource.GetProperty("slug").GetString());
+        Assert.Equal("MINERAL", resource.GetProperty("category").GetString());
+
+        var products = detail.GetProperty("productsUsingResource");
+        Assert.True(products.GetArrayLength() >= 1,
+            "Chemical Minerals should be used by at least one product (e.g. Basic Medicine).");
+
+        // Basic Medicine specifically must appear (it is the starter HEALTHCARE product)
+        var hasMedicine = products.EnumerateArray()
+            .Any(p => p.GetProperty("slug").GetString() == "basic-medicine");
+        Assert.True(hasMedicine, "Basic Medicine must appear in the chemical-minerals downstream products list.");
+
+        // At least one Healthcare product must appear
+        var hasHealthcareProduct = products.EnumerateArray()
+            .Any(p => p.GetProperty("industry").GetString() == "HEALTHCARE");
+        Assert.True(hasHealthcareProduct, "At least one HEALTHCARE product must be downstream of Chemical Minerals.");
+    }
+
+    [Fact]
+    public async Task ResourceTypes_AllEightCoreResourceSlugsPresent()
+    {
+        // ROADMAP: "Every resource must have unique picture." and the encyclopedia must cover
+        // the entire resource graph. Verify the 8 canonical seeded resources are all present.
+        var result = await ExecuteGraphQlAsync(
+            "{ resourceTypes { slug } }");
+
+        var resources = result.GetProperty("data").GetProperty("resourceTypes");
+        var slugs = resources.EnumerateArray()
+            .Select(r => r.GetProperty("slug").GetString()!)
+            .ToHashSet();
+
+        var expectedSlugs = new[]
+        {
+            "wood", "iron-ore", "coal", "gold",
+            "chemical-minerals", "cotton", "grain", "silicon"
+        };
+
+        foreach (var expected in expectedSlugs)
+        {
+            Assert.Contains(expected, slugs);
+        }
+    }
+
+    [Fact]
+    public async Task ProductTypes_FoodProcessingProductsHaveGrainBasedRecipes()
+    {
+        // ROADMAP: "All combination of products are visible." Verifies the Food Processing
+        // supply chain is connected to its raw material so the encyclopedia chain
+        // grain → Bread → sales shop makes sense.
+        // Note: Some FOOD_PROCESSING products use intermediate ingredients (e.g. bakery-premix
+        // uses Flour rather than Grain directly). We verify the starter product (Bread) uses
+        // Grain and that every product has at least one ingredient (raw or intermediate).
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              productTypes(industry: "FOOD_PROCESSING") {
+                slug
+                recipes {
+                  resourceType { slug }
+                  inputProductType { slug }
+                }
+              }
+            }
+            """);
+
+        var products = result.GetProperty("data").GetProperty("productTypes");
+        Assert.True(products.GetArrayLength() > 0, "FOOD_PROCESSING products must be seeded.");
+
+        // Every FOOD_PROCESSING product should have at least one recipe ingredient
+        foreach (var product in products.EnumerateArray())
+        {
+            var hasAnyIngredient = product.GetProperty("recipes").EnumerateArray()
+                .Any(r =>
+                    r.GetProperty("resourceType").ValueKind != System.Text.Json.JsonValueKind.Null ||
+                    r.GetProperty("inputProductType").ValueKind != System.Text.Json.JsonValueKind.Null);
+            Assert.True(hasAnyIngredient,
+                $"FOOD_PROCESSING product '{product.GetProperty("slug").GetString()}' has no recipe ingredients at all.");
+        }
+
+        // Bread (the starter product) must use Grain as a direct raw material
+        var bread = products.EnumerateArray().FirstOrDefault(p => p.GetProperty("slug").GetString() == "bread");
+        Assert.True(bread.ValueKind != System.Text.Json.JsonValueKind.Undefined, "Bread must be seeded as a FOOD_PROCESSING product.");
+        var breadUsesGrain = bread.GetProperty("recipes").EnumerateArray()
+            .Any(r => r.GetProperty("resourceType").ValueKind != System.Text.Json.JsonValueKind.Null
+                   && r.GetProperty("resourceType").GetProperty("slug").GetString() == "grain");
+        Assert.True(breadUsesGrain, "Bread must use Grain as a direct recipe ingredient.");
+    }
+
+    [Fact]
+    public async Task ProductTypes_HealthcareProductsHaveChemicalMineralsBasedRecipes()
+    {
+        // ROADMAP: "All combination of products are visible." Verifies the Healthcare
+        // supply chain is connected to its raw material so the encyclopedia chain
+        // chemical-minerals → Basic Medicine makes sense.
+        // Note: Some HEALTHCARE products use intermediate ingredients (e.g. first-aid-kit
+        // uses Bandages/Antiseptic/Cotton Swabs rather than Chemical Minerals directly).
+        // We verify the starter product (Basic Medicine) uses Chemical Minerals and that
+        // every product has at least one ingredient (raw or intermediate).
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              productTypes(industry: "HEALTHCARE") {
+                slug
+                recipes {
+                  resourceType { slug }
+                  inputProductType { slug }
+                }
+              }
+            }
+            """);
+
+        var products = result.GetProperty("data").GetProperty("productTypes");
+        Assert.True(products.GetArrayLength() > 0, "HEALTHCARE products must be seeded.");
+
+        // Every HEALTHCARE product must have at least one recipe ingredient (raw or intermediate)
+        foreach (var product in products.EnumerateArray())
+        {
+            var hasAnyIngredient = product.GetProperty("recipes").EnumerateArray()
+                .Any(r =>
+                    r.GetProperty("resourceType").ValueKind != System.Text.Json.JsonValueKind.Null ||
+                    r.GetProperty("inputProductType").ValueKind != System.Text.Json.JsonValueKind.Null);
+            Assert.True(hasAnyIngredient,
+                $"HEALTHCARE product '{product.GetProperty("slug").GetString()}' has no recipe ingredients at all.");
+        }
+
+        // Basic Medicine (the starter product) must use Chemical Minerals as a direct raw material
+        var medicine = products.EnumerateArray().FirstOrDefault(p => p.GetProperty("slug").GetString() == "basic-medicine");
+        Assert.True(medicine.ValueKind != System.Text.Json.JsonValueKind.Undefined, "Basic Medicine must be seeded as a HEALTHCARE product.");
+        var medicineUsesChemicals = medicine.GetProperty("recipes").EnumerateArray()
+            .Any(r => r.GetProperty("resourceType").ValueKind != System.Text.Json.JsonValueKind.Null
+                   && r.GetProperty("resourceType").GetProperty("slug").GetString() == "chemical-minerals");
+        Assert.True(medicineUsesChemicals, "Basic Medicine must use Chemical Minerals as a direct recipe ingredient.");
+    }
+
     #endregion
 
     #region Company Management
