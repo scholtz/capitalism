@@ -2735,3 +2735,97 @@ test.describe('Factory and shop layout display after completion', () => {
     await expect(shopPanel.locator('.unit-chain-icon')).toHaveCount(2)
   })
 })
+
+test.describe('Onboarding wizard progress bar accuracy (AC1 — visible step progress)', () => {
+  // AC: "Use a step-based structure with visible progress so the player knows how far they are from starting the business."
+  // ROADMAP: "Wizard will show them important areas on the screen."
+
+  test('progress bar marks step 1 as done when player advances to step 2', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // At step 1: first segment should be active but not done
+    const firstSegment = page.locator('.progress-segment').first()
+    await expect(firstSegment).toHaveClass(/active/)
+    await expect(firstSegment).not.toHaveClass(/done/)
+
+    // Select industry and advance
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // At step 2: first segment should now be done (shows ✓)
+    await expect(firstSegment).toHaveClass(/done/)
+    const doneIcon = firstSegment.locator('.check-icon')
+    await expect(doneIcon).toBeVisible()
+    await expect(doneIcon).toContainText('✓')
+
+    // Step 2 segment should now be active
+    const secondSegment = page.locator('.progress-segment').nth(1)
+    await expect(secondSegment).toHaveClass(/active/)
+    await expect(secondSegment).not.toHaveClass(/done/)
+  })
+
+  test('progress bar marks steps 1 and 2 as done when player reaches step 3', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: both segments 1 and 2 should be done
+    const firstSegment = page.locator('.progress-segment').first()
+    const secondSegment = page.locator('.progress-segment').nth(1)
+    const thirdSegment = page.locator('.progress-segment').nth(2)
+
+    await expect(firstSegment).toHaveClass(/done/)
+    await expect(secondSegment).toHaveClass(/done/)
+    await expect(thirdSegment).toHaveClass(/active/)
+    await expect(thirdSegment).not.toHaveClass(/done/)
+  })
+
+  test('progress bar is hidden on the completion step (step 5)', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Step 5 is the completion/save-progress screen — progress bar should not be shown
+    await expect(page.locator('.progress-bar')).toBeHidden()
+  })
+})
+
+test.describe('Guest registration error recovery (AC10 — resilience)', () => {
+  // AC10: "The flow handles conflicts and invalid guest outcomes gracefully."
+  // Specifically: a duplicate email during guest registration should show an inline error
+  // and let the player try again without losing their wizard progress.
+
+  test('duplicate email during guest registration shows error and player can retry with different email', async ({
+    page,
+  }) => {
+    const existingPlayer = makePlayer({ email: 'taken@test.com' })
+    const state = setupMockApi(page, { players: [existingPlayer] })
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Try to register with an email that already exists
+    await page.locator('#guestEmail').fill('taken@test.com')
+    await page.locator('#guestDisplayName').fill('Duplicate Hopeful')
+    await page.locator('#guestPassword').fill('TestPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Should show a duplicate-email error inline — NOT restart the wizard
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    const errorEl = page.locator('.error-message, .error-global, [role="alert"]').first()
+    await expect(errorEl).toBeVisible()
+    await expect(errorEl).toContainText(/already exists/i)
+
+    // Player should be able to correct their email and succeed
+    await page.locator('#guestEmail').fill('unique@test.com')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // After a successful registration the onboarding mutation runs — expect the launcher screen
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    expect(state.currentUserId).toBeTruthy()
+  })
+})

@@ -180,14 +180,17 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var lotsResult = await ExecuteGraphQlAsync(
             """
             query CityLots($cityId: UUID!) {
-              cityLots(cityId: $cityId) { id suitableTypes ownerCompanyId }
+              cityLots(cityId: $cityId) { id suitableTypes ownerCompanyId price }
             }
             """,
             new { cityId });
 
+        // Filter to affordable lots (price within starting cash of $500,000) so that test lots
+        // intentionally priced above the starting cash do not interfere with other tests.
         return lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
             .First(lot => lot.GetProperty("suitableTypes").GetString()!.Contains(suitableType)
-                          && lot.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null)
+                          && lot.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null
+                          && lot.GetProperty("price").GetDecimal() < 500_000m)
             .GetProperty("id")
             .GetString()!;
     }
@@ -4047,6 +4050,37 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         Assert.True(result.TryGetProperty("errors", out var errors));
         Assert.Contains("not suitable", errors[0].GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task StartOnboardingCompany_WhenFactoryLotCostsMoreThanStartingCash_Fails()
+    {
+        // ROADMAP: "The price to purchase the land includes also the base price for the raw material."
+        // Starting cash for a new onboarding company is $500,000. A factory lot priced above that
+        // should be rejected with INSUFFICIENT_FUNDS before the company is persisted.
+        var token = await RegisterAndGetTokenAsync($"onboard-map-broke-{Guid.NewGuid()}@test.com", "Broke Factory Player");
+        var cityId = await GetCityIdByNameAsync();
+        var expensiveLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 600_000m, "Expensive Factory Lot");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Broke Factory Co", factoryLotId = expensiveLotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("INSUFFICIENT_FUNDS", code);
+        Assert.Contains("600,000", errors[0].GetProperty("message").GetString());
+
+        // Onboarding should NOT be in progress since the mutation failed
+        var meResult = await ExecuteGraphQlAsync("{ me { onboardingCurrentStep onboardingCompanyId } }", token: token);
+        var me = meResult.GetProperty("data").GetProperty("me");
+        Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingCurrentStep").ValueKind);
+        Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingCompanyId").ValueKind);
     }
 
     [Fact]
