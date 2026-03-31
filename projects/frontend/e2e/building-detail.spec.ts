@@ -3130,6 +3130,154 @@ test.describe('Global exchange market', () => {
     // Bratislava must show $0 transit (same city as destination)
     await expect(bratislavaOffer.getByText(/Transit: \$0/)).toBeVisible()
   })
+
+  test('higher-quality offer is selected when min quality threshold excludes cheaper alternatives', async ({
+    page,
+  }) => {
+    // Scenario: Building is in Bratislava (destination city = same city = 0 transit).
+    //
+    // Bratislava: abundance 0.7 → quality 0.77, no transit, delivered ≈ $11.17/t
+    // Prague:     abundance 0.9 → quality 0.89, transit ≈ $3.88/t,  delivered ≈ $13.77/t
+    //
+    // With minQuality = 0.80:
+    //   Bratislava (CHEAPER at $11.17) is BLOCKED — quality 0.77 < minQuality 0.80
+    //   Prague (MORE EXPENSIVE at $13.77) PASSES — quality 0.89 > minQuality 0.80
+    //
+    // Proves: "cheaper alternative excluded by quality threshold, higher-quality offer selected."
+    const player = makePlayer()
+    const cities = [
+      {
+        id: 'city-ba',
+        name: 'Bratislava',
+        countryCode: 'SK',
+        latitude: 48.1486,
+        longitude: 17.1077,
+        population: 475000,
+        averageRentPerSqm: 14,
+        baseSalaryPerManhour: 18,
+        resources: [
+          // abundance 0.7 → quality = 0.77 → BLOCKED by minQuality 0.80
+          { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.7 },
+        ],
+      },
+      {
+        id: 'city-pr',
+        name: 'Prague',
+        countryCode: 'CZ',
+        latitude: 50.0755,
+        longitude: 14.4378,
+        population: 1350000,
+        averageRentPerSqm: 18,
+        baseSalaryPerManhour: 22,
+        resources: [
+          // abundance 0.9 → quality = 0.89 → PASSES minQuality 0.80, but transit adds cost
+          { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.9 },
+        ],
+      },
+    ]
+
+    player.companies.push({
+      id: 'company-qual-filter',
+      playerId: player.id,
+      name: 'Quality Filter Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-qual-filter',
+          companyId: 'company-qual-filter',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Quality Filter Factory',
+          latitude: 48.1486,
+          longitude: 17.1077,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-qual-filter',
+              buildingId: 'building-qual-filter',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              purchaseSource: 'EXCHANGE',
+              maxPrice: 9999,
+              // minQuality 0.80 blocks Bratislava (quality 0.77) but passes Prague (quality 0.89)
+              minQuality: 0.8,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.cities = cities as ReturnType<typeof makeDefaultCities>
+    state.resourceTypes = [
+      {
+        id: 'res-wood',
+        name: 'Wood',
+        slug: 'wood',
+        category: 'ORGANIC',
+        basePrice: 10,
+        weightPerUnit: 5,
+        unitName: 'Ton',
+        unitSymbol: 't',
+        imageUrl: null,
+        description: 'Harvested timber.',
+      },
+    ]
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-qual-filter')
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    const offersList = page.locator('.exchange-offers-list')
+    await expect(offersList).toBeVisible()
+
+    // Bratislava: cheaper delivered price but blocked by min quality
+    const bratislavaOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Bratislava' })
+    await expect(bratislavaOffer).toBeVisible()
+    await expect(bratislavaOffer).toHaveClass(/offer-blocked/)
+    await expect(bratislavaOffer.locator('.offer-blocked-reason')).toContainText('Below your min quality')
+
+    // Prague: more expensive delivered price, but passes min quality → selected as best
+    const pragueOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Prague' })
+    await expect(pragueOffer).toBeVisible()
+    await expect(pragueOffer).not.toHaveClass(/offer-blocked/)
+    await expect(pragueOffer.locator('.offer-best-badge')).toBeVisible()
+    await expect(pragueOffer.locator('.offer-best-badge')).toContainText('Best delivered price')
+
+    // Prague has positive transit cost (it is ~310 km from Bratislava)
+    const pragueTransitText = await pragueOffer.getByText(/Transit:/).textContent()
+    expect(pragueTransitText).not.toContain('$0.00')
+
+    // The "no valid offers" warning must NOT appear — Prague still qualifies
+    await expect(page.getByText(/No offers meet your price and quality constraints/)).toBeHidden()
+  })
 })
 
 // ── Exchange panel narrow/mobile layout ────────────────────────────────────────
