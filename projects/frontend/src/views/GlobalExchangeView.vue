@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
 import { useTickRefresh } from '@/composables/useTickRefresh'
+import { useGameStateStore } from '@/stores/gameState'
 import { deepEqual } from '@/lib/utils'
 import type { GlobalExchangeOffer, ResourceType } from '@/types'
 
@@ -28,6 +29,7 @@ interface ExchangeRow {
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const gameStateStore = useGameStateStore()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -97,7 +99,10 @@ async function loadCitiesAndResources() {
     resources.value = resourcesData.resourceTypes
   }
   if (citiesData.cities.length > 0 && !selectedCityId.value) {
-    selectedCityId.value = citiesData.cities[0].id
+    const firstCity = citiesData.cities[0]
+    if (firstCity) {
+      selectedCityId.value = firstCity.id
+    }
   }
 }
 
@@ -129,6 +134,7 @@ onMounted(async () => {
   if (auth.isAuthenticated) {
     void auth.fetchMe()
   }
+  gameStateStore.start()
   try {
     await loadCitiesAndResources()
     await loadOffers()
@@ -143,6 +149,8 @@ watch(selectedCityId, async () => {
 })
 
 useTickRefresh(refreshAll)
+
+const currentTick = computed(() => gameStateStore.gameState?.currentTick ?? null)
 
 const categories = computed(() => {
   const cats = [...new Set(resources.value.map((r) => r.category))]
@@ -202,6 +210,13 @@ function localizedCategory(cat: string): string {
         <p class="exchange-eyebrow">{{ t('globalExchange.eyebrow') }}</p>
         <h1 class="exchange-title">{{ t('globalExchange.title') }}</h1>
         <p class="exchange-subtitle">{{ t('globalExchange.subtitle') }}</p>
+        <div class="exchange-hero-meta">
+          <span class="exchange-tick-chip" :title="t('globalExchange.tickHint')">
+            <span class="exchange-tick-label">{{ t('globalExchange.tick') }}</span>
+            <span class="exchange-tick-value">{{ currentTick !== null ? currentTick : '—' }}</span>
+          </span>
+          <span class="exchange-supply-chip">{{ t('globalExchange.endlessSupply') }}</span>
+        </div>
       </div>
     </div>
 
@@ -363,8 +378,55 @@ function localizedCategory(cat: string): string {
 .exchange-subtitle {
   font-size: 0.9375rem;
   color: var(--color-text-secondary);
-  margin: 0;
+  margin: 0 0 1rem;
   max-width: 640px;
+}
+
+.exchange-hero-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.exchange-tick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: 0.75rem;
+  cursor: default;
+}
+
+.exchange-tick-label {
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  font-size: 0.7rem;
+}
+
+.exchange-tick-value {
+  font-weight: 700;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.exchange-supply-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-success, #22c55e) 30%, transparent);
+  background: color-mix(in srgb, var(--color-success, #22c55e) 8%, transparent);
+  color: var(--color-success, #22c55e);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .exchange-body {

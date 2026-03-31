@@ -6047,6 +6047,49 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GlobalExchangeOffers_BestOptionIsFirstSortedByDeliveredPrice_ForAllStarterIndustries()
+    {
+        // AC#10: for all three starter industries, the first globalExchangeOffers result
+        // must be the cheapest delivered-cost option (optimal price selection logic).
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var resourceIds = await ExecuteGraphQlAsync("{ resourceTypes { id slug } }");
+        var slugToId = resourceIds.GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray()
+            .ToDictionary(
+                r => r.GetProperty("slug").GetString()!,
+                r => r.GetProperty("id").GetString()!);
+
+        // Furniture (Wood), Food Processing (Grain), Healthcare (Chemical Minerals)
+        foreach (var slug in new[] { "wood", "grain", "chemical-minerals" })
+        {
+            var resourceId = slugToId[slug];
+
+            var result = await ExecuteGraphQlAsync(
+                """
+                query GlobalExchangeOffers($destinationCityId: UUID!, $resourceTypeId: UUID) {
+                  globalExchangeOffers(destinationCityId: $destinationCityId, resourceTypeId: $resourceTypeId) {
+                    cityName
+                    deliveredPricePerUnit
+                  }
+                }
+                """,
+                new { destinationCityId = bratislavaId, resourceTypeId = resourceId });
+
+            var offers = result.GetProperty("data").GetProperty("globalExchangeOffers")
+                .EnumerateArray().ToList();
+
+            Assert.True(offers.Count > 0, $"No offers for {slug}");
+
+            // The first offer must have the minimum delivered price (sorted ascending = cheapest first).
+            var minDelivered = offers.Min(o => o.GetProperty("deliveredPricePerUnit").GetDecimal());
+            var firstDelivered = offers[0].GetProperty("deliveredPricePerUnit").GetDecimal();
+
+            Assert.True(firstDelivered == minDelivered,
+                $"First offer for {slug} must be the optimal (cheapest delivered) option. Got {firstDelivered}, min is {minDelivered}.");
+        }
+    }
+
+    [Fact]
     public async Task StoreBuildingConfiguration_PurchaseUnit_PersistsExchangeSourceAndConstraints()
     {
         var email = $"exchange-cfg-{Guid.NewGuid():N}@test.com";

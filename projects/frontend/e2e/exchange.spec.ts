@@ -106,6 +106,23 @@ test.describe('Global Exchange page', () => {
 
     await expect(page.locator('.city-offer-card.best-offer').first()).toBeVisible()
   })
+
+  test('shows tick context chip indicating data refresh timing', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+
+    // The tick chip communicates when exchange data was last refreshed
+    await expect(page.locator('.exchange-tick-chip')).toBeVisible()
+  })
+
+  test('shows endless supply badge communicating stable market supply', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+
+    // The exchange is a never-ending resource sale per ROADMAP — communicate this clearly
+    await expect(page.locator('.exchange-supply-chip')).toBeVisible()
+    await expect(page.locator('.exchange-supply-chip')).toContainText('Endless supply')
+  })
 })
 
 // ── City switching ─────────────────────────────────────────────────────────────

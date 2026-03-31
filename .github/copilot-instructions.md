@@ -187,8 +187,9 @@ npx playwright test --debug --project=chromium
 # Frontend
 cd projects/frontend
 npm run dev          # Dev server on :5173
-npm run build:client # Production build with SW
-npm run build:ssr    # SSR build with vue-tsc type checking
+npm run build:client # Production build with SW (no type checking)
+npm run build:ssr    # SSR build via Vite only (no type checking)
+npm run build        # Full build: runs vue-tsc type-check + build:client + build:ssr (USE THIS for CI-equivalent validation)
 
 # Backend
 cd projects/Api
@@ -344,7 +345,7 @@ Root-cause of a quality failure (March 2026, PR #52 after rebasing with `main`):
 
 **When your branch is rebased or merged with `main`:**
 1. Re-open `src/types/index.ts` (and any other shared type files touched by the merge) and scan for duplicated properties or merge leftovers before assuming the branch is still green.
-2. Re-run the clean frontend pipeline (`npm ci`, `npm run lint`, `npm run test:unit`, `npm run build:ssr`) after the merge/rebase, even if the branch was green before.
+2. Re-run the clean frontend pipeline (`npm ci`, `npm run lint`, `npm run test:unit`, `npm run build`) after the merge/rebase, even if the branch was green before.
 3. Treat any new CI type-check failure after a merge/rebase as a real regression in the merged branch head and fix that head state directly.
 
 ## Frontend merge parity — main can advance between sessions
@@ -361,13 +362,13 @@ Root-cause of a recurring CI failure (March 2026, PRs #89):
 
 **At the start of every session:**
 1. Run `git fetch origin main:refs/remotes/origin/main && git merge refs/remotes/origin/main` before ANY local lint/build validation. Note: `git fetch origin main` then `git merge refs/remotes/origin/main` is the reliable two-step approach because `FETCH_HEAD` points to the fetched commit which may be the same as HEAD if the branch is already up-to-date.
-2. Run `npm run build:ssr` (not just `npm run build:client`) to exercise `vue-tsc` type checking — the client build does NOT fail on type errors, only the SSR build does.
-3. Use `npm run build:ssr` as the canonical type-check step, not `npm run build`.
+2. Run `npm run build` (NOT `npm run build:ssr`) to exercise `vue-tsc` type checking. The `build:ssr` command only invokes Vite's SSR bundler and does NOT run `vue-tsc`, so TypeScript errors are missed. `npm run build` runs `type-check` (vue-tsc --build) AND `build-only` in parallel — both must pass.
+3. Use `npm run build` as the canonical type-check step. The `build:client` command does NOT fail on type errors; only `npm run build` (which includes the `type-check` script) catches them.
 
 **When a merge conflict occurs in `utils.ts` or shared utility files:**
 - Both branches may have valid changes. If the logic is functionally equivalent, prefer the main version to minimize divergence.
 - After resolving conflicts, `git add` the file and run `GIT_EDITOR=true git merge --continue` to complete the merge without opening an editor.
-- Always re-run lint + build:ssr + tests after any merge to confirm no regressions.
+- Always re-run lint + `npm run build` + tests after any merge to confirm no regressions.
 
 ## E2E test quality — preventing selector failures
 
@@ -467,6 +468,18 @@ Root-cause of a quality failure (March 2026, PR #93 initial session):
 3. Run `dotnet test` with a filter targeting the specific feature area to find failures the happy-path tests mask.
 4. Screenshot every wizard step and compare against the ROADMAP description before declaring done.
 5. A feature is only "done" when ALL of: CI passes, product copy matches ROADMAP, all industries work end-to-end, and tests cover every defined variant.
+
+## TypeScript build — always use `npm run build` not `npm run build:ssr` for type checking
+
+Root-cause of a CI failure (March 2026, PR #115 global exchange):
+- `GlobalExchangeView.vue` had `cities[0].id` on a `City[]` array — TypeScript's `noUncheckedIndexedAccess` or strict mode flags this as `Object is possibly 'undefined'` even when preceded by a `.length > 0` check.
+- The agent ran `npm run build:ssr` locally and saw it pass. `build:ssr` only invokes Vite SSR bundling — it does NOT run `vue-tsc`. The TypeScript error was only caught by `vue-tsc --build` which runs as `type-check` inside `npm run build`.
+- `frontend-ci-cd` failed with: `error TS2532: Object is possibly 'undefined'`.
+
+**Rules to prevent recurrence:**
+1. **Always use `npm run build` as the canonical local type-check step.** Never rely on `build:ssr` or `build:client` alone — neither runs `vue-tsc`.
+2. **When accessing an array by index (`arr[0]`), always narrow to a variable first:** `const first = arr[0]; if (first) { ... }`. TypeScript strict mode does not consider `.length > 0` sufficient to narrow array subscript access.
+3. **The correct CI-equivalent command is: `cd projects/frontend && npm ci && npm run lint && npm run test:unit && npm run build`** — where `npm run build` bundles BOTH type-check and build-only together. All three must exit 0 before pushing.
 
 ## CI infrastructure failures vs code failures — always distinguish before reporting
 

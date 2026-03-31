@@ -276,6 +276,9 @@ export default {
     abundance: 'Local abundance',
     bestDelivered: 'Best price',
     bestDeliveredHint: 'Lowest delivered price for this resource to the selected city.',
+    tick: 'Tick',
+    tickHint: 'Exchange prices update each game tick. The current tick is the latest data snapshot.',
+    endlessSupply: '∞ Endless supply — all resources always available',
   },
   encyclopedia: {
     eyebrow: 'Manufacturing Knowledge Base',

@@ -276,6 +276,9 @@ export default {
     abundance: 'Miestna dostupnosť',
     bestDelivered: 'Najlepšia cena',
     bestDeliveredHint: 'Najnižšia cena dodania pre túto surovinu do vybraného mesta.',
+    tick: 'Tick',
+    tickHint: 'Ceny burzy sa aktualizujú každý herný tick. Aktuálny tick je posledný snapshot dát.',
+    endlessSupply: '∞ Nekonečná ponuka — všetky suroviny vždy dostupné',
   },
   encyclopedia: {
     eyebrow: 'Znalostná báza výroby',

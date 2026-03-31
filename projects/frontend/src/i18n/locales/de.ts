@@ -277,6 +277,9 @@ export default {
     abundance: 'Lokale Verfügbarkeit',
     bestDelivered: 'Bester Preis',
     bestDeliveredHint: 'Niedrigster Lieferpreis für diesen Rohstoff in die ausgewählte Stadt.',
+    tick: 'Tick',
+    tickHint: 'Börsenpreise aktualisieren sich jeden Spieltick. Der aktuelle Tick ist der neueste Datensnapshot.',
+    endlessSupply: '∞ Endloses Angebot — alle Rohstoffe jederzeit verfügbar',
   },
   encyclopedia: {
     eyebrow: 'Wissensbasis für Produktion',
