@@ -8031,6 +8031,229 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Contains(inventories, item => item.GetProperty("sourcingCostPerUnit").GetDecimal() == 8m);
     }
 
+    [Fact]
+    public async Task LedgerDrillDown_RevenueDrillDown_ReturnsEntries()
+    {
+        var token = await RegisterAndGetTokenAsync("ledger-rev-drill@test.com", "RevDrillUser");
+        Guid companyId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-rev-drill@test.com");
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Rev Drill Co",
+                Cash = 100_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            db.LedgerEntries.AddRange(
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue, Description = "Public sales - Wooden Chair",
+                    Amount = 2500m, RecordedAtTick = 5, RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue, Description = "Public sales - Wooden Table",
+                    Amount = 1800m, RecordedAtTick = 10, RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.LaborCost, Description = "Operating labor",
+                    Amount = -300m, RecordedAtTick = 10, RecordedAtUtc = DateTime.UtcNow,
+                });
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        var drillResult = await ExecuteGraphQlAsync(
+            $"{{ ledgerDrillDown(companyId: \"{companyId}\", category: \"REVENUE\") {{ id category description amount recordedAtTick }} }}",
+            token: token);
+
+        var entries = drillResult.GetProperty("data").GetProperty("ledgerDrillDown").EnumerateArray().ToList();
+        Assert.Equal(2, entries.Count);
+        Assert.All(entries, e => Assert.Equal("REVENUE", e.GetProperty("category").GetString()));
+        Assert.All(entries, e => Assert.True(e.GetProperty("amount").GetDecimal() > 0, "Revenue amounts must be positive"));
+        // Ordered descending by tick
+        Assert.Equal(10, entries[0].GetProperty("recordedAtTick").GetInt64());
+        Assert.Equal(5, entries[1].GetProperty("recordedAtTick").GetInt64());
+    }
+
+    [Fact]
+    public async Task LedgerDrillDown_LaborCost_ReturnsEntries()
+    {
+        var token = await RegisterAndGetTokenAsync("ledger-labor-drill@test.com", "LaborDrillUser");
+        Guid companyId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-labor-drill@test.com");
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Labor Drill Co",
+                Cash = 80_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            db.LedgerEntries.AddRange(
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.LaborCost, Description = "Operating labor for MANUFACTURING",
+                    Amount = -400m, RecordedAtTick = 8, RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.LaborCost, Description = "Operating labor for SALES",
+                    Amount = -200m, RecordedAtTick = 12, RecordedAtUtc = DateTime.UtcNow,
+                });
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        var drillResult = await ExecuteGraphQlAsync(
+            $"{{ ledgerDrillDown(companyId: \"{companyId}\", category: \"LABOR_COST\") {{ id category description amount }} }}",
+            token: token);
+
+        var entries = drillResult.GetProperty("data").GetProperty("ledgerDrillDown").EnumerateArray().ToList();
+        Assert.Equal(2, entries.Count);
+        Assert.All(entries, e => Assert.Equal("LABOR_COST", e.GetProperty("category").GetString()));
+        Assert.All(entries, e => Assert.True(e.GetProperty("amount").GetDecimal() < 0, "Labor cost amounts must be negative"));
+    }
+
+    [Fact]
+    public async Task LedgerDrillDown_NonOwner_ReturnsEmpty()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync("drill-owner2@test.com", "DrillOwner2");
+        var result = await ExecuteGraphQlAsync(
+            """mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }""",
+            new { input = new { name = "Owner2 Co" } },
+            ownerToken);
+        var companyId = result.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        var otherToken = await RegisterAndGetTokenAsync("drill-other2@test.com", "DrillOther2");
+        var drillResult = await ExecuteGraphQlAsync(
+            $"{{ ledgerDrillDown(companyId: \"{companyId}\", category: \"REVENUE\") {{ id }} }}",
+            token: otherToken);
+
+        var entries = drillResult.GetProperty("data").GetProperty("ledgerDrillDown").EnumerateArray().ToList();
+        Assert.Empty(entries);
+    }
+
+    [Fact]
+    public async Task LedgerDrillDown_WithGameYear_FiltersByYear()
+    {
+        var token = await RegisterAndGetTokenAsync("ledger-year-drill@test.com", "YearDrillUser");
+        Guid companyId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-year-drill@test.com");
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Year Drill Co",
+                Cash = 120_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            // Year 2000: ticks 1..8759; Year 2001: ticks 8760..17519
+            db.LedgerEntries.AddRange(
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue, Description = "Year 2000 sale",
+                    Amount = 600m, RecordedAtTick = 100, RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue, Description = "Year 2001 sale",
+                    Amount = 900m, RecordedAtTick = 9000, RecordedAtUtc = DateTime.UtcNow,
+                });
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        // Drill-down scoped to year 2000 should only return the tick-100 entry
+        var drillYear2000 = await ExecuteGraphQlAsync(
+            $"{{ ledgerDrillDown(companyId: \"{companyId}\", category: \"REVENUE\", gameYear: 2000) {{ description amount recordedAtTick }} }}",
+            token: token);
+        var year2000Entries = drillYear2000.GetProperty("data").GetProperty("ledgerDrillDown").EnumerateArray().ToList();
+        Assert.Single(year2000Entries);
+        Assert.Equal("Year 2000 sale", year2000Entries[0].GetProperty("description").GetString());
+
+        // Drill-down scoped to year 2001 should only return the tick-9000 entry
+        var drillYear2001 = await ExecuteGraphQlAsync(
+            $"{{ ledgerDrillDown(companyId: \"{companyId}\", category: \"REVENUE\", gameYear: 2001) {{ description amount recordedAtTick }} }}",
+            token: token);
+        var year2001Entries = drillYear2001.GetProperty("data").GetProperty("ledgerDrillDown").EnumerateArray().ToList();
+        Assert.Single(year2001Entries);
+        Assert.Equal("Year 2001 sale", year2001Entries[0].GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task CompanyLedger_UnitUpgradeCost_ReflectedInTaxableIncome()
+    {
+        var token = await RegisterAndGetTokenAsync("ledger-upgrade@test.com", "UpgradeUser");
+        Guid companyId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-upgrade@test.com");
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Upgrade Co",
+                Cash = 200_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            db.LedgerEntries.AddRange(
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue, Description = "Sales",
+                    Amount = 5000m, RecordedAtTick = 10, RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.UnitUpgrade, Description = "MANUFACTURING unit upgrade to level 2",
+                    Amount = -2000m, RecordedAtTick = 10, RecordedAtUtc = DateTime.UtcNow,
+                });
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ companyLedger(companyId: \"{companyId}\") {{ totalRevenue taxableIncome netIncome }} }}",
+            token: token);
+
+        var ledger = result.GetProperty("data").GetProperty("companyLedger");
+        Assert.Equal(5000m, ledger.GetProperty("totalRevenue").GetDecimal());
+        // UNIT_UPGRADE is a deductible category, so taxable income = 5000 - 2000 = 3000
+        Assert.Equal(3000m, ledger.GetProperty("taxableIncome").GetDecimal());
+        // netIncome formula only subtracts purchasing/labor/energy/marketing/tax/other — NOT unit upgrades
+        // so netIncome = 5000 (the upgrade cost is a capital expense, not an operating expense)
+        Assert.Equal(5000m, ledger.GetProperty("netIncome").GetDecimal());
+    }
+
     #endregion
 
 }

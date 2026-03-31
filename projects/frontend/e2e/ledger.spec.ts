@@ -411,4 +411,243 @@ test.describe('Company Ledger', () => {
     await page.waitForURL('/dashboard')
     await expect(page).toHaveURL('/dashboard')
   })
+
+  test('drill-down building link navigates to building detail', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, {
+      players: [player],
+      cities: makeDefaultCities(),
+      resourceTypes: makeDefaultResources(),
+      productTypes: makeDefaultProducts(),
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    const buildingId = 'building-source-nav'
+    const company = {
+      id: 'company-source-nav',
+      playerId: player.id,
+      name: 'Source Nav Corp',
+      cash: 350000,
+      foundedAtUtc: new Date().toISOString(),
+      buildings: [
+        {
+          id: buildingId,
+          companyId: 'company-source-nav',
+          cityId: 'bratislava',
+          type: 'FACTORY',
+          name: 'Nav Factory',
+          latitude: 48.1,
+          longitude: 17.1,
+          level: 1,
+          powerConsumption: 0,
+          isForSale: false,
+          builtAtUtc: new Date().toISOString(),
+          units: [],
+          pendingConfiguration: null,
+        },
+      ],
+    }
+    player.companies = [company]
+    player.onboardingCompletedAtUtc = new Date().toISOString()
+
+    state.ledgerData[company.id] = {
+      companyId: company.id,
+      companyName: 'Source Nav Corp',
+      currentCash: 350000,
+      totalRevenue: 8000,
+      totalPurchasingCosts: 0,
+      totalLaborCosts: 0,
+      totalEnergyCosts: 0,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 0,
+      totalOtherCosts: 0,
+      netIncome: 8000,
+      buildingValue: 0,
+      inventoryValue: 0,
+      propertyValue: 0,
+      propertyAppreciation: 0,
+      totalAssets: 350000,
+      totalPropertyPurchases: 0,
+      cashFromOperations: 8000,
+      cashFromInvestments: 0,
+      firstRecordedTick: 5,
+      lastRecordedTick: 20,
+      buildingSummaries: [],
+    }
+
+    const entries: MockLedgerEntry[] = [
+      {
+        id: 'entry-revenue-building',
+        category: 'REVENUE',
+        description: 'Public sales - Wooden Chair',
+        amount: 8000,
+        recordedAtTick: 20,
+        buildingId,
+        buildingName: 'Nav Factory',
+        buildingUnitId: null,
+        productTypeId: null,
+        productName: 'Wooden Chair',
+        resourceTypeId: null,
+        resourceName: null,
+      },
+    ]
+    state.drillDownData[`${company.id}:REVENUE`] = entries
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto(`/ledger/${company.id}`)
+
+    // Open revenue drill-down
+    const revenueRow = page
+      .locator('.statement-row')
+      .filter({ hasText: /^Revenue/ })
+      .first()
+    await revenueRow.getByRole('button').click()
+    await expect(page.getByText('Wooden Chair')).toBeVisible()
+
+    // Verify the building link exists and points to correct route
+    const buildingLink = page.getByRole('link', { name: 'Nav Factory' })
+    await expect(buildingLink).toBeVisible()
+    await expect(buildingLink).toHaveAttribute('href', `/building/${buildingId}`)
+  })
+
+  test('historical year drill-down shows year-specific entries', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, {
+      players: [player],
+      cities: makeDefaultCities(),
+      resourceTypes: makeDefaultResources(),
+      productTypes: makeDefaultProducts(),
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    const company = {
+      id: 'company-hist-drill',
+      playerId: player.id,
+      name: 'History Drill Corp',
+      cash: 600000,
+      foundedAtUtc: new Date().toISOString(),
+      buildings: [],
+    }
+    player.companies = [company]
+    player.onboardingCompletedAtUtc = new Date().toISOString()
+
+    const currentYearLedger: MockLedgerSummary = {
+      companyId: company.id,
+      companyName: 'History Drill Corp',
+      gameYear: 2001,
+      isCurrentGameYear: true,
+      currentCash: 600000,
+      totalRevenue: 5000,
+      totalPurchasingCosts: 0,
+      totalLaborCosts: 0,
+      totalEnergyCosts: 0,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 0,
+      totalOtherCosts: 0,
+      taxableIncome: 5000,
+      estimatedIncomeTax: 750,
+      netIncome: 5000,
+      propertyValue: 0,
+      propertyAppreciation: 0,
+      buildingValue: 0,
+      inventoryValue: 0,
+      totalAssets: 600000,
+      totalPropertyPurchases: 0,
+      cashFromOperations: 5000,
+      cashFromInvestments: 0,
+      firstRecordedTick: 8800,
+      lastRecordedTick: 8820,
+      history: [
+        {
+          gameYear: 2001,
+          isCurrentGameYear: true,
+          totalRevenue: 5000,
+          totalLaborCosts: 0,
+          totalEnergyCosts: 0,
+          netIncome: 5000,
+          totalTaxPaid: 0,
+          taxableIncome: 5000,
+          estimatedIncomeTax: 750,
+          firstRecordedTick: 8800,
+          lastRecordedTick: 8820,
+        },
+        {
+          gameYear: 2000,
+          isCurrentGameYear: false,
+          totalRevenue: 2400,
+          totalLaborCosts: 200,
+          totalEnergyCosts: 80,
+          netIncome: 2120,
+          totalTaxPaid: 318,
+          taxableIncome: 2120,
+          estimatedIncomeTax: 318,
+          firstRecordedTick: 50,
+          lastRecordedTick: 8750,
+        },
+      ],
+      buildingSummaries: [],
+    }
+    state.ledgerData[company.id] = currentYearLedger
+    state.ledgerData[`${company.id}:2000`] = {
+      ...currentYearLedger,
+      gameYear: 2000,
+      isCurrentGameYear: false,
+      totalRevenue: 2400,
+      netIncome: 2120,
+      totalTaxPaid: 318,
+      taxableIncome: 2120,
+      estimatedIncomeTax: 318,
+      firstRecordedTick: 50,
+      lastRecordedTick: 8750,
+      isIncomeTaxSettled: true,
+    }
+
+    const year2000Entries: MockLedgerEntry[] = [
+      {
+        id: 'entry-hist-1',
+        category: 'REVENUE',
+        description: 'Historical sale - Year 2000',
+        amount: 2400,
+        recordedAtTick: 4000,
+        buildingId: null,
+        buildingName: null,
+        buildingUnitId: null,
+        productTypeId: null,
+        productName: 'Wooden Table',
+        resourceTypeId: null,
+        resourceName: null,
+      },
+    ]
+    state.drillDownData[`${company.id}:REVENUE:2000`] = year2000Entries
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto(`/ledger/${company.id}`)
+
+    // Switch to year 2000
+    await page.getByRole('button', { name: /Year 2000/ }).click()
+    await expect(page.locator('.kpi-card').getByText('Year 2000')).toBeVisible()
+
+    // Revenue for year 2000 should show $2,400
+    await expect(page.getByText('$2,400.00')).toBeVisible()
+
+    // Open revenue drill-down for the historical year
+    const revenueRow = page
+      .locator('.statement-row')
+      .filter({ hasText: /^Revenue/ })
+      .first()
+    await revenueRow.getByRole('button').click()
+
+    // Should show the year-2000-specific entry
+    await expect(page.getByText('Wooden Table')).toBeVisible()
+  })
 })
