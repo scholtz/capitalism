@@ -3684,6 +3684,69 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task FinishOnboarding_ResultIncludesSelectedProductBasePrice_ForAllIndustries()
+    {
+        // The configure-guide in the frontend depends on selectedProduct.basePrice from the
+        // FinishOnboarding result to show the player the market benchmark selling price.
+        // If this field is ever dropped from the GraphQL response, the guide silently shows
+        // generic text instead of the concrete price ($45 Furniture, $3 Bread, $50 Medicine).
+        var industries = new[]
+        {
+            ("FURNITURE", "wooden-chair", 45m),
+            ("FOOD_PROCESSING", "bread", 3m),
+            ("HEALTHCARE", "basic-medicine", 50m),
+        };
+
+        foreach (var (industry, slug, expectedBasePrice) in industries)
+        {
+            var token = await RegisterAndGetTokenAsync($"guide-price-{industry.ToLower()}-{Guid.NewGuid()}@test.com", $"Guide Price {industry}");
+
+            // Start with the correct industry
+            var cityId = await GetCityIdByNameAsync();
+            var factoryLotId = await GetAvailableLotIdAsync(cityId, "FACTORY");
+            var startResult = await ExecuteGraphQlAsync(
+                """
+                mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+                  startOnboardingCompany(input: $input) { company { id } }
+                }
+                """,
+                new { input = new { industry, cityId, companyName = $"Guide Price {industry} Co", factoryLotId } },
+                token);
+            Assert.False(startResult.TryGetProperty("errors", out _), $"StartOnboardingCompany failed for {industry}");
+
+            var productsResult = await ExecuteGraphQlAsync($"{{ productTypes(industry: \"{industry}\") {{ id slug basePrice }} }}");
+            var product = productsResult.GetProperty("data").GetProperty("productTypes")
+                .EnumerateArray()
+                .Single(p => p.GetProperty("slug").GetString() == slug);
+            var productId = product.GetProperty("id").GetString()!;
+
+            var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+
+            // Query FinishOnboarding with selectedProduct.basePrice included
+            var finishResult = await ExecuteGraphQlAsync(
+                """
+                mutation FinishOnboarding($input: FinishOnboardingInput!) {
+                  finishOnboarding(input: $input) {
+                    selectedProduct { id name basePrice }
+                  }
+                }
+                """,
+                new { input = new { productTypeId = productId, shopLotId } },
+                token);
+
+            Assert.False(finishResult.TryGetProperty("errors", out _), $"FinishOnboarding failed for {industry}");
+            var returnedBasePrice = finishResult
+                .GetProperty("data")
+                .GetProperty("finishOnboarding")
+                .GetProperty("selectedProduct")
+                .GetProperty("basePrice")
+                .GetDecimal();
+
+            Assert.Equal(expectedBasePrice, returnedBasePrice);
+        }
+    }
+
+    [Fact]
     public async Task StartOnboardingCompany_UnsuitableFactoryLot_Fails()
     {
         var token = await RegisterAndGetTokenAsync($"onboard-map-invalid-{Guid.NewGuid()}@test.com", "Wrong Plot");

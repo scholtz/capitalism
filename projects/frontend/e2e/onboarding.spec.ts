@@ -79,6 +79,34 @@ async function completeGuidedOnboarding(page: Page, companyName: string) {
   await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
 }
 
+/**
+ * Drives the authenticated guided onboarding wizard with a specified industry and product.
+ * Used by configure-guide price tests to validate industry-specific benchmark prices.
+ */
+async function completeGuidedOnboardingForIndustry(
+  page: Page,
+  companyName: string,
+  industryLabel: string,
+  productLabel: string,
+) {
+  await page.locator('.industry-card', { hasText: industryLabel }).click()
+  await page.getByRole('button', { name: 'Next' }).click()
+  await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+  await page.getByRole('button', { name: 'Next' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+  await page.getByLabel('Company Name').fill(companyName)
+  await page.getByRole('button', { name: 'List View' }).click()
+  await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+  await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+  await page.locator('.product-card', { hasText: productLabel }).click()
+  await page.getByRole('button', { name: 'List View' }).click()
+  await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+  await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+}
+
 test.describe('Authentication', () => {
   test('register new account and redirect to home', async ({ page }) => {
     setupMockApi(page)
@@ -1806,6 +1834,60 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
 
     // Should NOT navigate away — URL stays on onboarding (with step=complete query param from resume)
     await expect(page).toHaveURL('/onboarding?step=complete')
+  })
+
+  test('configure-guide price step shows Food Processing benchmark price', async ({ page }) => {
+    // ROADMAP: "Wizard will show them important areas on the screen like how much money they have,
+    // the price configuration or public sales configuration."
+    // For Food Processing (Bread, basePrice $3), the configure-guide must show $3 as the market
+    // benchmark so the player knows what price target the simulation uses.
+    // This is the same teach-the-simulation UX requirement that makes the null-maxPrice on the
+    // factory purchase unit critical: the player is taught the market price, not a cap that could
+    // silently block Grain purchases.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboardingForIndustry(page, 'Bread Corp', 'Food Processing', 'Bread')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The price step must show the Bread market benchmark price ($3)
+    const priceStep = page.locator('.configure-step').filter({ hasText: 'Set a selling price' })
+    await expect(priceStep).toBeVisible()
+    await expect(priceStep).toContainText('$3')
+  })
+
+  test('configure-guide price step shows Healthcare benchmark price', async ({ page }) => {
+    // ROADMAP: "Wizard will show them important areas on the screen like how much money they have,
+    // the price configuration or public sales configuration."
+    // For Healthcare (Basic Medicine, basePrice $50), the configure-guide must show $50 as the
+    // market benchmark so the player understands the premium-margin opportunity.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboardingForIndustry(
+      page,
+      'Medicine Corp',
+      'Healthcare',
+      'Basic Medicine',
+    )
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The price step must show the Basic Medicine market benchmark price ($50)
+    const priceStep = page.locator('.configure-step').filter({ hasText: 'Set a selling price' })
+    await expect(priceStep).toBeVisible()
+    await expect(priceStep).toContainText('$50')
   })
 
   test('already-fully-onboarded player visiting /onboarding is redirected to dashboard immediately', async ({

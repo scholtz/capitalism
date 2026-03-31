@@ -467,3 +467,29 @@ Root-cause of a quality failure (March 2026, PR #93 initial session):
 3. Run `dotnet test` with a filter targeting the specific feature area to find failures the happy-path tests mask.
 4. Screenshot every wizard step and compare against the ROADMAP description before declaring done.
 5. A feature is only "done" when ALL of: CI passes, product copy matches ROADMAP, all industries work end-to-end, and tests cover every defined variant.
+
+## CI infrastructure failures vs code failures — always distinguish before reporting
+
+Root-cause of a quality failure (March 2026, PR #107):
+- The product owner asked "Fix build and fix tests" after seeing `frontend-ci-cd` failures on `main`.
+- The failures were Docker registry credential errors (`Username and password required` on `docker/login-action`) — a repository secrets/infrastructure issue, not a code failure.
+- The agent had already confirmed all code tests pass (235 backend, 494 unit, 238 E2E) but did not explicitly distinguish infra failures from code failures in its reply, causing continued concern.
+
+**Rules to prevent recurrence:**
+1. **When CI is failing, always check the job logs first.** If the failure is in a Docker push/login step and says "Username and password required", it is an infrastructure credentials issue — not a code failure. Report it explicitly as such.
+2. **Before claiming "CI passes", list exactly which workflows pass and which fail, and why each failure category is not a code regression.**
+3. **Infrastructure CI failures (Docker credentials, registry unavailable, missing secrets) are the repository owner's responsibility.** Do NOT try to fix them by changing code. Report them clearly and proceed to address any code-level gaps.
+4. **When a PR has a small diff (e.g., only regression tests), explicitly prove the broader implementation is working:** run all test suites locally, provide test counts, and include screenshots of the live UI flow.
+5. **The "Addressing comment on PR" agent run always has CI triggered for the branch.** If the branch CI passes but `main` CI fails, that is a main-branch infrastructure issue and not related to the PR.
+
+## Test coverage quality — all industries must be covered at every layer
+
+Root-cause of a gap (March 2026, PR #107):
+- The configure-guide benchmark price test (asserting "$45" for Furniture) existed, but identical coverage for Food Processing ($3) and Healthcare ($50) was missing.
+- This left a regression vector where the `configureGuideBasePrice` computed property or the `FinishOnboarding` GraphQL result could silently stop returning `basePrice` for non-Furniture industries without any test catching it.
+
+**Rules to prevent recurrence:**
+1. **When adding a test for one industry variant, always add equivalent tests for all other starter industries (FURNITURE, FOOD_PROCESSING, HEALTHCARE).** Do not stop at the first happy-path industry.
+2. **When the configure-guide or wizard teaches a price/margin concept, assert the concrete numeric value for each industry** — not just that "some price" is shown.
+3. **Backend `FinishOnboarding` result must include `selectedProduct.basePrice`** so the frontend configure-guide can show the industry-specific benchmark. Test this with a dedicated backend test covering all 3 industries.
+4. **For any ROADMAP teaching moment** (price configuration, tick explanation, cash display), add both a backend test validating the data is returned and an E2E test validating the data is displayed.
