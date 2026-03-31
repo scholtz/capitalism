@@ -3213,9 +3213,21 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         var offer = result.GetProperty("data").GetProperty("completeOnboarding").GetProperty("startupPackOffer");
         Assert.Equal("ELIGIBLE", offer.GetProperty("status").GetString());
-        Assert.Equal(250000m, offer.GetProperty("companyCashGrant").GetDecimal());
-        Assert.Equal(90, offer.GetProperty("proDurationDays").GetInt32());
+        Assert.Equal(StartupPackService.CompanyCashGrant, offer.GetProperty("companyCashGrant").GetDecimal());
+        Assert.Equal(StartupPackService.ProDurationDays, offer.GetProperty("proDurationDays").GetInt32());
         Assert.True(DateTime.TryParse(offer.GetProperty("expiresAtUtc").GetString(), out _));
+    }
+
+    [Fact]
+    public void StartupPackService_PriceUsd_MatchesRoadmapDefinition()
+    {
+        // The ROADMAP defines the startup pack price as $20.
+        // This test documents and enforces that contract so any accidental change is caught.
+        Assert.Equal(20m, StartupPackService.PriceUsd);
+        // Pro and cash-grant constants must also stay within expected ranges.
+        Assert.Equal(90, StartupPackService.ProDurationDays);
+        Assert.True(StartupPackService.CompanyCashGrant > 0,
+            "CompanyCashGrant must be a positive in-game currency amount.");
     }
 
     [Fact]

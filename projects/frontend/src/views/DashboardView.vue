@@ -377,15 +377,18 @@ function formatTimeRemaining(expiresAtUtc: string): string {
             <span class="startup-pack-eyebrow">{{ t('startupPack.eyebrow') }}</span>
             <h2 id="dashboard-startup-pack-title">{{ t('startupPack.revisitTitle') }}</h2>
           </div>
-          <span
-            class="startup-pack-status"
-            :class="{
-              claimed: claimedStartupPackOffer,
-              expired: expiredStartupPackOffer,
-            }"
-          >
-            {{ t(`startupPack.status.${auth.startupPackOffer.status.toLowerCase()}`) }}
-          </span>
+          <div class="startup-pack-header-right">
+            <span class="startup-pack-price">{{ t('startupPack.price') }}</span>
+            <span
+              class="startup-pack-status"
+              :class="{
+                claimed: claimedStartupPackOffer,
+                expired: expiredStartupPackOffer,
+              }"
+            >
+              {{ t(`startupPack.status.${auth.startupPackOffer.status.toLowerCase()}`) }}
+            </span>
+          </div>
         </div>
 
         <p class="startup-pack-subtitle">
@@ -629,6 +632,20 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-start;
+}
+
+.startup-pack-header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.375rem;
+}
+
+.startup-pack-price {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--color-primary);
+  letter-spacing: -0.02em;
 }
 
 .startup-pack-eyebrow {

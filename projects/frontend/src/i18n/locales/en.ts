@@ -184,11 +184,13 @@ export default {
   },
   startupPack: {
     eyebrow: 'Limited-time startup pack',
+    price: '$20',
     title: 'Scale faster while your first business is taking off',
     revisitTitle: 'Your startup pack is still available',
     subtitle: 'Claim 3 months of Pro access and {amount} in expansion capital for the next phase of your empire.',
     proBenefitTitle: '3 months of Pro',
-    proBenefitBody: 'Unlock Pro access for {days} days while you expand into bigger product lines.',
+    proBenefitBody:
+      'Unlock Pro access for {days} days and manufacture more products to sell — expanding your product lines beyond the free tier.',
     cashBenefitTitle: 'Expansion capital',
     cashBenefitBody: '{amount} will be credited to {company}.',
     deadlineLabel: 'Offer window',

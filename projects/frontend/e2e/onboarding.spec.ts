@@ -1122,6 +1122,11 @@ test.describe('Onboarding resume and progress persistence', () => {
     await expect(page.getByRole('link', { name: 'View Leaderboard' })).toBeVisible()
     await expect(page.getByText('3 months of Pro', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+    // AC #2: offer must clearly display the $20 price
+    await expect(page.locator('.startup-pack-price')).toBeVisible()
+    await expect(page.locator('.startup-pack-price')).toContainText('$20')
+    // AC #4: pro benefit copy must mention more products to manufacture and sell
+    await expect(page.getByText(/more products to.*sell/i)).toBeVisible()
 
     // Should show achievement items (factory and shop names)
     await expect(page.locator('.achievement-item')).toHaveCount(4)
@@ -1237,12 +1242,15 @@ test.describe('Onboarding resume and progress persistence', () => {
 
     await expect(page.getByRole('heading', { name: 'Your startup pack is still available' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+    // AC #2: price must be visible on dashboard offer panel
+    await expect(page.locator('.startup-pack-price')).toContainText('$20')
 
     // Reload the page — offer must still be visible (state persisted in backend)
     await page.reload()
 
     await expect(page.getByRole('heading', { name: 'Your startup pack is still available' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+    await expect(page.locator('.startup-pack-price')).toContainText('$20')
   })
 
   test('expired offer on dashboard shows expired message without claim button', async ({

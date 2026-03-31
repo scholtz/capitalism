@@ -185,11 +185,13 @@ export default {
   },
   startupPack: {
     eyebrow: 'Zeitlich begrenztes Startup-Paket',
+    price: '20 $',
     title: 'Wachsen Sie schneller, während Ihr erstes Unternehmen Fahrt aufnimmt',
     revisitTitle: 'Ihr Startup-Paket ist weiterhin verfügbar',
     subtitle: 'Sichern Sie sich 3 Monate Pro-Zugang und {amount} Expansionskapital für die nächste Phase Ihres Imperiums.',
     proBenefitTitle: '3 Monate Pro',
-    proBenefitBody: 'Schalten Sie Pro für {days} Tage frei, während Sie in größere Produktlinien expandieren.',
+    proBenefitBody:
+      'Schalten Sie Pro für {days} Tage frei und stellen Sie mehr Produkte zum Verkauf her — erweitern Sie Ihre Produktlinien über die kostenlose Stufe hinaus.',
     cashBenefitTitle: 'Expansionskapital',
     cashBenefitBody: '{amount} werden {company} gutgeschrieben.',
     deadlineLabel: 'Angebotsfenster',

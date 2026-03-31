@@ -1522,9 +1522,12 @@ useTickRefresh(async () => {
               <span class="startup-pack-eyebrow">{{ t('startupPack.eyebrow') }}</span>
               <h3 id="startup-pack-title">{{ t('startupPack.title') }}</h3>
             </div>
-            <span class="startup-pack-status" :class="{ claimed: claimedStartupPackOffer, expired: expiredStartupPackOffer }">
-              {{ t(`startupPack.status.${startupPackOffer.status.toLowerCase()}`) }}
-            </span>
+            <div class="startup-pack-header-right">
+              <span class="startup-pack-price">{{ t('startupPack.price') }}</span>
+              <span class="startup-pack-status" :class="{ claimed: claimedStartupPackOffer, expired: expiredStartupPackOffer }">
+                {{ t(`startupPack.status.${startupPackOffer.status.toLowerCase()}`) }}
+              </span>
+            </div>
           </div>
 
           <p class="startup-pack-subtitle">
@@ -2251,6 +2254,20 @@ useTickRefresh(async () => {
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
+}
+
+.startup-pack-header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.375rem;
+}
+
+.startup-pack-price {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--color-primary);
+  letter-spacing: -0.02em;
 }
 
 .startup-pack-eyebrow {

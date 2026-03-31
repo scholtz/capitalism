@@ -184,11 +184,13 @@ export default {
   },
   startupPack: {
     eyebrow: 'Časovo obmedzený štartovací balík',
+    price: '20 $',
     title: 'Rastite rýchlejšie, keď sa váš prvý podnik rozbieha',
     revisitTitle: 'Váš štartovací balík je stále dostupný',
     subtitle: 'Získajte 3 mesiace Pro prístupu a {amount} rozširovacieho kapitálu pre ďalšiu fázu vášho impéria.',
     proBenefitTitle: '3 mesiace Pro',
-    proBenefitBody: 'Odomknite si Pro prístup na {days} dní, kým rozšírite výrobu o väčšie produktové rady.',
+    proBenefitBody:
+      'Odomknite si Pro prístup na {days} dní a vyrábajte viac produktov na predaj — rozširujte produktové rady za hranice bezplatnej verzie.',
     cashBenefitTitle: 'Kapitál na expanziu',
     cashBenefitBody: '{amount} bude pripísaných firme {company}.',
     deadlineLabel: 'Okno ponuky',
