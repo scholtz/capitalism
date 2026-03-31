@@ -5048,6 +5048,169 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(500_000m - factoryPrice - shopPrice, cashAfterShop);
     }
 
+    [Fact]
+    public async Task FinishOnboarding_FactoryAndShopUnitsIncludedInResponse_Furniture()
+    {
+        // ROADMAP: "This will set the factory layout for them. Wizard will show them important areas on the screen"
+        // Verifies that finishOnboarding returns factory and sales shop units so the frontend
+        // can display the auto-configured production chain on the completion screen.
+        var token = await RegisterAndGetTokenAsync($"onboard-layout-furn-{Guid.NewGuid()}@test.com", "Layout Furniture Founder");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Layout Furn Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) {
+                factory {
+                  id name type
+                  units { id unitType gridX gridY level linkRight }
+                }
+                salesShop {
+                  id name type
+                  units { id unitType gridX gridY level linkRight }
+                }
+              }
+            }
+            """,
+            new { input = new { productTypeId = productId, shopLotId } },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "FinishOnboarding with units must succeed");
+
+        var data = result.GetProperty("data").GetProperty("finishOnboarding");
+
+        // Factory must have exactly 4 units: PURCHASE(0) → MANUFACTURING(1) → STORAGE(2) → B2B_SALES(3)
+        var factoryUnits = data.GetProperty("factory").GetProperty("units").EnumerateArray().OrderBy(u => u.GetProperty("gridX").GetInt32()).ToList();
+        Assert.Equal(4, factoryUnits.Count);
+        Assert.Equal("PURCHASE", factoryUnits[0].GetProperty("unitType").GetString());
+        Assert.Equal(0, factoryUnits[0].GetProperty("gridX").GetInt32());
+        Assert.True(factoryUnits[0].GetProperty("linkRight").GetBoolean(), "Purchase unit must link right to manufacturing");
+        Assert.Equal("MANUFACTURING", factoryUnits[1].GetProperty("unitType").GetString());
+        Assert.Equal(1, factoryUnits[1].GetProperty("gridX").GetInt32());
+        Assert.True(factoryUnits[1].GetProperty("linkRight").GetBoolean(), "Manufacturing unit must link right to storage");
+        Assert.Equal("STORAGE", factoryUnits[2].GetProperty("unitType").GetString());
+        Assert.Equal(2, factoryUnits[2].GetProperty("gridX").GetInt32());
+        Assert.True(factoryUnits[2].GetProperty("linkRight").GetBoolean(), "Storage unit must link right to B2B sales");
+        Assert.Equal("B2B_SALES", factoryUnits[3].GetProperty("unitType").GetString());
+        Assert.Equal(3, factoryUnits[3].GetProperty("gridX").GetInt32());
+
+        // Sales shop must have exactly 2 units: PURCHASE(0) → PUBLIC_SALES(1)
+        var shopUnits = data.GetProperty("salesShop").GetProperty("units").EnumerateArray().OrderBy(u => u.GetProperty("gridX").GetInt32()).ToList();
+        Assert.Equal(2, shopUnits.Count);
+        Assert.Equal("PURCHASE", shopUnits[0].GetProperty("unitType").GetString());
+        Assert.Equal(0, shopUnits[0].GetProperty("gridX").GetInt32());
+        Assert.True(shopUnits[0].GetProperty("linkRight").GetBoolean(), "Shop purchase unit must link right to public sales");
+        Assert.Equal("PUBLIC_SALES", shopUnits[1].GetProperty("unitType").GetString());
+        Assert.Equal(1, shopUnits[1].GetProperty("gridX").GetInt32());
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_FactoryAndShopUnitsIncludedInResponse_FoodProcessing()
+    {
+        // Verifies factory/shop unit layout is returned for the Food Processing industry.
+        var token = await RegisterAndGetTokenAsync($"onboard-layout-food-{Guid.NewGuid()}@test.com", "Layout Food Founder");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "Layout Food Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) {
+                factory { units { unitType gridX linkRight } }
+                salesShop { units { unitType gridX linkRight } }
+              }
+            }
+            """,
+            new { input = new { productTypeId = productId, shopLotId } },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "FinishOnboarding FOOD_PROCESSING with units must succeed");
+        var data = result.GetProperty("data").GetProperty("finishOnboarding");
+
+        var factoryUnits = data.GetProperty("factory").GetProperty("units").EnumerateArray().OrderBy(u => u.GetProperty("gridX").GetInt32()).ToList();
+        Assert.Equal(4, factoryUnits.Count);
+        Assert.Equal("PURCHASE", factoryUnits[0].GetProperty("unitType").GetString());
+        Assert.Equal("MANUFACTURING", factoryUnits[1].GetProperty("unitType").GetString());
+        Assert.Equal("STORAGE", factoryUnits[2].GetProperty("unitType").GetString());
+        Assert.Equal("B2B_SALES", factoryUnits[3].GetProperty("unitType").GetString());
+
+        var shopUnits = data.GetProperty("salesShop").GetProperty("units").EnumerateArray().OrderBy(u => u.GetProperty("gridX").GetInt32()).ToList();
+        Assert.Equal(2, shopUnits.Count);
+        Assert.Equal("PURCHASE", shopUnits[0].GetProperty("unitType").GetString());
+        Assert.Equal("PUBLIC_SALES", shopUnits[1].GetProperty("unitType").GetString());
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_FactoryAndShopUnitsIncludedInResponse_Healthcare()
+    {
+        // Verifies factory/shop unit layout is returned for the Healthcare industry.
+        var token = await RegisterAndGetTokenAsync($"onboard-layout-health-{Guid.NewGuid()}@test.com", "Layout Health Founder");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "Layout Health Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) {
+                factory { units { unitType gridX } }
+                salesShop { units { unitType gridX } }
+              }
+            }
+            """,
+            new { input = new { productTypeId = productId, shopLotId } },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "FinishOnboarding HEALTHCARE with units must succeed");
+        var data = result.GetProperty("data").GetProperty("finishOnboarding");
+
+        var factoryUnits = data.GetProperty("factory").GetProperty("units").EnumerateArray().OrderBy(u => u.GetProperty("gridX").GetInt32()).ToList();
+        Assert.Equal(4, factoryUnits.Count);
+        Assert.Equal("PURCHASE", factoryUnits[0].GetProperty("unitType").GetString());
+        Assert.Equal("MANUFACTURING", factoryUnits[1].GetProperty("unitType").GetString());
+
+        var shopUnits = data.GetProperty("salesShop").GetProperty("units").EnumerateArray().OrderBy(u => u.GetProperty("gridX").GetInt32()).ToList();
+        Assert.Equal(2, shopUnits.Count);
+        Assert.Equal("PURCHASE", shopUnits[0].GetProperty("unitType").GetString());
+        Assert.Equal("PUBLIC_SALES", shopUnits[1].GetProperty("unitType").GetString());
+    }
+
     #endregion
 
     #region Rankings

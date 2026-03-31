@@ -277,6 +277,63 @@ const configureGuideBasePrice = computed(() => {
   return findResumedShopBasePrice()
 })
 
+/** Unit type icon mapping for the factory layout display. */
+const unitTypeIcons: Record<string, string> = {
+  PURCHASE: '🛒',
+  MANUFACTURING: '⚙️',
+  STORAGE: '📦',
+  B2B_SALES: '🔗',
+  PUBLIC_SALES: '🏷️',
+  MINING: '⛏️',
+  BRANDING: '🎨',
+  MARKETING: '📣',
+}
+
+/**
+ * Returns the factory units from completionResult sorted by gridX position,
+ * ready for display as a production chain.
+ */
+const completionFactoryUnits = computed(() => {
+  const units = completionResult.value?.factory?.units
+  if (!units || units.length === 0) return null
+  return [...units].sort((a, b) => a.gridX - b.gridX || a.gridY - b.gridY)
+})
+
+/**
+ * Returns the sales shop units from completionResult sorted by gridX position.
+ */
+const completionShopUnits = computed(() => {
+  const units = completionResult.value?.salesShop?.units
+  if (!units || units.length === 0) return null
+  return [...units].sort((a, b) => a.gridX - b.gridX || a.gridY - b.gridY)
+})
+
+/**
+ * Returns a static guest factory layout showing what will be configured on save.
+ * Matches the ConfigureStarterFactory backend output: PURCHASE → MANUFACTURING → STORAGE → B2B_SALES.
+ */
+const guestFactoryLayout = computed(() => {
+  if (!isGuestMode.value || step.value !== 5) return null
+  return [
+    { unitType: 'PURCHASE', gridX: 0 },
+    { unitType: 'MANUFACTURING', gridX: 1 },
+    { unitType: 'STORAGE', gridX: 2 },
+    { unitType: 'B2B_SALES', gridX: 3 },
+  ]
+})
+
+/**
+ * Returns a static guest shop layout showing what will be configured on save.
+ * Matches the AddStarterShop backend output: PURCHASE → PUBLIC_SALES.
+ */
+const guestShopLayout = computed(() => {
+  if (!isGuestMode.value || step.value !== 5) return null
+  return [
+    { unitType: 'PURCHASE', gridX: 0 },
+    { unitType: 'PUBLIC_SALES', gridX: 1 },
+  ]
+})
+
 const industryIcons: Record<string, string> = {
   FURNITURE: '🪑',
   FOOD_PROCESSING: '🍞',
@@ -645,8 +702,8 @@ async function completeOnboarding() {
       `mutation FinishOnboarding($input: FinishOnboardingInput!) {
         finishOnboarding(input: $input) {
           company { id name cash }
-          factory { id name type }
-          salesShop { id name type }
+          factory { id name type units { id unitType gridX gridY level linkRight } }
+          salesShop { id name type units { id unitType gridX gridY level linkRight } }
           selectedProduct { name industry basePrice }
           startupPackOffer {
             id
@@ -814,8 +871,8 @@ async function saveGuestProgress() {
           `mutation FinishOnboarding($input: FinishOnboardingInput!) {
             finishOnboarding(input: $input) {
               company { id name cash }
-              factory { id name type }
-              salesShop { id name type }
+              factory { id name type units { id unitType gridX gridY level linkRight } }
+              salesShop { id name type units { id unitType gridX gridY level linkRight } }
               selectedProduct { name industry basePrice }
               startupPackOffer {
                 id offerKey status createdAtUtc expiresAtUtc shownAtUtc
@@ -1006,6 +1063,13 @@ function formatCurrency(value: number): string {
 
 function formatNumber(value: number): string {
   return value.toLocaleString(locale.value)
+}
+
+/** Returns the translated label for a building unit type, falling back to the raw string. */
+function getUnitTypeLabel(unitType: string): string {
+  const key = `buildingDetail.unitTypes.${unitType}`
+  const translated = t(key)
+  return translated === key ? unitType : translated
 }
 
 function formatDateTime(value: string): string {
@@ -1401,6 +1465,36 @@ useTickRefresh(async () => {
           </div>
         </div>
 
+        <!-- Guest factory layout preview (ROADMAP: "Wizard will show them the factory layout") -->
+        <div v-if="isGuestMode && guestFactoryLayout" class="factory-layout-panel" aria-label="Factory layout">
+          <h3>{{ t('onboarding.factoryLayoutTitle') }}</h3>
+          <p>{{ t('onboarding.factoryLayoutGuestDesc') }}</p>
+          <div class="unit-chain">
+            <template v-for="(unit, index) in guestFactoryLayout" :key="unit.unitType">
+              <div class="unit-chain-step">
+                <span class="unit-chain-icon">{{ unitTypeIcons[unit.unitType] ?? '▪️' }}</span>
+                <span class="unit-chain-label">{{ getUnitTypeLabel(unit.unitType) }}</span>
+              </div>
+              <span v-if="index < guestFactoryLayout.length - 1" class="unit-chain-arrow" aria-hidden="true">→</span>
+            </template>
+          </div>
+        </div>
+
+        <!-- Guest shop layout preview -->
+        <div v-if="isGuestMode && guestShopLayout" class="factory-layout-panel factory-layout-shop" aria-label="Sales shop layout">
+          <h3>{{ t('onboarding.shopLayoutTitle') }}</h3>
+          <p>{{ t('onboarding.shopLayoutGuestDesc') }}</p>
+          <div class="unit-chain">
+            <template v-for="(unit, index) in guestShopLayout" :key="unit.unitType">
+              <div class="unit-chain-step">
+                <span class="unit-chain-icon">{{ unitTypeIcons[unit.unitType] ?? '▪️' }}</span>
+                <span class="unit-chain-label">{{ getUnitTypeLabel(unit.unitType) }}</span>
+              </div>
+              <span v-if="index < guestShopLayout.length - 1" class="unit-chain-arrow" aria-hidden="true">→</span>
+            </template>
+          </div>
+        </div>
+
         <!-- Guest mode tick countdown -->
         <div v-if="isGuestMode && gameState" class="guest-tick-panel">
           <span class="configure-step-icon">⏱</span>
@@ -1513,6 +1607,36 @@ useTickRefresh(async () => {
               <strong>${{ completionResult.company.cash.toLocaleString() }}</strong>
               <span>{{ t('onboarding.completionCapital', { amount: '$' + completionResult.company.cash.toLocaleString() }) }}</span>
             </div>
+          </div>
+        </div>
+
+        <!-- Authenticated factory layout display (ROADMAP: "Wizard will show them the factory layout") -->
+        <div v-if="completionFactoryUnits" class="factory-layout-panel" aria-label="Factory layout">
+          <h3>{{ t('onboarding.factoryLayoutTitle') }}</h3>
+          <p>{{ t('onboarding.factoryLayoutDesc') }}</p>
+          <div class="unit-chain">
+            <template v-for="(unit, index) in completionFactoryUnits" :key="unit.id">
+              <div class="unit-chain-step">
+                <span class="unit-chain-icon">{{ unitTypeIcons[unit.unitType] ?? '▪️' }}</span>
+                <span class="unit-chain-label">{{ getUnitTypeLabel(unit.unitType) }}</span>
+              </div>
+              <span v-if="index < completionFactoryUnits.length - 1" class="unit-chain-arrow" aria-hidden="true">→</span>
+            </template>
+          </div>
+        </div>
+
+        <!-- Authenticated shop layout display -->
+        <div v-if="completionShopUnits" class="factory-layout-panel factory-layout-shop" aria-label="Sales shop layout">
+          <h3>{{ t('onboarding.shopLayoutTitle') }}</h3>
+          <p>{{ t('onboarding.shopLayoutDesc') }}</p>
+          <div class="unit-chain">
+            <template v-for="(unit, index) in completionShopUnits" :key="unit.id">
+              <div class="unit-chain-step">
+                <span class="unit-chain-icon">{{ unitTypeIcons[unit.unitType] ?? '▪️' }}</span>
+                <span class="unit-chain-label">{{ getUnitTypeLabel(unit.unitType) }}</span>
+              </div>
+              <span v-if="index < completionShopUnits.length - 1" class="unit-chain-arrow" aria-hidden="true">→</span>
+            </template>
           </div>
         </div>
 
@@ -2238,6 +2362,70 @@ useTickRefresh(async () => {
 .achievement-text span {
   color: var(--color-text-secondary);
   font-size: 0.8rem;
+}
+
+/* Factory layout panel — ROADMAP: "Wizard will show them the factory layout" */
+.factory-layout-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+  text-align: left;
+}
+
+.factory-layout-panel h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 0.4rem;
+}
+
+.factory-layout-panel p {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.9rem;
+}
+
+.factory-layout-shop {
+  border-color: rgba(var(--color-success-rgb, 72, 199, 142), 0.4);
+}
+
+.unit-chain {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.unit-chain-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  min-width: 80px;
+}
+
+.unit-chain-icon {
+  font-size: 1.25rem;
+}
+
+.unit-chain-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-align: center;
+}
+
+.unit-chain-arrow {
+  font-size: 1rem;
+  color: var(--color-text-secondary);
+  padding: 0 0.1rem;
+  align-self: center;
 }
 
 .startup-pack-panel {

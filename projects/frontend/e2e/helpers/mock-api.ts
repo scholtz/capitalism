@@ -1146,6 +1146,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
 
       company.cash -= shopLot.price
       const shopId = `building-shop-${Date.now()}`
+      const productId = product?.id ?? ''
       const shopBuilding: MockBuilding = {
         id: shopId,
         companyId: company.id,
@@ -1159,8 +1160,23 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         powerStatus: 'POWERED',
         isForSale: false,
         builtAtUtc: new Date().toISOString(),
-        units: [],
+        units: [
+          { id: `unit-shop-purchase-${Date.now()}`, buildingId: shopId, unitType: 'PURCHASE', gridX: 0, gridY: 0, level: 1, linkRight: true, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: productId, resourceTypeId: null, minPrice: null, maxPrice: null, purchaseSource: 'LOCAL', saleVisibility: null, budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: company.id },
+          { id: `unit-shop-publicsales-${Date.now() + 1}`, buildingId: shopId, unitType: 'PUBLIC_SALES', gridX: 1, gridY: 0, level: 1, linkRight: false, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: productId, resourceTypeId: null, minPrice: product?.basePrice != null ? product.basePrice * 1.5 : null, maxPrice: null, purchaseSource: null, saleVisibility: null, budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: null },
+        ],
         pendingConfiguration: null,
+      }
+
+      // Configure the factory with starter units (mirrors ConfigureStarterFactory on backend)
+      const factoryBuilding = company.buildings.find((candidate) => candidate.type === 'FACTORY')
+      if (factoryBuilding && factoryBuilding.units.length === 0) {
+        const resourceTypeId = product?.recipes[0]?.resourceType?.id ?? null
+        factoryBuilding.units = [
+          { id: `unit-factory-purchase-${Date.now()}`, buildingId: factoryBuilding.id, unitType: 'PURCHASE', gridX: 0, gridY: 0, level: 1, linkRight: true, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: null, resourceTypeId, minPrice: null, maxPrice: null, purchaseSource: 'OPTIMAL', saleVisibility: null, budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: null },
+          { id: `unit-factory-manufacturing-${Date.now() + 1}`, buildingId: factoryBuilding.id, unitType: 'MANUFACTURING', gridX: 1, gridY: 0, level: 1, linkRight: true, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: productId, resourceTypeId: null, minPrice: null, maxPrice: null, purchaseSource: null, saleVisibility: null, budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: null },
+          { id: `unit-factory-storage-${Date.now() + 2}`, buildingId: factoryBuilding.id, unitType: 'STORAGE', gridX: 2, gridY: 0, level: 1, linkRight: true, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: null, resourceTypeId: null, minPrice: null, maxPrice: null, purchaseSource: null, saleVisibility: null, budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: null },
+          { id: `unit-factory-b2bsales-${Date.now() + 3}`, buildingId: factoryBuilding.id, unitType: 'B2B_SALES', gridX: 3, gridY: 0, level: 1, linkRight: false, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: productId, resourceTypeId: null, minPrice: product?.basePrice ?? null, maxPrice: null, purchaseSource: null, saleVisibility: 'COMPANY', budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: null },
+        ]
       }
       company.buildings.push(shopBuilding)
 
@@ -1202,6 +1218,10 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }) })
       }
       const product = state.productTypes.find((p) => p.id === input.productTypeId)
+      const productId = product?.id ?? ''
+      const resourceTypeId = product?.recipes[0]?.resourceType?.id ?? null
+      const factoryBuildingId = `building-factory-${Date.now()}`
+      const shopBuildingId = `building-shop-${Date.now() + 1}`
       const company: MockCompany = {
         id: `company-${Date.now()}`,
         playerId: player.id,
@@ -1211,7 +1231,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         foundedAtTick: state.gameState.currentTick,
         buildings: [
           {
-            id: `building-factory-${Date.now()}`,
+            id: factoryBuildingId,
             companyId: '',
             cityId: input.cityId,
             type: 'FACTORY',
@@ -1223,11 +1243,16 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
             powerStatus: 'POWERED',
             isForSale: false,
             builtAtUtc: new Date().toISOString(),
-            units: [],
+            units: [
+              { id: `unit-factory-purchase-${Date.now()}`, buildingId: factoryBuildingId, unitType: 'PURCHASE', gridX: 0, gridY: 0, level: 1, linkRight: true, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: null, resourceTypeId, minPrice: null, maxPrice: null, purchaseSource: 'OPTIMAL', saleVisibility: null, budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: null },
+              { id: `unit-factory-manufacturing-${Date.now() + 1}`, buildingId: factoryBuildingId, unitType: 'MANUFACTURING', gridX: 1, gridY: 0, level: 1, linkRight: true, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: productId, resourceTypeId: null, minPrice: null, maxPrice: null, purchaseSource: null, saleVisibility: null, budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: null },
+              { id: `unit-factory-storage-${Date.now() + 2}`, buildingId: factoryBuildingId, unitType: 'STORAGE', gridX: 2, gridY: 0, level: 1, linkRight: true, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: null, resourceTypeId: null, minPrice: null, maxPrice: null, purchaseSource: null, saleVisibility: null, budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: null },
+              { id: `unit-factory-b2bsales-${Date.now() + 3}`, buildingId: factoryBuildingId, unitType: 'B2B_SALES', gridX: 3, gridY: 0, level: 1, linkRight: false, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: productId, resourceTypeId: null, minPrice: product?.basePrice ?? null, maxPrice: null, purchaseSource: null, saleVisibility: 'COMPANY', budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: null },
+            ],
             pendingConfiguration: null,
           },
           {
-            id: `building-shop-${Date.now()}`,
+            id: shopBuildingId,
             companyId: '',
             cityId: input.cityId,
             type: 'SALES_SHOP',
@@ -1239,7 +1264,10 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
             powerStatus: 'POWERED',
             isForSale: false,
             builtAtUtc: new Date().toISOString(),
-            units: [],
+            units: [
+              { id: `unit-shop-purchase-${Date.now() + 4}`, buildingId: shopBuildingId, unitType: 'PURCHASE', gridX: 0, gridY: 0, level: 1, linkRight: true, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: productId, resourceTypeId: null, minPrice: null, maxPrice: null, purchaseSource: 'LOCAL', saleVisibility: null, budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: null },
+              { id: `unit-shop-publicsales-${Date.now() + 5}`, buildingId: shopBuildingId, unitType: 'PUBLIC_SALES', gridX: 1, gridY: 0, level: 1, linkRight: false, linkLeft: false, linkUp: false, linkDown: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false, productTypeId: productId, resourceTypeId: null, minPrice: product?.basePrice != null ? product.basePrice * 1.5 : null, maxPrice: null, purchaseSource: null, saleVisibility: null, budget: null, mediaHouseBuildingId: null, minQuality: null, brandScope: null, vendorLockCompanyId: null },
+            ],
             pendingConfiguration: null,
           },
         ],

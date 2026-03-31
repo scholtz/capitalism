@@ -2563,3 +2563,143 @@ test.describe('Onboarding wizard CTA validation and budget guard rails', () => {
     expect(healthcareRevenue).toBeGreaterThan(foodRevenue)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────
+// Factory & shop layout display — ROADMAP: "Wizard will show them
+// the factory layout" and "important areas on the screen"
+// ─────────────────────────────────────────────────────────────────
+test.describe('Factory and shop layout display after completion', () => {
+  test('guest completion screen shows factory layout panel with all 4 production units', async ({ page }) => {
+    // ROADMAP: "This will set the factory layout for them. Wizard will show them important areas on the screen"
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Factory layout panel should be visible
+    await expect(page.locator('[aria-label="Factory layout"]')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your Factory Layout' })).toBeVisible()
+
+    // All 4 starter factory unit types must be shown
+    const factoryPanel = page.locator('[aria-label="Factory layout"]')
+    await expect(factoryPanel.locator('.unit-chain-label', { hasText: 'Purchase' })).toBeVisible()
+    await expect(factoryPanel.locator('.unit-chain-label', { hasText: 'Manufacturing' })).toBeVisible()
+    await expect(factoryPanel.locator('.unit-chain-label', { hasText: 'Storage' })).toBeVisible()
+    await expect(factoryPanel.locator('.unit-chain-label', { hasText: 'B2B Sales' })).toBeVisible()
+
+    // Arrows between units should be visible (3 arrows for 4 units)
+    await expect(factoryPanel.locator('.unit-chain-arrow')).toHaveCount(3)
+  })
+
+  test('guest completion screen shows sales shop layout panel with 2 units', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // Shop layout panel should be visible
+    await expect(page.locator('[aria-label="Sales shop layout"]')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your Sales Shop Layout' })).toBeVisible()
+
+    // Sales shop has PURCHASE → PUBLIC_SALES
+    const shopPanel = page.locator('[aria-label="Sales shop layout"]')
+    await expect(shopPanel.locator('.unit-chain-label', { hasText: 'Purchase' })).toBeVisible()
+    await expect(shopPanel.locator('.unit-chain-label', { hasText: 'Public Sales' })).toBeVisible()
+
+    // 1 arrow between 2 units
+    await expect(shopPanel.locator('.unit-chain-arrow')).toHaveCount(1)
+  })
+
+  test('authenticated completion screen shows factory layout with units from backend', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    player.onboardingCurrentStep = 'SHOP_SELECTION'
+    player.onboardingIndustry = 'FURNITURE'
+    player.onboardingCityId = state.cities[0].id
+    player.onboardingCompanyId = 'company-existing'
+    player.onboardingFactoryLotId = state.buildingLots[0].id
+    const factoryId = `building-factory-auth-test`
+    player.companies = [{
+      id: 'company-existing',
+      playerId: player.id,
+      name: 'Auth Test Corp',
+      cash: 450000,
+      foundedAtUtc: new Date().toISOString(),
+      foundedAtTick: 1,
+      buildings: [{
+        id: factoryId,
+        companyId: 'company-existing',
+        cityId: state.cities[0].id,
+        type: 'FACTORY',
+        name: 'Auth Test Corp Factory',
+        latitude: 48.15,
+        longitude: 17.11,
+        level: 1,
+        powerConsumption: 2,
+        powerStatus: 'POWERED',
+        isForSale: false,
+        builtAtUtc: new Date().toISOString(),
+        units: [],
+        pendingConfiguration: null,
+      }],
+    }]
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto('/onboarding')
+
+    // Step 4: select product + shop lot + purchase
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Authenticated completion screen
+    await expect(page.getByRole('heading', { name: '🚀 Your Empire Has Launched!' })).toBeVisible()
+
+    // Factory layout panel shown with backend units
+    await expect(page.locator('[aria-label="Factory layout"]')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Your Factory Layout' })).toBeVisible()
+    const factoryPanel = page.locator('[aria-label="Factory layout"]')
+    await expect(factoryPanel.locator('.unit-chain-label', { hasText: 'Purchase' })).toBeVisible()
+    await expect(factoryPanel.locator('.unit-chain-label', { hasText: 'Manufacturing' })).toBeVisible()
+    await expect(factoryPanel.locator('.unit-chain-label', { hasText: 'Storage' })).toBeVisible()
+    await expect(factoryPanel.locator('.unit-chain-label', { hasText: 'B2B Sales' })).toBeVisible()
+
+    // Shop layout also shown
+    await expect(page.locator('[aria-label="Sales shop layout"]')).toBeVisible()
+    const shopPanel = page.locator('[aria-label="Sales shop layout"]')
+    await expect(shopPanel.locator('.unit-chain-label', { hasText: 'Purchase' })).toBeVisible()
+    await expect(shopPanel.locator('.unit-chain-label', { hasText: 'Public Sales' })).toBeVisible()
+  })
+
+  test('factory layout desc explains the units to the player in guest mode', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    // The descriptive text explains what will happen (guest layout is a preview)
+    const factoryPanel = page.locator('[aria-label="Factory layout"]')
+    await expect(factoryPanel).toContainText('configured')
+
+    const shopPanel = page.locator('[aria-label="Sales shop layout"]')
+    await expect(shopPanel).toContainText('configured')
+  })
+
+  test('factory layout icons are visible for each unit in the chain', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    const factoryPanel = page.locator('[aria-label="Factory layout"]')
+    // There should be 4 icon elements in the factory chain
+    await expect(factoryPanel.locator('.unit-chain-icon')).toHaveCount(4)
+
+    const shopPanel = page.locator('[aria-label="Sales shop layout"]')
+    // There should be 2 icon elements in the shop chain
+    await expect(shopPanel.locator('.unit-chain-icon')).toHaveCount(2)
+  })
+})
