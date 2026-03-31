@@ -3450,6 +3450,240 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task FinishOnboarding_FoodProcessingConfiguresStarterPricingAndLinks()
+    {
+        // Regression test: ConfigureStarterFactory must NOT set MaxPrice on the factory purchase unit.
+        // Bread BasePrice = 3 but Grain exchange price ≈ 6, so capping at BasePrice silently breaks
+        // the FOOD_PROCESSING supply chain. This test explicitly verifies null maxPrice.
+        var token = await RegisterAndGetTokenAsync($"onboard-food-config-{Guid.NewGuid()}@test.com", "Food Config Founder");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "Food Config Co", factoryLotId } },
+            token);
+
+        var productsResult = await ExecuteGraphQlAsync(
+            """
+            query {
+              productTypes(industry: "FOOD_PROCESSING") {
+                id
+                slug
+                basePrice
+                recipes {
+                  resourceType { id }
+                }
+              }
+            }
+            """);
+
+        var selectedProduct = productsResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .Single(product => product.GetProperty("slug").GetString() == "bread");
+        var productId = selectedProduct.GetProperty("id").GetString()!;
+        var basePrice = selectedProduct.GetProperty("basePrice").GetDecimal();
+        var starterResourceId = selectedProduct.GetProperty("recipes").EnumerateArray()
+            .Select(recipe => recipe.GetProperty("resourceType"))
+            .Single(resourceType => resourceType.ValueKind == JsonValueKind.Object)
+            .GetProperty("id")
+            .GetString();
+
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 95_000m);
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        var companiesResult = await ExecuteGraphQlAsync(
+            """
+            {
+              myCompanies {
+                buildings {
+                  type
+                  units {
+                    unitType
+                    gridX
+                    resourceTypeId
+                    productTypeId
+                    minPrice
+                    maxPrice
+                    purchaseSource
+                    saleVisibility
+                    vendorLockCompanyId
+                    linkRight
+                  }
+                }
+              }
+            }
+            """,
+            token: token);
+
+        var buildings = companiesResult.GetProperty("data").GetProperty("myCompanies")[0].GetProperty("buildings")
+            .EnumerateArray()
+            .ToList();
+        var factory = buildings.Single(building => building.GetProperty("type").GetString() == "FACTORY");
+        var shop = buildings.Single(building => building.GetProperty("type").GetString() == "SALES_SHOP");
+
+        var factoryUnits = factory.GetProperty("units").EnumerateArray().ToList();
+        var factoryPurchase = factoryUnits.Single(unit => unit.GetProperty("unitType").GetString() == "PURCHASE");
+        var factoryManufacturing = factoryUnits.Single(unit => unit.GetProperty("unitType").GetString() == "MANUFACTURING");
+        var factoryStorage = factoryUnits.Single(unit => unit.GetProperty("unitType").GetString() == "STORAGE");
+        var factorySales = factoryUnits.Single(unit => unit.GetProperty("unitType").GetString() == "B2B_SALES");
+
+        Assert.Equal(0, factoryPurchase.GetProperty("gridX").GetInt32());
+        Assert.Equal(starterResourceId, factoryPurchase.GetProperty("resourceTypeId").GetString());
+        // Null maxPrice is critical for FOOD_PROCESSING: Grain exchange price (~6) > Bread basePrice (3).
+        // If maxPrice were set to basePrice, the factory could never purchase Grain at market rate.
+        Assert.Equal(JsonValueKind.Null, factoryPurchase.GetProperty("maxPrice").ValueKind);
+        Assert.Equal("OPTIMAL", factoryPurchase.GetProperty("purchaseSource").GetString());
+        Assert.True(factoryPurchase.GetProperty("linkRight").GetBoolean());
+
+        Assert.Equal(1, factoryManufacturing.GetProperty("gridX").GetInt32());
+        Assert.Equal(productId, factoryManufacturing.GetProperty("productTypeId").GetString());
+        Assert.True(factoryManufacturing.GetProperty("linkRight").GetBoolean());
+
+        Assert.Equal(2, factoryStorage.GetProperty("gridX").GetInt32());
+        Assert.True(factoryStorage.GetProperty("linkRight").GetBoolean());
+
+        Assert.Equal(3, factorySales.GetProperty("gridX").GetInt32());
+        Assert.Equal(productId, factorySales.GetProperty("productTypeId").GetString());
+        Assert.Equal(basePrice, factorySales.GetProperty("minPrice").GetDecimal());
+        Assert.Equal("COMPANY", factorySales.GetProperty("saleVisibility").GetString());
+
+        var shopUnits = shop.GetProperty("units").EnumerateArray().ToList();
+        var shopPurchase = shopUnits.Single(unit => unit.GetProperty("unitType").GetString() == "PURCHASE");
+        var publicSales = shopUnits.Single(unit => unit.GetProperty("unitType").GetString() == "PUBLIC_SALES");
+
+        Assert.Equal(0, shopPurchase.GetProperty("gridX").GetInt32());
+        Assert.Equal(productId, shopPurchase.GetProperty("productTypeId").GetString());
+        Assert.Equal(basePrice * 1.1m, shopPurchase.GetProperty("maxPrice").GetDecimal());
+        Assert.Equal("LOCAL", shopPurchase.GetProperty("purchaseSource").GetString());
+        Assert.True(shopPurchase.GetProperty("linkRight").GetBoolean());
+
+        Assert.Equal(1, publicSales.GetProperty("gridX").GetInt32());
+        Assert.Equal(productId, publicSales.GetProperty("productTypeId").GetString());
+        Assert.Equal(basePrice * 1.5m, publicSales.GetProperty("minPrice").GetDecimal());
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_HealthcareConfiguresStarterPricingAndLinks()
+    {
+        // Verifies that ConfigureStarterFactory correctly sets null maxPrice on the factory purchase unit
+        // for HEALTHCARE, and that all unit positions, links, pricing, and visibility are correct.
+        var token = await RegisterAndGetTokenAsync($"onboard-health-config-{Guid.NewGuid()}@test.com", "Health Config Founder");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "Health Config Co", factoryLotId } },
+            token);
+
+        var productsResult = await ExecuteGraphQlAsync(
+            """
+            query {
+              productTypes(industry: "HEALTHCARE") {
+                id
+                slug
+                basePrice
+                recipes {
+                  resourceType { id }
+                }
+              }
+            }
+            """);
+
+        var selectedProduct = productsResult.GetProperty("data").GetProperty("productTypes")
+            .EnumerateArray()
+            .Single(product => product.GetProperty("slug").GetString() == "basic-medicine");
+        var productId = selectedProduct.GetProperty("id").GetString()!;
+        var basePrice = selectedProduct.GetProperty("basePrice").GetDecimal();
+        var starterResourceId = selectedProduct.GetProperty("recipes").EnumerateArray()
+            .Select(recipe => recipe.GetProperty("resourceType"))
+            .Single(resourceType => resourceType.ValueKind == JsonValueKind.Object)
+            .GetProperty("id")
+            .GetString();
+
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 95_000m);
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        var companiesResult = await ExecuteGraphQlAsync(
+            """
+            {
+              myCompanies {
+                buildings {
+                  type
+                  units {
+                    unitType
+                    gridX
+                    resourceTypeId
+                    productTypeId
+                    minPrice
+                    maxPrice
+                    purchaseSource
+                    saleVisibility
+                    vendorLockCompanyId
+                    linkRight
+                  }
+                }
+              }
+            }
+            """,
+            token: token);
+
+        var buildings = companiesResult.GetProperty("data").GetProperty("myCompanies")[0].GetProperty("buildings")
+            .EnumerateArray()
+            .ToList();
+        var factory = buildings.Single(building => building.GetProperty("type").GetString() == "FACTORY");
+        var shop = buildings.Single(building => building.GetProperty("type").GetString() == "SALES_SHOP");
+
+        var factoryUnits = factory.GetProperty("units").EnumerateArray().ToList();
+        var factoryPurchase = factoryUnits.Single(unit => unit.GetProperty("unitType").GetString() == "PURCHASE");
+        var factoryManufacturing = factoryUnits.Single(unit => unit.GetProperty("unitType").GetString() == "MANUFACTURING");
+        var factoryStorage = factoryUnits.Single(unit => unit.GetProperty("unitType").GetString() == "STORAGE");
+        var factorySales = factoryUnits.Single(unit => unit.GetProperty("unitType").GetString() == "B2B_SALES");
+
+        Assert.Equal(0, factoryPurchase.GetProperty("gridX").GetInt32());
+        Assert.Equal(starterResourceId, factoryPurchase.GetProperty("resourceTypeId").GetString());
+        // Null maxPrice ensures the factory can purchase raw materials at market rate regardless of product base price.
+        Assert.Equal(JsonValueKind.Null, factoryPurchase.GetProperty("maxPrice").ValueKind);
+        Assert.Equal("OPTIMAL", factoryPurchase.GetProperty("purchaseSource").GetString());
+        Assert.True(factoryPurchase.GetProperty("linkRight").GetBoolean());
+
+        Assert.Equal(1, factoryManufacturing.GetProperty("gridX").GetInt32());
+        Assert.Equal(productId, factoryManufacturing.GetProperty("productTypeId").GetString());
+        Assert.True(factoryManufacturing.GetProperty("linkRight").GetBoolean());
+
+        Assert.Equal(2, factoryStorage.GetProperty("gridX").GetInt32());
+        Assert.True(factoryStorage.GetProperty("linkRight").GetBoolean());
+
+        Assert.Equal(3, factorySales.GetProperty("gridX").GetInt32());
+        Assert.Equal(productId, factorySales.GetProperty("productTypeId").GetString());
+        Assert.Equal(basePrice, factorySales.GetProperty("minPrice").GetDecimal());
+        Assert.Equal("COMPANY", factorySales.GetProperty("saleVisibility").GetString());
+
+        var shopUnits = shop.GetProperty("units").EnumerateArray().ToList();
+        var shopPurchase = shopUnits.Single(unit => unit.GetProperty("unitType").GetString() == "PURCHASE");
+        var publicSales = shopUnits.Single(unit => unit.GetProperty("unitType").GetString() == "PUBLIC_SALES");
+
+        Assert.Equal(0, shopPurchase.GetProperty("gridX").GetInt32());
+        Assert.Equal(productId, shopPurchase.GetProperty("productTypeId").GetString());
+        Assert.Equal(basePrice * 1.1m, shopPurchase.GetProperty("maxPrice").GetDecimal());
+        Assert.Equal("LOCAL", shopPurchase.GetProperty("purchaseSource").GetString());
+        Assert.True(shopPurchase.GetProperty("linkRight").GetBoolean());
+
+        Assert.Equal(1, publicSales.GetProperty("gridX").GetInt32());
+        Assert.Equal(productId, publicSales.GetProperty("productTypeId").GetString());
+        Assert.Equal(basePrice * 1.5m, publicSales.GetProperty("minPrice").GetDecimal());
+    }
+
+    [Fact]
     public async Task StartOnboardingCompany_UnsuitableFactoryLot_Fails()
     {
         var token = await RegisterAndGetTokenAsync($"onboard-map-invalid-{Guid.NewGuid()}@test.com", "Wrong Plot");
