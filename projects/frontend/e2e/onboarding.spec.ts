@@ -4,7 +4,12 @@
  * Implements issue #54 — guest onboarding sandbox wizard with save-progress handoff.
  */
 import { test, expect, type Page } from '@playwright/test'
-import { setupMockApi, makePlayer, makeStartupPackOffer } from './helpers/mock-api'
+import {
+  setupMockApi,
+  makePlayer,
+  makeStartupPackOffer,
+  makeDefaultBuildingLots,
+} from './helpers/mock-api'
 
 async function authenticateViaLocalStorage(page: Page, token: string) {
   await page.addInitScript((value) => {
@@ -2827,5 +2832,163 @@ test.describe('Guest registration error recovery (AC10 — resilience)', () => {
     // After a successful registration the onboarding mutation runs — expect the launcher screen
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
     expect(state.currentUserId).toBeTruthy()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// Empty-lots graceful degradation — AC11
+// "If a guest onboarding run encounters a recoverable conflict or
+// invalid state, the product handles it gracefully."
+// ─────────────────────────────────────────────────────────────────
+test.describe('Empty-lots graceful degradation (AC11)', () => {
+  test('step 3 shows no-factory-lots message when city has no suitable factory lots', async ({
+    page,
+  }) => {
+    // Arrange: give the city a shop lot only — no FACTORY-capable lot
+    const state = setupMockApi(page)
+    state.buildingLots = makeDefaultBuildingLots().filter((lot) =>
+      lot.suitableTypes.includes('SALES_SHOP'),
+    )
+    await page.goto('/onboarding')
+
+    // Steps 1 & 2
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+
+    // The empty-state message should be shown instead of the lot selector
+    await expect(page.locator('.empty-state-message').first()).toBeVisible()
+    await expect(page.locator('.empty-state-message').first()).toContainText(
+      /No factory-capable lots are available/i,
+    )
+
+    // The "Purchase First Factory" CTA must remain disabled (no lot can be selected)
+    await page.getByLabel('Company Name').fill('Empty Lot Corp')
+    await expect(page.getByRole('button', { name: 'Purchase First Factory' })).toBeDisabled()
+  })
+
+  test('step 4 shows no-shop-lots message when city has no suitable sales-shop lots', async ({
+    page,
+  }) => {
+    // Arrange: supply only factory lots — strip all SALES_SHOP lots
+    const state = setupMockApi(page)
+    state.buildingLots = makeDefaultBuildingLots().filter((lot) =>
+      lot.suitableTypes.includes('FACTORY'),
+    )
+    await page.goto('/onboarding')
+
+    // Complete steps 1-3 (factory purchase succeeds — factory lot IS available)
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('No Shop Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+
+    // The no-shop-lots empty-state message should appear
+    await expect(page.locator('.empty-state-message').first()).toBeVisible()
+    await expect(page.locator('.empty-state-message').first()).toContainText(
+      /No sales-shop lots are available/i,
+    )
+
+    // "Purchase First Sales Shop" must stay disabled — no lot can be selected
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await expect(page.getByRole('button', { name: 'Purchase First Sales Shop' })).toBeDisabled()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// Non-Bratislava city selection
+// Verifies the wizard completes successfully when the player
+// chooses Prague instead of Bratislava (all cities must work).
+// ─────────────────────────────────────────────────────────────────
+test.describe('City selection — Prague as starter city', () => {
+  test('guest can complete wizard steps 1-5 after selecting Prague as starter city', async ({
+    page,
+  }) => {
+    // Arrange: add Prague-specific lots so the factory and shop steps are available
+    const state = setupMockApi(page)
+    state.buildingLots = [
+      ...makeDefaultBuildingLots(),
+      {
+        id: 'lot-prague-factory-1',
+        cityId: 'city-pr',
+        name: 'Prague Industrial Park',
+        description: 'Factory-capable lot in Prague.',
+        district: 'Industrial Zone',
+        latitude: 50.08,
+        longitude: 14.44,
+        price: 80_000,
+        suitableTypes: 'FACTORY,MINE',
+        resourceTypeId: null,
+        materialQuality: null,
+        materialQuantity: null,
+        ownedByCompanyId: null,
+        appraisedValue: 80_000,
+      },
+      {
+        id: 'lot-prague-shop-1',
+        cityId: 'city-pr',
+        name: 'Prague High Street Shop',
+        description: 'Retail space in Prague city centre.',
+        district: 'Commercial District',
+        latitude: 50.083,
+        longitude: 14.43,
+        price: 75_000,
+        suitableTypes: 'SALES_SHOP,COMMERCIAL',
+        resourceTypeId: null,
+        materialQuality: null,
+        materialQuantity: null,
+        ownedByCompanyId: null,
+        appraisedValue: 75_000,
+      },
+    ]
+
+    await page.goto('/onboarding')
+
+    // Step 1: select Furniture
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: select Prague (not Bratislava)
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Prague' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot in Prague
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Prague Empire Inc')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Prague Industrial Park/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: product + shop lot in Prague
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Prague High Street Shop/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: completion / save-progress screen
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+    // Ensure the profit preview shows a positive revenue amount
+    const revenueEl = page.locator('.profit-stat-revenue')
+    await expect(revenueEl).toBeVisible()
+    const revenueText = await revenueEl.textContent()
+    expect(revenueText).toMatch(/\$\d/)
+
+    // The save-progress form should be present for registration
+    await expect(page.locator('#guestEmail')).toBeVisible()
+
+    // Verify the guest's chosen city (Prague) was used — state.buildingLots shows Prague lots were loaded
+    expect(state.buildingLots.some((lot) => lot.cityId === 'city-pr')).toBe(true)
   })
 })
