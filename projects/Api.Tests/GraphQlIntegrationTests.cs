@@ -5596,6 +5596,48 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task PurchaseLot_WrongCompanyOwner_Fails()
+    {
+        // An authenticated player must not be able to purchase a lot using another player's company.
+        var tokenOwner = await RegisterAndGetTokenAsync($"lot-owner-{Guid.NewGuid()}@test.com");
+        var (ownerCompanyId, _, _) = await CompleteOnboardingAsync(tokenOwner, "Owner Co");
+
+        // Second player registers and tries to use the first player's company ID
+        var tokenAttacker = await RegisterAndGetTokenAsync($"lot-attacker-{Guid.NewGuid()}@test.com");
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var bratislavaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Bratislava")
+            .GetProperty("id").GetString();
+
+        var lotsResult = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id suitableTypes ownerCompanyId }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        var lot = lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
+            .First(l => l.GetProperty("suitableTypes").GetString()!.Contains("FACTORY")
+                     && l.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null);
+        var lotId = lot.GetProperty("id").GetString();
+
+        // The attacker authenticates with their own token but submits the owner's company ID
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { lot { id } }
+            }
+            """,
+            new { input = new { companyId = ownerCompanyId, lotId, buildingType = "FACTORY", buildingName = "Stolen Factory" } },
+            tokenAttacker);
+
+        Assert.True(result.TryGetProperty("errors", out var errors), "should fail when using another player's company ID");
+        Assert.Contains("Company not found", errors[0].GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task PurchaseLot_CityLotsQueryReflectsOwnershipAfterPurchase()
     {
         // After a successful purchaseLot, the cityLots query must immediately return

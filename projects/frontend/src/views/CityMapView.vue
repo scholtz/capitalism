@@ -41,6 +41,7 @@ const purchasing = ref(false)
 const purchaseError = ref<string | null>(null)
 const purchaseSuccess = ref<string | null>(null)
 const justPurchasedBuildingId = ref<string | null>(null)
+const justPurchasedBuildingType = ref<string | null>(null)
 
 // Map reference
 const mapContainer = ref<HTMLDivElement | null>(null)
@@ -140,6 +141,22 @@ function placementGuidanceKey(buildingType: string): string {
     MEDIA_HOUSE: 'placementGuidanceMediaHouse',
   }
   return map[buildingType] ?? 'placementGuidanceGeneric'
+}
+
+function postPurchaseBodyKey(buildingType: string): string {
+  const map: Record<string, string> = {
+    FACTORY: 'postPurchaseBodyFactory',
+    MINE: 'postPurchaseBodyMine',
+    SALES_SHOP: 'postPurchaseBodySalesShop',
+    RESEARCH_DEVELOPMENT: 'postPurchaseBodyResearchDevelopment',
+    APARTMENT: 'postPurchaseBodyApartment',
+    COMMERCIAL: 'postPurchaseBodyCommercial',
+    MEDIA_HOUSE: 'postPurchaseBodyMediaHouse',
+    BANK: 'postPurchaseBodyBank',
+    EXCHANGE: 'postPurchaseBodyExchange',
+    POWER_PLANT: 'postPurchaseBodyPowerPlant',
+  }
+  return map[buildingType] ?? 'postPurchaseBody'
 }
 
 async function fetchData() {
@@ -264,6 +281,7 @@ function selectLot(lot: BuildingLot) {
   purchaseError.value = null
   purchaseSuccess.value = null
   justPurchasedBuildingId.value = null
+  justPurchasedBuildingType.value = null
   selectedBuildingType.value = ''
   buildingName.value = ''
 
@@ -327,6 +345,7 @@ async function confirmPurchase() {
 
     purchaseSuccess.value = t('cityMap.purchaseSuccess')
     justPurchasedBuildingId.value = data.purchaseLot.building.id
+    justPurchasedBuildingType.value = data.purchaseLot.building.type
     purchaseMode.value = false
     updateMarkers()
   } catch (e: unknown) {
@@ -671,12 +690,25 @@ watch(viewMode, async (mode) => {
               <div v-else class="purchase-form">
                 <div class="form-group">
                   <label>{{ t('cityMap.buildingType') }}</label>
-                  <select v-model="selectedBuildingType" class="form-select">
-                    <option value="">{{ t('cityMap.selectBuildingType') }}</option>
-                    <option v-for="type in suitableTypesForLot" :key="type" :value="type">
-                      {{ formatBuildingType(type) }}
-                    </option>
-                  </select>
+                  <div class="building-type-cards" role="radiogroup" :aria-label="t('cityMap.buildingType')">
+                    <button
+                      v-for="type in suitableTypesForLot"
+                      :key="type"
+                      class="building-type-card"
+                      :class="{ selected: selectedBuildingType === type }"
+                      type="button"
+                      role="radio"
+                      :aria-checked="selectedBuildingType === type"
+                      @click="selectedBuildingType = type"
+                    >
+                      <span class="card-type-icon">{{ t(`buildings.typeIcons.${type}`) }}</span>
+                      <span class="card-type-name">{{ formatBuildingType(type) }}</span>
+                      <span class="card-type-desc">{{ t(`buildings.typeDescriptions.${type}`) }}</span>
+                    </button>
+                  </div>
+                  <p v-if="selectedBuildingType" class="selected-type-guidance">
+                    {{ t(`cityMap.${placementGuidanceKey(selectedBuildingType)}`) }}
+                  </p>
                 </div>
 
                 <div class="form-group">
@@ -721,8 +753,8 @@ watch(viewMode, async (mode) => {
           <!-- Post-purchase setup guidance (shown immediately after a successful purchase) -->
           <div v-if="justPurchasedBuildingId && isOwnedByPlayer" class="post-purchase-banner" role="status">
             <div class="post-purchase-body">
-              <strong class="post-purchase-title">🏭 {{ t('cityMap.postPurchaseTitle') }}</strong>
-              <p class="post-purchase-text">{{ t('cityMap.postPurchaseBody') }}</p>
+              <strong class="post-purchase-title">{{ t(`buildings.typeIcons.${justPurchasedBuildingType ?? 'FACTORY'}`) }} {{ t('cityMap.postPurchaseTitle') }}</strong>
+              <p class="post-purchase-text">{{ t(`cityMap.${postPurchaseBodyKey(justPurchasedBuildingType ?? 'FACTORY')}`) }}</p>
             </div>
             <RouterLink
               :to="`/building/${justPurchasedBuildingId}`"
@@ -1242,6 +1274,69 @@ watch(viewMode, async (mode) => {
 .form-input:focus {
   outline: none;
   border-color: var(--color-primary);
+}
+
+/* Building type card picker */
+.building-type-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.building-type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.75rem 0.5rem;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  color: var(--color-text);
+}
+
+.building-type-card:hover {
+  border-color: var(--color-primary);
+  background: rgba(0, 71, 255, 0.04);
+}
+
+.building-type-card.selected {
+  border-color: var(--color-primary);
+  background: rgba(0, 71, 255, 0.08);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.card-type-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.card-type-name {
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.card-type-desc {
+  font-size: 0.6875rem;
+  color: var(--color-text-secondary);
+  line-height: 1.3;
+}
+
+.selected-type-guidance {
+  font-size: 0.75rem;
+  color: var(--color-primary);
+  line-height: 1.5;
+  padding: 0.5rem 0.625rem;
+  background: rgba(0, 71, 255, 0.05);
+  border-left: 3px solid var(--color-primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin-top: 0.375rem;
+  font-style: italic;
 }
 
 .success-message {

@@ -146,7 +146,7 @@ test.describe('City Map View', () => {
     await page.getByRole('button', { name: /Purchase Lot/i }).click()
 
     // Fill in purchase form
-    await page.getByRole('complementary').locator('select').selectOption('FACTORY')
+    await page.locator('.building-type-card').filter({ hasText: /Factory/i }).click()
     await page.getByRole('complementary').locator('input[type="text"]').fill('My New Factory')
 
     // Click confirm
@@ -229,7 +229,7 @@ test.describe('City Map View', () => {
     lot.ownerCompanyId = 'other-company'
     lot.ownerCompany = { id: 'other-company', name: 'Rival Corp' }
 
-    await page.locator('.form-select').selectOption('SALES_SHOP')
+    await page.locator('.building-type-card').filter({ hasText: /Sales Shop/i }).click()
     await page.locator('.form-input').fill('My Shop')
     await page.getByRole('button', { name: /Confirm Purchase/i }).click()
 
@@ -391,8 +391,8 @@ test.describe('City Map View', () => {
     // Open purchase form
     await page.getByRole('button', { name: /Purchase Lot/i }).click()
 
-    // Fill in and submit
-    await page.getByRole('complementary').locator('select').selectOption('FACTORY')
+    // Select building type via card picker, fill name, and submit
+    await page.locator('.building-type-card').filter({ hasText: /Factory/i }).click()
     await page.getByRole('complementary').locator('input[type="text"]').fill('Victory Factory')
     await page.getByRole('button', { name: /Confirm Purchase/i }).click()
 
@@ -483,7 +483,7 @@ test.describe('City Map View', () => {
     await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
     await page.getByRole('button', { name: /Purchase Lot/i }).click()
 
-    await page.locator('.form-select').selectOption('FACTORY')
+    await page.locator('.building-type-card').filter({ hasText: /Factory/i }).click()
     await page.locator('.form-input').fill('Bankrupt Factory')
     await page.getByRole('button', { name: /Confirm Purchase/i }).click()
 
@@ -602,7 +602,7 @@ test.describe('City Map View', () => {
   })
 
   test('narrow viewport still shows raw material and placement guidance', async ({ page }) => {
-    page.setViewportSize({ width: 375, height: 812 })
+    await page.setViewportSize({ width: 375, height: 812 })
     const { player } = setupAuthenticatedPlayer(page)
     await authenticateViaLocalStorage(page, player.id)
 
@@ -652,10 +652,9 @@ test.describe('City Map — invalid and stale selection paths', () => {
     await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
     await page.getByRole('button', { name: /Purchase Lot/i }).click()
 
-    // The select only shows suitable types — MINE should be in it, FACTORY should not
-    const select = page.locator('.form-select')
-    await expect(select.locator('option[value="MINE"]')).toBeAttached()
-    await expect(select.locator('option[value="FACTORY"]')).not.toBeAttached()
+    // The card picker only shows suitable types — Mine card should be present, Factory should not
+    await expect(page.locator('.building-type-card').filter({ hasText: /Mine/i })).toBeVisible()
+    await expect(page.locator('.building-type-card').filter({ hasText: /Factory/i })).toHaveCount(0)
   })
 
   test('shows stale-lot error when lot was claimed by another player before purchase completes', async ({
@@ -690,7 +689,7 @@ test.describe('City Map — invalid and stale selection paths', () => {
     lots[0]!.ownerCompanyId = 'other-company-99'
 
     // Now submit the purchase
-    await page.locator('.form-select').selectOption('FACTORY')
+    await page.locator('.building-type-card').filter({ hasText: /Factory/i }).click()
     await page.locator('.form-input').fill('Too Late Factory')
     await page.getByRole('button', { name: /Confirm Purchase/i }).click()
 
@@ -831,3 +830,119 @@ test.describe('City Map — invalid and stale selection paths', () => {
   })
 })
 
+// ── Building type card picker ────────────────────────────────────────────────
+
+test.describe('City Map — building type card picker', () => {
+  test('purchase form shows card-based building type picker with icon and description', async ({
+    page,
+  }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    // Cards should be visible for each suitable type (Industrial Plot A1 has FACTORY,MINE)
+    const factoryCard = page.locator('.building-type-card').filter({ hasText: /Factory/i })
+    const mineCard = page.locator('.building-type-card').filter({ hasText: /Mine/i })
+    await expect(factoryCard).toBeVisible()
+    await expect(mineCard).toBeVisible()
+
+    // Each card shows an icon and description
+    await expect(factoryCard.locator('.card-type-icon')).toBeVisible()
+    await expect(factoryCard.locator('.card-type-desc')).toBeVisible()
+    await expect(mineCard.locator('.card-type-icon')).toBeVisible()
+  })
+
+  test('selecting a building type card marks it as selected and shows strategic guidance', async ({
+    page,
+  }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    // Click the Factory card
+    await page.locator('.building-type-card').filter({ hasText: /Factory/i }).click()
+
+    // Factory card should be selected
+    await expect(
+      page.locator('.building-type-card.selected').filter({ hasText: /Factory/i }),
+    ).toBeVisible()
+
+    // Strategic guidance for factory should appear below the cards
+    await expect(page.locator('.selected-type-guidance')).toBeVisible()
+    await expect(page.locator('.selected-type-guidance')).toContainText(/industrial/i)
+  })
+
+  test('card picker only shows building types suitable for the lot', async ({ page }) => {
+    // High Street Retail Space is suitable for SALES_SHOP and COMMERCIAL only
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    // Should show Sales Shop card (suitable)
+    await expect(
+      page.locator('.building-type-card').filter({ hasText: /Sales Shop/i }),
+    ).toBeVisible()
+
+    // Should NOT show Factory card (not suitable for retail space)
+    await expect(
+      page.locator('.building-type-card').filter({ hasText: /Factory/i }),
+    ).toHaveCount(0)
+  })
+
+  test('post-purchase banner shows factory-specific next-step guidance', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    await page.locator('.building-type-card').filter({ hasText: /Factory/i }).click()
+    await page.locator('.form-input').fill('Supply Chain Factory')
+    await page.getByRole('button', { name: /Confirm Purchase/i }).click()
+
+    // Post-purchase banner should show factory-specific guidance
+    const banner = page.locator('.post-purchase-banner')
+    await expect(banner).toBeVisible()
+    await expect(banner).toContainText(/Purchasing unit/i)
+    await expect(banner).toContainText(/Manufacturing unit/i)
+  })
+
+  test('mobile viewport can complete purchase flow using card picker', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    // On mobile the card picker should still be visible and usable
+    const factoryCard = page.locator('.building-type-card').filter({ hasText: /Factory/i })
+    await expect(factoryCard).toBeVisible()
+    await factoryCard.click()
+    await expect(factoryCard).toHaveClass(/selected/)
+
+    await page.locator('.form-input').fill('Mobile Factory')
+    await page.getByRole('button', { name: /Confirm Purchase/i }).click()
+
+    // Success: post-purchase banner appears
+    await expect(page.locator('.post-purchase-banner')).toBeVisible()
+    await expect(page.getByRole('link', { name: /Set Up Your Building/i })).toBeVisible()
+  })
+})
