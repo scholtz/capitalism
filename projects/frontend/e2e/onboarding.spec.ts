@@ -2905,6 +2905,46 @@ test.describe('Empty-lots graceful degradation (AC11)', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────
+// Tick feedback — connects simulation state to UI (issue AC#3)
+// "The player can observe game time/tick progression during onboarding
+//  in a way that feels connected to the simulation."
+// ─────────────────────────────────────────────────────────────────
+test.describe('Tick feedback connected to simulation state', () => {
+  test('guest step-5 tick panel shows the current tick from game state', async ({ page }) => {
+    // The tick number shown in the guest save-progress screen must come from the
+    // live gameState API response, not from a hardcoded constant in the UI.
+    // This test sets a non-default tick value and verifies the panel uses it.
+    const state = setupMockApi(page)
+    state.gameState.currentTick = 77 // Non-default value (default mock is 42)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    // The tick panel must reference exactly the tick number returned by the API
+    await expect(page.locator('.guest-tick-panel')).toBeVisible()
+    await expect(page.getByText(/Current simulation tick: 77\./)).toBeVisible()
+  })
+
+  test('authenticated completion screen shows the correct tick from game state', async ({ page }) => {
+    // After authentication + FinishOnboarding, the configure-guide tick step must
+    // show the tick number from the authoritative gameState response.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 99 // Non-default to prove the UI uses the API value
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/onboarding')
+    await completeGuidedOnboarding(page, 'Tick Verify Corp')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    // Configure-guide tick step must reference the server-provided tick (99)
+    await expect(page.getByText('Current simulation tick: 99.')).toBeVisible()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
 // Non-Bratislava city selection
 // Verifies the wizard completes successfully when the player
 // chooses Prague instead of Bratislava (all cities must work).

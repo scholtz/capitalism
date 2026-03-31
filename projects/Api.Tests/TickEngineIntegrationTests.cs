@@ -1659,4 +1659,214 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
     }
 
     #endregion
+
+    #region Full supply-chain integration (onboarding AC#4)
+
+    // AC#4: "The guided flow results in a valid starter company scenario that demonstrates
+    // production and sales leading to visible profit or a clearly explained business outcome."
+    //
+    // These tests validate the EXACT unit configuration produced by ConfigureStarterFactory +
+    // AddStarterShop for every starter industry. They run enough ticks for the full chain
+    // (raw material purchase → manufacturing → storage → B2B sales → shop purchase → public
+    // sales) to complete and assert that PublicSalesRecords are created, proving the
+    // onboarding-configured supply chain actually delivers profit to the player.
+
+    private async Task<(Guid CompanyId, Guid ShopPublicSalesUnitId)> SeedStarterOnboardingChainAsync(
+        AppDbContext db, string productSlug, string resourceSlug)
+    {
+        var city = await db.Cities.Include(c => c.Resources).ThenInclude(r => r.ResourceType).FirstAsync();
+
+        var player = new Player
+        {
+            Id = Guid.NewGuid(),
+            Email = $"onboard-chain-{resourceSlug}-{Guid.NewGuid():N}@test.com",
+            DisplayName = $"Onboard Chain {productSlug}",
+            PasswordHash = "hash",
+            Role = PlayerRole.Player
+        };
+        db.Players.Add(player);
+
+        var company = new Company
+        {
+            Id = Guid.NewGuid(),
+            PlayerId = player.Id,
+            Name = $"Onboard Corp {productSlug}",
+            Cash = 5_000_000m
+        };
+        db.Companies.Add(company);
+
+        var product = await db.ProductTypes
+            .Include(p => p.Recipes)
+            .FirstAsync(p => p.Slug == productSlug);
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == resourceSlug);
+
+        // Factory: PURCHASE(OPTIMAL,null MaxPrice) → MANUFACTURING → STORAGE → B2B_SALES(COMPANY)
+        // This mirrors ConfigureStarterFactory exactly (null MaxPrice so exchange is never blocked).
+        var factory = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = BuildingType.Factory,
+            Name = "Starter Factory",
+            Level = 1
+        };
+        db.Buildings.Add(factory);
+
+        db.BuildingUnits.AddRange(
+            new BuildingUnit
+            {
+                Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Purchase,
+                GridX = 0, GridY = 0, Level = 1, LinkRight = true,
+                ResourceTypeId = resource.Id, PurchaseSource = "OPTIMAL"
+                // MaxPrice intentionally null — allows buying at any exchange price
+            },
+            new BuildingUnit
+            {
+                Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Manufacturing,
+                GridX = 1, GridY = 0, Level = 1, LinkRight = true,
+                ProductTypeId = product.Id
+            },
+            new BuildingUnit
+            {
+                Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.Storage,
+                GridX = 2, GridY = 0, Level = 1, LinkRight = true
+            },
+            new BuildingUnit
+            {
+                Id = Guid.NewGuid(), BuildingId = factory.Id, UnitType = UnitType.B2BSales,
+                GridX = 3, GridY = 0, Level = 1,
+                ProductTypeId = product.Id, MinPrice = product.BasePrice, SaleVisibility = "COMPANY"
+            });
+
+        // Sales shop: PURCHASE(LOCAL, VendorLock=company) → PUBLIC_SALES
+        // This mirrors AddStarterShop exactly.
+        var shop = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = BuildingType.SalesShop,
+            Name = "Starter Shop",
+            Level = 1
+        };
+        db.Buildings.Add(shop);
+
+        var shopPublicSalesUnit = new BuildingUnit
+        {
+            Id = Guid.NewGuid(), BuildingId = shop.Id, UnitType = UnitType.PublicSales,
+            GridX = 1, GridY = 0, Level = 1,
+            ProductTypeId = product.Id, MinPrice = product.BasePrice * 1.5m
+        };
+        db.BuildingUnits.AddRange(
+            new BuildingUnit
+            {
+                Id = Guid.NewGuid(), BuildingId = shop.Id, UnitType = UnitType.Purchase,
+                GridX = 0, GridY = 0, Level = 1, LinkRight = true,
+                ProductTypeId = product.Id, PurchaseSource = "LOCAL",
+                MaxPrice = product.BasePrice * 1.1m, VendorLockCompanyId = company.Id
+            },
+            shopPublicSalesUnit);
+
+        await db.SaveChangesAsync();
+        return (company.Id, shopPublicSalesUnit.Id);
+    }
+
+    [Fact]
+    public async Task FullSupplyChain_StarterFurnitureConfig_ProducesPublicSalesRevenue()
+    {
+        // AC#4: The onboarding-configured Furniture factory (Wood → Wooden Chair) must
+        // produce public sales records and company revenue after enough ticks pass.
+        // Proves the auto-configured starter layout (ConfigureStarterFactory + AddStarterShop)
+        // actually delivers the promised profit outcome for the FURNITURE industry.
+        Guid companyId;
+        Guid shopPublicSalesUnitId;
+        await using (var seedScope = _factory.Services.CreateAsyncScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (companyId, shopPublicSalesUnitId) =
+                await SeedStarterOnboardingChainAsync(seedDb, "wooden-chair", "wood");
+        }
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var processor = await CreateProcessorAsync(scope);
+
+        // 15 ticks is well beyond the chain depth needed (exchange buy → manufacture →
+        // storage → B2B → shop purchase → public sales ≈ 6 ticks from first purchase).
+        for (var i = 0; i < 15; i++)
+            await processor.ProcessTickAsync();
+
+        var salesRecords = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == shopPublicSalesUnitId)
+            .ToListAsync();
+
+        Assert.NotEmpty(salesRecords);
+        Assert.True(salesRecords.Sum(r => r.Revenue) > 0m,
+            "Furniture starter shop must have earned revenue from public sales after 15 ticks.");
+    }
+
+    [Fact]
+    public async Task FullSupplyChain_StarterFoodProcessingConfig_ProducesPublicSalesRevenue()
+    {
+        // AC#4: The onboarding-configured Food Processing factory (Grain → Bread) must
+        // produce public sales records after enough ticks. Critical regression guard for the
+        // null-MaxPrice fix: Grain's global exchange price (~6) exceeds Bread's BasePrice (3),
+        // so any non-null MaxPrice cap would permanently block the purchase unit.
+        Guid companyId;
+        Guid shopPublicSalesUnitId;
+        await using (var seedScope = _factory.Services.CreateAsyncScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (companyId, shopPublicSalesUnitId) =
+                await SeedStarterOnboardingChainAsync(seedDb, "bread", "grain");
+        }
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var processor = await CreateProcessorAsync(scope);
+
+        for (var i = 0; i < 15; i++)
+            await processor.ProcessTickAsync();
+
+        var salesRecords = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == shopPublicSalesUnitId)
+            .ToListAsync();
+
+        Assert.NotEmpty(salesRecords);
+        Assert.True(salesRecords.Sum(r => r.Revenue) > 0m,
+            "Food Processing starter shop must have earned revenue from public sales after 15 ticks.");
+    }
+
+    [Fact]
+    public async Task FullSupplyChain_StarterHealthcareConfig_ProducesPublicSalesRevenue()
+    {
+        // AC#4: The onboarding-configured Healthcare factory (Chemical Minerals → Basic Medicine)
+        // must produce public sales records after enough ticks.
+        Guid companyId;
+        Guid shopPublicSalesUnitId;
+        await using (var seedScope = _factory.Services.CreateAsyncScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (companyId, shopPublicSalesUnitId) =
+                await SeedStarterOnboardingChainAsync(seedDb, "basic-medicine", "chemical-minerals");
+        }
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var processor = await CreateProcessorAsync(scope);
+
+        for (var i = 0; i < 15; i++)
+            await processor.ProcessTickAsync();
+
+        var salesRecords = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == shopPublicSalesUnitId)
+            .ToListAsync();
+
+        Assert.NotEmpty(salesRecords);
+        Assert.True(salesRecords.Sum(r => r.Revenue) > 0m,
+            "Healthcare starter shop must have earned revenue from public sales after 15 ticks.");
+    }
+
+    #endregion
 }
