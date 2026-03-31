@@ -4399,10 +4399,12 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
-    public async Task FinishOnboarding_WhenAlreadyCompleted_ReturnsError()
+    public async Task FinishOnboarding_AfterCompletion_RejectsWithNotInProgress()
     {
-        // A player who has already completed onboarding (via CompleteOnboarding or FinishOnboarding)
-        // must not be able to call FinishOnboarding again — preventing duplicate company/building creation.
+        // A player who has already completed onboarding (via FinishOnboarding)
+        // cannot call FinishOnboarding a second time — the backend clears the
+        // OnboardingCurrentStep after completion, so subsequent calls are rejected
+        // as ONBOARDING_NOT_IN_PROGRESS rather than reaching a duplicate-completion check.
         var token = await RegisterAndGetTokenAsync($"finish-already-done-{Guid.NewGuid()}@test.com", "AlreadyDoneFin");
         var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Already Done Fin Co");
         var productId = await GetStarterProductIdAsync();
@@ -4412,14 +4414,14 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var firstResult = await FinishOnboardingAsync(token, productId, shopLotId);
         Assert.False(firstResult.TryGetProperty("errors", out _), "First FinishOnboarding must succeed");
 
-        // Second call on the same token must fail with ONBOARDING_ALREADY_COMPLETED
+        // Second call on the same token must fail — OnboardingCurrentStep was cleared by the first call
         var secondShopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Second Shop Lot");
         var secondResult = await FinishOnboardingAsync(token, productId, secondShopLotId);
 
         Assert.True(secondResult.TryGetProperty("errors", out var errors), "Second FinishOnboarding call must return an error");
         var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
         // After completing onboarding the player's OnboardingCurrentStep is cleared,
-        // so FinishOnboarding treats it as "not in progress" — not an "already completed" check.
+        // so FinishOnboarding treats it as "not in progress".
         Assert.Equal("ONBOARDING_NOT_IN_PROGRESS", code);
     }
 

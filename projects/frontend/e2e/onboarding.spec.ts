@@ -13,6 +13,36 @@ async function authenticateViaLocalStorage(page: Page, token: string) {
   }, token)
 }
 
+/**
+ * Drives the guest wizard through steps 1–4 for a given industry and product,
+ * then returns the text content of `.profit-stat-revenue` on the step-5 screen.
+ * Used by the revenue-comparison test to avoid duplicating navigation logic.
+ */
+async function getGuestProfitRevenue(
+  page: Page,
+  industry: string,
+  productName: string,
+  companyName = `${industry} Revenue Corp`,
+): Promise<number> {
+  setupMockApi(page)
+  await page.goto('/onboarding')
+  await page.locator('.industry-card', { hasText: industry }).click()
+  await page.getByRole('button', { name: 'Next' }).click()
+  await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+  await page.getByRole('button', { name: 'Next' }).click()
+  await page.getByLabel('Company Name').fill(companyName)
+  await page.getByRole('button', { name: 'List View' }).click()
+  await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+  await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+  await page.locator('.product-card', { hasText: productName }).click()
+  await page.getByRole('button', { name: 'List View' }).click()
+  await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+  await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+  await expect(page.locator('.profit-stat-revenue')).toBeVisible()
+  const text = (await page.locator('.profit-stat-revenue').textContent()) ?? '$0'
+  return parseInt(text.replace(/[^0-9]/g, ''), 10)
+}
+
 /** Drives the guest wizard through steps 1–4 (no auth) and lands on the step-5 save-progress screen. */
 async function completeGuestSteps1to4(page: Page, companyName = 'Guest Corp') {
   await page.locator('.industry-card', { hasText: 'Furniture' }).click()
@@ -2327,36 +2357,21 @@ test.describe('Onboarding wizard CTA validation and budget guard rails', () => {
   })
 
   test('guest profit preview shows higher revenue for Healthcare vs Food Processing (AC6 business consequence)', async ({
-    page,
+    browser,
   }) => {
     // Verifies the profit preview makes industry value differentiation visible to the player.
     // Healthcare has a $50/unit product, Food Processing has $3/unit — this should be
     // clearly reflected in the estimated revenue shown on the completion screen.
-    async function getRevenue(industry: string, productName: string): Promise<number> {
-      const ctx = await page.context().browser()!.newContext()
-      const p = await ctx.newPage()
-      setupMockApi(p)
-      await p.goto('/onboarding')
-      await p.locator('.industry-card', { hasText: industry }).click()
-      await p.getByRole('button', { name: 'Next' }).click()
-      await p.locator('.city-card', { hasText: 'Bratislava' }).click()
-      await p.getByRole('button', { name: 'Next' }).click()
-      await p.getByLabel('Company Name').fill(`${industry} Revenue Corp`)
-      await p.getByRole('button', { name: 'List View' }).click()
-      await p.getByRole('button', { name: /Industrial Plot A1/i }).click()
-      await p.getByRole('button', { name: 'Purchase First Factory' }).click()
-      await p.locator('.product-card', { hasText: productName }).click()
-      await p.getByRole('button', { name: 'List View' }).click()
-      await p.getByRole('button', { name: /High Street Retail Space/i }).click()
-      await p.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
-      await expect(p.locator('.profit-stat-revenue')).toBeVisible()
-      const text = (await p.locator('.profit-stat-revenue').textContent()) ?? '$0'
-      await ctx.close()
-      return parseInt(text.replace(/[^0-9]/g, ''), 10)
-    }
+    // Uses separate browser contexts to avoid page state interference between the two runs.
+    const ctxHealthcare = await browser.newContext()
+    const pageHealthcare = await ctxHealthcare.newPage()
+    const healthcareRevenue = await getGuestProfitRevenue(pageHealthcare, 'Healthcare', 'Basic Medicine')
+    await ctxHealthcare.close()
 
-    const healthcareRevenue = await getRevenue('Healthcare', 'Basic Medicine')
-    const foodRevenue = await getRevenue('Food Processing', 'Bread')
+    const ctxFood = await browser.newContext()
+    const pageFood = await ctxFood.newPage()
+    const foodRevenue = await getGuestProfitRevenue(pageFood, 'Food Processing', 'Bread', 'Food Revenue Corp')
+    await ctxFood.close()
 
     // Healthcare ($50/unit) must have meaningfully higher revenue than Food Processing ($3/unit)
     expect(healthcareRevenue).toBeGreaterThan(foodRevenue)
