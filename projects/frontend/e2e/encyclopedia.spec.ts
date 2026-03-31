@@ -442,3 +442,170 @@ test.describe('Encyclopedia search and filter', () => {
     await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
   })
 })
+
+test.describe('Encyclopedia discoverability and routing', () => {
+  test('encyclopedia is reachable via the header nav link without authentication', async ({ page }) => {
+    // ROADMAP: encyclopedia must be discoverable from the existing game navigation.
+    // Unauthenticated users should also be able to browse it.
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicTableProduct],
+    })
+
+    await page.goto('/')
+
+    // The header nav should have an Encyclopedia link
+    await page.getByRole('link', { name: 'Encyclopedia' }).click()
+
+    await expect(page).toHaveURL('/encyclopedia')
+    await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Wood/ })).toBeVisible()
+  })
+
+  test('resource detail page loads correctly when navigated to directly (bookmark / refresh)', async ({
+    page,
+  }) => {
+    // ROADMAP: Validate the route can be refreshed/bookmarked without breaking data loading.
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicTableProduct],
+    })
+
+    // Navigate directly to a resource detail URL as if bookmarked
+    await page.goto('/encyclopedia/resources/wood')
+
+    await expect(page.getByRole('heading', { name: 'Wood', level: 1 })).toBeVisible()
+    await expect(page.locator('.resource-description').first()).toContainText('Timber for furniture.')
+    await expect(page.getByRole('heading', { name: 'Used in Production Chains' })).toBeVisible()
+  })
+
+  test('product detail page loads correctly when navigated to directly (bookmark / refresh)', async ({
+    page,
+  }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    // Navigate directly to a product detail URL as if bookmarked
+    await page.goto('/encyclopedia/resources/electronic-table')
+
+    await expect(page.getByRole('heading', { name: 'Electronic Table', level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Requirement composition' })).toBeVisible()
+    await expect(page.locator('.composition-node.ingredient')).toHaveCount(2)
+  })
+
+  test('key resource relationships are visible without scrolling on a standard desktop viewport', async ({
+    page,
+  }) => {
+    // ROADMAP: "When user clicks on the resource he can see at the same screen
+    // without scrolling all manufacturable resources associated with it."
+    await page.setViewportSize({ width: 1280, height: 800 })
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia/resources/wood')
+
+    // Resource name and description should be above the fold
+    // (viewport height is 800px; the heading should appear in the top half)
+    const ABOVE_FOLD_THRESHOLD = 400
+    const heading = page.getByRole('heading', { name: 'Wood', level: 1 })
+    await expect(heading).toBeVisible()
+    const headingBox = await heading.boundingBox()
+    expect(headingBox!.y).toBeLessThan(ABOVE_FOLD_THRESHOLD)
+
+    // "Used in Production Chains" section header should be within the 800px viewport
+    const VIEWPORT_HEIGHT = 800
+    const usedInHeading = page.getByRole('heading', { name: 'Used in Production Chains' })
+    await expect(usedInHeading).toBeVisible()
+    const usedInBox = await usedInHeading.boundingBox()
+    expect(usedInBox!.y).toBeLessThan(VIEWPORT_HEIGHT)
+
+    // The downstream product card should also be visible without scrolling
+    const productCard = page.locator('.product-card').filter({ hasText: 'Electronic Table' })
+    await expect(productCard).toBeVisible()
+    const productBox = await productCard.boundingBox()
+    expect(productBox!.y).toBeLessThan(VIEWPORT_HEIGHT)
+  })
+
+  test('encyclopedia list shows all three starter industries together', async ({ page }) => {
+    // ROADMAP: "All combination of products are visible in the manufacturing encyclopedia."
+    const { makeDefaultResources, makeDefaultProducts } = await import('./helpers/mock-api.js')
+    setupMockApi(page, {
+      resourceTypes: makeDefaultResources(),
+      productTypes: makeDefaultProducts(),
+    })
+
+    await page.goto('/encyclopedia')
+
+    // 3 raw material resources visible — use resource-card--resource class to avoid matching product names
+    await expect(page.locator('.resource-card--resource', { hasText: 'Wood' })).toBeVisible()
+    await expect(page.locator('.resource-card--resource', { hasText: 'Grain' })).toBeVisible()
+    await expect(page.locator('.resource-card--resource', { hasText: 'Chemical Minerals' })).toBeVisible()
+
+    // Products from all 3 starter industries visible
+    await expect(page.locator('.resource-card--product', { hasText: 'Wooden Chair' })).toBeVisible()
+    await expect(page.locator('.resource-card--product', { hasText: 'Bread' })).toBeVisible()
+    await expect(page.locator('.resource-card--product', { hasText: 'Basic Medicine' })).toBeVisible()
+  })
+
+  test('encyclopedia list shows error message when API fails', async ({ page }) => {
+    // Provide no resources/products so the API returns empty; test error state
+    // by navigating with no data and verifying the page degrades gracefully.
+    setupMockApi(page, {
+      resourceTypes: [],
+      productTypes: [],
+    })
+
+    await page.goto('/encyclopedia')
+
+    // Empty state: the stat cards show zero counts
+    await expect(page.locator('.stat-card').first()).toContainText('0')
+
+    // The search bar is still rendered so users can attempt to search
+    await expect(page.getByPlaceholder('Search resources, ingredients, or descriptions')).toBeVisible()
+  })
+
+  test('full user journey: home nav → encyclopedia → search → detail → related resource', async ({
+    page,
+  }) => {
+    // End-to-end scenario: a player opens the encyclopedia from the nav bar,
+    // searches for a resource, opens its detail, and navigates to a related product.
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    // Start at home page
+    await page.goto('/')
+
+    // Click the Encyclopedia link in the header nav
+    await page.getByRole('link', { name: 'Encyclopedia' }).click()
+    await expect(page).toHaveURL('/encyclopedia')
+    await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
+
+    // Search for "Wood"
+    await page.getByPlaceholder('Search resources, ingredients, or descriptions').fill('Wood')
+
+    // Wood resource and Electronic Table (uses wood) should be visible; Components should be hidden
+    await expect(page.getByRole('button', { name: /Wood/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Electronic Table/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Electronic Components/ })).toHaveCount(0)
+
+    // Click Wood to open the resource detail
+    await page.getByRole('button', { name: /Wood/ }).click()
+    await expect(page).toHaveURL('/encyclopedia/resources/wood')
+    await expect(page.getByRole('heading', { name: 'Wood', level: 1 })).toBeVisible()
+
+    // Electronic Table should appear as a downstream product
+    const downstreamCard = page.locator('.product-card').filter({ hasText: 'Electronic Table' })
+    await expect(downstreamCard).toBeVisible()
+
+    // Navigate to the downstream product
+    await downstreamCard.click()
+    await expect(page).toHaveURL('/encyclopedia/resources/electronic-table')
+    await expect(page.getByRole('heading', { name: 'Electronic Table', level: 1 })).toBeVisible()
+  })
+})

@@ -997,6 +997,122 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             "At least one seeded product should have an intermediate manufactured product as a recipe input.");
     }
 
+    [Fact]
+    public async Task EncyclopediaResource_IsPublicQueryNoAuthRequired()
+    {
+        // The encyclopedia must be browsable without authentication so new players
+        // can explore the production graph before completing onboarding.
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              encyclopediaResource(slug: "wood") {
+                resource { slug name }
+                productsUsingResource { slug }
+              }
+            }
+            """,
+            token: null);
+
+        var detail = result.GetProperty("data").GetProperty("encyclopediaResource");
+        Assert.False(detail.ValueKind == System.Text.Json.JsonValueKind.Null);
+        Assert.Equal("wood", detail.GetProperty("resource").GetProperty("slug").GetString());
+    }
+
+    [Fact]
+    public async Task ResourceTypes_IsPublicQueryNoAuthRequired()
+    {
+        // The encyclopedia list must be browsable without authentication.
+        var result = await ExecuteGraphQlAsync(
+            "{ resourceTypes { slug } }",
+            token: null);
+
+        var resources = result.GetProperty("data").GetProperty("resourceTypes");
+        Assert.True(resources.GetArrayLength() >= 8);
+    }
+
+    [Fact]
+    public async Task ProductTypes_IsPublicQueryNoAuthRequired()
+    {
+        // Products must be visible without authentication.
+        var result = await ExecuteGraphQlAsync(
+            "{ productTypes { slug isProOnly } }",
+            token: null);
+
+        var products = result.GetProperty("data").GetProperty("productTypes");
+        Assert.True(products.GetArrayLength() > 0);
+    }
+
+    [Fact]
+    public async Task ProductTypes_AllStarterIndustriesRepresented()
+    {
+        // ROADMAP: All combinations of products visible in the manufacturing encyclopedia.
+        // Verify the three starter industries are all seeded.
+        var result = await ExecuteGraphQlAsync(
+            "{ productTypes { industry } }");
+
+        var products = result.GetProperty("data").GetProperty("productTypes");
+        var industries = products.EnumerateArray()
+            .Select(p => p.GetProperty("industry").GetString())
+            .Distinct()
+            .ToHashSet();
+
+        Assert.Contains("FURNITURE", industries);
+        Assert.Contains("FOOD_PROCESSING", industries);
+        Assert.Contains("HEALTHCARE", industries);
+    }
+
+    [Fact]
+    public async Task ProductTypes_AllHaveNonEmptyRecipes()
+    {
+        // Every product in the encyclopedia must have at least one recipe ingredient
+        // so the manufacturing detail view is never empty for any product.
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              productTypes {
+                slug industry
+                recipes { quantity resourceType { slug } inputProductType { slug } }
+              }
+            }
+            """);
+
+        var products = result.GetProperty("data").GetProperty("productTypes");
+        foreach (var product in products.EnumerateArray())
+        {
+            var recipes = product.GetProperty("recipes");
+            Assert.True(recipes.GetArrayLength() > 0,
+                $"Product '{product.GetProperty("slug").GetString()}' has no recipe ingredients.");
+        }
+    }
+
+    [Fact]
+    public async Task EncyclopediaResource_WoodHasDownstreamFurnitureProducts()
+    {
+        // Wood is the cornerstone raw material for FURNITURE. Verify it links back to
+        // all seeded furniture products so the "used in production chains" section works.
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              encyclopediaResource(slug: "wood") {
+                productsUsingResource { slug industry }
+              }
+            }
+            """);
+
+        var products = result.GetProperty("data").GetProperty("encyclopediaResource")
+            .GetProperty("productsUsingResource");
+
+        Assert.True(products.GetArrayLength() >= 3,
+            // At least Wooden Chair, Wooden Table, and Wooden Bed are seeded for FURNITURE.
+            // If the seed data is later extended, the minimum count can be raised.
+            "Wood should be used by at least 3 furniture products (chair, table, bed).");
+
+        foreach (var product in products.EnumerateArray())
+        {
+            Assert.Equal("FURNITURE", product.GetProperty("industry").GetString());
+        }
+    }
+
     #endregion
 
     #region Company Management
