@@ -313,6 +313,8 @@ export type MockState = {
   gameState: { currentTick: number; lastTickAtUtc: string; tickIntervalSeconds: number; taxCycleTicks: number; taxRate: number }
   ledgerData: Record<string, MockLedgerSummary>
   drillDownData: Record<string, MockLedgerEntry[]>
+  /** When true, the next ClaimStartupPack mutation returns a server error instead of succeeding. */
+  forceStartupPackClaimError: boolean
 }
 
 const STARTING_CASH_FOR_ONBOARDING = 500000
@@ -933,6 +935,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     gameState: { currentTick: 42, lastTickAtUtc: new Date(Date.now() - 30000).toISOString(), tickIntervalSeconds: 60, taxCycleTicks: 8760, taxRate: 15 },
     ledgerData: {},
     drillDownData: {},
+    forceStartupPackClaimError: false,
     ...initial,
   }
 
@@ -1338,6 +1341,14 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     }
 
     if (query.includes('ClaimStartupPack')) {
+      if (state.forceStartupPackClaimError) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'We could not activate the startup pack. Please try again.' }] }),
+        })
+      }
+
       const player = state.players.find((p) => p.id === state.currentUserId)
       const companyId = body.variables?.input?.companyId
       const company = player?.companies.find((candidate) => candidate.id === companyId)

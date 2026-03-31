@@ -1483,6 +1483,38 @@ test.describe('Onboarding resume and progress persistence', () => {
       page.getByText('The offer has been saved to your dashboard until it expires.'),
     ).toBeVisible()
   })
+
+  test('claim failure shows error message and player can still navigate to dashboard safely', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.forceStartupPackClaimError = true
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboarding(page, 'Resilience Corp')
+
+    // Startup pack offer is visible after onboarding
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+
+    // Claim fails due to simulated server error
+    await page.getByRole('button', { name: 'Claim startup pack' }).click()
+
+    // Error message should be shown so the player understands what happened
+    await expect(page.getByText(/could not activate the startup pack/i)).toBeVisible()
+
+    // The claim button should still be available for retry
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+
+    // Player can still navigate away to the dashboard without being blocked
+    await page.getByRole('link', { name: 'Go to Dashboard' }).click()
+    await page.waitForURL('/dashboard')
+    await expect(page).toHaveURL('/dashboard')
+  })
 })
 
 test.describe('Guided first-profit onboarding (post-completion)', () => {
