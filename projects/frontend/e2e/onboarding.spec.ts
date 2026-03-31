@@ -2257,3 +2257,108 @@ test.describe('Guest conflict recovery — authenticated restart flow', () => {
     expect(state.currentUserId).toBeTruthy()
   })
 })
+
+test.describe('Onboarding wizard CTA validation and budget guard rails', () => {
+  // Issue #102 AC6: "The interface clearly surfaces money, pricing, and the business
+  // consequences of player choices during onboarding."
+  // This describes the CTA disabled-state enforcement and budget coaching.
+
+  test('guest step 3 — Purchase First Factory is disabled until company name and lot are both selected', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Steps 1 & 2
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+
+    // CTA must be disabled at initial state (no name, no lot)
+    await expect(page.getByRole('button', { name: 'Purchase First Factory' })).toBeDisabled()
+
+    // Fill company name only — still disabled (no lot)
+    await page.getByLabel('Company Name').fill('Validation Corp')
+    await expect(page.getByRole('button', { name: 'Purchase First Factory' })).toBeDisabled()
+
+    // Select lot without company name — fill name first then clear to test
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    // Now both name + lot are set: CTA must be enabled
+    await expect(page.getByRole('button', { name: 'Purchase First Factory' })).toBeEnabled()
+
+    // Clear company name — CTA must go disabled again
+    await page.getByLabel('Company Name').fill('')
+    await expect(page.getByRole('button', { name: 'Purchase First Factory' })).toBeDisabled()
+  })
+
+  test('guest step 4 — Purchase First Sales Shop is disabled until product and lot are both selected', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Complete steps 1-3
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('CTA Test Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+
+    // CTA must be disabled initially (no product, no lot)
+    await expect(page.getByRole('button', { name: 'Purchase First Sales Shop' })).toBeDisabled()
+
+    // Select product only — still disabled (no shop lot)
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await expect(page.getByRole('button', { name: 'Purchase First Sales Shop' })).toBeDisabled()
+
+    // Select shop lot — both now selected, CTA enabled
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await expect(page.getByRole('button', { name: 'Purchase First Sales Shop' })).toBeEnabled()
+  })
+
+  test('guest profit preview shows higher revenue for Healthcare vs Food Processing (AC6 business consequence)', async ({
+    page,
+  }) => {
+    // Verifies the profit preview makes industry value differentiation visible to the player.
+    // Healthcare has a $50/unit product, Food Processing has $3/unit — this should be
+    // clearly reflected in the estimated revenue shown on the completion screen.
+    async function getRevenue(industry: string, productName: string): Promise<number> {
+      const ctx = await page.context().browser()!.newContext()
+      const p = await ctx.newPage()
+      setupMockApi(p)
+      await p.goto('/onboarding')
+      await p.locator('.industry-card', { hasText: industry }).click()
+      await p.getByRole('button', { name: 'Next' }).click()
+      await p.locator('.city-card', { hasText: 'Bratislava' }).click()
+      await p.getByRole('button', { name: 'Next' }).click()
+      await p.getByLabel('Company Name').fill(`${industry} Revenue Corp`)
+      await p.getByRole('button', { name: 'List View' }).click()
+      await p.getByRole('button', { name: /Industrial Plot A1/i }).click()
+      await p.getByRole('button', { name: 'Purchase First Factory' }).click()
+      await p.locator('.product-card', { hasText: productName }).click()
+      await p.getByRole('button', { name: 'List View' }).click()
+      await p.getByRole('button', { name: /High Street Retail Space/i }).click()
+      await p.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+      await expect(p.locator('.profit-stat-revenue')).toBeVisible()
+      const text = (await p.locator('.profit-stat-revenue').textContent()) ?? '$0'
+      await ctx.close()
+      return parseInt(text.replace(/[^0-9]/g, ''), 10)
+    }
+
+    const healthcareRevenue = await getRevenue('Healthcare', 'Basic Medicine')
+    const foodRevenue = await getRevenue('Food Processing', 'Bread')
+
+    // Healthcare ($50/unit) must have meaningfully higher revenue than Food Processing ($3/unit)
+    expect(healthcareRevenue).toBeGreaterThan(foodRevenue)
+  })
+})

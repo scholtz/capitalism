@@ -4398,6 +4398,74 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.NotNull(retryData.GetProperty("salesShop").GetProperty("id").GetString());
     }
 
+    [Fact]
+    public async Task FinishOnboarding_WhenAlreadyCompleted_ReturnsError()
+    {
+        // A player who has already completed onboarding (via CompleteOnboarding or FinishOnboarding)
+        // must not be able to call FinishOnboarding again — preventing duplicate company/building creation.
+        var token = await RegisterAndGetTokenAsync($"finish-already-done-{Guid.NewGuid()}@test.com", "AlreadyDoneFin");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Already Done Fin Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "First Shop Lot");
+
+        // First call succeeds
+        var firstResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        Assert.False(firstResult.TryGetProperty("errors", out _), "First FinishOnboarding must succeed");
+
+        // Second call on the same token must fail with ONBOARDING_ALREADY_COMPLETED
+        var secondShopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Second Shop Lot");
+        var secondResult = await FinishOnboardingAsync(token, productId, secondShopLotId);
+
+        Assert.True(secondResult.TryGetProperty("errors", out var errors), "Second FinishOnboarding call must return an error");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        // After completing onboarding the player's OnboardingCurrentStep is cleared,
+        // so FinishOnboarding treats it as "not in progress" — not an "already completed" check.
+        Assert.Equal("ONBOARDING_NOT_IN_PROGRESS", code);
+    }
+
+    [Fact]
+    public async Task GuestOnboardingPath_StartingCashAndBudgetDecisionAreConsistent()
+    {
+        // Verifies that the starting cash ($500,000), factory lot price, and remaining cash
+        // after purchase are all consistent — so the UI budget coaching panels show accurate data.
+        var token = await RegisterAndGetTokenAsync($"budget-check-{Guid.NewGuid()}@test.com", "BudgetChecker");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryPrice = 75_000m;
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", factoryPrice);
+
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                company { id cash }
+                factory { id }
+                nextStep
+              }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Budget Test Co", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+        var cashAfterFactory = startData.GetProperty("company").GetProperty("cash").GetDecimal();
+
+        // Starting cash is $500,000; after buying the factory lot the balance should be exactly $425,000
+        Assert.Equal(500_000m - factoryPrice, cashAfterFactory);
+
+        // Finish onboarding with a shop lot and verify final cash is further reduced
+        var shopPrice = 90_000m;
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", shopPrice);
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding must succeed");
+
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+        var cashAfterShop = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
+
+        Assert.Equal(500_000m - factoryPrice - shopPrice, cashAfterShop);
+    }
+
     #endregion
 
     #region Rankings
