@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { gqlRequest } from '@/lib/graphql'
+import { getOverheadStatus } from '@/lib/companyOverhead'
 import type { CompanySettings } from '@/types'
 
 const { t, locale } = useI18n()
@@ -26,6 +27,8 @@ const SETTINGS_QUERY = `
       cash
       foundedAtTick
       administrationOverheadRate
+      ageFactor
+      assetFactor
       assetValue
       citySalarySettings {
         cityId
@@ -114,6 +117,10 @@ function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`
 }
 
+const overheadStatus = computed(() =>
+  settings.value ? getOverheadStatus(settings.value.administrationOverheadRate) : 'low',
+)
+
 onMounted(loadSettings)
 </script>
 
@@ -154,10 +161,26 @@ onMounted(loadSettings)
           </div>
           <div>
             <span class="overview-label">{{ t('companySettings.administrationOverhead') }}</span>
-            <strong>{{ formatPercent(settings.administrationOverheadRate) }}</strong>
+            <strong :class="`overhead-value overhead-${overheadStatus}`">
+              {{ formatPercent(settings.administrationOverheadRate) }}
+              <span class="overhead-badge">
+                {{ t(`companySettings.overheadStatus.${overheadStatus}`) }}
+              </span>
+            </strong>
           </div>
         </div>
+
+        <div class="overhead-drivers">
+          <span class="driver-chip">
+            {{ t('companySettings.overheadDriverAge') }}: {{ formatPercent(settings.ageFactor) }}
+          </span>
+          <span class="driver-chip">
+            {{ t('companySettings.overheadDriverScale') }}: {{ formatPercent(settings.assetFactor) }}
+          </span>
+        </div>
+
         <p class="overview-copy">{{ t('companySettings.overheadHelp') }}</p>
+        <p class="overview-copy overhead-tip">{{ t('companySettings.overheadReduceTip') }}</p>
       </section>
 
       <section class="settings-card form-card">
@@ -199,6 +222,8 @@ onMounted(loadSettings)
             </tbody>
           </table>
         </div>
+
+        <p class="salary-impact-hint">{{ t('companySettings.salaryImpactHint') }}</p>
 
         <p v-if="success" class="save-message" role="status">{{ success }}</p>
         <p v-if="error" class="save-error" role="alert">{{ error }}</p>
@@ -255,6 +280,67 @@ onMounted(loadSettings)
   display: block;
   font-size: 0.8rem;
   margin-bottom: 0.25rem;
+}
+
+/* Overhead status colors */
+.overhead-value {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.overhead-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.overhead-low .overhead-badge {
+  background: color-mix(in srgb, var(--color-success, #22c55e) 15%, transparent);
+  color: var(--color-success, #16a34a);
+}
+
+.overhead-medium .overhead-badge {
+  background: color-mix(in srgb, #f59e0b 15%, transparent);
+  color: #b45309;
+}
+
+.overhead-high .overhead-badge {
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent);
+  color: var(--color-danger, #dc2626);
+}
+
+/* Driver chips */
+.overhead-drivers {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.driver-chip {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: var(--color-surface-elevated, var(--color-surface));
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.overhead-tip {
+  font-size: 0.82rem;
+  margin-top: 0.25rem;
+}
+
+/* Salary impact hint */
+.salary-impact-hint {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+  margin: 0.75rem 0 0.25rem;
 }
 
 .settings-field {

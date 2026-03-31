@@ -1661,6 +1661,92 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public void AdministrationOverheadDrivers_NewCompany_BothFactorsAreZero()
+    {
+        var (ageFactor, assetFactor) = CompanyEconomyCalculator.ComputeAdministrationOverheadDrivers(
+            new Company { FoundedAtTick = 0 },
+            companyAssetValue: 0m,
+            maxCompanyAssetValue: 0m,
+            currentTick: 0);
+
+        Assert.Equal(0m, ageFactor);
+        Assert.Equal(0m, assetFactor);
+    }
+
+    [Fact]
+    public void AdministrationOverheadDrivers_TwoYearOldMaxScale_BothFactorsAreOne()
+    {
+        var ticksPerYear = Engine.GameConstants.TicksPerYear;
+        var company = new Company { FoundedAtTick = 0 };
+
+        var (ageFactor, assetFactor) = CompanyEconomyCalculator.ComputeAdministrationOverheadDrivers(
+            company,
+            companyAssetValue: 1_000_000m,
+            maxCompanyAssetValue: 1_000_000m,
+            currentTick: 2 * ticksPerYear);
+
+        Assert.Equal(1m, ageFactor);
+        Assert.Equal(1m, assetFactor);
+    }
+
+    [Fact]
+    public void AdministrationOverheadDrivers_AreConsistentWithOverheadRate()
+    {
+        // Drivers * max rate must equal the overhead rate
+        var ticksPerYear = Engine.GameConstants.TicksPerYear;
+        var company = new Company { FoundedAtTick = 0 };
+
+        var (ageFactor, assetFactor) = CompanyEconomyCalculator.ComputeAdministrationOverheadDrivers(
+            company,
+            companyAssetValue: 750_000m,
+            maxCompanyAssetValue: 1_000_000m,
+            currentTick: ticksPerYear);
+
+        var rate = CompanyEconomyCalculator.ComputeAdministrationOverheadRate(
+            company,
+            companyAssetValue: 750_000m,
+            maxCompanyAssetValue: 1_000_000m,
+            currentTick: ticksPerYear);
+
+        Assert.Equal(
+            decimal.Round(CompanyEconomyCalculator.MaximumAdministrationOverheadRate * ageFactor * assetFactor, 4, MidpointRounding.AwayFromZero),
+            rate);
+    }
+
+    [Fact]
+    public async Task GetCompanySettings_ReturnsAgeFactorAndAssetFactor()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync("driver-fields@test.com", "Driver Fields User");
+
+        var createResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Driver Corp" } },
+            ownerToken);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetCompanySettings($companyId: UUID!) {
+              companySettings(companyId: $companyId) {
+                administrationOverheadRate
+                ageFactor
+                assetFactor
+              }
+            }
+            """,
+            new { companyId },
+            ownerToken);
+
+        var settings = result.GetProperty("data").GetProperty("companySettings");
+        // New company at tick 0 has no age → ageFactor = 0 → overheadRate = 0 regardless of assetFactor
+        Assert.Equal(0m, settings.GetProperty("ageFactor").GetDecimal());
+        Assert.Equal(0m, settings.GetProperty("administrationOverheadRate").GetDecimal());
+        // assetFactor is 0–1; it is accessible and numeric (exact value depends on other companies in the test db)
+        var assetFactor = settings.GetProperty("assetFactor").GetDecimal();
+        Assert.InRange(assetFactor, 0m, 1m);
+    }
+
+    [Fact]
     public async Task CompanyLedger_IncludesLaborAndEnergyTotals()
     {
         var token = await RegisterAndGetTokenAsync("ledger-costs@test.com", "Ledger Costs User");

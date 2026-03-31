@@ -53,6 +53,10 @@ export interface CompanySettings {
   cash: number
   foundedAtTick: number
   administrationOverheadRate: number
+  /** 0–1: how much company age contributes to overhead (reaches 1 at 2 years old) */
+  ageFactor: number
+  /** 0–1: how much company scale (assets) contributes to overhead */
+  assetFactor: number
   assetValue: number
   citySalarySettings: CompanyCitySalarySetting[]
 }

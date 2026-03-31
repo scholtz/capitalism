@@ -464,6 +464,101 @@ test.describe('Dashboard — company settings', () => {
     await expect(page.getByRole('alert')).toContainText(/not found|access denied/i)
     await expect(page.getByRole('button', { name: /try again/i })).toBeVisible()
   })
+
+  test('shows overhead status badge and driver chips for a mature high-scale company', async ({ page }) => {
+    const TICKS_PER_YEAR = 24 * 365
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-high-overhead',
+          playerId: 'player-1',
+          name: 'Big Corp',
+          cash: 5000000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 0,
+          // No buildings — overhead driven purely by cash (large asset value)
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Advance to 2 years → ageFactor = 1
+    state.gameState.currentTick = 2 * TICKS_PER_YEAR
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/company/comp-high-overhead/settings')
+
+    // Overhead value and badge should be visible
+    await expect(page.locator('.overhead-value')).toBeVisible()
+    await expect(page.locator('.overhead-badge')).toBeVisible()
+
+    // Driver chips should show age and scale labels
+    await expect(page.locator('.driver-chip', { hasText: /Age factor/i })).toBeVisible()
+    await expect(page.locator('.driver-chip', { hasText: /Scale factor/i })).toBeVisible()
+
+    // Reduce-tip text should be visible
+    await expect(page.locator('.overhead-tip')).toBeVisible()
+  })
+
+  test('shows salary impact hint below the salary table', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-salary-hint',
+          playerId: 'player-1',
+          name: 'Hint Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 0,
+          citySalaryMultipliers: {},
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/company/comp-salary-hint/settings')
+
+    // Salary impact hint should appear below the salary table
+    await expect(page.locator('.salary-impact-hint')).toBeVisible()
+    await expect(page.locator('.salary-impact-hint')).toContainText(/labor costs/i)
+  })
+
+  test('shows low overhead badge for brand-new company', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-new',
+          playerId: 'player-1',
+          name: 'New Corp',
+          cash: 50000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 0,
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Brand new at tick 0 → ageFactor = 0 → overhead = 0%
+    state.gameState.currentTick = 0
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/company/comp-new/settings')
+
+    // Low overhead badge should be visible and text should show 0.0%
+    await expect(page.locator('.overhead-low')).toBeVisible()
+    await expect(page.locator('.overhead-badge')).toContainText(/low/i)
+  })
 })
 
 // ── Power grid dashboard tests ─────────────────────────────────────────────

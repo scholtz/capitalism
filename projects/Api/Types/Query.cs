@@ -301,10 +301,16 @@ public sealed class Query
             candidate => ComputeCompanyAssetValue(candidate, allOwnedLots, allInventories));
         var assetValue = companyAssetValues.GetValueOrDefault(company.Id);
         var currentTick = await db.GameStates.AsNoTracking().Select(state => state.CurrentTick).FirstOrDefaultAsync();
+        var maxAssetValue = companyAssetValues.Values.DefaultIfEmpty(0m).Max();
         var overheadRate = CompanyEconomyCalculator.ComputeAdministrationOverheadRate(
             company,
             assetValue,
-            companyAssetValues.Values.DefaultIfEmpty(0m).Max(),
+            maxAssetValue,
+            currentTick);
+        var (ageFactor, assetFactor) = CompanyEconomyCalculator.ComputeAdministrationOverheadDrivers(
+            company,
+            assetValue,
+            maxAssetValue,
             currentTick);
 
         return new CompanySettingsResult
@@ -314,6 +320,8 @@ public sealed class Query
             Cash = company.Cash,
             FoundedAtTick = company.FoundedAtTick,
             AdministrationOverheadRate = overheadRate,
+            AgeFactor = ageFactor,
+            AssetFactor = assetFactor,
             AssetValue = assetValue,
             CitySalarySettings = cities
                 .Select(city =>

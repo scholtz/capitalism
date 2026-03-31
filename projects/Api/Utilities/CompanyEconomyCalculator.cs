@@ -37,7 +37,12 @@ public static class CompanyEconomyCalculator
             MidpointRounding.AwayFromZero);
     }
 
-    public static decimal ComputeAdministrationOverheadRate(
+    /// <summary>
+    /// Returns the age factor (0–1) and asset factor (0–1) that drive the overhead calculation.
+    /// Age factor reaches 1 at 2 years old; asset factor equals the company's share of the
+    /// largest asset value in the game.
+    /// </summary>
+    public static (decimal AgeFactor, decimal AssetFactor) ComputeAdministrationOverheadDrivers(
         Company company,
         decimal companyAssetValue,
         decimal maxCompanyAssetValue,
@@ -48,6 +53,19 @@ public static class CompanyEconomyCalculator
         var assetFactor = maxCompanyAssetValue > 0m
             ? Math.Min(1m, companyAssetValue / maxCompanyAssetValue)
             : 0m;
+
+        return (decimal.Round(ageFactor, 4, MidpointRounding.AwayFromZero),
+                decimal.Round(assetFactor, 4, MidpointRounding.AwayFromZero));
+    }
+
+    public static decimal ComputeAdministrationOverheadRate(
+        Company company,
+        decimal companyAssetValue,
+        decimal maxCompanyAssetValue,
+        long currentTick)
+    {
+        var (ageFactor, assetFactor) = ComputeAdministrationOverheadDrivers(
+            company, companyAssetValue, maxCompanyAssetValue, currentTick);
 
         return decimal.Round(
             MaximumAdministrationOverheadRate * ageFactor * assetFactor,

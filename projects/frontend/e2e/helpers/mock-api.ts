@@ -2091,7 +2091,9 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       const companyAssetValue = computeAssetValue(company)
       const maxAssetValue = Math.max(...state.players.flatMap((candidate) => candidate.companies).map(computeAssetValue), 0)
       const ageTicks = Math.max(state.gameState.currentTick - (company.foundedAtTick ?? 0), 0)
-      const overheadRate = Number((0.5 * Math.min(ageTicks / (TICKS_PER_YEAR * 2), 1) * (maxAssetValue > 0 ? companyAssetValue / maxAssetValue : 0)).toFixed(4))
+      const ageFactor = Number(Math.min(ageTicks / (TICKS_PER_YEAR * 2), 1).toFixed(4))
+      const assetFactor = Number((maxAssetValue > 0 ? Math.min(companyAssetValue / maxAssetValue, 1) : 0).toFixed(4))
+      const overheadRate = Number((0.5 * ageFactor * assetFactor).toFixed(4))
 
       return route.fulfill({
         status: 200,
@@ -2104,6 +2106,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
               cash: company.cash,
               foundedAtTick: company.foundedAtTick ?? 0,
               administrationOverheadRate: overheadRate,
+              ageFactor,
+              assetFactor,
               assetValue: companyAssetValue,
               citySalarySettings: state.cities.map((city) => {
                 const salaryMultiplier = company.citySalaryMultipliers?.[city.id] ?? 1

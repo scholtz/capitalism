@@ -7,6 +7,10 @@ public sealed class CompanySettingsResult
     public decimal Cash { get; set; }
     public long FoundedAtTick { get; set; }
     public decimal AdministrationOverheadRate { get; set; }
+    /// <summary>0–1 fraction representing how much company age contributes to overhead (reaches 1 at 2 years).</summary>
+    public decimal AgeFactor { get; set; }
+    /// <summary>0–1 fraction representing how much company scale (assets) contributes to overhead.</summary>
+    public decimal AssetFactor { get; set; }
     public decimal AssetValue { get; set; }
     public List<CompanyCitySalarySettingResult> CitySalarySettings { get; set; } = [];
 }
