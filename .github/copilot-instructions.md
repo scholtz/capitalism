@@ -535,3 +535,19 @@ Root-cause of a quality gap (March 2026, PR #115 city global exchange):
 3. **Verify all 8 seed resource slugs appear in exchange listings** via a dedicated backend test — not just the 3 starter industry inputs.
 4. **Exchange quality must be tested against seed abundance data** — higher abundance resources (Wood at 0.7) must produce higher quality than lower abundance resources (ChemMinerals at 0.3) in the same city.
 5. **When the diff vs main is empty, do not report "done".** Instead, run targeted tests by feature area to find gaps, add tests for every missing variant, and only report done after new tests are committed and pass.
+
+## Guided wizard — always show auto-configured layouts to the player
+
+Root-cause of a ROADMAP alignment gap (March 2026, PR #125 guest onboarding):
+- The onboarding wizard successfully auto-configured the factory layout on the backend via `ConfigureStarterFactory` (PURCHASE → MANUFACTURING → STORAGE → B2BSales) and the shop via `AddStarterShop` (PURCHASE → PUBLIC_SALES).
+- But the completion screen (step 5) only showed the factory and shop names — it did NOT show the configured unit layout to the player.
+- The ROADMAP explicitly says: "This will set the factory layout for them. Wizard will show them important areas on the screen."
+- Fix: updated the `finishOnboarding` GraphQL query to request `units { id unitType gridX gridY level linkRight }` from both factory and salesShop, then added a `factory-layout-panel` with a `unit-chain` visual display showing each unit type with an icon and an arrow between them.
+
+**Rules to prevent recurrence:**
+1. **When a wizard step says it will "set" or "configure" something, the wizard must also SHOW what was configured** — not just confirm it happened. "Factory configured and ready to produce" is insufficient; the player needs to see the unit chain.
+2. **Read ROADMAP phrases like "Wizard will show them important areas on the screen" as concrete UI requirements**, not just aspirational copy. They specify that the wizard must display the configured layout before the player is sent elsewhere.
+3. **After any auto-configuration step (factory setup, shop setup, etc.), add the configured layout to the completion/summary screen.** For building units: show the unit type chain with icons and arrows sorted by gridX position.
+4. **GraphQL queries for completion results must request enough data to display what was configured.** If the backend configures units, the mutation result must include `units { id unitType gridX gridY level linkRight }` so the frontend can render the chain.
+5. **Add E2E tests that assert the configured unit types are VISIBLE on the completion screen** — `expect(page.locator('[aria-label="Factory layout"] .unit-chain-label', { hasText: 'Manufacturing' })).toBeVisible()` — not just that "factory was set up" text is present.
+6. **Add backend tests that request units in the mutation response** and verify the count and types are correct for each supported industry.
