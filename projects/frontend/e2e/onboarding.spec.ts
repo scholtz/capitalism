@@ -2017,3 +2017,105 @@ test.describe('Onboarding on narrow/mobile layouts', () => {
     await expect(progressLabel).toBeHidden()
   })
 })
+
+test.describe('Onboarding budget coaching — guest cash visibility (AC 6)', () => {
+  // AC 6: "The UI clearly highlights money, pricing, and key business configuration concepts
+  // during the flow."
+  // ROADMAP: "Wizard will show them important areas on the screen like how much money they
+  // have, the price configuration or public sales configuration."
+
+  test('guest wizard step 3 shows starting cash and post-purchase cash budget panel', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Step 1 & 2: industry + city
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot — budget panel must be visible before any lot is selected
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+
+    // "Starting cash" label and amount must be visible (ROADMAP coaching requirement)
+    await expect(page.getByText('Starting cash')).toBeVisible()
+    const budgetCards = page.locator('.budget-card')
+    await expect(budgetCards.first()).toBeVisible()
+
+    // Select a lot and verify "Cash after purchase" updates
+    await page.getByLabel('Company Name').fill('Budget Test Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    await expect(page.locator('.budget-grid').getByText('Cash after purchase')).toBeVisible()
+    // The cash-after value must be a dollar amount (may differ from starting cash)
+    const cashAfterEl = page.locator('.budget-card').nth(1).locator('strong')
+    await expect(cashAfterEl).toBeVisible()
+    const cashAfterText = await cashAfterEl.textContent()
+    expect(cashAfterText).toMatch(/^\$[\d,]+$/)
+  })
+
+  test('guest wizard step 4 shows available cash and product base price per unit', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Steps 1–3
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Pricing Test Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: shop lot — available cash panel + product price must be visible
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+
+    // Available cash must be shown (coaching the player on their remaining budget)
+    await expect(page.getByText('Available cash')).toBeVisible()
+
+    // Product cards must show base price per unit (ROADMAP: "price configuration")
+    const furnitureCard = page.locator('.product-card', { hasText: 'Wooden Chair' })
+    await expect(furnitureCard).toBeVisible()
+    // Price label ends with '/unit' (i18n key onboarding.perUnit = '/unit')
+    await expect(furnitureCard.getByText(/\/unit/)).toBeVisible()
+  })
+
+  test('guest completion screen names the industry-specific product chosen', async ({ page }) => {
+    // Verifies that the step-5 achievement list names the product the guest chose,
+    // making the coaching outcome industry-specific and personally relevant (AC 6 & AC 3).
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Choose Food Processing → Bread
+    await page.locator('.industry-card', { hasText: 'Food Processing' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Bread Guest Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+    await page.locator('.product-card', { hasText: 'Bread' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: achievement list must name the chosen product (Bread)
+    const achievementList = page.locator('.completion-achievements')
+    await expect(achievementList).toBeVisible()
+    await expect(achievementList).toContainText(/Bread/i)
+
+    // Profit preview must also be visible with a dollar revenue figure
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+    const revenueEl = page.locator('.profit-stat-revenue')
+    await expect(revenueEl).toBeVisible()
+    const revenueText = await revenueEl.textContent()
+    expect(revenueText).toMatch(/\$\d/)
+  })
+})
