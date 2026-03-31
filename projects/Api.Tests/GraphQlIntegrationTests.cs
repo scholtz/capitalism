@@ -1301,6 +1301,169 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GetCompanySettings_Authenticated_ReturnsCompanyData()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync("get-settings-owner@test.com", "Settings Reader");
+
+        var createResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Settings Reader Corp" } },
+            ownerToken);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetCompanySettings($companyId: UUID!) {
+              companySettings(companyId: $companyId) {
+                companyId
+                companyName
+                cash
+                foundedAtTick
+                administrationOverheadRate
+                assetValue
+                citySalarySettings {
+                  cityId
+                  cityName
+                  baseSalaryPerManhour
+                  salaryMultiplier
+                  effectiveSalaryPerManhour
+                }
+              }
+            }
+            """,
+            new { companyId },
+            ownerToken);
+
+        var settings = result.GetProperty("data").GetProperty("companySettings");
+        Assert.Equal(companyId, settings.GetProperty("companyId").GetString());
+        Assert.Equal("Settings Reader Corp", settings.GetProperty("companyName").GetString());
+        var citySalaries = settings.GetProperty("citySalarySettings");
+        Assert.True(citySalaries.GetArrayLength() > 0);
+        var firstCity = citySalaries[0];
+        Assert.Equal(1.0m, firstCity.GetProperty("salaryMultiplier").GetDecimal());
+        Assert.Equal(
+            firstCity.GetProperty("baseSalaryPerManhour").GetDecimal(),
+            firstCity.GetProperty("effectiveSalaryPerManhour").GetDecimal());
+    }
+
+    [Fact]
+    public async Task GetCompanySettings_NonOwner_ReturnsNull()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync("settings-owner2@test.com", "Owner2");
+        var intruderToken = await RegisterAndGetTokenAsync("settings-intruder2@test.com", "Intruder2");
+
+        var createResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Private Corp" } },
+            ownerToken);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetCompanySettings($companyId: UUID!) {
+              companySettings(companyId: $companyId) {
+                companyId
+                companyName
+              }
+            }
+            """,
+            new { companyId },
+            intruderToken);
+
+        Assert.Equal(JsonValueKind.Null, result.GetProperty("data").GetProperty("companySettings").ValueKind);
+    }
+
+    [Fact]
+    public async Task UpdateCompanySettings_SalaryMultiplierAboveMax_GetsClampedToTwo()
+    {
+        var token = await RegisterAndGetTokenAsync("salary-clamp@test.com", "Salary Clamp User");
+
+        var createResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Clamp Corp" } },
+            token);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        Guid cityId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            cityId = await db.Cities.OrderBy(c => c.Name).Select(c => c.Id).FirstAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdateCompanySettings($input: UpdateCompanySettingsInput!) {
+              updateCompanySettings(input: $input) { id name }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    companyId,
+                    name = "Clamp Corp",
+                    citySalarySettings = new[] { new { cityId, salaryMultiplier = 5.0 } }
+                }
+            },
+            token);
+
+        // Mutation should succeed (no error)
+        Assert.False(result.TryGetProperty("errors", out _));
+
+        await using var verifyScope = _factory.Services.CreateAsyncScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var persisted = await verifyDb.CompanyCitySalarySettings
+            .SingleAsync(s => s.CityId == cityId);
+        Assert.Equal(CompanyEconomyCalculator.MaximumSalaryMultiplier, persisted.SalaryMultiplier);
+    }
+
+    [Fact]
+    public void AdministrationOverheadRate_NewCompany_IsZero()
+    {
+        // Brand-new company at tick 0 with no assets should have 0% overhead
+        var rate = CompanyEconomyCalculator.ComputeAdministrationOverheadRate(
+            new Company { FoundedAtTick = 0 },
+            companyAssetValue: 0m,
+            maxCompanyAssetValue: 0m,
+            currentTick: 0);
+
+        Assert.Equal(0m, rate);
+    }
+
+    [Fact]
+    public void AdministrationOverheadRate_MaximumScenario_IsFiftyPercent()
+    {
+        // 2-year-old company with highest asset equity should reach 50% maximum overhead (ROADMAP)
+        var ticksPerYear = Engine.GameConstants.TicksPerYear;
+        var company = new Company { FoundedAtTick = 0 };
+
+        var rate = CompanyEconomyCalculator.ComputeAdministrationOverheadRate(
+            company,
+            companyAssetValue: 1_000_000m,
+            maxCompanyAssetValue: 1_000_000m,
+            currentTick: 2 * ticksPerYear);
+
+        Assert.Equal(CompanyEconomyCalculator.MaximumAdministrationOverheadRate, rate);
+    }
+
+    [Fact]
+    public void AdministrationOverheadRate_OneYearOldSmallCompany_IsQuarterMax()
+    {
+        // 1-year-old company (ageFactor=0.5) with half the top equity (assetFactor=0.5) = 50% * 0.5 * 0.5 = 12.5%
+        var ticksPerYear = Engine.GameConstants.TicksPerYear;
+        var company = new Company { FoundedAtTick = 0 };
+
+        var rate = CompanyEconomyCalculator.ComputeAdministrationOverheadRate(
+            company,
+            companyAssetValue: 500_000m,
+            maxCompanyAssetValue: 1_000_000m,
+            currentTick: ticksPerYear);
+
+        Assert.Equal(0.125m, rate);
+    }
+
+    [Fact]
     public async Task CompanyLedger_IncludesLaborAndEnergyTotals()
     {
         var token = await RegisterAndGetTokenAsync("ledger-costs@test.com", "Ledger Costs User");

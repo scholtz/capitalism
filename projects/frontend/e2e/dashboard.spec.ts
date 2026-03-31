@@ -381,6 +381,89 @@ test.describe('Dashboard — company settings', () => {
     await expect(page.getByRole('heading', { name: 'Renamed Industries' })).toBeVisible()
     await expect(page.getByLabel('Salary Multiplier Bratislava')).toHaveValue('1.35')
   })
+
+  test('displays administration overhead rate and overhead help text', async ({ page }) => {
+    const TICKS_PER_YEAR = 24 * 365
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-overhead',
+          playerId: 'player-1',
+          name: 'Overhead Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 0,
+          buildings: [],
+        },
+      ],
+    })
+    // Set current tick to 2 years in, making the company mature
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 2 * TICKS_PER_YEAR
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/company/comp-overhead/settings')
+
+    // Overhead section should be visible
+    await expect(page.getByText('Operating Overview')).toBeVisible()
+    await expect(page.getByText('Administration overhead', { exact: true })).toBeVisible()
+
+    // Overhead help text should explain the metric
+    await expect(page.getByText(/Administration overhead increases/i)).toBeVisible()
+  })
+
+  test('shows per-city salary settings with base and effective wages', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-salaries',
+          playerId: 'player-1',
+          name: 'Salary Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 0,
+          citySalaryMultipliers: {},
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/company/comp-salaries/settings')
+
+    // Salary table should show city, base salary, multiplier, and effective salary columns
+    await expect(page.getByRole('columnheader', { name: 'City' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Base wage / hour' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Salary multiplier' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Effective wage / hour' })).toBeVisible()
+
+    // At least one city row should be present
+    await expect(page.locator('.salary-table tbody tr').first()).toBeVisible()
+  })
+
+  test('shows error state when company settings not found', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    // Navigate to settings for a company that doesn't belong to this player
+    await page.goto('/company/nonexistent-company/settings')
+
+    await expect(page.getByRole('alert')).toContainText(/not found|access denied/i)
+    await expect(page.getByRole('button', { name: /try again/i })).toBeVisible()
+  })
 })
 
 // ── Power grid dashboard tests ─────────────────────────────────────────────
