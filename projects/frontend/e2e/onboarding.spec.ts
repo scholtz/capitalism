@@ -359,6 +359,70 @@ test.describe('Onboarding wizard', () => {
     await expect(page.getByText('Your starter company uses the free catalog.')).toBeVisible()
   })
 
+  test('step 4 shows only Bread for Food Processing industry (AC3/AC5)', async ({ page }) => {
+    // AC3: Each starter industry presents a viable starter product/path.
+    // AC5: The onboarding flow prepares an initial factory layout appropriate to the selected industry.
+    // Verifies that selecting Food Processing in step 1 results in only the Bread product card
+    // being available in step 4 — not the Wooden Chair or Basic Medicine.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await page.locator('.industry-card', { hasText: 'Food Processing' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    await page.getByLabel('Company Name').fill('Food Processing Co')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Only the industry-appropriate product should be shown
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await expect(page.locator('.product-card')).toHaveCount(1)
+    await expect(page.locator('.product-card')).toContainText('Bread')
+    // Furniture and Healthcare products must NOT appear
+    await expect(page.locator('.product-card', { hasText: 'Wooden Chair' })).toHaveCount(0)
+    await expect(page.locator('.product-card', { hasText: 'Basic Medicine' })).toHaveCount(0)
+  })
+
+  test('step 4 shows only Basic Medicine for Healthcare industry (AC3/AC5)', async ({ page }) => {
+    // AC3: Each starter industry presents a viable starter product/path.
+    // AC5: The onboarding flow prepares an initial factory layout appropriate to the selected industry.
+    // Verifies that selecting Healthcare in step 1 results in only the Basic Medicine product card
+    // being available in step 4 — not the Wooden Chair or Bread.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await page.locator('.industry-card', { hasText: 'Healthcare' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    await page.getByLabel('Company Name').fill('Pharma Co')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Only the industry-appropriate product should be shown
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await expect(page.locator('.product-card')).toHaveCount(1)
+    await expect(page.locator('.product-card')).toContainText('Basic Medicine')
+    // Furniture and Food Processing products must NOT appear
+    await expect(page.locator('.product-card', { hasText: 'Wooden Chair' })).toHaveCount(0)
+    await expect(page.locator('.product-card', { hasText: 'Bread' })).toHaveCount(0)
+  })
+
   test('back button navigates to previous step', async ({ page }) => {
     const player = makePlayer()
     const state = setupMockApi(page, { players: [player] })
@@ -2229,6 +2293,46 @@ test.describe('Onboarding budget coaching — guest cash visibility (AC 6)', () 
     await expect(revenueEl).toBeVisible()
     const revenueText = await revenueEl.textContent()
     expect(revenueText).toMatch(/\$\d/)
+  })
+
+  test('guest completion screen achievement list names Basic Medicine for Healthcare industry (AC3/AC9)', async ({
+    page,
+  }) => {
+    // AC3: Each starter industry presents a viable starter product/path.
+    // AC9: The player reaches a first-profit milestone — the completion screen surfaces
+    //      industry-specific context so the player knows their exact business outcome.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Choose Healthcare → Basic Medicine
+    await page.locator('.industry-card', { hasText: 'Healthcare' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Pharma Guest Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+    await page.locator('.product-card', { hasText: 'Basic Medicine' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: achievement list must name the chosen product (Basic Medicine)
+    const achievementList = page.locator('.completion-achievements')
+    await expect(achievementList).toBeVisible()
+    await expect(achievementList).toContainText(/Basic Medicine/i)
+
+    // Profit preview must be visible with a dollar revenue figure
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+    const revenueEl = page.locator('.profit-stat-revenue')
+    await expect(revenueEl).toBeVisible()
+    const revenueText = await revenueEl.textContent()
+    expect(revenueText).toMatch(/\$\d/)
+
+    // Save prompt must be visible (AC12: ask to register after first profit)
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Save & Launch' })).toBeVisible()
   })
 })
 
