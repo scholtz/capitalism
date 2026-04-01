@@ -41,5 +41,6 @@ public static class LedgerCategory
     public const string UnitUpgrade = "UNIT_UPGRADE";
     public const string Marketing = "MARKETING";
     public const string Tax = "TAX";
+    public const string RentIncome = "RENT_INCOME";
     public const string Other = "OTHER";
 }

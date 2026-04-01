@@ -1259,6 +1259,64 @@ public sealed class Mutation
         return building;
     }
 
+    /// <summary>
+    /// Schedules a new rent per m² for an apartment or commercial building.
+    /// The change is stored as pending and activates after one in-game day (24 ticks).
+    /// </summary>
+    [Authorize]
+    public async Task<Building> SetRentPerSqm(
+        SetRentPerSqmInput input,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var building = await db.Buildings
+            .Include(b => b.Company)
+            .FirstOrDefaultAsync(b => b.Id == input.BuildingId);
+
+        if (building is null || building.Company.PlayerId != userId)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Building not found or you don't own it.")
+                    .SetCode("BUILDING_NOT_FOUND")
+                    .Build());
+        }
+
+        if (building.Type != BuildingType.Apartment && building.Type != BuildingType.Commercial)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Only apartment and commercial buildings support rent pricing.")
+                    .SetCode("INVALID_BUILDING_TYPE")
+                    .Build());
+        }
+
+        if (input.RentPerSqm < 0m)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Rent per m² must be a non-negative value.")
+                    .SetCode("INVALID_RENT")
+                    .Build());
+        }
+
+        var gameState = await db.GameStates.FirstOrDefaultAsync()
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Game state not found.")
+                    .SetCode("GAME_STATE_NOT_FOUND")
+                    .Build());
+
+        // Schedule the rent change – takes effect after one in-game day (24 ticks).
+        building.PendingPricePerSqm = input.RentPerSqm;
+        building.PendingPriceActivationTick = gameState.CurrentTick + Engine.GameConstants.TicksPerDay;
+
+        await db.SaveChangesAsync();
+        return building;
+    }
+
     /// <summary>Purchases a building lot and places a building on it.</summary>
     [Authorize]
     public async Task<PurchaseLotResult> PurchaseLot(

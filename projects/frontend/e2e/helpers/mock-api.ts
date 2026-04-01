@@ -140,6 +140,8 @@ export type MockBuilding = {
   pricePerSqm?: number | null
   occupancyPercent?: number | null
   totalAreaSqm?: number | null
+  pendingPricePerSqm?: number | null
+  pendingPriceActivationTick?: number | null
   powerPlantType?: string | null
   powerOutput?: number | null
   /** Power supply status: POWERED | CONSTRAINED | OFFLINE */
@@ -1813,6 +1815,57 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { setBuildingForSale: { id: building.id, isForSale: building.isForSale, askingPrice: building.askingPrice } } }),
+      })
+    }
+
+    if (query.includes('SetRentPerSqm') || query.includes('setRentPerSqm')) {
+      const input = body.variables?.input
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      const building = player?.companies
+        .flatMap((company) => company.buildings)
+        .find((candidate) => candidate.id === input?.buildingId)
+
+      if (!building) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Building not found or you don\'t own it.', extensions: { code: 'BUILDING_NOT_FOUND' } }] }),
+        })
+      }
+
+      if (building.type !== 'APARTMENT' && building.type !== 'COMMERCIAL') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Only apartment and commercial buildings support rent pricing.', extensions: { code: 'INVALID_BUILDING_TYPE' } }] }),
+        })
+      }
+
+      if (input.rentPerSqm < 0) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Rent per m² must be a non-negative value.', extensions: { code: 'INVALID_RENT' } }] }),
+        })
+      }
+
+      const currentTick = state.gameState?.currentTick ?? 0
+      building.pendingPricePerSqm = input.rentPerSqm
+      building.pendingPriceActivationTick = currentTick + 24
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            setRentPerSqm: {
+              id: building.id,
+              pricePerSqm: building.pricePerSqm ?? null,
+              pendingPricePerSqm: building.pendingPricePerSqm,
+              pendingPriceActivationTick: building.pendingPriceActivationTick,
+            },
+          },
+        }),
       })
     }
 

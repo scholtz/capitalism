@@ -1085,6 +1085,8 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             "The premium retail lot should not underperform the outskirt lot once higher population demand is applied.");
     }
 
+    #region Property Management (Rent & Occupancy)
+
     [Fact]
     public async Task RentPhase_CollectsRentForApartments()
     {
@@ -1101,6 +1103,257 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         Assert.True(company.Cash > cashBefore,
             "Company should collect rent from apartment building.");
     }
+
+    [Fact]
+    public async Task RentPhase_CollectsRentForCommercialBuilding()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var player = new Player { Id = Guid.NewGuid(), Email = $"comm-rent-{Guid.NewGuid():N}@test.com", DisplayName = "Comm Rent Tester", PasswordHash = "hash", Role = PlayerRole.Player };
+        db.Players.Add(player);
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Comm Corp", Cash = 500_000m };
+        db.Companies.Add(company);
+        var building = new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = BuildingType.Commercial, Name = "Test Office Block",
+            Level = 1, PricePerSqm = city.AverageRentPerSqm, TotalAreaSqm = 500m, OccupancyPercent = 60m
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var cashBefore = company.Cash;
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        Assert.True(company.Cash > cashBefore,
+            "Company should collect rent from commercial building.");
+    }
+
+    [Fact]
+    public async Task RentPhase_AboveMarketRent_ReducesOccupancy()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var player = new Player { Id = Guid.NewGuid(), Email = $"above-rent-{Guid.NewGuid():N}@test.com", DisplayName = "Above Market", PasswordHash = "hash", Role = PlayerRole.Player };
+        db.Players.Add(player);
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Above Market Corp", Cash = 500_000m };
+        db.Companies.Add(company);
+        // Set rent 50% above the city average.
+        var building = new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = BuildingType.Apartment, Name = "Overpriced Apts",
+            Level = 1, PricePerSqm = city.AverageRentPerSqm * 1.5m, TotalAreaSqm = 800m, OccupancyPercent = 80m
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var occupancyBefore = building.OccupancyPercent!.Value;
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        Assert.True(building.OccupancyPercent < occupancyBefore,
+            "Occupancy should decrease when rent is above the area average.");
+    }
+
+    [Fact]
+    public async Task RentPhase_BelowMarketRent_IncreasesOccupancy()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var player = new Player { Id = Guid.NewGuid(), Email = $"below-rent-{Guid.NewGuid():N}@test.com", DisplayName = "Below Market", PasswordHash = "hash", Role = PlayerRole.Player };
+        db.Players.Add(player);
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Below Market Corp", Cash = 500_000m };
+        db.Companies.Add(company);
+        // Set rent 30% below the city average.
+        var building = new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = BuildingType.Apartment, Name = "Bargain Apts",
+            Level = 1, PricePerSqm = city.AverageRentPerSqm * 0.7m, TotalAreaSqm = 800m, OccupancyPercent = 50m
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var occupancyBefore = building.OccupancyPercent!.Value;
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        Assert.True(building.OccupancyPercent > occupancyBefore,
+            "Occupancy should increase when rent is below the area average.");
+    }
+
+    [Fact]
+    public async Task RentPhase_FullOccupancyIsHardToReach_OccupancyCapAt100()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var player = new Player { Id = Guid.NewGuid(), Email = $"full-occ-{Guid.NewGuid():N}@test.com", DisplayName = "Full Occ Tester", PasswordHash = "hash", Role = PlayerRole.Player };
+        db.Players.Add(player);
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Full Occ Corp", Cash = 500_000m };
+        db.Companies.Add(company);
+        // Deeply underpriced – occupancy should grow but never exceed 100.
+        var building = new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = BuildingType.Apartment, Name = "Cheap Apts",
+            Level = 1, PricePerSqm = city.AverageRentPerSqm * 0.1m, TotalAreaSqm = 500m, OccupancyPercent = 90m
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        // Run many ticks – occupancy must never exceed 100.
+        for (var i = 0; i < 50; i++)
+            await processor.ProcessTickAsync();
+
+        Assert.True(building.OccupancyPercent <= 100m,
+            "Occupancy must never exceed 100%.");
+    }
+
+    [Fact]
+    public async Task RentPhase_PendingRentActivatesAfterCorrectTick()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var player = new Player { Id = Guid.NewGuid(), Email = $"pending-rent-{Guid.NewGuid():N}@test.com", DisplayName = "Pending Tester", PasswordHash = "hash", Role = PlayerRole.Player };
+        db.Players.Add(player);
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Pending Corp", Cash = 500_000m };
+        db.Companies.Add(company);
+
+        var gs = await db.GameStates.FirstAsync();
+        var startTick = gs.CurrentTick;
+        var newRent = city.AverageRentPerSqm + 5m;
+
+        var building = new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = BuildingType.Apartment, Name = "Pending Apts",
+            Level = 1, PricePerSqm = city.AverageRentPerSqm, TotalAreaSqm = 600m, OccupancyPercent = 70m,
+            PendingPricePerSqm = newRent,
+            PendingPriceActivationTick = startTick + GameConstants.TicksPerDay
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+
+        // Run 23 ticks — pending price must NOT yet activate.
+        for (var i = 0; i < GameConstants.TicksPerDay - 1; i++)
+            await processor.ProcessTickAsync();
+
+        Assert.NotNull(building.PendingPricePerSqm);
+        Assert.Equal(city.AverageRentPerSqm, building.PricePerSqm);
+
+        // Run one more tick — pending price activates on tick (startTick + 24).
+        await processor.ProcessTickAsync();
+
+        Assert.Null(building.PendingPricePerSqm);
+        Assert.Null(building.PendingPriceActivationTick);
+        Assert.Equal(newRent, building.PricePerSqm);
+    }
+
+    [Fact]
+    public async Task RentPhase_RepeatedPendingRentBeforeActivation_LatestValueWins()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var player = new Player { Id = Guid.NewGuid(), Email = $"repeat-rent-{Guid.NewGuid():N}@test.com", DisplayName = "Repeat Tester", PasswordHash = "hash", Role = PlayerRole.Player };
+        db.Players.Add(player);
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Repeat Corp", Cash = 500_000m };
+        db.Companies.Add(company);
+
+        var gs = await db.GameStates.FirstAsync();
+        var startTick = gs.CurrentTick;
+        var firstPending = city.AverageRentPerSqm + 3m;
+        var secondPending = city.AverageRentPerSqm + 7m;
+
+        var building = new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = BuildingType.Apartment, Name = "Override Apts",
+            Level = 1, PricePerSqm = city.AverageRentPerSqm, TotalAreaSqm = 400m, OccupancyPercent = 65m,
+            PendingPricePerSqm = firstPending,
+            PendingPriceActivationTick = startTick + GameConstants.TicksPerDay
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        // Overwrite pending before it activates.
+        building.PendingPricePerSqm = secondPending;
+        building.PendingPriceActivationTick = startTick + GameConstants.TicksPerDay;
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        for (var i = 0; i < GameConstants.TicksPerDay; i++)
+            await processor.ProcessTickAsync();
+
+        Assert.True(building.PricePerSqm == secondPending,
+            "When a pending rent is overwritten, the last value should activate.");
+    }
+
+    [Fact]
+    public async Task RentPhase_ZeroOccupancy_NoRentIncome()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var player = new Player { Id = Guid.NewGuid(), Email = $"zero-occ-{Guid.NewGuid():N}@test.com", DisplayName = "Zero Occ Tester", PasswordHash = "hash", Role = PlayerRole.Player };
+        db.Players.Add(player);
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Vacant Corp", Cash = 500_000m };
+        db.Companies.Add(company);
+        var building = new Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = BuildingType.Apartment, Name = "Vacant Apts",
+            Level = 1, PricePerSqm = city.AverageRentPerSqm, TotalAreaSqm = 1000m, OccupancyPercent = 0m
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var cashBefore = company.Cash;
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        Assert.True(company.Cash == cashBefore,
+            "Zero-occupancy building should generate no rent income.");
+    }
+
+    [Fact]
+    public async Task RentPhase_RentIncomeAppearsInLedger()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var (companyId, buildingId) = await SeedApartmentAsync(db);
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var ledgerEntries = await db.LedgerEntries
+            .Where(e => e.CompanyId == companyId && e.Category == LedgerCategory.RentIncome)
+            .ToListAsync();
+
+        Assert.NotEmpty(ledgerEntries);
+        Assert.True(ledgerEntries.Sum(e => e.Amount) > 0m,
+            "Rent income must appear as a positive ledger entry.");
+        Assert.All(ledgerEntries, e => Assert.Equal(buildingId, e.BuildingId));
+    }
+
+    #endregion
 
     [Fact]
     public async Task TaxPhase_DeductsAnnualIncomeTaxOnPositiveTaxableIncome()

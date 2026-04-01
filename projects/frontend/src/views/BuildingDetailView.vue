@@ -121,6 +121,12 @@ const layoutName = ref('')
 const showLayoutDialog = ref(false)
 const selectedHistoryItemKey = ref<string | null>(null)
 
+// Property management (APARTMENT / COMMERCIAL)
+const showRentDialog = ref(false)
+const newRentPerSqm = ref<number | null>(null)
+const savingRent = ref(false)
+const rentSaveError = ref<string | null>(null)
+
 let activeBuildingLoadRequest = 0
 let activeExchangeOffersRequest = 0
 
@@ -1238,6 +1244,52 @@ async function setBuildingForSale(forSale: boolean) {
   }
 }
 
+// ── Rent management (APARTMENT / COMMERCIAL) ──
+
+function openRentDialog() {
+  newRentPerSqm.value = building.value?.pendingPricePerSqm ?? building.value?.pricePerSqm ?? null
+  rentSaveError.value = null
+  showRentDialog.value = true
+}
+
+function closeRentDialog() {
+  showRentDialog.value = false
+  rentSaveError.value = null
+}
+
+async function saveRentPerSqm() {
+  if (!building.value || savingRent.value || newRentPerSqm.value === null) return
+  savingRent.value = true
+  rentSaveError.value = null
+  try {
+    const result = await gqlRequest<{
+      setRentPerSqm: { id: string; pricePerSqm: number | null; pendingPricePerSqm: number | null; pendingPriceActivationTick: number | null }
+    }>(
+      `mutation SetRentPerSqm($input: SetRentPerSqmInput!) {
+        setRentPerSqm(input: $input) {
+          id pricePerSqm pendingPricePerSqm pendingPriceActivationTick
+        }
+      }`,
+      {
+        input: {
+          buildingId: building.value.id,
+          rentPerSqm: newRentPerSqm.value,
+        },
+      },
+    )
+    // Update local building state with returned values.
+    if (building.value) {
+      building.value.pendingPricePerSqm = result.setRentPerSqm.pendingPricePerSqm
+      building.value.pendingPriceActivationTick = result.setRentPerSqm.pendingPriceActivationTick
+    }
+    showRentDialog.value = false
+  } catch (reason: unknown) {
+    rentSaveError.value = reason instanceof Error ? reason.message : t('property.saveFailed')
+  } finally {
+    savingRent.value = false
+  }
+}
+
 // ── Layout save/load ──
 
 type SavedLayout = {
@@ -1995,6 +2047,8 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
             isForSale
             askingPrice
             pricePerSqm
+            pendingPricePerSqm
+            pendingPriceActivationTick
             occupancyPercent
             totalAreaSqm
             powerPlantType
@@ -2303,6 +2357,100 @@ watch(
             <button v-if="building.isForSale" class="btn btn-danger" :disabled="savingSale" @click="setBuildingForSale(false)">
               {{ t('buildingDetail.cancelSale') }}
             </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Property management panel: APARTMENT / COMMERCIAL buildings -->
+      <div
+        v-if="building.type === 'APARTMENT' || building.type === 'COMMERCIAL'"
+        class="property-panel"
+        role="region"
+        aria-label="property management"
+      >
+        <div class="property-panel-header">
+          <h2 class="property-panel-title">{{ t('property.panelTitle') }}</h2>
+          <button class="btn btn-primary btn-sm" @click="openRentDialog">
+            {{ t('property.setRentBtn') }}
+          </button>
+        </div>
+
+        <!-- Key metrics row -->
+        <div class="property-metrics">
+          <div class="property-metric">
+            <span class="property-metric-label">{{ t('property.totalArea') }}</span>
+            <span class="property-metric-value">
+              {{ building.totalAreaSqm != null ? building.totalAreaSqm.toLocaleString() + ' m²' : t('common.notAvailable') }}
+            </span>
+          </div>
+          <div class="property-metric">
+            <span class="property-metric-label">{{ t('property.occupancy') }}</span>
+            <span class="property-metric-value" :class="{'property-metric-zero': building.occupancyPercent === 0}">
+              {{ building.occupancyPercent != null ? building.occupancyPercent.toFixed(1) + '%' : t('common.notAvailable') }}
+            </span>
+          </div>
+          <div class="property-metric">
+            <span class="property-metric-label">{{ t('property.activeRent') }}</span>
+            <span class="property-metric-value">
+              {{ building.pricePerSqm != null ? '€' + building.pricePerSqm.toFixed(2) + ' / m²' : t('property.noRentSet') }}
+            </span>
+          </div>
+          <div v-if="building.occupancyPercent != null && building.totalAreaSqm != null" class="property-metric">
+            <span class="property-metric-label">{{ t('property.occupiedArea') }}</span>
+            <span class="property-metric-value">
+              {{ Math.round(building.totalAreaSqm * (building.occupancyPercent / 100)).toLocaleString() }} m²
+              / {{ building.totalAreaSqm.toLocaleString() }} m²
+            </span>
+          </div>
+        </div>
+
+        <!-- Pending rent change notice -->
+        <div v-if="building.pendingPricePerSqm != null" class="pending-rent-notice" role="status">
+          <span class="pending-rent-icon">⏳</span>
+          <span class="pending-rent-text">
+            {{ t('property.pendingRentNotice', {
+              rent: '€' + building.pendingPricePerSqm.toFixed(2),
+              ticks: building.pendingPriceActivationTick != null
+                ? Math.max(0, building.pendingPriceActivationTick - currentTick)
+                : '—'
+            }) }}
+          </span>
+        </div>
+
+        <!-- Occupancy empty-state hint -->
+        <div v-if="building.occupancyPercent === 0 && building.pricePerSqm == null" class="property-empty-state">
+          {{ t('property.noRentHint') }}
+        </div>
+
+        <!-- Rent dialog -->
+        <div v-if="showRentDialog" class="rent-dialog">
+          <div class="rent-dialog-header">
+            <h3>{{ t('property.rentDialogTitle') }}</h3>
+            <button class="btn btn-ghost" @click="closeRentDialog">{{ t('common.close') }}</button>
+          </div>
+          <div class="rent-dialog-body">
+            <p class="rent-dialog-hint">{{ t('property.rentDelayHint') }}</p>
+            <label class="form-label">{{ t('property.rentLabel') }}</label>
+            <input
+              type="number"
+              class="form-input"
+              :placeholder="t('property.rentPlaceholder')"
+              :value="newRentPerSqm"
+              @input="newRentPerSqm = isNaN(($event.target as HTMLInputElement).valueAsNumber) ? null : ($event.target as HTMLInputElement).valueAsNumber"
+              min="0"
+              step="0.5"
+            />
+            <p v-if="rentSaveError" class="rent-dialog-error">{{ rentSaveError }}</p>
+            <div class="rent-dialog-actions">
+              <button
+                class="btn btn-primary"
+                :disabled="savingRent || newRentPerSqm === null || newRentPerSqm < 0"
+                @click="saveRentPerSqm"
+              >
+                {{ savingRent ? t('common.saving') : t('property.scheduleRentBtn') }}
+              </button>
+              <button class="btn btn-secondary" @click="closeRentDialog">{{ t('common.cancel') }}</button>
+            </div>
           </div>
         </div>
       </div>
@@ -4628,6 +4776,129 @@ watch(
 }
 
 /* Config warnings */
+.property-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.property-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.property-panel-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.property-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.property-metric {
+  background: var(--color-bg);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.property-metric-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.property-metric-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.property-metric-zero {
+  color: var(--color-text-secondary);
+}
+
+.pending-rent-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: #1d4ed8;
+  margin-bottom: 0.75rem;
+}
+
+.pending-rent-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.property-empty-state {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  padding: 0.5rem 0;
+}
+
+.rent-dialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  margin-top: 1rem;
+}
+
+.rent-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.rent-dialog-header h3 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.rent-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rent-dialog-hint {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.rent-dialog-error {
+  font-size: 0.8125rem;
+  color: #dc2626;
+  margin: 0;
+}
+
+.rent-dialog-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+
 .config-warnings {
   background: rgba(255, 109, 0, 0.08);
   border: 1px solid rgba(255, 109, 0, 0.3);

@@ -161,6 +161,16 @@ public sealed class SetBuildingForSaleInput
     public decimal? AskingPrice { get; set; }
 }
 
+/// <summary>Input for setting the rent per m² on an apartment or commercial building.</summary>
+public sealed class SetRentPerSqmInput
+{
+    /// <summary>Apartment or commercial building to configure.</summary>
+    public Guid BuildingId { get; set; }
+
+    /// <summary>New rent per m² to apply after one in-game day (24 ticks).</summary>
+    public decimal RentPerSqm { get; set; }
+}
+
 /// <summary>Input for purchasing a building lot and placing a building on it.</summary>
 public sealed class PurchaseLotInput
 {

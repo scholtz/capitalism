@@ -75,6 +75,10 @@ export interface Building {
   isForSale: boolean
   askingPrice: number | null
   pricePerSqm: number | null
+  /** Pending rent per m² scheduled by the player; activates at pendingPriceActivationTick. */
+  pendingPricePerSqm: number | null
+  /** Tick number when pendingPricePerSqm becomes active. Null if no pending change. */
+  pendingPriceActivationTick: number | null
   occupancyPercent: number | null
   totalAreaSqm: number | null
   powerPlantType: string | null

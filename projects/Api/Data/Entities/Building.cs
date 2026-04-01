@@ -52,6 +52,18 @@ public sealed class Building
     /// <summary>Price per m² for apartment and commercial buildings.</summary>
     public decimal? PricePerSqm { get; set; }
 
+    /// <summary>
+    /// Pending (future) rent per m² set by the player. Applied on the tick
+    /// specified by <see cref="PendingPriceActivationTick"/> (one in-game day = 24 ticks after submission).
+    /// </summary>
+    public decimal? PendingPricePerSqm { get; set; }
+
+    /// <summary>
+    /// Tick number at which <see cref="PendingPricePerSqm"/> becomes the active
+    /// <see cref="PricePerSqm"/>. Null when no pending change is queued.
+    /// </summary>
+    public long? PendingPriceActivationTick { get; set; }
+
     /// <summary>Occupancy percentage (0-100) for apartment/commercial buildings.</summary>
     public decimal? OccupancyPercent { get; set; }
 

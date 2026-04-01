@@ -8290,6 +8290,176 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
     #endregion
 
+    #region Property Management (setRentPerSqm mutation)
+
+    /// <summary>
+    /// Helper: creates a company + apartment building owned by the given player token.
+    /// Returns (companyId, buildingId).
+    /// </summary>
+    private async Task<(string CompanyId, string BuildingId)> CreateApartmentBuildingAsync(string token)
+    {
+        var cityId = await GetCityIdByNameAsync();
+        var lotId = await CreateTestLotAsync(cityId, "APARTMENT", "Residential Quarter", 80_000m, $"Apt Lot {Guid.NewGuid():N}"[..17]);
+
+        // Complete onboarding to get a company, then separately purchase the apartment lot.
+        var onboardingResult = await CompleteOnboardingAsync(token, $"Apt Co {Guid.NewGuid():N}"[..14]);
+        var companyId = onboardingResult.CompanyId;
+
+        var purchaseResult = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) {
+                building { id type pricePerSqm occupancyPercent totalAreaSqm pendingPricePerSqm pendingPriceActivationTick }
+              }
+            }
+            """,
+            new { input = new { companyId, lotId, buildingType = "APARTMENT", buildingName = "My Apartments" } },
+            token);
+
+        var building = purchaseResult.GetProperty("data").GetProperty("purchaseLot").GetProperty("building");
+        return (companyId, building.GetProperty("id").GetString()!);
+    }
+
+    [Fact]
+    public async Task SetRentPerSqm_ValidInput_SchedulesPendingRent()
+    {
+        var token = await RegisterAndGetTokenAsync($"rent-set-{Guid.NewGuid()}@test.com", "Rent Setter");
+        var (_, buildingId) = await CreateApartmentBuildingAsync(token);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation SetRent($input: SetRentPerSqmInput!) {
+              setRentPerSqm(input: $input) {
+                id pricePerSqm pendingPricePerSqm pendingPriceActivationTick
+              }
+            }
+            """,
+            new { input = new { buildingId = Guid.Parse(buildingId), rentPerSqm = 20.0m } },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), $"Expected success but got errors: {result}");
+        var b = result.GetProperty("data").GetProperty("setRentPerSqm");
+        Assert.Equal(20.0m, b.GetProperty("pendingPricePerSqm").GetDecimal());
+        Assert.NotEqual(JsonValueKind.Null, b.GetProperty("pendingPriceActivationTick").ValueKind);
+    }
+
+    [Fact]
+    public async Task SetRentPerSqm_Unauthenticated_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"rent-unauth-{Guid.NewGuid()}@test.com", "Unauth Rent");
+        var (_, buildingId) = await CreateApartmentBuildingAsync(token);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation SetRent($input: SetRentPerSqmInput!) {
+              setRentPerSqm(input: $input) { id }
+            }
+            """,
+            new { input = new { buildingId = Guid.Parse(buildingId), rentPerSqm = 20.0m } }
+            // No token – should fail auth.
+        );
+
+        Assert.True(result.TryGetProperty("errors", out _), "Unauthenticated call must return errors.");
+    }
+
+    [Fact]
+    public async Task SetRentPerSqm_WrongOwner_ReturnsError()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync($"rent-owner-{Guid.NewGuid()}@test.com", "Owner");
+        var (_, buildingId) = await CreateApartmentBuildingAsync(ownerToken);
+
+        var otherToken = await RegisterAndGetTokenAsync($"rent-other-{Guid.NewGuid()}@test.com", "Other");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation SetRent($input: SetRentPerSqmInput!) {
+              setRentPerSqm(input: $input) { id }
+            }
+            """,
+            new { input = new { buildingId = Guid.Parse(buildingId), rentPerSqm = 20.0m } },
+            otherToken);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("BUILDING_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task SetRentPerSqm_NegativeValue_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"rent-neg-{Guid.NewGuid()}@test.com", "Negative Rent");
+        var (_, buildingId) = await CreateApartmentBuildingAsync(token);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation SetRent($input: SetRentPerSqmInput!) {
+              setRentPerSqm(input: $input) { id }
+            }
+            """,
+            new { input = new { buildingId = Guid.Parse(buildingId), rentPerSqm = -5.0m } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_RENT", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task SetRentPerSqm_OnFactoryBuilding_ReturnsInvalidBuildingType()
+    {
+        var token = await RegisterAndGetTokenAsync($"rent-factory-{Guid.NewGuid()}@test.com", "Factory Owner");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP", "Commercial District");
+        await StartOnboardingCompanyAsync(token, "Factory Co", factoryLotId);
+        var productId = await GetStarterProductIdAsync();
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        // Get the factory building id.
+        var myCompanies = await ExecuteGraphQlAsync("{ myCompanies { buildings { id type } } }", token: token);
+        var factoryId = myCompanies.GetProperty("data").GetProperty("myCompanies")[0]
+            .GetProperty("buildings").EnumerateArray()
+            .First(b => b.GetProperty("type").GetString() == "FACTORY")
+            .GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation SetRent($input: SetRentPerSqmInput!) {
+              setRentPerSqm(input: $input) { id }
+            }
+            """,
+            new { input = new { buildingId = Guid.Parse(factoryId), rentPerSqm = 20.0m } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_BUILDING_TYPE", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task SetRentPerSqm_ActivationTickIsCurrentPlusTwentyFour()
+    {
+        var token = await RegisterAndGetTokenAsync($"rent-tick-{Guid.NewGuid()}@test.com", "Rent Tick Test");
+        var (_, buildingId) = await CreateApartmentBuildingAsync(token);
+
+        var gameStateResult = await ExecuteGraphQlAsync("{ gameState { currentTick } }");
+        var currentTick = gameStateResult.GetProperty("data").GetProperty("gameState").GetProperty("currentTick").GetInt64();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation SetRent($input: SetRentPerSqmInput!) {
+              setRentPerSqm(input: $input) { pendingPriceActivationTick }
+            }
+            """,
+            new { input = new { buildingId = Guid.Parse(buildingId), rentPerSqm = 15.0m } },
+            token);
+
+        var activationTick = result.GetProperty("data").GetProperty("setRentPerSqm")
+            .GetProperty("pendingPriceActivationTick").GetInt64();
+
+        Assert.True(activationTick == currentTick + 24,
+            "Pending rent must activate exactly 24 ticks (one in-game day) after submission.");
+    }
+
+    #endregion
+
 }
 
 /// <summary>
@@ -8759,4 +8929,5 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     }
 
     #endregion
+
 }

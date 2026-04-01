@@ -5010,3 +5010,207 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
     await expect(page.getByRole('button', { name: /Store Upgrade/i })).toBeVisible()
   })
 })
+
+// ── Property Management (APARTMENT / COMMERCIAL) ──────────────────────────────
+
+function makeApartmentPlayer() {
+  const player = makePlayer()
+  player.companies.push({
+    id: 'company-apt',
+    playerId: player.id,
+    name: 'Apt Holdings',
+    cash: 1_000_000,
+    foundedAtUtc: '2026-01-01T00:00:00Z',
+    buildings: [
+      {
+        id: 'building-apt',
+        companyId: 'company-apt',
+        cityId: 'city-ba',
+        type: 'APARTMENT',
+        name: 'River View Apartments',
+        latitude: 48.14,
+        longitude: 17.1,
+        level: 1,
+        powerConsumption: 1,
+        isForSale: false,
+        builtAtUtc: '2026-01-01T00:00:00Z',
+        pendingConfiguration: null,
+        units: [],
+        pricePerSqm: 14,
+        occupancyPercent: 72.5,
+        totalAreaSqm: 2000,
+        pendingPricePerSqm: null,
+        pendingPriceActivationTick: null,
+      },
+    ],
+  })
+  return player
+}
+
+test.describe('Property management panel', () => {
+  test('shows property metrics for apartment building', async ({ page }) => {
+    const player = makeApartmentPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-apt')
+
+    const panel = page.locator('[aria-label="property management"]')
+    await expect(panel).toBeVisible()
+
+    // Occupancy
+    await expect(panel).toContainText('72.5%')
+    // Active rent
+    await expect(panel).toContainText('€14.00 / m²')
+    // Total area
+    await expect(panel).toContainText('2,000 m²')
+    // Set Rent button
+    await expect(panel.getByRole('button', { name: /Set Rent/i })).toBeVisible()
+  })
+
+  test('shows pending rent notice when pending change is queued', async ({ page }) => {
+    const player = makeApartmentPlayer()
+    const apt = player.companies.find((c) => c.id === 'company-apt')!.buildings.find((b) => b.id === 'building-apt')!
+    apt.pendingPricePerSqm = 18
+    apt.pendingPriceActivationTick = 50
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState = { ...state.gameState, currentTick: 30 }
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-apt')
+
+    const notice = page.locator('.pending-rent-notice')
+    await expect(notice).toBeVisible()
+    await expect(notice).toContainText('€18.00')
+    await expect(notice).toContainText('20 ticks')
+  })
+
+  test('opens rent dialog and schedules a new rent', async ({ page }) => {
+    const player = makeApartmentPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-apt')
+
+    const panel = page.locator('[aria-label="property management"]')
+    await panel.getByRole('button', { name: /Set Rent/i }).click()
+
+    // Dialog should open
+    await expect(panel.locator('.rent-dialog')).toBeVisible()
+    // Should show the delay hint
+    await expect(panel.locator('.rent-dialog')).toContainText('24 ticks')
+
+    // Fill new rent
+    await panel.locator('.rent-dialog input[type="number"]').fill('20')
+    await panel.getByRole('button', { name: /Schedule Change/i }).click()
+
+    // Dialog closes and pending notice appears
+    await expect(panel.locator('.rent-dialog')).toBeHidden()
+    await expect(panel.locator('.pending-rent-notice')).toBeVisible()
+    await expect(panel.locator('.pending-rent-notice')).toContainText('€20.00')
+  })
+
+  test('property panel is not shown for factory buildings', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-fac',
+      playerId: player.id,
+      name: 'Factory Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-fac',
+          companyId: 'company-fac',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'My Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-fac')
+
+    await expect(page.locator('[aria-label="property management"]')).toBeHidden()
+  })
+
+  test('commercial building also shows property panel', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-comm',
+      playerId: player.id,
+      name: 'Commercial Corp',
+      cash: 800000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-comm',
+          companyId: 'company-comm',
+          cityId: 'city-ba',
+          type: 'COMMERCIAL',
+          name: 'Business Centre',
+          latitude: 48.15,
+          longitude: 17.1,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [],
+          pricePerSqm: 22,
+          occupancyPercent: 85,
+          totalAreaSqm: 3000,
+          pendingPricePerSqm: null,
+          pendingPriceActivationTick: null,
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-comm')
+
+    const panel = page.locator('[aria-label="property management"]')
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText('€22.00 / m²')
+    await expect(panel).toContainText('85.0%')
+  })
+})

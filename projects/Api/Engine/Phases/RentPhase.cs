@@ -26,6 +26,16 @@ public sealed class RentPhase : ITickPhase
 
         foreach (var building in buildings)
         {
+            // Activate pending rent change if the activation tick has been reached.
+            if (building.PendingPricePerSqm.HasValue
+                && building.PendingPriceActivationTick.HasValue
+                && context.CurrentTick >= building.PendingPriceActivationTick.Value)
+            {
+                building.PricePerSqm = building.PendingPricePerSqm.Value;
+                building.PendingPricePerSqm = null;
+                building.PendingPriceActivationTick = null;
+            }
+
             if (building.PricePerSqm is null || building.TotalAreaSqm is null || building.OccupancyPercent is null)
                 continue;
             if (!context.CompaniesById.TryGetValue(building.CompanyId, out var company))
@@ -37,7 +47,24 @@ public sealed class RentPhase : ITickPhase
             var rentIncome = building.PricePerSqm.Value
                              * building.TotalAreaSqm.Value
                              * building.OccupancyPercent.Value / 100m;
-            company.Cash += rentIncome;
+
+            if (rentIncome > 0m)
+            {
+                company.Cash += rentIncome;
+
+                // Record rent income in the ledger.
+                context.Db.LedgerEntries.Add(new LedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyId = company.Id,
+                    BuildingId = building.Id,
+                    Category = LedgerCategory.RentIncome,
+                    Description = $"Rent income – {building.Name}",
+                    Amount = rentIncome,
+                    RecordedAtTick = context.CurrentTick,
+                    RecordedAtUtc = DateTime.UtcNow
+                });
+            }
 
             // Adjust occupancy toward equilibrium.
             var avgRent = city.AverageRentPerSqm;
