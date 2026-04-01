@@ -5214,3 +5214,119 @@ test.describe('Property management panel', () => {
     await expect(panel).toContainText('85.0%')
   })
 })
+
+// ── Grid editor: configure + directional link, save, reload, persist ──────────
+
+test.describe('Grid editor: save and reload persistence', () => {
+  test('configure directional link, save, reload — pending configuration persists', async ({ page }) => {
+    // Scenario: player opens a factory, enters edit mode, activates a directional link
+    // between existing units, saves the plan, then reloads the page and verifies the
+    // pending configuration with the link is still visible in the Queued Upgrade section.
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-persist',
+      playerId: player.id,
+      name: 'Persist Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-persist',
+          companyId: 'company-persist',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Persist Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'persist-u1',
+              buildingId: 'building-persist',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'persist-u2',
+              buildingId: 'building-persist',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-persist')
+    await expect(page.getByRole('heading', { name: 'Persist Factory' })).toBeVisible()
+
+    // Step 1: Enter edit mode
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+
+    // Step 2: Activate the horizontal link from PURCHASE (0,0) → MANUFACTURING (1,0)
+    const hLink = plannedSection.locator('.link-toggle.horizontal').first()
+    await expect(hLink).toHaveClass(/link-state-none/)
+    await hLink.click()
+    await expect(hLink).toHaveClass(/link-state-forward/)
+
+    // Step 3: Save the plan — this should queue a pending configuration
+    await page.getByRole('button', { name: 'Store Upgrade' }).click()
+
+    // After save the upgrade-in-progress banner should appear
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+
+    // Step 4: Reload the page — the pending configuration must survive the reload
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Persist Factory' })).toBeVisible()
+
+    // The queued upgrade banner must still be visible after reload
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+
+    // Step 5: Enter edit mode again to inspect the queued plan
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const queuedSection = getGridSection(page, 'Queued Upgrade')
+
+    // The horizontal link between the two units must still show as forward/active
+    const queuedHLink = queuedSection.locator('.link-toggle.horizontal').first()
+    await expect(queuedHLink).toHaveClass(/link-state-forward/)
+    await expect(queuedHLink).toHaveClass(/active/)
+
+    // Both units must appear in the queued section
+    await expect(getGridCell(queuedSection, 0, 0)).toContainText('Purchase')
+    await expect(getGridCell(queuedSection, 1, 0)).toContainText('Manufacturing')
+  })
+})
