@@ -5330,3 +5330,335 @@ test.describe('Grid editor: save and reload persistence', () => {
     await expect(getGridCell(queuedSection, 1, 0)).toContainText('Manufacturing')
   })
 })
+
+// ── Exchange sourcing — per-industry coverage ─────────────────────────────────
+
+test.describe('Global exchange market — per-industry resource coverage', () => {
+  // Helper that builds a building with a single PURCHASE unit targeting the given resource.
+  function makePurchaseBuilding(
+    resourceId: string,
+    buildingId: string,
+    cityId = 'city-ba',
+  ) {
+    return {
+      id: buildingId,
+      companyId: `company-${buildingId}`,
+      cityId,
+      type: 'FACTORY' as const,
+      name: `${buildingId} Factory`,
+      latitude: 48.1486,
+      longitude: 17.1077,
+      level: 1,
+      powerConsumption: 2,
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      pendingConfiguration: null,
+      units: [
+        {
+          id: `unit-${buildingId}`,
+          buildingId,
+          unitType: 'PURCHASE' as const,
+          gridX: 0,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: false,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+          resourceTypeId: resourceId,
+          purchaseSource: 'EXCHANGE',
+          // null = no price cap, matching the correct starter-industry configuration
+          // (avoids the PR #93 regression where BasePrice caps blocked Grain purchases)
+          maxPrice: null,
+        },
+      ],
+    }
+  }
+
+  test('Grain (Food Processing input) purchase unit shows exchange offers for all cities', async ({
+    page,
+  }) => {
+    // A PURCHASE unit targeting Grain (Food Processing raw material) must show
+    // exchange offers from all seeded cities with price/transit/delivered breakdown.
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-grain-exch',
+      playerId: player.id,
+      name: 'Grain Exchange Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makePurchaseBuilding('res-grain', 'building-grain-exch')],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-grain-exch')
+    await expect(page.getByRole('heading', { name: 'building-grain-exch Factory' })).toBeVisible()
+
+    // Click the PURCHASE cell in the Current Configuration section
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Exchange offers panel must appear
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // All seeded cities must have Grain offers
+    const offersList = page.locator('.exchange-offers-list')
+    await expect(offersList.getByText('Bratislava')).toBeVisible()
+    await expect(offersList.getByText('Prague')).toBeVisible()
+    await expect(offersList.getByText('Vienna')).toBeVisible()
+
+    // Each offer must show all three cost components
+    await expect(offersList.getByText(/Exchange:/).first()).toBeVisible()
+    await expect(offersList.getByText(/Transit:/).first()).toBeVisible()
+    await expect(offersList.getByText(/Delivered:/).first()).toBeVisible()
+
+    // The same-city offer (Bratislava) must have zero transit cost
+    const braOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Bratislava' })
+    await expect(braOffer.getByText(/Transit: \$0/)).toBeVisible()
+
+    // A remote-city offer must have positive transit cost
+    const pragueOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Prague' })
+    const pragueTransitText = await pragueOffer.getByText(/Transit:/).textContent()
+    expect(pragueTransitText).toMatch(/Transit: \$[1-9]\d*/)
+
+    // Best-price badge must appear exactly once
+    await expect(page.locator('.offer-best-badge')).toHaveCount(1)
+  })
+
+  test('Chemical Minerals (Healthcare input) purchase unit shows exchange offers for all cities', async ({
+    page,
+  }) => {
+    // A PURCHASE unit targeting Chemical Minerals (Healthcare raw material) must show
+    // exchange offers. Chemical Minerals has no city-specific abundance in mock data,
+    // so the default abundance (0.05) is used for all cities — exchange price is higher
+    // than the base price and quality is lower than high-abundance resources.
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-chem-exch',
+      playerId: player.id,
+      name: 'Chemical Exchange Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makePurchaseBuilding('res-chem', 'building-chem-exch')],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-chem-exch')
+    await expect(
+      page.getByRole('heading', { name: 'building-chem-exch Factory' }),
+    ).toBeVisible()
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Exchange offers panel must appear for Chemical Minerals
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    const offersList = page.locator('.exchange-offers-list')
+    // All three cities must be represented
+    await expect(offersList.getByText('Bratislava')).toBeVisible()
+    await expect(offersList.getByText('Prague')).toBeVisible()
+    await expect(offersList.getByText('Vienna')).toBeVisible()
+
+    // Cost breakdown must be present
+    await expect(offersList.getByText(/Exchange:/).first()).toBeVisible()
+    await expect(offersList.getByText(/Transit:/).first()).toBeVisible()
+    await expect(offersList.getByText(/Delivered:/).first()).toBeVisible()
+
+    // Quality must be visible for each offer
+    await expect(offersList.getByText(/Quality \d/).first()).toBeVisible()
+
+    // Best-price badge must appear exactly once
+    await expect(page.locator('.offer-best-badge')).toHaveCount(1)
+
+    // Since Chemical Minerals are not in any city's abundance list, the same-city offer
+    // (Bratislava) still has zero transit cost, making it the cheapest delivered option.
+    const braOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Bratislava' })
+    await expect(braOffer.locator('.offer-best-badge')).toBeVisible()
+    await expect(braOffer.getByText(/Transit: \$0/)).toBeVisible()
+  })
+
+  test('changing minQuality in edit mode reactively blocks/unblocks exchange offers without saving', async ({
+    page,
+  }) => {
+    // Proves that the exchange offer panel reacts immediately when the player edits
+    // the minQuality threshold in the planning sidebar — no save required.
+    //
+    // Setup: two cities with different Wood abundances so they have different quality scores.
+    //   Bratislava: abundance 0.5 → quality = 0.35 + 0.5*0.6 = 0.65 → BLOCKED by minQuality 0.70
+    //   Prague:     abundance 0.8 → quality = 0.35 + 0.8*0.6 = 0.83 → PASSES minQuality 0.70
+    //
+    // Starting state: minQuality = null → both offers pass (no blocked styling).
+    // After edit:     minQuality = 0.70 → Bratislava offer shows blocked reason without saving.
+    const player = makePlayer()
+    const cities = [
+      {
+        id: 'city-ba',
+        name: 'Bratislava',
+        countryCode: 'SK',
+        latitude: 48.1486,
+        longitude: 17.1077,
+        population: 475000,
+        averageRentPerSqm: 14,
+        baseSalaryPerManhour: 18,
+        resources: [
+          { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.5 },
+        ],
+      },
+      {
+        id: 'city-pr',
+        name: 'Prague',
+        countryCode: 'CZ',
+        latitude: 50.0755,
+        longitude: 14.4378,
+        population: 1350000,
+        averageRentPerSqm: 18,
+        baseSalaryPerManhour: 22,
+        resources: [
+          { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.8 },
+        ],
+      },
+    ]
+
+    player.companies.push({
+      id: 'company-reactive-qual',
+      playerId: player.id,
+      name: 'Reactive Quality Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-reactive-qual',
+          companyId: 'company-reactive-qual',
+          cityId: 'city-ba',
+          type: 'FACTORY' as const,
+          name: 'Reactive Quality Factory',
+          latitude: 48.1486,
+          longitude: 17.1077,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-reactive-qual',
+              buildingId: 'building-reactive-qual',
+              unitType: 'PURCHASE' as const,
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              purchaseSource: 'EXCHANGE',
+              maxPrice: 9999,
+              // No minQuality initially — all offers pass
+              minQuality: null,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.cities = cities as typeof state.cities
+    state.resourceTypes = [
+      {
+        id: 'res-wood',
+        name: 'Wood',
+        slug: 'wood',
+        category: 'ORGANIC',
+        basePrice: 10,
+        weightPerUnit: 5,
+        unitName: 'Ton',
+        unitSymbol: 't',
+        imageUrl: null,
+        description: 'Harvested timber.',
+      },
+    ]
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-reactive-qual')
+    await expect(page.getByRole('heading', { name: 'Reactive Quality Factory' })).toBeVisible()
+
+    // Step 1: Enter edit mode and click the PURCHASE cell in the Planned Upgrade draft
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    await expect(page.getByRole('button', { name: 'Store Upgrade' })).toBeVisible()
+
+    const draftSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await draftSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Config panel opens and exchange offers appear (no blocked offers yet)
+    await expect(page.getByText('Unit Configuration')).toBeVisible()
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // Both cities should be unblocked (minQuality is null)
+    const braOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Bratislava' })
+    const pragueOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Prague' })
+    await expect(braOffer).toBeVisible()
+    await expect(braOffer).not.toHaveClass(/offer-blocked/)
+    await expect(pragueOffer).toBeVisible()
+    await expect(pragueOffer).not.toHaveClass(/offer-blocked/)
+
+    // Step 2: Change minQuality to 0.70 — this should block Bratislava (quality 0.65)
+    // but leave Prague unblocked (quality 0.83). No save needed.
+    const minQualityInput = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Min Quality') })
+      .locator('input[type="number"]')
+    await minQualityInput.fill('0.70')
+    // Trigger the input event so the Vue binding fires
+    await minQualityInput.dispatchEvent('input')
+
+    // Bratislava must now be blocked (quality 0.65 < minQuality 0.70)
+    await expect(braOffer).toHaveClass(/offer-blocked/)
+    await expect(braOffer.locator('.offer-blocked-reason')).toContainText('Below your min quality')
+
+    // Prague must remain unblocked (quality 0.83 > minQuality 0.70) and be the new best
+    await expect(pragueOffer).toBeVisible()
+    await expect(pragueOffer).not.toHaveClass(/offer-blocked/)
+    await expect(pragueOffer.locator('.offer-best-badge')).toBeVisible()
+
+    // The "no valid offers" banner must NOT appear (Prague still qualifies)
+    await expect(page.getByText(/No offers meet your price and quality constraints/)).toBeHidden()
+  })
+})

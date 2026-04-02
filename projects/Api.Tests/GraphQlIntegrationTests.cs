@@ -6683,6 +6683,187 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task StoreBuildingConfiguration_PurchaseUnit_PersistsExchangeSourceForGrain_FoodProcessing()
+    {
+        // AC#10: validates the exchange-source purchase-unit configuration round-trip for the
+        // Food Processing starter industry (Grain raw material).
+        var email = $"grain-exch-cfg-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "Grain Exchange Tester");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Grain Exchange Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Grain Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var grainId = (await ExecuteGraphQlAsync("{ resourceTypes { id slug } }"))
+            .GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray().First(r => r.GetProperty("slug").GetString() == "grain")
+            .GetProperty("id").GetString()!;
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new
+                        {
+                            gridX = 0, gridY = 0,
+                            unitType = "PURCHASE",
+                            resourceTypeId = grainId,
+                            // null MaxPrice allows purchasing at any market rate.
+                            // A non-null cap (e.g. BasePrice) risks blocking Grain purchases when
+                            // the exchange price exceeds it — the root cause of PR #93's silent
+                            // Food Processing supply-chain failure.
+                            maxPrice = (decimal?)null,
+                            minQuality = 0.5m,
+                            purchaseSource = "EXCHANGE",
+                            linkRight = false, linkLeft = false, linkUp = false, linkDown = false,
+                            linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false,
+                        }
+                    }
+                }
+            },
+            token);
+
+        await AdvanceGameTicksAsync(3);
+
+        var companiesResult = await ExecuteGraphQlAsync(
+            """
+            {
+              myCompanies {
+                buildings {
+                  id
+                  units { gridX gridY unitType resourceTypeId maxPrice minQuality purchaseSource }
+                }
+              }
+            }
+            """,
+            token: token);
+
+        var building = companiesResult.GetProperty("data").GetProperty("myCompanies")
+            .EnumerateArray()
+            .SelectMany(c => c.GetProperty("buildings").EnumerateArray())
+            .First(b => b.GetProperty("id").GetString() == buildingId);
+
+        var unit = building.GetProperty("units").EnumerateArray()
+            .First(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+
+        Assert.Equal("EXCHANGE", unit.GetProperty("purchaseSource").GetString());
+        // null MaxPrice means no cap — Food Processing can buy Grain at any market price
+        Assert.True(unit.GetProperty("maxPrice").ValueKind == System.Text.Json.JsonValueKind.Null,
+            "MaxPrice must be null for Food Processing purchase unit so the engine can buy at market price");
+        Assert.Equal(0.5m, unit.GetProperty("minQuality").GetDecimal());
+        Assert.Equal(grainId, unit.GetProperty("resourceTypeId").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_PurchaseUnit_PersistsExchangeSourceForChemicalMinerals_Healthcare()
+    {
+        // AC#10: validates the exchange-source purchase-unit configuration round-trip for the
+        // Healthcare starter industry (Chemical Minerals raw material).
+        var email = $"chem-exch-cfg-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "Chem Exchange Tester");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Chem Exchange Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Chem Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var chemId = (await ExecuteGraphQlAsync("{ resourceTypes { id slug } }"))
+            .GetProperty("data").GetProperty("resourceTypes")
+            .EnumerateArray().First(r => r.GetProperty("slug").GetString() == "chemical-minerals")
+            .GetProperty("id").GetString()!;
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new
+                        {
+                            gridX = 0, gridY = 0,
+                            unitType = "PURCHASE",
+                            resourceTypeId = chemId,
+                            maxPrice = (decimal?)null,
+                            minQuality = (decimal?)null,
+                            purchaseSource = "OPTIMAL",
+                            linkRight = false, linkLeft = false, linkUp = false, linkDown = false,
+                            linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false,
+                        }
+                    }
+                }
+            },
+            token);
+
+        await AdvanceGameTicksAsync(3);
+
+        var companiesResult = await ExecuteGraphQlAsync(
+            """
+            {
+              myCompanies {
+                buildings {
+                  id
+                  units { gridX gridY unitType resourceTypeId maxPrice minQuality purchaseSource }
+                }
+              }
+            }
+            """,
+            token: token);
+
+        var building = companiesResult.GetProperty("data").GetProperty("myCompanies")
+            .EnumerateArray()
+            .SelectMany(c => c.GetProperty("buildings").EnumerateArray())
+            .First(b => b.GetProperty("id").GetString() == buildingId);
+
+        var unit = building.GetProperty("units").EnumerateArray()
+            .First(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+
+        Assert.Equal("OPTIMAL", unit.GetProperty("purchaseSource").GetString());
+        Assert.Equal(chemId, unit.GetProperty("resourceTypeId").GetString());
+        // Null constraints mean no cap — Healthcare can buy Chemical Minerals at any market price/quality
+        Assert.True(unit.GetProperty("maxPrice").ValueKind == System.Text.Json.JsonValueKind.Null,
+            "MaxPrice must be null for Healthcare purchase unit");
+        Assert.True(unit.GetProperty("minQuality").ValueKind == System.Text.Json.JsonValueKind.Null,
+            "MinQuality must be null for unrestricted Healthcare purchase unit");
+    }
+
+    [Fact]
     public async Task CityLots_ReturnsPopulationIndexForAllSeedLots()
     {
         // Every seeded lot must expose a non-zero populationIndex so the frontend
