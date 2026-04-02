@@ -906,6 +906,28 @@ test.describe('Guest onboarding wizard', () => {
     await expect(page.getByText(/Current simulation tick: \d+\./)).toBeVisible()
   })
 
+  test('guest completion screen shows tick countdown timer in the tick panel (AC 8)', async ({
+    page,
+  }) => {
+    // AC 8: "The player can observe time progressing and receive clear feedback when production
+    // and/or first sales occur." The tick countdown timer (`.tick-countdown`) must be visible
+    // inside the guest tick panel so the player can see when the next simulation step occurs.
+    // The default mock sets lastTickAtUtc 30 seconds ago with tickIntervalSeconds=60, giving ~30s remaining.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-tick-panel')).toBeVisible()
+
+    // The countdown timer element must be present and show time-related text
+    const countdownEl = page.locator('.guest-tick-panel .tick-countdown')
+    await expect(countdownEl).toBeVisible()
+    const countdownText = await countdownEl.textContent()
+    // Should contain a time reference ("soon" or digits indicating seconds/minutes)
+    expect(countdownText?.toLowerCase()).toMatch(/tick|soon|\d+/)
+  })
+
   test('guest steps 1-4 make no backend mutation calls (progress is temporary)', async ({ page }) => {
     // AC: "Guest progress is handled as temporary and is not incorrectly persisted as a permanent
     // backend-owned company before authentication."
@@ -1548,6 +1570,34 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     await expect(page.getByText('Enable public sales')).toBeVisible()
     await expect(page.getByText('Wait for the next tick')).toBeVisible()
     await expect(page.getByText('Current simulation tick: 42.')).toBeVisible()
+  })
+
+  test('configure-guide public sales step shows description explaining city-wide buyer discovery (AC 7)', async ({
+    page,
+  }) => {
+    // AC 7: "The UI highlights key concepts during onboarding, including available cash,
+    // price configuration, and public sales configuration."
+    // ROADMAP: "Wizard will show them important areas on the screen like ... public sales configuration."
+    // This test verifies the public sales step description (not just its heading) is rendered
+    // so players understand why enabling public visibility is required for revenue.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboarding(page, 'Public Sales Corp')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The public sales configure-step must show its description text, not just the heading
+    const publicSalesStep = page.locator('.configure-step').filter({ hasText: 'Enable public sales' })
+    await expect(publicSalesStep).toBeVisible()
+    // Description explains that PUBLIC visibility enables city-wide customer discovery
+    await expect(publicSalesStep).toContainText('PUBLIC')
+    await expect(publicSalesStep).toContainText('customer')
   })
 
   test('configure-guide price step explains margin and demand trade-offs', async ({ page }) => {
