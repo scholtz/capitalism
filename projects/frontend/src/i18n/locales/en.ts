@@ -145,8 +145,10 @@ export default {
     configureStepCash: 'Review your cash',
     configureStepCashDesc: 'You have {amount} to fund your first operations. Monitor this as you purchase raw materials and set up production.',
     configureStepPrice: 'Set a selling price',
-    configureStepPriceDesc: 'In the sales shop, open the PUBLIC_SALES unit and set a minimum selling price. A higher price earns more margin per unit but reduces customer demand; a lower price drives more volume at a thinner margin. Start near the base market price for the best first-sale balance.',
-    configureStepPriceDescWithPrice: 'In the sales shop, set a minimum selling price. The market benchmark is {price}. Price higher to earn more margin per unit — but expect fewer buyers. Price lower to boost demand and move products faster. Find your balance to maximise early profit.',
+    configureStepPriceDesc:
+      'In the sales shop, open the PUBLIC_SALES unit and set a minimum selling price. A higher price earns more margin per unit but reduces customer demand; a lower price drives more volume at a thinner margin. Start near the base market price for the best first-sale balance.',
+    configureStepPriceDescWithPrice:
+      'In the sales shop, set a minimum selling price. The market benchmark is {price}. Price higher to earn more margin per unit — but expect fewer buyers. Price lower to boost demand and move products faster. Find your balance to maximise early profit.',
     configureStepPublicSales: 'Enable public sales',
     configureStepPublicSalesDesc: 'Set the sale visibility to PUBLIC on your sales unit. This allows any customer in the city to discover and buy your product.',
     configureStepTick: 'Wait for the next tick',
@@ -200,8 +202,7 @@ export default {
     revisitTitle: 'Your startup pack is still available',
     subtitle: 'Claim 3 months of Pro access and {amount} in expansion capital for the next phase of your empire.',
     proBenefitTitle: '3 months of Pro',
-    proBenefitBody:
-      'Unlock Pro access for {days} days and manufacture more products to sell — expanding your product lines beyond the free tier.',
+    proBenefitBody: 'Unlock Pro access for {days} days and manufacture more products to sell — expanding your product lines beyond the free tier.',
     cashBenefitTitle: 'Expansion capital',
     cashBenefitBody: '{amount} will be credited to {company}.',
     deadlineLabel: 'Offer window',
@@ -715,16 +716,24 @@ export default {
     setupBuilding: 'Set Up Your Building',
     postPurchaseTitle: 'Building acquired — time to develop your property',
     postPurchaseBody: 'Your building is placed on the lot. Configure units to start producing economic value.',
-    postPurchaseBodyFactory: 'Your factory is ready for configuration. Add a Purchasing unit to source raw materials, a Manufacturing unit to produce goods, and a B2B Sales or Storage unit to move inventory. A complete chain means real revenue.',
-    postPurchaseBodyMine: 'Your mine is placed on the deposit. Configure a Mining unit to begin extracting resources each tick. Link output to a Storage unit or sell directly via B2B Sales to downstream factories.',
-    postPurchaseBodySalesShop: 'Your sales shop is ready to sell to local customers. High population index here means strong demand. Add Public Sales units and stock them with finished goods to start generating retail revenue.',
-    postPurchaseBodyResearchDevelopment: 'Your R&D centre is ready. Configure research units to improve product quality and brand strength over time. Better quality commands higher prices in the market.',
+    postPurchaseBodyFactory:
+      'Your factory is ready for configuration. Add a Purchasing unit to source raw materials, a Manufacturing unit to produce goods, and a B2B Sales or Storage unit to move inventory. A complete chain means real revenue.',
+    postPurchaseBodyMine:
+      'Your mine is placed on the deposit. Configure a Mining unit to begin extracting resources each tick. Link output to a Storage unit or sell directly via B2B Sales to downstream factories.',
+    postPurchaseBodySalesShop:
+      'Your sales shop is ready to sell to local customers. High population index here means strong demand. Add Public Sales units and stock them with finished goods to start generating retail revenue.',
+    postPurchaseBodyResearchDevelopment:
+      'Your R&D centre is ready. Configure research units to improve product quality and brand strength over time. Better quality commands higher prices in the market.',
     postPurchaseBodyApartment: 'Your apartment building is ready. Residential units earn stable rent income each tick based on local population demand. Configure units to maximise occupancy.',
-    postPurchaseBodyCommercial: 'Your commercial building is ready. Configure office or retail units to earn rental income from business tenants. Proximity to other commercial buildings increases yield.',
-    postPurchaseBodyMediaHouse: 'Your media house is operational. Configure broadcasting units to boost brand awareness across the city. Higher reach means better marketing effectiveness for your other businesses.',
-    postPurchaseBodyBank: 'Your bank is open. Configure lending units to offer capital to other players and earn interest income each tick. A well-positioned bank in the financial district is highly profitable.',
+    postPurchaseBodyCommercial:
+      'Your commercial building is ready. Configure office or retail units to earn rental income from business tenants. Proximity to other commercial buildings increases yield.',
+    postPurchaseBodyMediaHouse:
+      'Your media house is operational. Configure broadcasting units to boost brand awareness across the city. Higher reach means better marketing effectiveness for your other businesses.',
+    postPurchaseBodyBank:
+      'Your bank is open. Configure lending units to offer capital to other players and earn interest income each tick. A well-positioned bank in the financial district is highly profitable.',
     postPurchaseBodyExchange: 'Your exchange is live. Configure trading units to facilitate commodity transactions and earn transaction fees. Central location maximises order flow.',
-    postPurchaseBodyPowerPlant: 'Your power plant is constructed. Configure generation units to supply electricity to your buildings city-wide. Reliable power reduces operating costs across your entire company.',
+    postPurchaseBodyPowerPlant:
+      'Your power plant is constructed. Configure generation units to supply electricity to your buildings city-wide. Reliable power reduces operating costs across your entire company.',
     populationIndex: 'Population Index',
     populationIndexHint: 'Higher index = more nearby residents and commuters = stronger demand for retail and services. Factories and power plants perform equally regardless of population index.',
     populationIndexVeryHigh: 'Very High',
@@ -876,7 +885,8 @@ export default {
     },
     overheadDriverAge: 'Age factor',
     overheadDriverScale: 'Scale factor',
-    salaryImpactHint: 'Higher multipliers raise ongoing labor costs in that city but can improve worker quality and competitiveness. Lower multipliers reduce costs but may affect operational performance.',
+    salaryImpactHint:
+      'Higher multipliers raise ongoing labor costs in that city but can improve worker quality and competitiveness. Lower multipliers reduce costs but may affect operational performance.',
     baseSalary: 'Base wage / hour',
     salaryMultiplier: 'Salary multiplier',
     effectiveSalary: 'Effective wage / hour',

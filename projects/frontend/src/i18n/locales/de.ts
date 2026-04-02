@@ -145,8 +145,10 @@ export default {
     configureStepCash: 'Ihr Guthaben prüfen',
     configureStepCashDesc: 'Sie haben {amount} für den Betrieb. Behalten Sie diesen Betrag im Auge, während Sie Rohstoffe kaufen und die Produktion einrichten.',
     configureStepPrice: 'Verkaufspreis festlegen',
-    configureStepPriceDesc: 'Legen Sie im Laden einen Mindestverkaufspreis in der Einheit ÖFFENTLICHER VERKAUF fest. Ein höherer Preis bringt mehr Marge pro Einheit, aber verringert die Nachfrage; ein niedrigerer Preis steigert das Verkaufsvolumen bei geringerer Marge. Beginnen Sie nahe am Marktbasispreis für die beste Balance beim ersten Verkauf.',
-    configureStepPriceDescWithPrice: 'Legen Sie im Laden einen Mindestverkaufspreis fest. Der Marktrichtwert beträgt {price}. Ein höherer Preis erhöht Ihre Marge pro Einheit — aber erwarten Sie weniger Käufer. Ein niedrigerer Preis steigert die Nachfrage und beschleunigt den Absatz. Finden Sie die Balance für maximalen Gewinn.',
+    configureStepPriceDesc:
+      'Legen Sie im Laden einen Mindestverkaufspreis in der Einheit ÖFFENTLICHER VERKAUF fest. Ein höherer Preis bringt mehr Marge pro Einheit, aber verringert die Nachfrage; ein niedrigerer Preis steigert das Verkaufsvolumen bei geringerer Marge. Beginnen Sie nahe am Marktbasispreis für die beste Balance beim ersten Verkauf.',
+    configureStepPriceDescWithPrice:
+      'Legen Sie im Laden einen Mindestverkaufspreis fest. Der Marktrichtwert beträgt {price}. Ein höherer Preis erhöht Ihre Marge pro Einheit — aber erwarten Sie weniger Käufer. Ein niedrigerer Preis steigert die Nachfrage und beschleunigt den Absatz. Finden Sie die Balance für maximalen Gewinn.',
     configureStepPublicSales: 'Öffentlichen Verkauf aktivieren',
     configureStepPublicSalesDesc: 'Setzen Sie die Verkaufssichtbarkeit auf ÖFFENTLICH in Ihrer Verkaufseinheit. Damit kann jeder Kunde in der Stadt Ihr Produkt entdecken und kaufen.',
     configureStepTick: 'Auf den nächsten Tick warten',
@@ -201,8 +203,7 @@ export default {
     revisitTitle: 'Ihr Startup-Paket ist weiterhin verfügbar',
     subtitle: 'Sichern Sie sich 3 Monate Pro-Zugang und {amount} Expansionskapital für die nächste Phase Ihres Imperiums.',
     proBenefitTitle: '3 Monate Pro',
-    proBenefitBody:
-      'Schalten Sie Pro für {days} Tage frei und stellen Sie mehr Produkte zum Verkauf her — erweitern Sie Ihre Produktlinien über die kostenlose Stufe hinaus.',
+    proBenefitBody: 'Schalten Sie Pro für {days} Tage frei und stellen Sie mehr Produkte zum Verkauf her — erweitern Sie Ihre Produktlinien über die kostenlose Stufe hinaus.',
     cashBenefitTitle: 'Expansionskapital',
     cashBenefitBody: '{amount} werden {company} gutgeschrieben.',
     deadlineLabel: 'Angebotsfenster',
@@ -719,8 +720,10 @@ export default {
     postPurchaseTitle: 'Gebäude erworben — Ihr Grundstück entwickeln',
     postPurchaseBody: 'Ihr Gebäude wurde auf dem Grundstück platziert. Konfigurieren Sie Einheiten, um wirtschaftlichen Wert zu produzieren.',
     postPurchaseBodyFactory: 'Ihre Fabrik wartet auf Konfiguration. Fügen Sie eine Einkaufseinheit für Rohstoffe, eine Produktionseinheit für Waren und eine Verkaufs- oder Lagereinheit hinzu.',
-    postPurchaseBodyMine: 'Ihre Mine liegt über dem Vorkommen. Konfigurieren Sie eine Abbaueinheit, um Ressourcen pro Takt zu fördern. Verbinden Sie die Ausgabe mit einer Lagereinheit oder verkaufen Sie über B2B-Vertrieb.',
-    postPurchaseBodySalesShop: 'Ihr Geschäft ist bereit für den Verkauf an lokale Kunden. Hoher Bevölkerungsindex bedeutet starke Nachfrage. Fügen Sie Verkaufseinheiten hinzu und bestücken Sie diese mit Fertigwaren.',
+    postPurchaseBodyMine:
+      'Ihre Mine liegt über dem Vorkommen. Konfigurieren Sie eine Abbaueinheit, um Ressourcen pro Takt zu fördern. Verbinden Sie die Ausgabe mit einer Lagereinheit oder verkaufen Sie über B2B-Vertrieb.',
+    postPurchaseBodySalesShop:
+      'Ihr Geschäft ist bereit für den Verkauf an lokale Kunden. Hoher Bevölkerungsindex bedeutet starke Nachfrage. Fügen Sie Verkaufseinheiten hinzu und bestücken Sie diese mit Fertigwaren.',
     postPurchaseBodyResearchDevelopment: 'Ihr F&E-Zentrum ist bereit. Konfigurieren Sie Forschungseinheiten, um Produktqualität und Markenstärke zu verbessern.',
     postPurchaseBodyApartment: 'Ihr Apartmentgebäude ist fertig. Wohneinheiten erzielen stabiles Mieteinkommen pro Takt basierend auf der lokalen Bevölkerungsnachfrage.',
     postPurchaseBodyCommercial: 'Ihr Gewerbegebäude ist fertig. Konfigurieren Sie Büro- oder Einzelhandelseinheiten, um Mieteinnahmen von Geschäftsmietern zu erzielen.',
@@ -872,7 +875,8 @@ export default {
     foundedTick: 'Gegründet bei Tick',
     administrationOverhead: 'Verwaltungsaufschlag',
     overheadHelp: 'Der Verwaltungsaufschlag erhöht die Arbeitskosten der Fertigung, wenn Ihr Unternehmen im Vergleich zu den größten Firmen im Spiel altert und wächst.',
-    overheadReduceTip: 'Um den Aufschlag zu senken: Verbessern Sie die Margen, um Ihre relative Unternehmensgröße zu reduzieren, oder warten Sie — der Altersfaktor ist fest und sinkt proportional erst nach 2 Jahren.',
+    overheadReduceTip:
+      'Um den Aufschlag zu senken: Verbessern Sie die Margen, um Ihre relative Unternehmensgröße zu reduzieren, oder warten Sie — der Altersfaktor ist fest und sinkt proportional erst nach 2 Jahren.',
     overheadStatus: {
       low: 'Niedrig',
       medium: 'Mittel',
@@ -880,7 +884,8 @@ export default {
     },
     overheadDriverAge: 'Altersfaktor',
     overheadDriverScale: 'Skalenfaktor',
-    salaryImpactHint: 'Ein höherer Multiplikator erhöht die laufenden Arbeitskosten in dieser Stadt, kann aber die Mitarbeiterqualität und Wettbewerbsfähigkeit verbessern. Ein niedrigerer Multiplikator senkt die Kosten, kann aber die Betriebsleistung beeinträchtigen.',
+    salaryImpactHint:
+      'Ein höherer Multiplikator erhöht die laufenden Arbeitskosten in dieser Stadt, kann aber die Mitarbeiterqualität und Wettbewerbsfähigkeit verbessern. Ein niedrigerer Multiplikator senkt die Kosten, kann aber die Betriebsleistung beeinträchtigen.',
     baseSalary: 'Grundlohn / Stunde',
     salaryMultiplier: 'Lohnmultiplikator',
     effectiveSalary: 'Effektiver Lohn / Stunde',
@@ -939,7 +944,8 @@ export default {
     noRentHint: 'Legen Sie eine Miete pro m² fest, um Einkommen aus diesem Objekt zu erzielen.',
     pendingRentNotice: 'Geplante Mietänderung: {rent} / m² aktiviert sich in {ticks} Ticks',
     rentDialogTitle: 'Mietänderung planen',
-    rentDelayHint: 'Die neue Miete tritt nach einem Spieltag (24 Ticks) in Kraft. Die Belegung passt sich schrittweise an, basierend auf dem Vergleich Ihres Preises mit dem lokalen Marktdurchschnitt.',
+    rentDelayHint:
+      'Die neue Miete tritt nach einem Spieltag (24 Ticks) in Kraft. Die Belegung passt sich schrittweise an, basierend auf dem Vergleich Ihres Preises mit dem lokalen Marktdurchschnitt.',
     rentLabel: 'Neue Miete pro m²',
     rentPlaceholder: 'Miete pro m² eingeben',
     scheduleRentBtn: 'Änderung planen',

@@ -145,8 +145,10 @@ export default {
     configureStepCash: 'Skontrolujte hotovosť',
     configureStepCashDesc: 'Máte {amount} na financovanie prvých operácií. Sledujte tento zostatok pri nákupe surovín a nastavovaní výroby.',
     configureStepPrice: 'Nastavte predajnú cenu',
-    configureStepPriceDesc: 'V predajni nastavte minimálnu predajnú cenu v jednotke VEREJNÝ PREDAJ. Vyššia cena prináša väčšiu maržu na kus, ale znižuje dopyt; nižšia cena zvyšuje objem predaja pri menšej marži. Začnite blízko základnej trhovej ceny pre najlepšiu rovnováhu pri prvom predaji.',
-    configureStepPriceDescWithPrice: 'V predajni nastavte minimálnu predajnú cenu. Trhová referencia je {price}. Vyššia cena zvyšuje maržu na kus — ale očakávajte menej kupujúcich. Nižšia cena zvyšuje dopyt a urýchľuje predaj. Nájdite rovnováhu pre maximalizáciu zisku.',
+    configureStepPriceDesc:
+      'V predajni nastavte minimálnu predajnú cenu v jednotke VEREJNÝ PREDAJ. Vyššia cena prináša väčšiu maržu na kus, ale znižuje dopyt; nižšia cena zvyšuje objem predaja pri menšej marži. Začnite blízko základnej trhovej ceny pre najlepšiu rovnováhu pri prvom predaji.',
+    configureStepPriceDescWithPrice:
+      'V predajni nastavte minimálnu predajnú cenu. Trhová referencia je {price}. Vyššia cena zvyšuje maržu na kus — ale očakávajte menej kupujúcich. Nižšia cena zvyšuje dopyt a urýchľuje predaj. Nájdite rovnováhu pre maximalizáciu zisku.',
     configureStepPublicSales: 'Aktivujte verejný predaj',
     configureStepPublicSalesDesc: 'Nastavte viditeľnosť predaja na VEREJNÉ vo vašej predajnej jednotke. Tým umožníte každému zákazníkovi v meste objaviť a kúpiť váš produkt.',
     configureStepTick: 'Počkajte na ďalší tick',
@@ -200,8 +202,7 @@ export default {
     revisitTitle: 'Váš štartovací balík je stále dostupný',
     subtitle: 'Získajte 3 mesiace Pro prístupu a {amount} rozširovacieho kapitálu pre ďalšiu fázu vášho impéria.',
     proBenefitTitle: '3 mesiace Pro',
-    proBenefitBody:
-      'Odomknite si Pro prístup na {days} dní a vyrábajte viac produktov na predaj — rozširujte produktové rady za hranice bezplatnej verzie.',
+    proBenefitBody: 'Odomknite si Pro prístup na {days} dní a vyrábajte viac produktov na predaj — rozširujte produktové rady za hranice bezplatnej verzie.',
     cashBenefitTitle: 'Kapitál na expanziu',
     cashBenefitBody: '{amount} bude pripísaných firme {company}.',
     deadlineLabel: 'Okno ponuky',
@@ -714,9 +715,12 @@ export default {
     setupBuilding: 'Nastaviť svoju budovu',
     postPurchaseTitle: 'Budova získaná — rozvíjajte svoju nehnuteľnosť',
     postPurchaseBody: 'Vaša budova je umiestnená na pozemku. Nakonfigurujte jednotky a začnite produkovať ekonomickú hodnotu.',
-    postPurchaseBodyFactory: 'Vaša továreň čaká na konfiguráciu. Pridajte nákupnú jednotku na zásobovanie surovinami, výrobnú jednotku na produkciu tovaru a predajnú alebo skladovaciu jednotku na presun zásob.',
-    postPurchaseBodyMine: 'Váš banský závod je umiestnený nad ložiskom. Nakonfigurujte ťažobnú jednotku na začatie ťažby zdrojov každý tik. Prepojte výstup so skladovacou jednotkou alebo predávajte cez B2B predaj.',
-    postPurchaseBodySalesShop: 'Váš obchod je pripravený predávať miestnym zákazníkom. Vysoký index osídlenia tu znamená silný dopyt. Pridajte jednotky verejného predaja a zásobte ich hotovými výrobkami.',
+    postPurchaseBodyFactory:
+      'Vaša továreň čaká na konfiguráciu. Pridajte nákupnú jednotku na zásobovanie surovinami, výrobnú jednotku na produkciu tovaru a predajnú alebo skladovaciu jednotku na presun zásob.',
+    postPurchaseBodyMine:
+      'Váš banský závod je umiestnený nad ložiskom. Nakonfigurujte ťažobnú jednotku na začatie ťažby zdrojov každý tik. Prepojte výstup so skladovacou jednotkou alebo predávajte cez B2B predaj.',
+    postPurchaseBodySalesShop:
+      'Váš obchod je pripravený predávať miestnym zákazníkom. Vysoký index osídlenia tu znamená silný dopyt. Pridajte jednotky verejného predaja a zásobte ich hotovými výrobkami.',
     postPurchaseBodyResearchDevelopment: 'Vaše výskumné centrum je pripravené. Nakonfigurujte výskumné jednotky na zlepšenie kvality produktov a sily značky v priebehu času.',
     postPurchaseBodyApartment: 'Váš bytový dom je pripravený. Bytové jednotky zarábajú stabilný príjem z prenájmu každý tik na základe lokálneho dopytu obyvateľstva.',
     postPurchaseBodyCommercial: 'Vaša komerčná budova je pripravená. Nakonfigurujte kancelárske alebo obchodné jednotky na zarábanie nájomného od firemných nájomníkov.',
@@ -875,7 +879,8 @@ export default {
     },
     overheadDriverAge: 'Vekový faktor',
     overheadDriverScale: 'Faktor rozsahu',
-    salaryImpactHint: 'Vyšší násobok zvyšuje priebežné mzdové náklady v tomto meste, ale môže zlepšiť kvalitu pracovníkov a konkurencieschopnosť. Nižší násobok znižuje náklady, ale môže ovplyvniť výkonnosť.',
+    salaryImpactHint:
+      'Vyšší násobok zvyšuje priebežné mzdové náklady v tomto meste, ale môže zlepšiť kvalitu pracovníkov a konkurencieschopnosť. Nižší násobok znižuje náklady, ale môže ovplyvniť výkonnosť.',
     baseSalary: 'Základná mzda / hodina',
     salaryMultiplier: 'Mzdový násobok',
     effectiveSalary: 'Efektívna mzda / hodina',
