@@ -5605,6 +5605,102 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.True(expiresAt > DateTime.UtcNow, "Startup pack expiry must be in the future");
     }
 
+    [Fact]
+    public async Task FullOnboarding_ViennaCity_CompletesSuccessfully()
+    {
+        // ROADMAP: "The game will start in single city and later other cities will be added."
+        // Verifies that the full onboarding flow (industry → city → factory → product → shop)
+        // works for Vienna — the third seeded city — not just the default Bratislava.
+        var token = await RegisterAndGetTokenAsync($"vienna-onboard-{Guid.NewGuid()}@test.com", "Vienna Player");
+        var cityId = await GetCityIdByNameAsync("Vienna");
+
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Vienna Industrial Park", 80_000m);
+
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id name cash }
+                factory { id name type }
+                factoryLot { id }
+              }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Vienna Empire", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany for Vienna must succeed");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+        Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
+        var cashAfterFactory = startData.GetProperty("company").GetProperty("cash").GetDecimal();
+        Assert.Equal(500_000m - 80_000m, cashAfterFactory);
+
+        // Confirm the factory building was created in the correct city
+        var factoryId = startData.GetProperty("factory").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var factory = await db.Buildings.SingleAsync(b => b.Id == Guid.Parse(factoryId));
+        Assert.Equal(Guid.Parse(cityId), factory.CityId);
+
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Vienna High Street", 75_000m);
+
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding for Vienna must succeed");
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+        Assert.Equal("FURNITURE", finishData.GetProperty("selectedProduct").GetProperty("industry").GetString());
+        var finalCash = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
+        Assert.Equal(500_000m - 80_000m - 75_000m, finalCash);
+    }
+
+    [Fact]
+    public async Task FullOnboarding_AllThreeCities_EachCompletesSuccessfully()
+    {
+        // ROADMAP: three seeded cities (Bratislava, Prague, Vienna) must all support the full
+        // onboarding flow so players are not constrained to a single starting location.
+        var cityCases = new[]
+        {
+            ("Bratislava", "FOOD_PROCESSING", "bread"),
+            ("Prague",     "HEALTHCARE",      "basic-medicine"),
+            ("Vienna",     "FURNITURE",       "wooden-chair"),
+        };
+
+        foreach (var (cityName, industry, slug) in cityCases)
+        {
+            var token = await RegisterAndGetTokenAsync($"city-{cityName.ToLower()}-{Guid.NewGuid()}@test.com", $"{cityName} Tycoon");
+            var cityId = await GetCityIdByNameAsync(cityName);
+
+            var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", $"{cityName} Industrial Zone", 75_000m);
+            var startResult = await ExecuteGraphQlAsync(
+                """
+                mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+                  startOnboardingCompany(input: $input) {
+                    nextStep
+                    company { id cash }
+                  }
+                }
+                """,
+                new { input = new { industry, cityId, companyName = $"{cityName} Corp", factoryLotId } },
+                token);
+
+            Assert.False(startResult.TryGetProperty("errors", out _),
+                $"StartOnboardingCompany must succeed for {cityName}/{industry}");
+            Assert.Equal("SHOP_SELECTION",
+                startResult.GetProperty("data").GetProperty("startOnboardingCompany").GetProperty("nextStep").GetString());
+
+            var productId = await GetStarterProductIdAsync(industry, slug);
+            var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", $"{cityName} High Street", 90_000m);
+            var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+            Assert.False(finishResult.TryGetProperty("errors", out _),
+                $"FinishOnboarding must succeed for {cityName}/{industry}");
+            Assert.Equal(industry,
+                finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("selectedProduct").GetProperty("industry").GetString());
+        }
+    }
+
     #endregion
 
     #region Rankings

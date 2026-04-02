@@ -3075,6 +3075,117 @@ test.describe('City selection — Prague as starter city', () => {
   })
 })
 
+test.describe('City selection — Vienna as starter city', () => {
+  test('guest can complete wizard steps 1-5 after selecting Vienna as starter city', async ({
+    page,
+  }) => {
+    // ROADMAP: "The game will start in single city and later other cities will be added."
+    // All three seeded cities (Bratislava, Prague, Vienna) must work for the onboarding wizard.
+    // This test uses Vienna (the third city) to prove city-agnostic wizard behaviour.
+    const state = setupMockApi(page)
+    state.buildingLots = [
+      ...makeDefaultBuildingLots(),
+      {
+        id: 'lot-vienna-factory-1',
+        cityId: 'city-vi',
+        name: 'Vienna Industrial Park',
+        description: 'Factory-capable lot in Vienna.',
+        district: 'Industrial Zone',
+        latitude: 48.21,
+        longitude: 16.38,
+        price: 80_000,
+        suitableTypes: 'FACTORY,MINE',
+        resourceTypeId: null,
+        materialQuality: null,
+        materialQuantity: null,
+        ownedByCompanyId: null,
+        appraisedValue: 80_000,
+      },
+      {
+        id: 'lot-vienna-shop-1',
+        cityId: 'city-vi',
+        name: 'Vienna High Street Shop',
+        description: 'Retail space in the Vienna city centre.',
+        district: 'Commercial District',
+        latitude: 48.209,
+        longitude: 16.375,
+        price: 75_000,
+        suitableTypes: 'SALES_SHOP,COMMERCIAL',
+        resourceTypeId: null,
+        materialQuality: null,
+        materialQuantity: null,
+        ownedByCompanyId: null,
+        appraisedValue: 75_000,
+      },
+    ]
+
+    await page.goto('/onboarding')
+
+    // Step 1: select Furniture
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: select Vienna (not Bratislava or Prague)
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Vienna' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot in Vienna
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Vienna Empire Inc')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Vienna Industrial Park/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: product + shop lot in Vienna
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Vienna High Street Shop/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: completion / save-progress screen
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Profit preview must show a positive revenue figure
+    const revenueEl = page.locator('.profit-stat-revenue')
+    await expect(revenueEl).toBeVisible()
+    const revenueText = await revenueEl.textContent()
+    expect(revenueText).toMatch(/\$\d/)
+
+    // The save-progress form should be present for registration
+    await expect(page.locator('#guestEmail')).toBeVisible()
+
+    // Factory and shop layout panels must be visible (ROADMAP: "Wizard will show them important areas")
+    await expect(page.locator('[aria-label="Factory layout"]')).toBeVisible()
+    await expect(page.locator('[aria-label="Sales shop layout"]')).toBeVisible()
+
+    // Verify Vienna lots were included in the mock state
+    expect(state.buildingLots.some((lot) => lot.cityId === 'city-vi')).toBe(true)
+  })
+
+  test('Vienna city card is rendered and selectable on step 2', async ({ page }) => {
+    // AC: All three starter cities must be visible and selectable on step 2 of the wizard.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Step 1: pick any industry
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: all three cities must be visible
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await expect(page.locator('.city-card', { hasText: 'Bratislava' })).toBeVisible()
+    await expect(page.locator('.city-card', { hasText: 'Prague' })).toBeVisible()
+    await expect(page.locator('.city-card', { hasText: 'Vienna' })).toBeVisible()
+
+    // Vienna is selectable (click makes it active)
+    await page.locator('.city-card', { hasText: 'Vienna' }).click()
+    await expect(page.locator('.city-card', { hasText: 'Vienna' })).toHaveClass(/selected|active/)
+  })
+})
+
 test.describe('Guest migration — all starter industries (AC2, AC9, AC13)', () => {
   // AC2: The onboarding flow offers Furniture, Food Processing, and Healthcare as starter-industry choices.
   // AC9: After a successful onboarding experience, the player is prompted to log in or sign up to save progress.

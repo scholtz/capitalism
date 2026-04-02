@@ -564,3 +564,31 @@ Root-cause of flickering (current issue):
 3. **Ensure ledger data is tax-year scoped and drill-downs align with the selected year.** Use `ledgerDrillDown(companyId, category, gameYear?)` with the same `gameYear` as the ledger query.
 4. **Add drill-downs for all major statement items as per ROADMAP:** revenue (sales items), costs (purchases, labor, energy, marketing), assets (building list), etc.
 5. **For ledger improvements, always verify against ROADMAP requirements:** income statement, cash flow, balance sheet, drillable details, tax info, history.
+
+## City coverage — always test all three seeded cities
+
+Root-cause of a gap (April 2026, PR #151 onboarding sandbox):
+- The full onboarding flow was implemented and tested for all three starter industries (Furniture, Food Processing, Healthcare) but only for the default city (Bratislava).
+- Prague was covered by one E2E test. Vienna (the third seeded city) had no dedicated E2E test and no backend integration test.
+- The ROADMAP states "The game will start in single city and later other cities will be added" — all three seeded cities must be exercisable from day one.
+
+**Rules to prevent recurrence:**
+1. **When adding backend onboarding tests that use `GetCityIdByNameAsync()`, add at least one variant that uses Vienna** to prove the third city path works end-to-end.
+2. **For any feature that uses city selection (onboarding, lot purchase, exchange), add at least one E2E test that explicitly selects Vienna** — not just Bratislava or Prague.
+3. **`makeDefaultCities()` already includes Vienna (`city-vi`)**. When extending lot fixtures for city-specific tests, always add Vienna lots alongside Prague lots so the wizard is fully exercisable for all three cities.
+4. **Asserting `.city-card` is rendered for all three cities on step 2** is a minimal sanity check that must exist as its own test, not just as a side effect of a longer flow test.
+
+## Previous session quality failure — "already done" anti-pattern with no added value
+
+Root-cause of a quality failure (April 2026, PR #151):
+- The branch diff vs main was a single "Initial plan" commit with no code changes beyond cleanup.
+- The agent verified all tests passed and declared the feature "already done" without investigating what improvements could still be made.
+- This violated the "Empty-PR quality failure" and "already on main quality mandate" lessons documented above.
+- The product owner's comment "increase test coverage" was a signal that the existing tests were insufficient — not that they were broken.
+
+**When a PR comment says "increase test coverage":**
+1. **Treat it as a concrete gap, not a vague ask.** Identify which variants, cities, industries, or edge cases are not covered, then add them.
+2. **Run a gap analysis**: for each seeded entity (city, industry, product), check if there is a dedicated backend test AND a dedicated E2E test. If not, add them.
+3. **Always add tests for the third option** (Vienna as the third city, Healthcare as the third industry, etc.) since tests tend to cover the first two and miss the third.
+4. **Do not stop at confirming existing tests pass.** The ask is for more tests, not for confirmation that the current ones work.
+5. **Commit the new tests before replying** — the reply should reference the commit hash and list what was specifically added.
