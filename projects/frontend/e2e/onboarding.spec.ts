@@ -3124,6 +3124,9 @@ test.describe('Guest migration — all starter industries (AC2, AC9, AC13)', () 
     // After migration: authenticated completion screen
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
     expect(state.currentUserId).toBeTruthy()
+    // AC: startup pack offer must appear after guest migration (Food Processing path)
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+    await expect(page.locator('.startup-pack-price')).toContainText('$20')
   })
 
   test('guest can register and migrate Healthcare (Basic Medicine) progress to authenticated account', async ({
@@ -3168,6 +3171,47 @@ test.describe('Guest migration — all starter industries (AC2, AC9, AC13)', () 
 
     // After migration: authenticated completion screen
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    expect(state.currentUserId).toBeTruthy()
+    // AC: startup pack offer must appear after guest migration (Healthcare path)
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+    await expect(page.locator('.startup-pack-price')).toContainText('$20')
+  })
+
+  test('guest migration completion: startup pack offer appears and player can claim it', async ({
+    page,
+  }) => {
+    // AC: "After onboarding is successfully completed, an eligible user is shown a startup pack offer."
+    // This test covers the guest-to-authenticated migration path specifically.
+    // It verifies the full offer including price, pro benefit copy, and claimable state.
+    const state = setupMockApi(page)
+    await page.goto('/onboarding')
+
+    await completeGuestSteps1to4(page, 'Startup Pack Migration Corp')
+
+    // Register as new user to trigger migration
+    await page.locator('#guestEmail').fill('startup-migration@test.com')
+    await page.locator('#guestDisplayName').fill('Startup Migrator')
+    await page.locator('#guestPassword').fill('MigrPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Completion screen with startup pack
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // AC #2: price clearly stated
+    await expect(page.locator('.startup-pack-price')).toContainText('$20')
+
+    // AC #3: 3 months Pro + in-game currency listed
+    await expect(page.getByText('3 months of Pro', { exact: true })).toBeVisible()
+
+    // AC #4: gameplay value of Pro explained
+    await expect(page.getByText(/more products to.*sell/i)).toBeVisible()
+
+    // AC #7: player can claim
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+    await page.getByRole('button', { name: 'Claim startup pack' }).click()
+
+    // After claiming, the claim button disappears and claimed state is shown
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeHidden()
     expect(state.currentUserId).toBeTruthy()
   })
 })

@@ -5547,6 +5547,64 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.NotEmpty(completedAt);
     }
 
+    [Fact]
+    public async Task GuestMigration_HappyPath_StartupPackOfferActivatedAfterMigration()
+    {
+        // AC: "Support both onboarding completion paths: guest-to-authenticated migration and already
+        // authenticated onboarding completion." The startup pack offer must be activated and returned
+        // in the finishOnboarding mutation result when a guest migrates to an authenticated account.
+        var token = await RegisterAndGetTokenAsync($"guest-pack-{Guid.NewGuid()}@test.com", "Guest Pack Migrator");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m);
+
+        // StartOnboardingCompany (equivalent of the guest's factory purchase being saved)
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id }
+              }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Guest Pack Corp", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed");
+
+        // FinishOnboarding (equivalent of the guest's shop purchase + product selection being saved)
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
+
+        var finishResult = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) {
+                company { id }
+                startupPackOffer {
+                  status
+                  companyCashGrant
+                  proDurationDays
+                  expiresAtUtc
+                }
+              }
+            }
+            """,
+            new { input = new { productTypeId = productId, shopLotId } },
+            token);
+
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding must succeed in guest migration path");
+        var offer = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("startupPackOffer");
+
+        // AC: startup pack must be ELIGIBLE immediately after guest migration completes
+        Assert.Equal("ELIGIBLE", offer.GetProperty("status").GetString());
+        Assert.Equal(StartupPackService.CompanyCashGrant, offer.GetProperty("companyCashGrant").GetDecimal());
+        Assert.Equal(StartupPackService.ProDurationDays, offer.GetProperty("proDurationDays").GetInt32());
+        // Expiry window must be a valid future timestamp
+        Assert.True(DateTime.TryParse(offer.GetProperty("expiresAtUtc").GetString(), out var expiresAt));
+        Assert.True(expiresAt > DateTime.UtcNow, "Startup pack expiry must be in the future");
+    }
+
     #endregion
 
     #region Rankings
