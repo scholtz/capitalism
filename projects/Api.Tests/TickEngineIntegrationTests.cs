@@ -1911,6 +1911,110 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         Assert.Equal(112.5m, remainingRawInventories.Sum(entry => entry.SourcingCostTotal));
     }
 
+    [Fact]
+    public async Task PurchasingPhase_GlobalExchange_PicksLowestDeliveredCost_NotLowestExchangePrice()
+    {
+        // KEY BUSINESS RULE: the purchasing phase must select the city with the lowest
+        // DELIVERED cost (exchange price + transit cost), not just the lowest exchange price.
+        //
+        // Bratislava is the factory city (destination). Wood in Bratislava has abundance=0.70
+        // which gives exchange price ~$11.17 and $0 transit. Prague may have higher abundance
+        // (cheaper sticker) but transit cost from 277 km makes its delivered cost higher.
+        // The purchasing phase must therefore pick Bratislava as the source.
+        //
+        // We verify this by ensuring:
+        //   1. Inventory was actually filled (phase ran successfully).
+        //   2. The per-unit sourcing cost on the filled inventory equals the Bratislava
+        //      delivered cost (exchange price, since transit=0), not a higher cross-city cost.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var (companyId, _, cityId, purchaseUnitId, resourceId) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "EXCHANGE", resourceSlug: "wood");
+
+        // Resolve the actual seeded city and resource to compute expected delivered price.
+        var city = await db.Cities
+            .Include(c => c.Resources).ThenInclude(cr => cr.ResourceType)
+            .FirstAsync(c => c.Id == cityId);
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Id == resourceId);
+        var abundance = city.Resources.FirstOrDefault(r => r.ResourceTypeId == resourceId)?.Abundance
+                        ?? GlobalExchangeCalculator.DefaultMissingAbundance;
+
+        var localExchangePrice = GlobalExchangeCalculator.ComputeExchangePrice(city, resource, abundance);
+        // Transit cost from local city to itself = 0.
+        var expectedDeliveredCostPerUnit = localExchangePrice;
+
+        // Retrieve the other seeded cities and verify at least one has a lower sticker price.
+        var allCities = await db.Cities
+            .Include(c => c.Resources).ThenInclude(cr => cr.ResourceType)
+            .ToListAsync();
+        var hasCheaperStickerElsewhere = allCities
+            .Where(c => c.Id != cityId)
+            .Any(remoteCity =>
+            {
+                var remoteAbundance = remoteCity.Resources
+                    .FirstOrDefault(cr => cr.ResourceTypeId == resourceId)?.Abundance
+                    ?? GlobalExchangeCalculator.DefaultMissingAbundance;
+                return GlobalExchangeCalculator.ComputeExchangePrice(remoteCity, resource, remoteAbundance) < localExchangePrice;
+            });
+
+        // Process one tick so the purchasing phase runs.
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var inventories = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId && i.Quantity > 0m)
+            .ToListAsync();
+
+        Assert.NotEmpty(inventories);
+
+        if (hasCheaperStickerElsewhere)
+        {
+            // The per-unit sourcing cost must match the LOCAL delivered price (exchange + $0 transit),
+            // not a remote city's higher delivered cost. This proves transit-reranking is in effect.
+            var actualCostPerUnit = inventories.Sum(i => i.SourcingCostTotal) / inventories.Sum(i => i.Quantity);
+            Assert.True(
+                actualCostPerUnit <= expectedDeliveredCostPerUnit + 0.05m,
+                $"Purchasing phase should source from lowest-delivered-cost city. " +
+                $"Expected per-unit cost ≤ {expectedDeliveredCostPerUnit + 0.05m} (local delivered) " +
+                $"but got {actualCostPerUnit}. A cheaper-sticker remote city exists but transit cost must " +
+                $"make it more expensive on a delivered basis.");
+        }
+        else
+        {
+            // Even without a cheaper sticker, inventory must have been filled.
+            Assert.True(inventories.Sum(i => i.Quantity) > 0m);
+        }
+    }
+
+    [Fact]
+    public async Task PurchasingPhase_GlobalExchange_MultipleTicksStillFills_NoDuplicateInventory()
+    {
+        // Regression test: running the purchasing phase multiple times should not produce
+        // duplicate inventory records or corrupt the quantity/cost accounting.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var (companyId, _, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "EXCHANGE");
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+        await processor.ProcessTickAsync();
+
+        var inventories = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId && i.Quantity > 0m)
+            .ToListAsync();
+
+        Assert.NotEmpty(inventories);
+        // All inventory entries must have positive quantity and positive sourcing cost.
+        Assert.All(inventories, inv =>
+        {
+            Assert.True(inv.Quantity > 0m, "Every inventory entry must have positive quantity.");
+            Assert.True(inv.SourcingCostTotal > 0m, "Every filled inventory entry must have positive sourcing cost.");
+        });
+    }
+
     #endregion
 
     #region Full supply-chain integration (onboarding AC#4)

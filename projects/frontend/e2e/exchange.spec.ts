@@ -572,3 +572,174 @@ test.describe('Global Exchange — post-onboarding context', () => {
     await expect(page.getByText('Browse city-level exchange prices')).toBeVisible()
   })
 })
+
+// ── Transit-reranking: cheapest sticker ≠ best delivered ──────────────────────
+
+test.describe('Global Exchange — transit-reranking proof', () => {
+  test('city with lowest exchange price is NOT always the best delivered option', async ({
+    page,
+  }) => {
+    // Bratislava is the DESTINATION (first city tab by default).
+    // Prague has highest Wood abundance → lowest sticker price.
+    // But Prague is ~310 km away, so its transit cost flips the ranking.
+    // Bratislava (local, 0 transit) should win on delivered price despite higher sticker.
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    await expect(woodRow).toBeVisible()
+
+    // The "best" badge should appear on the Bratislava offer (local, 0 transit)
+    const braCard = woodRow.locator('.city-offer-card').filter({ hasText: 'Bratislava' })
+    await expect(braCard.locator('.best-badge')).toBeVisible()
+
+    // Prague must NOT have the best-offer badge even if its exchange sticker is cheapest
+    const pragueCard = woodRow.locator('.city-offer-card').filter({ hasText: 'Prague' })
+    await expect(pragueCard).toBeVisible()
+    await expect(pragueCard.locator('.best-badge')).toHaveCount(0)
+
+    // Delivered price labels are present for both
+    await expect(braCard.locator('.delivered-price')).toBeVisible()
+    await expect(pragueCard.locator('.delivered-price')).toBeVisible()
+  })
+
+  test('category filter narrows visible resource rows without losing offer cards', async ({
+    page,
+  }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // All resources visible initially
+    const initialCount = await page.locator('.resource-row').count()
+    expect(initialCount).toBeGreaterThan(1)
+
+    // Filter to ORGANIC category — Wood and Grain are ORGANIC
+    const categorySelect = page.locator('.filter-select')
+    await categorySelect.selectOption({ label: 'Organic' })
+
+    const filteredCount = await page.locator('.resource-row').count()
+    expect(filteredCount).toBeGreaterThan(0)
+    expect(filteredCount).toBeLessThan(initialCount)
+
+    // Offer cards must still appear for the remaining rows
+    const firstVisibleRow = page.locator('.resource-row').first()
+    await expect(firstVisibleRow.locator('.city-offer-card').first()).toBeVisible()
+  })
+
+  test('switching city tab changes which city has zero transit cost', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Default tab = Bratislava → Bratislava offer has "Local — free"
+    const braLocalCard = page
+      .locator('.city-offer-card')
+      .filter({ hasText: 'Bratislava' })
+      .filter({ has: page.locator('.transit-free') })
+    await expect(braLocalCard.first()).toBeVisible()
+
+    // Switch to Prague tab
+    await page.getByRole('tab', { name: /Prague/ }).click()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Prague offer should now be "Local — free" (Prague is the destination)
+    const pragueLocalCard = page
+      .locator('.city-offer-card')
+      .filter({ hasText: 'Prague' })
+      .filter({ has: page.locator('.transit-free') })
+    await expect(pragueLocalCard.first()).toBeVisible()
+
+    // Bratislava is now remote → must show positive transit cost
+    const braRemoteCard = page
+      .locator('.city-offer-card')
+      .filter({ hasText: 'Bratislava' })
+      .first()
+    await expect(braRemoteCard.locator('.transit-cost').filter({ hasText: 'km' })).toBeVisible()
+  })
+})
+
+// ── Sourcing decision legibility ──────────────────────────────────────────────
+
+test.describe('Global Exchange — sourcing decision legibility', () => {
+  test('all four key metrics are present for every city offer card (resource, city, quality, delivered)', async ({
+    page,
+  }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const allCards = page.locator('.city-offer-card')
+    const count = await allCards.count()
+    expect(count).toBeGreaterThan(0)
+
+    // Every card must show all four key decision metrics
+    for (let i = 0; i < Math.min(count, 3); i++) {
+      const card = allCards.nth(i)
+      await expect(card.locator('.metric-label').filter({ hasText: 'Exchange' })).toBeVisible()
+      await expect(card.locator('.metric-label').filter({ hasText: 'Transit' })).toBeVisible()
+      await expect(card.locator('.metric-label').filter({ hasText: 'Delivered' })).toBeVisible()
+      await expect(card.locator('.metric-label').filter({ hasText: 'Quality' })).toBeVisible()
+    }
+  })
+
+  test('only one card per resource row has the best-price badge', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // For each resource row, exactly one offer card should have the best-badge
+    const rows = page.locator('.resource-row')
+    const rowCount = await rows.count()
+
+    for (let i = 0; i < rowCount; i++) {
+      const row = rows.nth(i)
+      const badgeCount = row.locator('.best-badge')
+      await expect(badgeCount).toHaveCount(1)
+    }
+  })
+
+  test('Grain resource row appears with all city offers (Food Processing raw input)', async ({
+    page,
+  }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const grainRow = page.locator('.resource-row[data-slug="grain"]')
+    await expect(grainRow).toBeVisible()
+    // All three seeded cities should have Grain offers
+    await expect(grainRow.locator('.city-offer-card')).toHaveCount(3)
+    // Each card must have a delivered price
+    await expect(grainRow.locator('.delivered-price').first()).toBeVisible()
+    // One card is best
+    await expect(grainRow.locator('.best-badge')).toHaveCount(1)
+  })
+
+  test('Chemical Minerals resource row appears with all city offers (Healthcare raw input)', async ({
+    page,
+  }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const chemRow = page.locator('.resource-row[data-slug="chemical-minerals"]')
+    await expect(chemRow).toBeVisible()
+    await expect(chemRow.locator('.city-offer-card')).toHaveCount(3)
+    await expect(chemRow.locator('.delivered-price').first()).toBeVisible()
+    await expect(chemRow.locator('.best-badge')).toHaveCount(1)
+  })
+})

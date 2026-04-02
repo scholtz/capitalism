@@ -255,4 +255,106 @@ public sealed class GlobalExchangeCalculatorUnitTests
         Assert.Equal(0m, transitCost);
         Assert.Equal(exchangePrice, exchangePrice + transitCost);
     }
+
+    // ---------------------------------------------------------------------------
+    // Transit-reranking: cheaper sticker price loses when transit cost is included
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void TransitReranking_LocalWinsOverRemote_WhenTransitCostFlipsTheRanking()
+    {
+        // KEY BUSINESS RULE: the local city source should be preferred even when a remote
+        // city has a lower sticker exchange price, if the transit cost on the remote source
+        // makes its effective delivered cost higher.
+        //
+        // Setup: Bratislava is the DESTINATION.
+        //   - Local (Bratislava): abundance=0.70, rent=$14 → exchange ≈$11.17, transit=$0.00, delivered≈$11.17
+        //   - Remote (Prague):    abundance=0.80, rent=$18 → exchange ≈$10.74, transit≈$0.69,  delivered≈$11.43
+        //
+        // Prague has the lower sticker price but loses because transit cost reverses the order.
+        // (At abundance=0.80 the sticker savings of ~$0.43 are less than transit ≈$0.69.)
+
+        var bratislava = new City { Id = Guid.NewGuid(), Name = "Bratislava", AverageRentPerSqm = 14m, Latitude = 48.15, Longitude = 17.11 };
+        var prague     = new City { Id = Guid.NewGuid(), Name = "Prague",     AverageRentPerSqm = 18m, Latitude = 50.08, Longitude = 14.43 };
+        var wood = new ResourceType { Id = Guid.NewGuid(), Name = "Wood", Slug = "wood", BasePrice = 10m, WeightPerUnit = 1.0m };
+
+        var localAbundance  = 0.70m;
+        var remoteAbundance = 0.80m; // High enough to give lower sticker, but transit still flips ranking
+
+        var localExchangePrice  = GlobalExchangeCalculator.ComputeExchangePrice(bratislava, wood, localAbundance);
+        var remoteExchangePrice = GlobalExchangeCalculator.ComputeExchangePrice(prague, wood, remoteAbundance);
+
+        var localTransit  = GlobalExchangeCalculator.ComputeTransitCostPerUnit(bratislava, bratislava, wood);
+        var remoteTransit = GlobalExchangeCalculator.ComputeTransitCostPerUnit(prague, bratislava, wood);
+
+        var localDelivered  = localExchangePrice  + localTransit;
+        var remoteDelivered = remoteExchangePrice + remoteTransit;
+
+        // Prague has a cheaper sticker price — this is the misleading signal.
+        Assert.True(remoteExchangePrice < localExchangePrice,
+            $"Prague sticker ({remoteExchangePrice}) should be cheaper than Bratislava sticker ({localExchangePrice}).");
+
+        // But after transit cost is applied, the local city is cheaper.
+        Assert.True(localDelivered < remoteDelivered,
+            $"Local delivered ({localDelivered}) should be < remote delivered ({remoteDelivered}) after transit reranking.");
+
+        // Transit must be zero for same city and positive for cross-city.
+        Assert.Equal(0m, localTransit);
+        Assert.True(remoteTransit > 0m);
+    }
+
+    [Fact]
+    public void TransitReranking_DeliveredPriceOrdering_DiffersFromExchangePriceOrdering()
+    {
+        // Verifies that sorting by delivered price can produce a different winner than
+        // sorting by exchange price alone — the core business insight of the feature.
+        var bratislava = new City { Id = Guid.NewGuid(), Name = "Bratislava", AverageRentPerSqm = 14m, Latitude = 48.15, Longitude = 17.11 };
+        var prague     = new City { Id = Guid.NewGuid(), Name = "Prague",     AverageRentPerSqm = 18m, Latitude = 50.08, Longitude = 14.43 };
+        var wood = new ResourceType { Id = Guid.NewGuid(), Name = "Wood", Slug = "wood", BasePrice = 10m, WeightPerUnit = 1.0m };
+
+        // Prague abundance=0.80: sticker ≈$10.74 < Bratislava ≈$11.17 (Prague wins on exchange)
+        // But Prague transit ≈$0.69: delivered ≈$11.43 > Bratislava $11.17 (Bratislava wins on delivered)
+        var braExchange = GlobalExchangeCalculator.ComputeExchangePrice(bratislava, wood, 0.70m);
+        var prgExchange = GlobalExchangeCalculator.ComputeExchangePrice(prague, wood, 0.80m);
+
+        var braTransit = GlobalExchangeCalculator.ComputeTransitCostPerUnit(bratislava, bratislava, wood);
+        var prgTransit = GlobalExchangeCalculator.ComputeTransitCostPerUnit(prague, bratislava, wood);
+
+        var braDelivered = braExchange + braTransit;
+        var prgDelivered = prgExchange + prgTransit;
+
+        // Prague wins on exchange price ranking.
+        var exchangeWinner = prgExchange < braExchange ? "Prague" : "Bratislava";
+        // Bratislava wins on delivered price ranking.
+        var deliveredWinner = braDelivered <= prgDelivered ? "Bratislava" : "Prague";
+
+        Assert.NotEqual<string>(exchangeWinner, deliveredWinner);
+    }
+
+    [Fact]
+    public void ComputeExchangeQuality_MidAbundance_IsWithinValidRange()
+    {
+        // Mid-abundance (0.5) should produce quality between the min and max bounds.
+        var quality = GlobalExchangeCalculator.ComputeExchangeQuality(0.5m);
+        Assert.InRange(quality, 0.35m, 0.95m);
+        // Should be strictly between the extremes.
+        Assert.True(quality > 0.35m && quality < 0.95m,
+            $"Mid-abundance quality {quality} should be strictly between 0.35 and 0.95");
+    }
+
+    [Fact]
+    public void ComputeExchangePrice_HigherRentCity_HasHigherPrice()
+    {
+        // Cities with higher average rent (more expensive commercial space) should have
+        // higher exchange prices for the same resource — the city rent multiplier is in effect.
+        var cheapCity      = new City { Id = Guid.NewGuid(), Name = "Cheap",      AverageRentPerSqm = 5m,  Latitude = 48.15, Longitude = 17.11 };
+        var expensiveCity  = new City { Id = Guid.NewGuid(), Name = "Expensive",  AverageRentPerSqm = 50m, Latitude = 48.15, Longitude = 17.11 };
+        var resource = MakeResource(10m, 1m);
+
+        var cheapPrice     = GlobalExchangeCalculator.ComputeExchangePrice(cheapCity, resource, 0.5m);
+        var expensivePrice = GlobalExchangeCalculator.ComputeExchangePrice(expensiveCity, resource, 0.5m);
+
+        Assert.True(expensivePrice > cheapPrice,
+            $"Expensive-city price ({expensivePrice}) should exceed cheap-city price ({cheapPrice})");
+    }
 }
