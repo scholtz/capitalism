@@ -70,6 +70,7 @@ export default {
     emailPlaceholder: "ihre{'@'}email.com",
     displayNamePlaceholder: 'Ihr Name',
     passwordPlaceholder: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
+    passwordTooShort: 'Das Passwort muss mindestens 8 Zeichen lang sein.',
     loginFailed: 'Anmeldung fehlgeschlagen. Bitte überprüfen Sie Ihre Zugangsdaten und versuchen Sie es erneut.',
   },
   onboarding: {

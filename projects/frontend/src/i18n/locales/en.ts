@@ -66,6 +66,7 @@ export default {
     displayNamePlaceholder: 'Your name',
     password: 'Password',
     passwordPlaceholder: '••••••••',
+    passwordTooShort: 'Password must be at least 8 characters.',
     loginButton: 'Sign In',
     registerButton: 'Create Account',
     haveAccount: 'Already have an account?',

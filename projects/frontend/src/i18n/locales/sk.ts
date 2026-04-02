@@ -70,6 +70,7 @@ export default {
     emailPlaceholder: "vas{'@'}email.com",
     displayNamePlaceholder: 'Va\u0161e meno',
     passwordPlaceholder: '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
+    passwordTooShort: 'Heslo mus\u00ed ma\u0165 aspo\u0148 8 znakov.',
     loginFailed: 'Prihl\u00e1senie zlyhalo. Skontrolujte prihlasovacie \u00fadaje a sk\u00faste znova.',
   },
   onboarding: {

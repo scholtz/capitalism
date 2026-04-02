@@ -802,6 +802,13 @@ async function markStartupPackOfferShown() {
  */
 async function saveGuestProgress() {
   guestSaveError.value = null
+
+  // Client-side validation: password must be at least 8 characters for registration
+  if (guestAuthMode.value === 'register' && guestPassword.value.length < 8) {
+    guestSaveError.value = t('auth.passwordTooShort')
+    return
+  }
+
   guestSaveLoading.value = true
 
   try {

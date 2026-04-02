@@ -5015,6 +5015,74 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GuestMigration_HappyPath_SelectedIndustryAndProductArePreservedInFinalState()
+    {
+        // ROADMAP: "Do not store the progress for these users to the backend, but make sure to
+        // show them they bought the buildings they setup the resources chain and they made some
+        // profit. After that ask them to log in to save their progress."
+        //
+        // This test simulates the guest-to-authenticated migration happy path with no conflicts:
+        // 1. A new player registers (the guest becomes authenticated).
+        // 2. They call StartOnboardingCompany (equivalent to the guest's factory purchase being saved).
+        // 3. They call FinishOnboarding with the chosen product (equivalent to shop purchase being saved).
+        // 4. The resulting company state reflects the industry/product choices from the guest session.
+        var industry = "HEALTHCARE";
+        var token = await RegisterAndGetTokenAsync($"guest-migration-happy-{Guid.NewGuid()}@test.com", "Happy Migrator");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m);
+
+        // Step 1: StartOnboardingCompany (factory purchase — guest's first persisted action)
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id name cash }
+                factory { id type }
+              }
+            }
+            """,
+            new { input = new { industry, cityId, companyName = "Happy Migration Corp", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed in happy path");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+        Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
+        Assert.Equal("Happy Migration Corp", startData.GetProperty("company").GetProperty("name").GetString());
+        Assert.Equal("FACTORY", startData.GetProperty("factory").GetProperty("type").GetString());
+
+        // Step 2: FinishOnboarding (shop purchase + product selection — guest's second persisted action)
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding must succeed in happy path");
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+
+        // Verify the selected product matches the guest's Healthcare industry choice
+        var selectedProduct = finishData.GetProperty("selectedProduct");
+        Assert.Equal(productId, selectedProduct.GetProperty("id").GetString());
+        Assert.Equal("HEALTHCARE", selectedProduct.GetProperty("industry").GetString());
+
+        // Verify money was correctly deducted: $500,000 - $75,000 (factory) - $90,000 (shop) = $335,000
+        var cashAfterMigration = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
+        Assert.Equal(335_000m, cashAfterMigration);
+
+        // Verify both buildings exist in the final state
+        Assert.NotNull(finishData.GetProperty("factory").GetProperty("id").GetString());
+        Assert.NotNull(finishData.GetProperty("salesShop").GetProperty("id").GetString());
+
+        // Verify the player's onboarding is marked complete
+        var meResult = await ExecuteGraphQlAsync(
+            "query { me { onboardingCompletedAtUtc } }",
+            null,
+            token);
+        var completedAt = meResult.GetProperty("data").GetProperty("me").GetProperty("onboardingCompletedAtUtc").GetString();
+        Assert.NotNull(completedAt);
+        Assert.NotEmpty(completedAt);
+    }
+
+    [Fact]
     public async Task FinishOnboarding_AfterCompletion_RejectsWithNotInProgress()
     {
         // A player who has already completed onboarding (via FinishOnboarding)

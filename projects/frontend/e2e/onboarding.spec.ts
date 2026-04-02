@@ -2833,6 +2833,48 @@ test.describe('Guest registration error recovery (AC10 — resilience)', () => {
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
     expect(state.currentUserId).toBeTruthy()
   })
+
+  test('password too short during guest registration shows validation error without submitting', async ({
+    page,
+  }) => {
+    // AC10: Client-side validation catches obviously invalid passwords before any API call,
+    // giving the player immediate feedback and keeping them on the save-progress screen.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    const mutationNames: string[] = []
+    page.on('request', (request) => {
+      if (request.url().includes('/graphql') && request.method() === 'POST') {
+        try {
+          const body = JSON.parse(request.postData() ?? '{}')
+          if ((body?.query ?? '').includes('Register')) mutationNames.push('Register')
+        } catch {
+          // ignore parse errors
+        }
+      }
+    })
+
+    // Fill a password that is too short (< 8 characters)
+    await page.locator('#guestEmail').fill('newplayer@test.com')
+    await page.locator('#guestDisplayName').fill('New Player')
+    await page.locator('#guestPassword').fill('abc')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Error must appear inline on the save-progress screen — wizard must NOT restart
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    const errorEl = page.locator('.error-message, .error-global, [role="alert"]').first()
+    await expect(errorEl).toBeVisible()
+    await expect(errorEl).toContainText(/at least 8 characters/i)
+
+    // No Register API call should have been made
+    expect(mutationNames).not.toContain('Register')
+
+    // Player should be able to fix their password and successfully save progress
+    await page.locator('#guestPassword').fill('StrongPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────
