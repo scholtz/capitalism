@@ -551,3 +551,18 @@ Root-cause of a ROADMAP alignment gap (March 2026, PR #125 guest onboarding):
 4. **GraphQL queries for completion results must request enough data to display what was configured.** If the backend configures units, the mutation result must include `units { id unitType gridX gridY level linkRight }` so the frontend can render the chain.
 5. **Add E2E tests that assert the configured unit types are VISIBLE on the completion screen** — `expect(page.locator('[aria-label="Factory layout"] .unit-chain-label', { hasText: 'Manufacturing' })).toBeVisible()` — not just that "factory was set up" text is present.
 6. **Add backend tests that request units in the mutation response** and verify the count and types are correct for each supported industry.
+
+## PR draft state and CI triggering — do not leave PRs in draft
+
+Root-cause of a quality failure (March 2026, PR #139 onboarding):
+- The PR was opened in draft state. Because it was draft, CI workflows did not trigger, so the product owner saw "no checks reported."
+- The agent had passing tests locally but the PR description only reflected the initial plan with generic claims — not concrete evidence of end-to-end ROADMAP delivery (e.g., no screenshots of the wizard steps, no test coverage breakdown, no proof of conflict handling).
+- Product owner rejected the PR with: "no reported CI checks," "missing proof of completed implementation," "missing automated coverage."
+
+**How to prevent this:**
+1. **Never leave a PR in draft state when the implementation is complete.** A PR should be marked "ready for review" as part of delivery, not left for someone else to un-draft.
+2. **Pushing a non-empty commit triggers CI.** If CI is not running, verify the branch has pushed commits. Every `report_progress` call pushes, so CI should trigger automatically after the first code commit.
+3. **If CI fails with infrastructure errors (e.g., Docker registry "Username and password required"), that is not a code failure** — it is a secrets/credentials issue in the repository settings. Focus on fixing code failures; infrastructure credential failures are the repository owner's responsibility.
+4. **The PR description must explicitly link to the issue it resolves** using GitHub's `Fixes #N` or `Closes #N` syntax so reviewers can trace the PR back to the product requirement.
+5. **Always demonstrate the full scope of delivery in the PR description**, not just the last incremental change. Reviewers need to see what was already on main vs what this branch contributes — make both clear.
+6. **Respond to product-owner review comments by adding concrete proof** (test names, passing counts, screenshots) — never by just asserting "it works."

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -776,7 +777,7 @@ public sealed class Mutation
         {
             throw new GraphQLException(
                 ErrorBuilder.New()
-                    .SetMessage($"Insufficient funds. This lot costs ${lot.Price:N0} but you only have ${company.Cash:N0}.")
+                    .SetMessage($"Insufficient funds. This lot costs ${lot.Price.ToString("N0", CultureInfo.InvariantCulture)} but you only have ${company.Cash.ToString("N0", CultureInfo.InvariantCulture)}.")
                     .SetCode("INSUFFICIENT_FUNDS")
                     .Build());
         }

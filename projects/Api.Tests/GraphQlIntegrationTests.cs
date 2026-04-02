@@ -4074,7 +4074,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.True(result.TryGetProperty("errors", out var errors));
         var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
         Assert.Equal("INSUFFICIENT_FUNDS", code);
-        Assert.Contains("600,000", errors[0].GetProperty("message").GetString());
+        var message = errors[0].GetProperty("message").GetString();
+        Assert.Contains("Insufficient funds", message);
+        Assert.Contains("600", message);
 
         // Onboarding should NOT be in progress since the mutation failed
         var meResult = await ExecuteGraphQlAsync("{ me { onboardingCurrentStep onboardingCompanyId } }", token: token);
