@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { makeChairProduct, makePlayer, setupMockApi } from './helpers/mock-api'
+import { makeChairProduct, makePlayer, setupMockApi, type MockBuildingUnit } from './helpers/mock-api'
 
 function getGridSection(page: Parameters<typeof test>[0]['page'], heading: string) {
   return page
@@ -5328,6 +5328,320 @@ test.describe('Grid editor: save and reload persistence', () => {
     // Both units must appear in the queued section
     await expect(getGridCell(queuedSection, 0, 0)).toContainText('Purchase')
     await expect(getGridCell(queuedSection, 1, 0)).toContainText('Manufacturing')
+  })
+})
+
+// ── R&D Research Progress Panel ───────────────────────────────────────────────
+
+test.describe('R&D Research Progress Panel', () => {
+  function makeRdBuilding(companyId: string, units: MockBuildingUnit[] = []) {
+    return {
+      id: 'building-rd-progress',
+      companyId,
+      cityId: 'city-ba',
+      type: 'RESEARCH_DEVELOPMENT',
+      name: 'Innovation Lab',
+      latitude: 48.15,
+      longitude: 17.11,
+      level: 1,
+      powerConsumption: 3,
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      pendingConfiguration: null,
+      units,
+    }
+  }
+
+  test('shows research progress panel for R&D buildings', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-rd-prog',
+      playerId: player.id,
+      name: 'Research Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makeRdBuilding('company-rd-prog')],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-rd-progress')
+
+    await expect(page.getByRole('region', { name: 'research progress' })).toBeVisible()
+    await expect(page.getByText('Research Progress')).toBeVisible()
+  })
+
+  test('shows empty state when no research brands exist yet', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-rd-empty',
+      playerId: player.id,
+      name: 'Empty Research Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makeRdBuilding('company-rd-empty')],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.researchBrands['company-rd-empty'] = []
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-rd-progress')
+
+    await expect(page.getByRole('region', { name: 'research progress' })).toBeVisible()
+    await expect(page.getByText(/No research recorded yet/)).toBeVisible()
+  })
+
+  test('shows product quality brand state in research progress panel', async ({ page }) => {
+    const player = makePlayer()
+    const companyId = 'company-rd-brands'
+    player.companies.push({
+      id: companyId,
+      playerId: player.id,
+      name: 'Quality Research Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        makeRdBuilding(companyId, [
+          {
+            id: 'rd-unit-pq',
+            buildingId: 'building-rd-progress',
+            unitType: 'PRODUCT_QUALITY',
+            gridX: 0,
+            gridY: 0,
+            level: 1,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            productTypeId: 'prod-chair',
+          },
+        ]),
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.researchBrands[companyId] = [
+      {
+        id: 'brand-chair',
+        companyId,
+        name: 'Wooden Chair',
+        scope: 'PRODUCT',
+        productTypeId: 'prod-chair',
+        productName: 'Wooden Chair',
+        industryCategory: null,
+        awareness: 0,
+        quality: 0.35,
+      },
+    ]
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-rd-progress')
+
+    const panel = page.getByRole('region', { name: 'research progress' })
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('Wooden Chair')).toBeVisible()
+    await expect(panel.locator('.research-metric-label', { hasText: 'Product Quality' }).first()).toBeVisible()
+    await expect(panel.locator('.research-metric-value', { hasText: '35.0%' })).toBeVisible()
+  })
+
+  test('shows brand awareness state for brand quality research', async ({ page }) => {
+    const player = makePlayer()
+    const companyId = 'company-rd-bq'
+    player.companies.push({
+      id: companyId,
+      playerId: player.id,
+      name: 'Brand Research Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        makeRdBuilding(companyId, [
+          {
+            id: 'rd-unit-bq',
+            buildingId: 'building-rd-progress',
+            unitType: 'BRAND_QUALITY',
+            gridX: 0,
+            gridY: 0,
+            level: 1,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            brandScope: 'COMPANY',
+          },
+        ]),
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.researchBrands[companyId] = [
+      {
+        id: 'brand-company',
+        companyId,
+        name: 'Brand Research Corp',
+        scope: 'COMPANY',
+        productTypeId: null,
+        productName: null,
+        industryCategory: null,
+        awareness: 0.72,
+        quality: 0,
+      },
+    ]
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-rd-progress')
+
+    const panel = page.getByRole('region', { name: 'research progress' })
+    await expect(panel).toBeVisible()
+    await expect(panel.locator('.research-metric-label', { hasText: 'Brand Awareness' })).toBeVisible()
+    await expect(panel.locator('.research-metric-value', { hasText: '72.0%' })).toBeVisible()
+    await expect(panel.locator('.research-brand-scope-badge', { hasText: 'Company' })).toBeVisible()
+  })
+
+  test('does not show research progress panel for non-RD buildings', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-factory',
+      playerId: player.id,
+      name: 'Factory Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-factory-rd-test',
+          companyId: 'company-factory',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Regular Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 5,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-factory-rd-test')
+
+    await expect(page.getByRole('region', { name: 'research progress' })).toBeHidden()
+  })
+
+  test('shows R&D configuration warnings when units are incomplete', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-rd-warn',
+      playerId: player.id,
+      name: 'Warning Research Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-rd-warn',
+          companyId: 'company-rd-warn',
+          cityId: 'city-ba',
+          type: 'RESEARCH_DEVELOPMENT',
+          name: 'Warning Lab',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 3,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'rd-pq-warn',
+              buildingId: 'building-rd-warn',
+              unitType: 'PRODUCT_QUALITY',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              // No productTypeId — should trigger warning
+            },
+            {
+              id: 'rd-bq-warn',
+              buildingId: 'building-rd-warn',
+              unitType: 'BRAND_QUALITY',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              // No brandScope — should trigger warning
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-rd-warn')
+
+    await expect(page.getByRole('alert')).toBeVisible()
+    await expect(page.getByText(/Product Quality unit at \(0, 0\) has no researched product selected/)).toBeVisible()
+    await expect(page.getByText(/Brand Quality unit at \(1, 0\) has no research scope selected/)).toBeVisible()
   })
 })
 

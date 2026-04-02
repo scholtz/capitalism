@@ -952,4 +952,13 @@ export default {
     scheduleRentBtn: 'Änderung planen',
     saveFailed: 'Mietänderung konnte nicht gespeichert werden. Bitte erneut versuchen.',
   },
+  research: {
+    panelTitle: 'Forschungsfortschritt',
+    intro: 'Die Forschung schreitet jeden Takt voran. Produktqualität verbessert die Ausgangsqualität der Fertigung. Markenqualität verbessert die Marketingeffizienz im gewählten Bereich.',
+    emptyState: 'Noch keine Forschung aufgezeichnet. Konfigurieren Sie Produktqualitäts- oder Markenqualitätseinheiten und lassen Sie die Simulation laufen, um hier Fortschritte zu sehen.',
+    qualityLabel: 'Produktqualität',
+    awarenessLabel: 'Markenbekanntheit',
+    qualityEffect: 'Trägt bis zu {pct}% Qualitätsbonus zum hergestellten Produkt bei.',
+    awarenessEffect: 'Marketingeinheiten sind aufgrund der Markenbekanntheit um {pct}% effizienter.',
+  },
 }

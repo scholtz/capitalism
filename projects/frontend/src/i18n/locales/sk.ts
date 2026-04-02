@@ -946,4 +946,13 @@ export default {
     scheduleRentBtn: 'Naplánovať zmenu',
     saveFailed: 'Uloženie zmeny nájmu zlyhalo. Skúste to znova.',
   },
+  research: {
+    panelTitle: 'Výskumný pokrok',
+    intro: 'Výskum postupuje každý tik. Kvalita produktu zlepšuje výstupnú kvalitu výroby. Kvalita značky zlepšuje efektívnosť marketingu v rámci vybraného rozsahu.',
+    emptyState: 'Zatiaľ žiadny výskum nezaznamenaný. Nakonfigurujte jednotky Kvality produktu alebo Kvality značky a nechajte simuláciu bežať, aby ste tu videli pokrok.',
+    qualityLabel: 'Kvalita produktu',
+    awarenessLabel: 'Povedomie o značke',
+    qualityEffect: 'Prispieva až {pct}% bonusom kvality do vyrobeného výstupu pre tento produkt.',
+    awarenessEffect: 'Marketingové jednotky míňajú o {pct}% efektívnejšie vďaka povedomiu o značke.',
+  },
 }

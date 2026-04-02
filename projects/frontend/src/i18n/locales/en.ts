@@ -952,4 +952,13 @@ export default {
     scheduleRentBtn: 'Schedule Change',
     saveFailed: 'Failed to save rent change. Please try again.',
   },
+  research: {
+    panelTitle: 'Research Progress',
+    intro: 'Research advances each tick. Product Quality improves manufactured output quality. Brand Quality improves marketing efficiency across the selected scope.',
+    emptyState: 'No research recorded yet. Configure Product Quality or Brand Quality units and let the simulation run to see progress here.',
+    qualityLabel: 'Product Quality',
+    awarenessLabel: 'Brand Awareness',
+    qualityEffect: 'Contributes up to {pct}% quality bonus to manufactured output for this product.',
+    awarenessEffect: 'Marketing units spend {pct}% more effectively due to brand awareness.',
+  },
 }

@@ -35,6 +35,7 @@ import type {
   Company,
   GlobalExchangeOffer,
   ProductType,
+  ResearchBrandState,
   ResourceType,
 } from '@/types'
 import type { HorizontalLinkState, VerticalLinkState } from '@/lib/linkHelpers'
@@ -112,6 +113,10 @@ const unitInventories = ref<BuildingUnitInventory[]>([])
 const unitResourceHistories = ref<BuildingUnitResourceHistoryPoint[]>([])
 const exchangeOffers = ref<GlobalExchangeOffer[]>([])
 const exchangeOffersLoading = ref(false)
+
+// R&D research progress state
+const researchBrands = ref<ResearchBrandState[]>([])
+const researchBrandsLoading = ref(false)
 const showSaleDialog = ref(false)
 const salePrice = ref<number | null>(null)
 const savingSale = ref(false)
@@ -2017,6 +2022,36 @@ async function loadGlobalExchangeOffers() {
   }
 }
 
+async function loadResearchBrands() {
+  const companyId = building.value?.companyId
+  if (!companyId || building.value?.type !== 'RESEARCH_DEVELOPMENT') return
+
+  researchBrandsLoading.value = true
+  try {
+    const data = await gqlRequest<{ companyBrands: ResearchBrandState[] }>(
+      `query CompanyBrands($companyId: UUID!) {
+        companyBrands(companyId: $companyId) {
+          id
+          companyId
+          name
+          scope
+          productTypeId
+          productName
+          industryCategory
+          awareness
+          quality
+        }
+      }`,
+      { companyId },
+    )
+    researchBrands.value = data.companyBrands ?? []
+  } catch {
+    researchBrands.value = []
+  } finally {
+    researchBrandsLoading.value = false
+  }
+}
+
 async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
   const requestId = ++activeBuildingLoadRequest
   const shouldShowLoading = !building.value
@@ -2217,7 +2252,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
       return
     }
 
-    await loadGlobalExchangeOffers()
+    await Promise.all([loadGlobalExchangeOffers(), loadResearchBrands()])
   } catch (reason: unknown) {
     if (requestId !== activeBuildingLoadRequest) {
       return
@@ -2463,6 +2498,72 @@ watch(
             {{ t(warning.key, warning.params || {}) }}
           </li>
         </ul>
+      </div>
+
+      <!-- R&D Research Progress panel: RESEARCH_DEVELOPMENT buildings -->
+      <div
+        v-if="building.type === 'RESEARCH_DEVELOPMENT'"
+        class="research-progress-panel"
+        role="region"
+        aria-label="research progress"
+      >
+        <div class="research-progress-header">
+          <h2 class="research-progress-title">🔬 {{ t('research.panelTitle') }}</h2>
+        </div>
+        <p class="research-progress-intro">{{ t('research.intro') }}</p>
+
+        <div v-if="researchBrandsLoading" class="research-loading">{{ t('common.loading') }}</div>
+
+        <div v-else-if="researchBrands.length === 0" class="research-empty-state">
+          {{ t('research.emptyState') }}
+        </div>
+
+        <div v-else class="research-brand-list">
+          <div
+            v-for="brand in researchBrands"
+            :key="brand.id"
+            class="research-brand-card"
+          >
+            <div class="research-brand-header">
+              <span class="research-brand-name">{{ brand.productName || brand.name }}</span>
+              <span class="research-brand-scope-badge">
+                {{ brand.scope === 'PRODUCT' ? t('buildingDetail.config.scopeProduct')
+                  : brand.scope === 'CATEGORY' ? t('buildingDetail.config.scopeCategory')
+                  : t('buildingDetail.config.scopeCompany') }}
+              </span>
+            </div>
+            <div v-if="brand.industryCategory" class="research-brand-industry">
+              {{ brand.industryCategory }}
+            </div>
+            <div class="research-brand-metrics">
+              <div class="research-metric">
+                <span class="research-metric-label">{{ t('research.qualityLabel') }}</span>
+                <div class="research-progress-bar" :aria-label="`Quality ${(brand.quality * 100).toFixed(1)}%`">
+                  <div class="research-progress-fill research-progress-quality" :style="{ width: `${(brand.quality * 100).toFixed(1)}%` }"></div>
+                </div>
+                <span class="research-metric-value">{{ (brand.quality * 100).toFixed(1) }}%</span>
+              </div>
+              <div class="research-metric">
+                <span class="research-metric-label">{{ t('research.awarenessLabel') }}</span>
+                <div class="research-progress-bar" :aria-label="`Awareness ${(brand.awareness * 100).toFixed(1)}%`">
+                  <div class="research-progress-fill research-progress-awareness" :style="{ width: `${(brand.awareness * 100).toFixed(1)}%` }"></div>
+                </div>
+                <span class="research-metric-value">{{ (brand.awareness * 100).toFixed(1) }}%</span>
+              </div>
+            </div>
+            <p class="research-brand-effect">
+              <span v-if="brand.quality > 0">
+                {{
+                  /* Brand quality contributes up to 30% quality bonus to manufactured output (game formula: quality * 30). */
+                  t('research.qualityEffect', { pct: (brand.quality * 30).toFixed(1) })
+                }}
+              </span>
+              <span v-if="brand.awareness > 0">
+                {{ t('research.awarenessEffect', { pct: (brand.awareness * 100).toFixed(1) }) }}
+              </span>
+            </p>
+          </div>
+        </div>
       </div>
 
       <!-- Starter factory setup banner (shown for empty factories with no pending plan) -->
@@ -5282,5 +5383,145 @@ watch(
 
 .grid-cell.clickable {
   cursor: pointer;
+}
+
+/* R&D Research Progress Panel */
+.research-progress-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.research-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.research-progress-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text);
+}
+
+.research-progress-intro {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 1rem;
+}
+
+.research-loading {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.research-empty-state {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.research-brand-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.research-brand-card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 0.875rem;
+}
+
+.research-brand-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.research-brand-name {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  color: var(--color-text);
+}
+
+.research-brand-scope-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.125rem 0.375rem;
+  border-radius: 9999px;
+  background: var(--color-primary-subtle, rgba(0, 71, 255, 0.1));
+  color: var(--color-primary);
+}
+
+.research-brand-industry {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.research-brand-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.research-metric {
+  display: grid;
+  grid-template-columns: 8rem 1fr 3.5rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.research-metric-label {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.research-metric-value {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text);
+  text-align: right;
+}
+
+.research-progress-bar {
+  height: 0.5rem;
+  background: var(--color-border);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.research-progress-fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+.research-progress-quality {
+  background: #0047ff;
+}
+
+.research-progress-awareness {
+  background: #9333ea;
+}
+
+.research-brand-effect {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
 }
 </style>

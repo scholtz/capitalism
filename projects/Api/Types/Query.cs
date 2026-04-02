@@ -260,6 +260,57 @@ public sealed class Query
             .ToListAsync();
     }
 
+    /// <summary>
+    /// Returns the brand research state for a company — all brands accumulated by R&amp;D and marketing
+    /// so the frontend can show current product-quality and brand-awareness progress.
+    /// Requires auth and company ownership.
+    /// </summary>
+    [Authorize]
+    public async Task<List<ResearchBrandState>> GetCompanyBrands(
+        Guid companyId,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var company = await db.Companies
+            .FirstOrDefaultAsync(c => c.Id == companyId && c.PlayerId == userId);
+        if (company is null)
+            return [];
+
+        var brands = await db.Brands
+            .Where(b => b.CompanyId == companyId)
+            .ToListAsync();
+
+        var productTypeIds = brands
+            .Where(b => b.ProductTypeId.HasValue)
+            .Select(b => b.ProductTypeId!.Value)
+            .Distinct()
+            .ToList();
+
+        var productTypes = await db.ProductTypes
+            .Where(pt => productTypeIds.Contains(pt.Id))
+            .ToListAsync();
+
+        return brands.Select(b =>
+        {
+            var pt = b.ProductTypeId.HasValue
+                ? productTypes.FirstOrDefault(p => p.Id == b.ProductTypeId.Value)
+                : null;
+            return new ResearchBrandState
+            {
+                Id = b.Id,
+                CompanyId = b.CompanyId,
+                Name = b.Name,
+                Scope = b.Scope,
+                ProductTypeId = b.ProductTypeId,
+                ProductName = pt?.Name,
+                IndustryCategory = b.IndustryCategory,
+                Awareness = b.Awareness,
+                Quality = b.Quality
+            };
+        }).ToList();
+    }
+
     /// <summary>Returns owner-editable company settings including salary levels per city.</summary>
     [Authorize]
     public async Task<CompanySettingsResult?> GetCompanySettings(
@@ -1228,4 +1279,44 @@ public sealed class PowerPlantSummary
 
     /// <summary>Power supply status of this plant (always POWERED).</summary>
     public string PowerStatus { get; set; } = Data.Entities.PowerStatus.Powered;
+}
+
+/// <summary>
+/// Snapshot of a company brand accumulated by R&amp;D research and marketing spend.
+/// Exposed by the companyBrands query so the frontend can render research progress.
+/// </summary>
+public sealed class ResearchBrandState
+{
+    /// <summary>Brand identifier.</summary>
+    public Guid Id { get; set; }
+
+    /// <summary>Company that owns this brand.</summary>
+    public Guid CompanyId { get; set; }
+
+    /// <summary>Display name of the brand (product name or company name).</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Scope: PRODUCT, CATEGORY, or COMPANY.</summary>
+    public string Scope { get; set; } = BrandScope.Product;
+
+    /// <summary>The specific product type this brand applies to (if scope is PRODUCT or CATEGORY).</summary>
+    public Guid? ProductTypeId { get; set; }
+
+    /// <summary>Human-readable product name for this brand (null for company-wide brands).</summary>
+    public string? ProductName { get; set; }
+
+    /// <summary>Industry category for CATEGORY-scoped brands.</summary>
+    public string? IndustryCategory { get; set; }
+
+    /// <summary>
+    /// Brand awareness level (0.0–1.0). Driven by BRAND_QUALITY R&amp;D and marketing units.
+    /// Higher awareness translates to better marketing effectiveness.
+    /// </summary>
+    public decimal Awareness { get; set; }
+
+    /// <summary>
+    /// Brand quality level (0.0–1.0). Driven by PRODUCT_QUALITY R&amp;D.
+    /// Higher quality improves manufactured product output quality.
+    /// </summary>
+    public decimal Quality { get; set; }
 }

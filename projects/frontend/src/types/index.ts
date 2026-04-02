@@ -610,3 +610,23 @@ export interface CityPowerBalance {
   powerPlantCount: number
   consumerBuildingCount: number
 }
+
+/**
+ * Research brand state returned by the companyBrands query.
+ * Represents a brand entity accumulated by R&D research (product quality)
+ * and marketing activity (brand awareness).
+ */
+export interface ResearchBrandState {
+  id: string
+  companyId: string
+  name: string
+  /** PRODUCT | CATEGORY | COMPANY */
+  scope: string
+  productTypeId: string | null
+  productName: string | null
+  industryCategory: string | null
+  /** 0.0–1.0: Driven by BRAND_QUALITY R&D and marketing. Higher = better marketing effectiveness. */
+  awareness: number
+  /** 0.0–1.0: Driven by PRODUCT_QUALITY R&D. Higher = better manufactured output quality. */
+  quality: number
+}

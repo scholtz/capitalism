@@ -304,6 +304,18 @@ export type MockProductType = {
   }[]
 }
 
+export type MockResearchBrandState = {
+  id: string
+  companyId: string
+  name: string
+  scope: 'PRODUCT' | 'CATEGORY' | 'COMPANY'
+  productTypeId: string | null
+  productName: string | null
+  industryCategory: string | null
+  awareness: number
+  quality: number
+}
+
 export type MockState = {
   players: MockPlayer[]
   cities: MockCity[]
@@ -317,6 +329,8 @@ export type MockState = {
   drillDownData: Record<string, MockLedgerEntry[]>
   /** When true, the next ClaimStartupPack mutation returns a server error instead of succeeding. */
   forceStartupPackClaimError: boolean
+  /** Research brand states keyed by companyId for the companyBrands query. */
+  researchBrands: Record<string, MockResearchBrandState[]>
 }
 
 const STARTING_CASH_FOR_ONBOARDING = 500000
@@ -938,6 +952,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     ledgerData: {},
     drillDownData: {},
     forceStartupPackClaimError: false,
+    researchBrands: {},
     ...initial,
   }
 
@@ -2436,7 +2451,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
-    if (query.includes('me') && !query.includes('companyLedger') && !query.includes('ledgerDrillDown')) {
+    if (query.includes('me') && !query.includes('companyLedger') && !query.includes('ledgerDrillDown') && !query.includes('companyBrands')) {
       const player = state.players.find((p) => p.id === state.currentUserId)
       if (!player) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }) })
@@ -2531,6 +2546,16 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { ledgerDrillDown: entries } }),
+      })
+    }
+
+    if (query.includes('companyBrands') || query.includes('CompanyBrands')) {
+      const companyId = body.variables?.companyId
+      const brands = companyId ? (state.researchBrands[companyId] ?? []) : []
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { companyBrands: brands } }),
       })
     }
 

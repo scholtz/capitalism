@@ -9114,6 +9114,428 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
     #endregion
 
+    #region R&D Building Configuration
+
+    /// <summary>
+    /// Helper: creates a company + R&amp;D building owned by the given player token.
+    /// Returns (companyId, buildingId).
+    /// </summary>
+    private async Task<(string CompanyId, string BuildingId)> CreateRdBuildingAsync(string token)
+    {
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, $"RD Corp {Guid.NewGuid():N}");
+        var cityId = await GetCityIdByNameAsync("Bratislava");
+        var lotId = await CreateTestLotAsync(cityId, "RESEARCH_DEVELOPMENT,COMMERCIAL", "Research District", 90_000m, "RD Lot");
+        var purchaseResult = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { building { id } }
+            }
+            """,
+            new { input = new { companyId, lotId, buildingType = "RESEARCH_DEVELOPMENT", buildingName = "Innovation Lab" } },
+            token);
+        var buildingId = purchaseResult.GetProperty("data").GetProperty("purchaseLot").GetProperty("building").GetProperty("id").GetString()!;
+        return (companyId, buildingId);
+    }
+
+    [Fact]
+    public async Task PlaceRdBuilding_ValidLot_Succeeds()
+    {
+        var token = await RegisterAndGetTokenAsync($"rd-place-{Guid.NewGuid()}@test.com", "RD Placer");
+        var (_, buildingId) = await CreateRdBuildingAsync(token);
+        Assert.False(string.IsNullOrEmpty(buildingId), "R&D building placement should return a building ID.");
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ProductQuality_WithValidProduct_Succeeds()
+    {
+        var token = await RegisterAndGetTokenAsync($"rd-pq-ok-{Guid.NewGuid()}@test.com", "PQ Config Tester");
+        var (_, buildingId) = await CreateRdBuildingAsync(token);
+
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new
+                        {
+                            unitType = "PRODUCT_QUALITY",
+                            gridX = 0,
+                            gridY = 0,
+                            linkUp = false,
+                            linkDown = false,
+                            linkLeft = false,
+                            linkRight = false,
+                            linkUpLeft = false,
+                            linkUpRight = false,
+                            linkDownLeft = false,
+                            linkDownRight = false,
+                            productTypeId = productId
+                        }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "Valid PRODUCT_QUALITY unit should succeed.");
+        var planId = result.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("id").GetString();
+        Assert.False(string.IsNullOrEmpty(planId));
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ProductQuality_WithoutProduct_Fails()
+    {
+        var token = await RegisterAndGetTokenAsync($"rd-pq-fail-{Guid.NewGuid()}@test.com", "PQ No Product");
+        var (_, buildingId) = await CreateRdBuildingAsync(token);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new
+                        {
+                            unitType = "PRODUCT_QUALITY",
+                            gridX = 0,
+                            gridY = 0,
+                            linkUp = false,
+                            linkDown = false,
+                            linkLeft = false,
+                            linkRight = false,
+                            linkUpLeft = false,
+                            linkUpRight = false,
+                            linkDownLeft = false,
+                            linkDownRight = false
+                        }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("PRODUCT_QUALITY_PRODUCT_REQUIRED",
+            errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_BrandQuality_CompanyScope_Succeeds()
+    {
+        var token = await RegisterAndGetTokenAsync($"rd-bq-co-{Guid.NewGuid()}@test.com", "BQ Company Scope");
+        var (_, buildingId) = await CreateRdBuildingAsync(token);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new
+                        {
+                            unitType = "BRAND_QUALITY",
+                            gridX = 0,
+                            gridY = 0,
+                            linkUp = false,
+                            linkDown = false,
+                            linkLeft = false,
+                            linkRight = false,
+                            linkUpLeft = false,
+                            linkUpRight = false,
+                            linkDownLeft = false,
+                            linkDownRight = false,
+                            brandScope = "COMPANY"
+                        }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "BRAND_QUALITY with COMPANY scope should succeed.");
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_BrandQuality_CategoryScope_WithProduct_Succeeds()
+    {
+        var token = await RegisterAndGetTokenAsync($"rd-bq-cat-{Guid.NewGuid()}@test.com", "BQ Category Scope");
+        var (_, buildingId) = await CreateRdBuildingAsync(token);
+
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new
+                        {
+                            unitType = "BRAND_QUALITY",
+                            gridX = 0,
+                            gridY = 0,
+                            linkUp = false,
+                            linkDown = false,
+                            linkLeft = false,
+                            linkRight = false,
+                            linkUpLeft = false,
+                            linkUpRight = false,
+                            linkDownLeft = false,
+                            linkDownRight = false,
+                            brandScope = "CATEGORY",
+                            productTypeId = productId
+                        }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "BRAND_QUALITY with CATEGORY scope + anchor product should succeed.");
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_BrandQuality_ProductScope_WithProduct_Succeeds()
+    {
+        var token = await RegisterAndGetTokenAsync($"rd-bq-prod-{Guid.NewGuid()}@test.com", "BQ Product Scope");
+        var (_, buildingId) = await CreateRdBuildingAsync(token);
+
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new
+                        {
+                            unitType = "BRAND_QUALITY",
+                            gridX = 0,
+                            gridY = 0,
+                            linkUp = false,
+                            linkDown = false,
+                            linkLeft = false,
+                            linkRight = false,
+                            linkUpLeft = false,
+                            linkUpRight = false,
+                            linkDownLeft = false,
+                            linkDownRight = false,
+                            brandScope = "PRODUCT",
+                            productTypeId = productId
+                        }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "BRAND_QUALITY with PRODUCT scope + anchor product should succeed.");
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_BrandQuality_WithoutScope_Fails()
+    {
+        var token = await RegisterAndGetTokenAsync($"rd-bq-noscope-{Guid.NewGuid()}@test.com", "BQ No Scope");
+        var (_, buildingId) = await CreateRdBuildingAsync(token);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new
+                        {
+                            unitType = "BRAND_QUALITY",
+                            gridX = 0,
+                            gridY = 0,
+                            linkUp = false,
+                            linkDown = false,
+                            linkLeft = false,
+                            linkRight = false,
+                            linkUpLeft = false,
+                            linkUpRight = false,
+                            linkDownLeft = false,
+                            linkDownRight = false
+                        }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("BRAND_QUALITY_SCOPE_REQUIRED",
+            errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_BrandQuality_InvalidScope_Fails()
+    {
+        var token = await RegisterAndGetTokenAsync($"rd-bq-badscope-{Guid.NewGuid()}@test.com", "BQ Bad Scope");
+        var (_, buildingId) = await CreateRdBuildingAsync(token);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new
+                        {
+                            unitType = "BRAND_QUALITY",
+                            gridX = 0,
+                            gridY = 0,
+                            linkUp = false,
+                            linkDown = false,
+                            linkLeft = false,
+                            linkRight = false,
+                            linkUpLeft = false,
+                            linkUpRight = false,
+                            linkDownLeft = false,
+                            linkDownRight = false,
+                            brandScope = "INVALID_SCOPE"
+                        }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_BRAND_SCOPE",
+            errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CompanyBrands_UnauthenticatedRequest_Fails()
+    {
+        var companyId = Guid.NewGuid();
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetBrands($companyId: UUID!) {
+              companyBrands(companyId: $companyId) { id scope awareness quality }
+            }
+            """,
+            new { companyId });
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.True(errors.GetArrayLength() > 0, "Unauthenticated companyBrands query must fail.");
+    }
+
+    [Fact]
+    public async Task CompanyBrands_OtherPlayersCompany_ReturnsEmpty()
+    {
+        // Player A registers
+        var tokenA = await RegisterAndGetTokenAsync($"rd-brands-a-{Guid.NewGuid()}@test.com", "Brand Viewer A");
+        var (companyIdA, _, _) = await CompleteOnboardingAsync(tokenA, "Brand Corp A");
+
+        // Player B registers and tries to query Player A's brands
+        var tokenB = await RegisterAndGetTokenAsync($"rd-brands-b-{Guid.NewGuid()}@test.com", "Brand Viewer B");
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetBrands($companyId: UUID!) {
+              companyBrands(companyId: $companyId) { id scope awareness quality }
+            }
+            """,
+            new { companyId = companyIdA },
+            tokenB);
+
+        Assert.False(result.TryGetProperty("errors", out _), "companyBrands query itself should succeed for another company.");
+        var brands = result.GetProperty("data").GetProperty("companyBrands").EnumerateArray().ToList();
+        Assert.Empty(brands);
+    }
+
+    [Fact]
+    public async Task CompanyBrands_AfterOnboarding_ReturnsBrandStates()
+    {
+        var token = await RegisterAndGetTokenAsync($"rd-brands-own-{Guid.NewGuid()}@test.com", "Brand Owner");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Brand Testing Corp");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetBrands($companyId: UUID!) {
+              companyBrands(companyId: $companyId) {
+                id
+                companyId
+                name
+                scope
+                productTypeId
+                productName
+                industryCategory
+                awareness
+                quality
+              }
+            }
+            """,
+            new { companyId },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "Authenticated companyBrands for owned company must succeed.");
+        var brands = result.GetProperty("data").GetProperty("companyBrands").EnumerateArray().ToList();
+
+        // A fresh account may have zero brands (no R&D configured yet).
+        // Validate the shape of any returned brands is correct.
+        foreach (var brand in brands)
+        {
+            var scope = brand.GetProperty("scope").GetString();
+            Assert.True(scope is "PRODUCT" or "CATEGORY" or "COMPANY",
+                $"Brand scope must be one of PRODUCT, CATEGORY, COMPANY. Got: {scope}");
+            Assert.True(brand.GetProperty("awareness").GetDecimal() is >= 0 and <= 1,
+                "Brand awareness must be between 0.0 and 1.0.");
+            Assert.True(brand.GetProperty("quality").GetDecimal() is >= 0 and <= 1,
+                "Brand quality must be between 0.0 and 1.0.");
+        }
+    }
+
+    #endregion
+
     #region Property Management (setRentPerSqm mutation)
 
     /// <summary>
