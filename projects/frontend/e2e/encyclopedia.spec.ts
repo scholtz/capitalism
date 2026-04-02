@@ -352,6 +352,54 @@ test.describe('Encyclopedia search and filter', () => {
     await expect(page.getByRole('button', { name: /Electronic Components/ })).toHaveCount(0)
   })
 
+  test('search is case-insensitive', async ({ page }) => {
+    // Issue requirement: "Test search filtering behavior, especially case-insensitive matching."
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia')
+    const searchInput = page.getByPlaceholder('Search resources, ingredients, or descriptions')
+
+    // Uppercase search should match "Wood" (stored as mixed-case).
+    // Electronic Table also appears because its recipe includes Wood as an ingredient —
+    // the search surfaces products that *use* the searched resource (upstream dependency matching).
+    await searchInput.fill('WOOD')
+    await expect(page.getByRole('button', { name: /Wood/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Electronic Table/ })).toBeVisible()
+
+    // Lowercase search should also match "Electronic Components"
+    await searchInput.fill('electronic components')
+    await expect(page.getByRole('button', { name: /Electronic Components/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Wood/ })).toHaveCount(0)
+
+    // Mixed-case search should match correctly
+    await searchInput.fill('eLeCtrOnIc TaBlE')
+    await expect(page.getByRole('button', { name: /Electronic Table/ })).toBeVisible()
+  })
+
+  test('search filters resources by description text', async ({ page }) => {
+    // The search also matches on description content so players can search for
+    // ingredient properties, not just names.
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia')
+    const searchInput = page.getByPlaceholder('Search resources, ingredients, or descriptions')
+
+    // woodResource.description = 'Timber for furniture.' — searching "timber" should surface Wood
+    await searchInput.fill('timber')
+    await expect(page.getByRole('button', { name: /Wood/ })).toBeVisible()
+
+    // electronicComponents.description = 'Intermediate electronics input.' — "intermediate" should surface it
+    await searchInput.fill('intermediate')
+    await expect(page.getByRole('button', { name: /Electronic Components/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Wood/ })).toHaveCount(0)
+  })
+
   test('industry filter shows only matching manufactured resources', async ({ page }) => {
     setupMockApi(page, {
       resourceTypes: [woodResource],

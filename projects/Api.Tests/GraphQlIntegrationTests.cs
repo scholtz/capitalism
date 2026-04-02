@@ -1313,6 +1313,104 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.True(medicineUsesChemicals, "Basic Medicine must use Chemical Minerals as a direct recipe ingredient.");
     }
 
+    [Fact]
+    public async Task ResourceTypes_ReturnsAllEncyclopediaListFields()
+    {
+        // Verifies that the resourceTypes query exposes every field required by the
+        // encyclopedia list view: id, name, slug, category, basePrice, weightPerUnit,
+        // unitName, unitSymbol, imageUrl, description.
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              resourceTypes {
+                id name slug category basePrice weightPerUnit unitName unitSymbol imageUrl description
+              }
+            }
+            """);
+
+        var resources = result.GetProperty("data").GetProperty("resourceTypes");
+        Assert.True(resources.GetArrayLength() >= 8, "All 8 core resource types must be returned.");
+
+        foreach (var resource in resources.EnumerateArray())
+        {
+            var slug = resource.GetProperty("slug").GetString()!;
+            Assert.False(string.IsNullOrWhiteSpace(resource.GetProperty("id").GetString()), $"{slug}: id must not be empty");
+            Assert.False(string.IsNullOrWhiteSpace(resource.GetProperty("name").GetString()), $"{slug}: name must not be empty");
+            Assert.False(string.IsNullOrWhiteSpace(resource.GetProperty("slug").GetString()), $"{slug}: slug must not be empty");
+            Assert.False(string.IsNullOrWhiteSpace(resource.GetProperty("category").GetString()), $"{slug}: category must not be empty");
+            Assert.True(resource.GetProperty("basePrice").GetDecimal() > 0, $"{slug}: basePrice must be positive");
+            Assert.True(resource.GetProperty("weightPerUnit").GetDecimal() > 0, $"{slug}: weightPerUnit must be positive");
+            Assert.False(string.IsNullOrWhiteSpace(resource.GetProperty("unitName").GetString()), $"{slug}: unitName must not be empty");
+            Assert.False(string.IsNullOrWhiteSpace(resource.GetProperty("unitSymbol").GetString()), $"{slug}: unitSymbol must not be empty");
+            Assert.False(string.IsNullOrWhiteSpace(resource.GetProperty("imageUrl").GetString()), $"{slug}: imageUrl must not be empty");
+            Assert.False(string.IsNullOrWhiteSpace(resource.GetProperty("description").GetString()), $"{slug}: description must not be empty");
+        }
+    }
+
+    [Fact]
+    public async Task ProductTypes_SlugsAreUniqueAndUrlSafe()
+    {
+        // ROADMAP: "Make resource detail a separate view from the encyclopedia entry."
+        // Each product must have a stable, URL-safe slug so detail routes never collide
+        // and bookmark URLs remain valid even when product names are renamed.
+        var result = await ExecuteGraphQlAsync(
+            "{ productTypes { slug name } }");
+
+        var products = result.GetProperty("data").GetProperty("productTypes");
+        Assert.True(products.GetArrayLength() > 0, "At least one product must be seeded.");
+
+        var slugs = products.EnumerateArray()
+            .Select(p => p.GetProperty("slug").GetString()!)
+            .ToList();
+
+        // Every product must have a non-empty slug
+        foreach (var slug in slugs)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(slug), "A product has a null or empty slug.");
+        }
+
+        // Slugs must be unique across the catalog (no two products share a route)
+        var distinctCount = slugs.Distinct().Count();
+        Assert.Equal(slugs.Count, distinctCount);
+
+        // Every slug must be URL-safe: only lowercase letters, digits, and hyphens
+        foreach (var slug in slugs)
+        {
+            Assert.Matches(@"^[a-z0-9-]+$", slug);
+        }
+    }
+
+    [Fact]
+    public async Task ResourceTypes_SlugsAreUniqueAndUrlSafe()
+    {
+        // ROADMAP: Stable identifier routing so resource detail URLs cannot silently break.
+        var result = await ExecuteGraphQlAsync(
+            "{ resourceTypes { slug name } }");
+
+        var resources = result.GetProperty("data").GetProperty("resourceTypes");
+        Assert.True(resources.GetArrayLength() >= 8, "All 8 core resource types must be seeded.");
+
+        var slugs = resources.EnumerateArray()
+            .Select(r => r.GetProperty("slug").GetString()!)
+            .ToList();
+
+        // Every resource must have a non-empty slug
+        foreach (var slug in slugs)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(slug), "A resource has a null or empty slug.");
+        }
+
+        // Slugs must be unique across the resource catalog
+        var distinctCount = slugs.Distinct().Count();
+        Assert.Equal(slugs.Count, distinctCount);
+
+        // Every slug must be URL-safe: only lowercase letters, digits, and hyphens
+        foreach (var slug in slugs)
+        {
+            Assert.Matches(@"^[a-z0-9-]+$", slug);
+        }
+    }
+
     #endregion
 
     #region Company Management
