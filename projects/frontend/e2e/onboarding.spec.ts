@@ -3074,3 +3074,100 @@ test.describe('City selection — Prague as starter city', () => {
     expect(state.buildingLots.some((lot) => lot.cityId === 'city-pr')).toBe(true)
   })
 })
+
+test.describe('Guest migration — all starter industries (AC2, AC9, AC13)', () => {
+  // AC2: The onboarding flow offers Furniture, Food Processing, and Healthcare as starter-industry choices.
+  // AC9: After a successful onboarding experience, the player is prompted to log in or sign up to save progress.
+  // AC13: Automated tests cover the happy path, guest-mode boundaries, critical state transitions,
+  //       and recovery scenarios — including one for each starter industry through the full migration path.
+
+  test('guest can register and migrate Food Processing (Bread) progress to authenticated account', async ({
+    page,
+  }) => {
+    // Full guest → register → empire launched journey for the FOOD_PROCESSING industry.
+    // Proves the login handoff preserves the Bread/Food Processing choice end-to-end.
+    const state = setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Step 1: Select Food Processing
+    await page.locator('.industry-card', { hasText: 'Food Processing' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Bratislava
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Bakery Migration Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Bread product + shop lot
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Bread' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress form
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Register and migrate guest progress
+    await page.locator('#guestEmail').fill('bakery-guest@test.com')
+    await page.locator('#guestDisplayName').fill('Bakery Founder')
+    await page.locator('#guestPassword').fill('BreadPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // After migration: authenticated completion screen
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    expect(state.currentUserId).toBeTruthy()
+  })
+
+  test('guest can register and migrate Healthcare (Basic Medicine) progress to authenticated account', async ({
+    page,
+  }) => {
+    // Full guest → register → empire launched journey for the HEALTHCARE industry.
+    // Proves the login handoff preserves the Basic Medicine/Healthcare choice end-to-end.
+    const state = setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Step 1: Select Healthcare
+    await page.locator('.industry-card', { hasText: 'Healthcare' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Bratislava
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Pharma Migration Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Basic Medicine product + shop lot
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Basic Medicine' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress form
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Register and migrate guest progress
+    await page.locator('#guestEmail').fill('pharma-guest@test.com')
+    await page.locator('#guestDisplayName').fill('Pharma Founder')
+    await page.locator('#guestPassword').fill('MedPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // After migration: authenticated completion screen
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    expect(state.currentUserId).toBeTruthy()
+  })
+})

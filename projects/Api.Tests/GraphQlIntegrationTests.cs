@@ -5315,6 +5315,238 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal("PUBLIC_SALES", shopUnits[1].GetProperty("unitType").GetString());
     }
 
+    [Fact]
+    public async Task CompleteOnboarding_FoodProcessing_CreatesCompanyFactoryAndShop()
+    {
+        // AC: "The onboarding flow offers Furniture, Food Processing, and Healthcare as starter-industry choices."
+        // Verifies that CompleteOnboarding works correctly with the FOOD_PROCESSING/bread industry,
+        // producing a factory with the correct PURCHASE→MANUFACTURING chain and a shop with PUBLIC_SALES.
+        var token = await RegisterAndGetTokenAsync($"complete-fp-{Guid.NewGuid()}@test.com", "FoodProcessor");
+        var cityId = await GetCityIdByNameAsync();
+
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation CompleteOnboarding($input: OnboardingInput!) {
+              completeOnboarding(input: $input) {
+                company { id name cash }
+                factory { id type }
+                salesShop { id type }
+                selectedProduct { id industry slug }
+              }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, productTypeId = productId, companyName = "Bread Factory Co" } },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "CompleteOnboarding must succeed for FOOD_PROCESSING");
+        var data = result.GetProperty("data").GetProperty("completeOnboarding");
+        Assert.Equal("Bread Factory Co", data.GetProperty("company").GetProperty("name").GetString());
+        Assert.Equal("FACTORY", data.GetProperty("factory").GetProperty("type").GetString());
+        Assert.Equal("SALES_SHOP", data.GetProperty("salesShop").GetProperty("type").GetString());
+        Assert.Equal("FOOD_PROCESSING", data.GetProperty("selectedProduct").GetProperty("industry").GetString());
+        Assert.Equal("bread", data.GetProperty("selectedProduct").GetProperty("slug").GetString());
+
+        // Verify units are configured for the FOOD_PROCESSING supply chain
+        var companiesResult = await ExecuteGraphQlAsync(
+            """
+            {
+              myCompanies {
+                buildings {
+                  type
+                  units { unitType resourceTypeId productTypeId }
+                }
+              }
+            }
+            """,
+            token: token);
+
+        var buildings = companiesResult.GetProperty("data").GetProperty("myCompanies")[0].GetProperty("buildings").EnumerateArray().ToList();
+        var factory = buildings.Single(b => b.GetProperty("type").GetString() == "FACTORY");
+        var shop = buildings.Single(b => b.GetProperty("type").GetString() == "SALES_SHOP");
+
+        // Factory must have a PURCHASE unit (for Grain) and a MANUFACTURING unit (for Bread)
+        Assert.Contains(factory.GetProperty("units").EnumerateArray(), unit =>
+            unit.GetProperty("unitType").GetString() == "PURCHASE"
+            && unit.GetProperty("resourceTypeId").ValueKind == JsonValueKind.String);
+        Assert.Contains(factory.GetProperty("units").EnumerateArray(), unit =>
+            unit.GetProperty("unitType").GetString() == "MANUFACTURING"
+            && unit.GetProperty("productTypeId").GetString() == productId);
+
+        // Shop must sell the Bread product
+        Assert.Contains(shop.GetProperty("units").EnumerateArray(), unit =>
+            unit.GetProperty("unitType").GetString() == "PUBLIC_SALES"
+            && unit.GetProperty("productTypeId").GetString() == productId);
+    }
+
+    [Fact]
+    public async Task CompleteOnboarding_Healthcare_CreatesCompanyFactoryAndShop()
+    {
+        // AC: "The onboarding flow offers Furniture, Food Processing, and Healthcare as starter-industry choices."
+        // Verifies that CompleteOnboarding works correctly with the HEALTHCARE/basic-medicine industry,
+        // producing a factory with the correct PURCHASE→MANUFACTURING chain and a shop with PUBLIC_SALES.
+        var token = await RegisterAndGetTokenAsync($"complete-hc-{Guid.NewGuid()}@test.com", "HealthcareFounder");
+        var cityId = await GetCityIdByNameAsync();
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation CompleteOnboarding($input: OnboardingInput!) {
+              completeOnboarding(input: $input) {
+                company { id name cash }
+                factory { id type }
+                salesShop { id type }
+                selectedProduct { id industry slug }
+              }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, productTypeId = productId, companyName = "Medicine Corp" } },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "CompleteOnboarding must succeed for HEALTHCARE");
+        var data = result.GetProperty("data").GetProperty("completeOnboarding");
+        Assert.Equal("Medicine Corp", data.GetProperty("company").GetProperty("name").GetString());
+        Assert.Equal("FACTORY", data.GetProperty("factory").GetProperty("type").GetString());
+        Assert.Equal("SALES_SHOP", data.GetProperty("salesShop").GetProperty("type").GetString());
+        Assert.Equal("HEALTHCARE", data.GetProperty("selectedProduct").GetProperty("industry").GetString());
+        Assert.Equal("basic-medicine", data.GetProperty("selectedProduct").GetProperty("slug").GetString());
+
+        // Verify units are configured for the HEALTHCARE supply chain
+        var companiesResult = await ExecuteGraphQlAsync(
+            """
+            {
+              myCompanies {
+                buildings {
+                  type
+                  units { unitType resourceTypeId productTypeId }
+                }
+              }
+            }
+            """,
+            token: token);
+
+        var buildings = companiesResult.GetProperty("data").GetProperty("myCompanies")[0].GetProperty("buildings").EnumerateArray().ToList();
+        var factory = buildings.Single(b => b.GetProperty("type").GetString() == "FACTORY");
+        var shop = buildings.Single(b => b.GetProperty("type").GetString() == "SALES_SHOP");
+
+        // Factory must have a PURCHASE unit (for Chemical Minerals) and a MANUFACTURING unit (for Basic Medicine)
+        Assert.Contains(factory.GetProperty("units").EnumerateArray(), unit =>
+            unit.GetProperty("unitType").GetString() == "PURCHASE"
+            && unit.GetProperty("resourceTypeId").ValueKind == JsonValueKind.String);
+        Assert.Contains(factory.GetProperty("units").EnumerateArray(), unit =>
+            unit.GetProperty("unitType").GetString() == "MANUFACTURING"
+            && unit.GetProperty("productTypeId").GetString() == productId);
+
+        // Shop must sell the Basic Medicine product
+        Assert.Contains(shop.GetProperty("units").EnumerateArray(), unit =>
+            unit.GetProperty("unitType").GetString() == "PUBLIC_SALES"
+            && unit.GetProperty("productTypeId").GetString() == productId);
+    }
+
+    [Fact]
+    public async Task GuestMigration_HappyPath_Furniture_SelectedIndustryAndProductArePreserved()
+    {
+        // AC: "After a successful onboarding experience, the player is prompted to log in or sign up to save progress."
+        // Verifies the guest-to-authenticated migration happy path for the FURNITURE industry.
+        // Guest chose Furniture/Wooden Chair → registers → StartOnboardingCompany + FinishOnboarding preserves the choice.
+        var token = await RegisterAndGetTokenAsync($"guest-furn-{Guid.NewGuid()}@test.com", "Furniture Migrator");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m);
+
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id name cash }
+                factory { id type }
+              }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Furniture Migration Corp", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed for FURNITURE");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+        Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
+        Assert.Equal("FACTORY", startData.GetProperty("factory").GetProperty("type").GetString());
+
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding must succeed for FURNITURE migration");
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+
+        // Verify the selected product matches the guest's FURNITURE choice
+        var selectedProduct = finishData.GetProperty("selectedProduct");
+        Assert.Equal(productId, selectedProduct.GetProperty("id").GetString());
+        Assert.Equal("FURNITURE", selectedProduct.GetProperty("industry").GetString());
+
+        // Verify cash reduced by both lot purchases: $500,000 - $75,000 - $90,000 = $335,000
+        var cashAfterMigration = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
+        Assert.Equal(335_000m, cashAfterMigration);
+
+        // Verify onboarding is marked complete
+        var meResult = await ExecuteGraphQlAsync("query { me { onboardingCompletedAtUtc } }", null, token);
+        var completedAt = meResult.GetProperty("data").GetProperty("me").GetProperty("onboardingCompletedAtUtc").GetString();
+        Assert.NotNull(completedAt);
+        Assert.NotEmpty(completedAt);
+    }
+
+    [Fact]
+    public async Task GuestMigration_HappyPath_FoodProcessing_SelectedIndustryAndProductArePreserved()
+    {
+        // AC: "After a successful onboarding experience, the player is prompted to log in or sign up to save progress."
+        // Verifies the guest-to-authenticated migration happy path for the FOOD_PROCESSING industry.
+        // Guest chose Food Processing/Bread → registers → StartOnboardingCompany + FinishOnboarding preserves the choice.
+        var token = await RegisterAndGetTokenAsync($"guest-fp-{Guid.NewGuid()}@test.com", "Food Processing Migrator");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m);
+
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id name cash }
+                factory { id type }
+              }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "Bread Factory Migration Corp", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed for FOOD_PROCESSING");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+        Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
+        Assert.Equal("FACTORY", startData.GetProperty("factory").GetProperty("type").GetString());
+
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding must succeed for FOOD_PROCESSING migration");
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+
+        // Verify the selected product matches the guest's FOOD_PROCESSING choice
+        var selectedProduct = finishData.GetProperty("selectedProduct");
+        Assert.Equal(productId, selectedProduct.GetProperty("id").GetString());
+        Assert.Equal("FOOD_PROCESSING", selectedProduct.GetProperty("industry").GetString());
+
+        // Verify cash reduced by both lot purchases: $500,000 - $75,000 - $90,000 = $335,000
+        var cashAfterMigration = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
+        Assert.Equal(335_000m, cashAfterMigration);
+
+        // Verify onboarding is marked complete
+        var meResult = await ExecuteGraphQlAsync("query { me { onboardingCompletedAtUtc } }", null, token);
+        var completedAt = meResult.GetProperty("data").GetProperty("me").GetProperty("onboardingCompletedAtUtc").GetString();
+        Assert.NotNull(completedAt);
+        Assert.NotEmpty(completedAt);
+    }
+
     #endregion
 
     #region Rankings
