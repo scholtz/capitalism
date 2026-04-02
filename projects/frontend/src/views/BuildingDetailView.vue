@@ -2040,6 +2040,7 @@ async function loadResearchBrands() {
           industryCategory
           awareness
           quality
+          marketingEfficiencyMultiplier
         }
       }`,
       { companyId },
@@ -2536,16 +2537,32 @@ watch(
               {{ brand.industryCategory }}
             </div>
             <div class="research-brand-metrics">
-              <div class="research-metric">
+              <!-- Product Quality metric (only shown when > 0 or scope is product-quality-relevant) -->
+              <div v-if="brand.quality > 0" class="research-metric">
                 <span class="research-metric-label">{{ t('research.qualityLabel') }}</span>
-                <div class="research-progress-bar" :aria-label="`Quality ${(brand.quality * 100).toFixed(1)}%`">
+                <div class="research-progress-bar" :aria-label="`Product quality ${(brand.quality * 100).toFixed(1)}%`">
                   <div class="research-progress-fill research-progress-quality" :style="{ width: `${(brand.quality * 100).toFixed(1)}%` }"></div>
                 </div>
                 <span class="research-metric-value">{{ (brand.quality * 100).toFixed(1) }}%</span>
               </div>
-              <div class="research-metric">
+              <!-- Marketing Efficiency metric (BRAND_QUALITY R&D result) -->
+              <div v-if="brand.marketingEfficiencyMultiplier > 1" class="research-metric">
+                <span class="research-metric-label">{{ t('research.marketingEfficiencyLabel') }}</span>
+                <div
+                  class="research-progress-bar"
+                  :aria-label="`Marketing efficiency ${brand.marketingEfficiencyMultiplier.toFixed(2)}x`"
+                >
+                  <div
+                    class="research-progress-fill research-progress-efficiency"
+                    :style="{ width: `${Math.min(100, (brand.marketingEfficiencyMultiplier - 1) * 100).toFixed(1)}%` }"
+                  ></div>
+                </div>
+                <span class="research-metric-value">{{ brand.marketingEfficiencyMultiplier.toFixed(2) }}×</span>
+              </div>
+              <!-- Brand Awareness (from marketing spend, informational) -->
+              <div v-if="brand.awareness > 0" class="research-metric">
                 <span class="research-metric-label">{{ t('research.awarenessLabel') }}</span>
-                <div class="research-progress-bar" :aria-label="`Awareness ${(brand.awareness * 100).toFixed(1)}%`">
+                <div class="research-progress-bar" :aria-label="`Brand awareness ${(brand.awareness * 100).toFixed(1)}%`">
                   <div class="research-progress-fill research-progress-awareness" :style="{ width: `${(brand.awareness * 100).toFixed(1)}%` }"></div>
                 </div>
                 <span class="research-metric-value">{{ (brand.awareness * 100).toFixed(1) }}%</span>
@@ -2558,8 +2575,8 @@ watch(
                   t('research.qualityEffect', { pct: (brand.quality * 30).toFixed(1) })
                 }}
               </span>
-              <span v-if="brand.awareness > 0">
-                {{ t('research.awarenessEffect', { pct: (brand.awareness * 100).toFixed(1) }) }}
+              <span v-if="brand.marketingEfficiencyMultiplier > 1">
+                {{ t('research.marketingEfficiencyEffect', { multiplier: brand.marketingEfficiencyMultiplier.toFixed(2) }) }}
               </span>
             </p>
           </div>
@@ -5514,6 +5531,10 @@ watch(
 
 .research-progress-awareness {
   background: #9333ea;
+}
+
+.research-progress-efficiency {
+  background: #16a34a;
 }
 
 .research-brand-effect {

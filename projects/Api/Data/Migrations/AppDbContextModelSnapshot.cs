@@ -34,6 +34,11 @@ namespace Api.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
 
+                    b.Property<decimal>("MarketingEfficiencyMultiplier")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(1m);
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)

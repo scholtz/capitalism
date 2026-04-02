@@ -314,6 +314,8 @@ export type MockResearchBrandState = {
   industryCategory: string | null
   awareness: number
   quality: number
+  /** ≥ 1.0: driven by BRAND_QUALITY R&D. >1.0 = marketing budget is more effective. */
+  marketingEfficiencyMultiplier: number
 }
 
 export type MockState = {

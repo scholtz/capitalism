@@ -306,7 +306,8 @@ public sealed class Query
                 ProductName = pt?.Name,
                 IndustryCategory = b.IndustryCategory,
                 Awareness = b.Awareness,
-                Quality = b.Quality
+                Quality = b.Quality,
+                MarketingEfficiencyMultiplier = b.MarketingEfficiencyMultiplier,
             };
         }).ToList();
     }
@@ -1309,8 +1310,8 @@ public sealed class ResearchBrandState
     public string? IndustryCategory { get; set; }
 
     /// <summary>
-    /// Brand awareness level (0.0–1.0). Driven by BRAND_QUALITY R&amp;D and marketing units.
-    /// Higher awareness translates to better marketing effectiveness.
+    /// Brand awareness level (0.0–1.0). Driven by marketing unit spend.
+    /// Higher awareness translates to more sales driven by brand recognition.
     /// </summary>
     public decimal Awareness { get; set; }
 
@@ -1319,4 +1320,11 @@ public sealed class ResearchBrandState
     /// Higher quality improves manufactured product output quality.
     /// </summary>
     public decimal Quality { get; set; }
+
+    /// <summary>
+    /// Marketing efficiency multiplier (≥ 1.0). Driven by BRAND_QUALITY R&amp;D.
+    /// A value of 1.5 means each unit of marketing budget generates 50% more brand awareness than baseline.
+    /// This is NOT a direct brand gain — it only amplifies the effect of marketing spend.
+    /// </summary>
+    public decimal MarketingEfficiencyMultiplier { get; set; } = 1m;
 }

@@ -54,38 +54,33 @@ public sealed class ResearchPhase : ITickPhase
 
     private static void ProcessBrandQuality(TickContext context, Building building, BuildingUnit unit)
     {
-        if (!context.BrandsByCompany.TryGetValue(building.CompanyId, out var brands))
-            return;
-
-        var rate = GameConstants.ResearchQualityRate(unit.Level);
+        var rate = GameConstants.ResearchEfficiencyRate(unit.Level);
 
         // Determine scope from unit configuration.
         var scope = unit.BrandScope ?? BrandScope.Company;
-        var selectedIndustry = unit.ProductTypeId.HasValue && context.ProductTypesById.TryGetValue(unit.ProductTypeId.Value, out var productType)
-            ? productType.Industry
+        var selectedProductType = unit.ProductTypeId.HasValue && context.ProductTypesById.TryGetValue(unit.ProductTypeId.Value, out var productType)
+            ? productType
             : null;
 
-        if (scope is BrandScope.Product or BrandScope.Category && !unit.ProductTypeId.HasValue)
+        if (scope is BrandScope.Product or BrandScope.Category && selectedProductType is null)
         {
             return;
         }
 
-        foreach (var brand in brands)
+        // BRAND_QUALITY research raises the marketing efficiency multiplier on scope-matching brands.
+        // This means marketing budget becomes more effective — it does NOT directly grant awareness.
+        var brand = scope switch
         {
-            var match = scope switch
-            {
-                BrandScope.Product => unit.ProductTypeId.HasValue && brand.ProductTypeId == unit.ProductTypeId,
-                BrandScope.Category => !string.IsNullOrEmpty(brand.IndustryCategory)
-                                       && string.Equals(brand.IndustryCategory,
-                                           selectedIndustry,
-                                           StringComparison.OrdinalIgnoreCase),
-                _ => true // COMPANY scope applies to all brands
-            };
+            BrandScope.Product when selectedProductType is not null =>
+                context.GetOrCreateBrand(building.CompanyId, selectedProductType.Id, selectedProductType.Name),
+            BrandScope.Category when selectedProductType is not null =>
+                context.GetOrCreateCategoryBrand(building.CompanyId, selectedProductType.Industry),
+            _ =>
+                context.GetOrCreateCompanyBrand(building.CompanyId)
+        };
 
-            if (match)
-            {
-                brand.Awareness = Math.Min(1m, brand.Awareness + rate * 0.5m);
-            }
-        }
+        brand.MarketingEfficiencyMultiplier = Math.Min(
+            GameConstants.MaxMarketingEfficiencyMultiplier,
+            brand.MarketingEfficiencyMultiplier + rate);
     }
 }

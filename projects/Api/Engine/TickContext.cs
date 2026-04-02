@@ -421,7 +421,83 @@ public sealed class TickContext
             Scope = BrandScope.Product,
             ProductTypeId = productTypeId,
             Awareness = 0m,
-            Quality = 0m
+            Quality = 0m,
+            MarketingEfficiencyMultiplier = 1m,
+        };
+        brands.Add(brand);
+        Db.Brands.Add(brand);
+        return brand;
+    }
+
+    /// <summary>Finds or creates a category-scoped brand for a company and industry.</summary>
+    public Brand GetOrCreateCategoryBrand(Guid companyId, string industry)
+    {
+        if (!BrandsByCompany.TryGetValue(companyId, out var brands))
+        {
+            brands = [];
+            BrandsByCompany[companyId] = brands;
+        }
+
+        var existing = brands.FirstOrDefault(b =>
+            b.Scope == BrandScope.Category &&
+            string.Equals(b.IndustryCategory, industry, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null) return existing;
+
+        var brand = new Brand
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = companyId,
+            Name = industry,
+            Scope = BrandScope.Category,
+            IndustryCategory = industry,
+            Awareness = 0m,
+            Quality = 0m,
+            MarketingEfficiencyMultiplier = 1m,
+        };
+        brands.Add(brand);
+        Db.Brands.Add(brand);
+        return brand;
+    }
+
+    /// <summary>Finds or creates a company-wide brand.</summary>
+    public Brand GetOrCreateCompanyBrand(Guid companyId)
+    {
+        if (!BrandsByCompany.TryGetValue(companyId, out var brands))
+        {
+            brands = [];
+            BrandsByCompany[companyId] = brands;
+        }
+
+        var existing = brands.FirstOrDefault(b => b.Scope == BrandScope.Company);
+        if (existing is not null) return existing;
+
+        if (!CompaniesById.TryGetValue(companyId, out var company))
+        {
+            // Fallback name if company not found in context
+            var fallback = new Brand
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = companyId,
+                Name = "Company Brand",
+                Scope = BrandScope.Company,
+                Awareness = 0m,
+                Quality = 0m,
+                MarketingEfficiencyMultiplier = 1m,
+            };
+            brands.Add(fallback);
+            Db.Brands.Add(fallback);
+            return fallback;
+        }
+
+        var brand = new Brand
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = companyId,
+            Name = company.Name,
+            Scope = BrandScope.Company,
+            Awareness = 0m,
+            Quality = 0m,
+            MarketingEfficiencyMultiplier = 1m,
         };
         brands.Add(brand);
         Db.Brands.Add(brand);

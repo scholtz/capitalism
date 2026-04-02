@@ -5449,6 +5449,7 @@ test.describe('R&D Research Progress Panel', () => {
         industryCategory: null,
         awareness: 0,
         quality: 0.35,
+        marketingEfficiencyMultiplier: 1,
       },
     ]
     await page.addInitScript((token) => {
@@ -5465,7 +5466,7 @@ test.describe('R&D Research Progress Panel', () => {
     await expect(panel.locator('.research-metric-value', { hasText: '35.0%' })).toBeVisible()
   })
 
-  test('shows brand awareness state for brand quality research', async ({ page }) => {
+  test('shows marketing efficiency multiplier for brand quality research', async ({ page }) => {
     const player = makePlayer()
     const companyId = 'company-rd-bq'
     player.companies.push({
@@ -5509,8 +5510,9 @@ test.describe('R&D Research Progress Panel', () => {
         productTypeId: null,
         productName: null,
         industryCategory: null,
-        awareness: 0.72,
+        awareness: 0,
         quality: 0,
+        marketingEfficiencyMultiplier: 1.45, // Accumulated via BRAND_QUALITY R&D over many ticks
       },
     ]
     await page.addInitScript((token) => {
@@ -5522,9 +5524,12 @@ test.describe('R&D Research Progress Panel', () => {
 
     const panel = page.getByRole('region', { name: 'research progress' })
     await expect(panel).toBeVisible()
-    await expect(panel.locator('.research-metric-label', { hasText: 'Brand Awareness' })).toBeVisible()
-    await expect(panel.locator('.research-metric-value', { hasText: '72.0%' })).toBeVisible()
+    // BRAND_QUALITY R&D shows marketing efficiency, not awareness (not free brand gain)
+    await expect(panel.locator('.research-metric-label', { hasText: 'Marketing Efficiency' })).toBeVisible()
+    await expect(panel.locator('.research-metric-value', { hasText: '1.45×' })).toBeVisible()
     await expect(panel.locator('.research-brand-scope-badge', { hasText: 'Company' })).toBeVisible()
+    // Awareness should NOT be shown (no marketing spend in this scenario)
+    await expect(panel.locator('.research-metric-label', { hasText: 'Brand Awareness' })).toBeHidden()
   })
 
   test('does not show research progress panel for non-RD buildings', async ({ page }) => {

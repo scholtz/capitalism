@@ -342,6 +342,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(b => b.IndustryCategory).HasMaxLength(50);
             e.Property(b => b.Awareness).HasPrecision(5, 4);
             e.Property(b => b.Quality).HasPrecision(5, 4);
+            e.Property(b => b.MarketingEfficiencyMultiplier).HasPrecision(7, 4).HasDefaultValue(1m);
             e.HasOne(b => b.Company).WithMany().HasForeignKey(b => b.CompanyId);
         });
 

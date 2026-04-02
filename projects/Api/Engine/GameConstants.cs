@@ -75,7 +75,23 @@ public static class GameConstants
     /// <summary>Brand awareness increment per unit of marketing budget spent.</summary>
     public const decimal BrandAwarenessPerBudget = 0.0001m;
 
-    /// <summary>R&D quality increment per tick per unit level.</summary>
+    /// <summary>
+    /// Maximum marketing efficiency multiplier achievable through BRAND_QUALITY R&amp;D.
+    /// At full research saturation the company's marketing budget is this many times more effective.
+    /// </summary>
+    public const decimal MaxMarketingEfficiencyMultiplier = 2m;
+
+    /// <summary>R&amp;D efficiency multiplier increment per tick per unit level (for BRAND_QUALITY research).</summary>
+    public static decimal ResearchEfficiencyRate(int level) => level switch
+    {
+        1 => 0.0005m,
+        2 => 0.001m,
+        3 => 0.002m,
+        4 => 0.004m,
+        _ => 0.0005m * (decimal)Math.Pow(2, Math.Max(level - 1, 0))
+    };
+
+    /// <summary>R&amp;D quality increment per tick per unit level (for PRODUCT_QUALITY research).</summary>
     public static decimal ResearchQualityRate(int level) => level switch
     {
         1 => 0.001m,

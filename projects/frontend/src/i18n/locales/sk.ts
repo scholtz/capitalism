@@ -948,11 +948,13 @@ export default {
   },
   research: {
     panelTitle: 'Výskumný pokrok',
-    intro: 'Výskum postupuje každý tik. Kvalita produktu zlepšuje výstupnú kvalitu výroby. Kvalita značky zlepšuje efektívnosť marketingu v rámci vybraného rozsahu.',
+    intro: 'Výskum postupuje každý tik. Kvalita produktu zlepšuje výstupnú kvalitu výroby. Výskum kvality značky zlepšuje efektívnosť marketingového rozpočtu — priamo nezvyšuje povedomie o značke.',
     emptyState: 'Zatiaľ žiadny výskum nezaznamenaný. Nakonfigurujte jednotky Kvality produktu alebo Kvality značky a nechajte simuláciu bežať, aby ste tu videli pokrok.',
     qualityLabel: 'Kvalita produktu',
     awarenessLabel: 'Povedomie o značke',
+    marketingEfficiencyLabel: 'Efektívnosť marketingu',
     qualityEffect: 'Prispieva až {pct}% bonusom kvality do vyrobeného výstupu pre tento produkt.',
-    awarenessEffect: 'Marketingové jednotky míňajú o {pct}% efektívnejšie vďaka povedomiu o značke.',
+    awarenessEffect: 'Rozpoznanie značky zákazníkmi: {pct}%.',
+    marketingEfficiencyEffect: 'Každá jednotka marketingového rozpočtu produkuje {multiplier}× viac povedomia o značke ako základná hodnota.',
   },
 }

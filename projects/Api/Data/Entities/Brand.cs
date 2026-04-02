@@ -38,8 +38,16 @@ public sealed class Brand
     /// <summary>Brand awareness level (0.0-1.0). Increased by marketing.</summary>
     public decimal Awareness { get; set; }
 
-    /// <summary>Brand quality level (0.0-1.0). Increased by R&amp;D and media.</summary>
+    /// <summary>Brand quality level (0.0-1.0). Increased by R&amp;D product-quality research and media.</summary>
     public decimal Quality { get; set; }
+
+    /// <summary>
+    /// Marketing efficiency multiplier (≥ 1.0). Increased by R&amp;D brand-quality research.
+    /// A value of 1.0 means standard marketing effectiveness.
+    /// A value of 2.0 means each unit of marketing budget generates twice the awareness gain.
+    /// This is NOT a direct brand gain — it only amplifies the effect of marketing spend.
+    /// </summary>
+    public decimal MarketingEfficiencyMultiplier { get; set; } = 1m;
 }
 
 /// <summary>Defines valid brand scope values.</summary>

@@ -9460,7 +9460,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var result = await ExecuteGraphQlAsync(
             """
             query GetBrands($companyId: UUID!) {
-              companyBrands(companyId: $companyId) { id scope awareness quality }
+              companyBrands(companyId: $companyId) { id scope awareness quality marketingEfficiencyMultiplier }
             }
             """,
             new { companyId });
@@ -9481,7 +9481,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var result = await ExecuteGraphQlAsync(
             """
             query GetBrands($companyId: UUID!) {
-              companyBrands(companyId: $companyId) { id scope awareness quality }
+              companyBrands(companyId: $companyId) { id scope awareness quality marketingEfficiencyMultiplier }
             }
             """,
             new { companyId = companyIdA },
@@ -9511,6 +9511,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                 industryCategory
                 awareness
                 quality
+                marketingEfficiencyMultiplier
               }
             }
             """,
@@ -9531,6 +9532,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                 "Brand awareness must be between 0.0 and 1.0.");
             Assert.True(brand.GetProperty("quality").GetDecimal() is >= 0 and <= 1,
                 "Brand quality must be between 0.0 and 1.0.");
+            // MarketingEfficiencyMultiplier must be >= 1.0 (1.0 = baseline, >1.0 = R&D bonus applied)
+            Assert.True(brand.GetProperty("marketingEfficiencyMultiplier").GetDecimal() >= 1m,
+                "MarketingEfficiencyMultiplier must be >= 1.0 (1.0 is baseline, R&D raises it above).");
         }
     }
 

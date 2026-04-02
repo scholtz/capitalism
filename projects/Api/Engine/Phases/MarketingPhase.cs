@@ -87,7 +87,13 @@ public sealed class MarketingPhase : ITickPhase
         {
             var productName = context.ProductTypesById.TryGetValue(productId, out var pt) ? pt.Name : "Product";
             var brand = context.GetOrCreateBrand(building.CompanyId, productId, $"{company.Cash:F0} – {productName}");
-            brand.Awareness = Math.Min(1m, brand.Awareness + budgetPerProduct * GameConstants.BrandAwarenessPerBudget);
+
+            // Apply marketing efficiency multiplier from BRAND_QUALITY R&D.
+            // This is the causal chain: R&D → higher efficiency → marketing budget produces more awareness.
+            var efficiencyBrand = context.FindBrand(building.CompanyId, productId, pt?.Industry);
+            var efficiencyMultiplier = efficiencyBrand?.MarketingEfficiencyMultiplier ?? 1m;
+
+            brand.Awareness = Math.Min(1m, brand.Awareness + budgetPerProduct * GameConstants.BrandAwarenessPerBudget * efficiencyMultiplier);
         }
     }
 }
