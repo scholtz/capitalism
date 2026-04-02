@@ -843,6 +843,8 @@ export default {
       LABOR_COST: 'Práca',
       ENERGY_COST: 'Energia',
       PROPERTY_PURCHASE: 'Kúpa nehnuteľnosti',
+      BUILDING_VALUE: 'Hodnota budov',
+      INVENTORY_VALUE: 'Hodnota zásob',
       UNIT_UPGRADE: 'Vylepšenie jednotky',
       MARKETING: 'Marketing',
       TAX: 'Daň',

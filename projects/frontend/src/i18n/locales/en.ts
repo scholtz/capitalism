@@ -844,6 +844,8 @@ export default {
       LABOR_COST: 'Labor',
       ENERGY_COST: 'Energy',
       PROPERTY_PURCHASE: 'Property Purchase',
+      BUILDING_VALUE: 'Building Value',
+      INVENTORY_VALUE: 'Inventory Value',
       UNIT_UPGRADE: 'Unit Upgrade',
       MARKETING: 'Marketing',
       TAX: 'Tax',

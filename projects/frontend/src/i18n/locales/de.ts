@@ -848,6 +848,8 @@ export default {
       LABOR_COST: 'Arbeit',
       ENERGY_COST: 'Energie',
       PROPERTY_PURCHASE: 'Immobilienkauf',
+      BUILDING_VALUE: 'Gebäude Wert',
+      INVENTORY_VALUE: 'Inventar Wert',
       UNIT_UPGRADE: 'Einheit-Upgrade',
       MARKETING: 'Marketing',
       TAX: 'Steuer',

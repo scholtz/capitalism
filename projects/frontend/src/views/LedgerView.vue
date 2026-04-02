@@ -47,8 +47,8 @@ const DRILL_QUERY = `
   }
 `
 
-async function fetchLedger() {
-  loading.value = true
+async function fetchLedger(isRefresh = false) {
+  if (!isRefresh) loading.value = true
   error.value = null
   try {
     const data = await gqlRequest<{ companyLedger: CompanyLedgerSummary | null }>(LEDGER_QUERY, {
@@ -63,13 +63,13 @@ async function fetchLedger() {
   } catch (e) {
     error.value = e instanceof Error ? e.message : t('ledger.loadFailed')
   } finally {
-    loading.value = false
+    if (!isRefresh) loading.value = false
   }
 }
 
-async function loadDrillEntries(category: string) {
+async function loadDrillEntries(category: string, isRefresh = false) {
+  if (!isRefresh) drillLoading.value = true
   drillEntries.value = []
-  drillLoading.value = true
   try {
     const data = await gqlRequest<{ ledgerDrillDown: LedgerEntryResult[] }>(DRILL_QUERY, {
       companyId: companyId.value,
@@ -80,7 +80,7 @@ async function loadDrillEntries(category: string) {
   } catch {
     drillEntries.value = []
   } finally {
-    drillLoading.value = false
+    if (!isRefresh) drillLoading.value = false
   }
 }
 
@@ -120,9 +120,9 @@ useTickRefresh(async () => {
     return
   }
 
-  await fetchLedger()
+  await fetchLedger(true)
   if (drillCategory.value) {
-    await loadDrillEntries(drillCategory.value)
+    await loadDrillEntries(drillCategory.value, true)
   }
 })
 </script>
@@ -145,7 +145,7 @@ useTickRefresh(async () => {
     <div v-else-if="error" class="state-box state-error">
       <span class="state-icon">⚠️</span>
       <p>{{ error }}</p>
-      <button class="btn btn-secondary" @click="fetchLedger">{{ t('common.tryAgain') }}</button>
+      <button class="btn btn-secondary" @click="() => fetchLedger()">{{ t('common.tryAgain') }}</button>
     </div>
 
     <div v-else-if="ledger" class="ledger-content">
@@ -301,10 +301,26 @@ useTickRefresh(async () => {
             <div class="statement-row">
               <span class="row-label">{{ t('ledger.buildingValue') }}</span>
               <span>{{ formatAmount(ledger.buildingValue) }}</span>
+              <button
+                class="drill-btn"
+                :class="{ active: drillCategory === 'BUILDING_VALUE' }"
+                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.buildingValue')"
+                @click="toggleDrill('BUILDING_VALUE')"
+              >
+                {{ drillCategory === 'BUILDING_VALUE' ? '▲' : '▼' }}
+              </button>
             </div>
             <div class="statement-row">
               <span class="row-label">{{ t('ledger.inventoryValue') }}</span>
               <span>{{ formatAmount(ledger.inventoryValue) }}</span>
+              <button
+                class="drill-btn"
+                :class="{ active: drillCategory === 'INVENTORY_VALUE' }"
+                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.inventoryValue')"
+                @click="toggleDrill('INVENTORY_VALUE')"
+              >
+                {{ drillCategory === 'INVENTORY_VALUE' ? '▲' : '▼' }}
+              </button>
             </div>
             <div class="statement-row total-row">
               <span class="row-label">{{ t('ledger.totalAssets') }}</span>
