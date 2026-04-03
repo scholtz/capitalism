@@ -8183,6 +8183,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(shopBuildingId, meBefore.GetProperty("onboardingShopBuildingId").GetString());
         Assert.Equal(JsonValueKind.Null, meBefore.GetProperty("onboardingFirstSaleCompletedAtUtc").ValueKind);
 
+        // Process enough ticks for the supply chain to produce a real public sale
+        await ProcessTicksAsync(6);
+
         // Call the milestone mutation
         var milestoneResult = await ExecuteGraphQlAsync(
             """
@@ -8225,6 +8228,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var productId = await GetStarterProductIdAsync();
         var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Idempotent Shop Lot");
         await FinishOnboardingAsync(token, productId, shopLotId);
+
+        // Process enough ticks for a real public sale to be recorded
+        await ProcessTicksAsync(6);
 
         var firstResult = await ExecuteGraphQlAsync(
             """
@@ -8316,7 +8322,10 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             JsonValueKind.Null,
             beforeResult.GetProperty("data").GetProperty("me").GetProperty("onboardingFirstSaleCompletedAtUtc").ValueKind);
 
-        // Complete the milestone
+        // Process enough ticks for a real public sale to be recorded
+        await ProcessTicksAsync(6);
+
+        // Complete the milestone (now that a real sale exists)
         await ExecuteGraphQlAsync(
             """
             mutation {
@@ -8357,6 +8366,300 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         Assert.True(result.TryGetProperty("errors", out var errors));
         Assert.NotEmpty(errors.EnumerateArray().ToList());
+    }
+
+    [Fact]
+    public async Task CompleteFirstSaleMilestone_BeforeFirstSale_ReturnsFirstSaleNotRecorded()
+    {
+        // Complete onboarding so the shop is configured, but do NOT process any ticks
+        var token = await RegisterAndGetTokenAsync($"first-sale-before-{Guid.NewGuid()}@test.com", "Early Bird Seller");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Early Bird Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Early Bird Shop Lot");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        // Attempt to complete the milestone without any ticks having processed a sale
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation {
+              completeFirstSaleMilestone {
+                onboardingFirstSaleCompletedAtUtc
+              }
+            }
+            """,
+            token: token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors2));
+        var code = errors2[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("FIRST_SALE_NOT_RECORDED", code);
+    }
+
+    [Fact]
+    public async Task FirstSaleMission_ReturnsNoShop_WhenOnboardingNotComplete()
+    {
+        var token = await RegisterAndGetTokenAsync($"mission-noshop-{Guid.NewGuid()}@test.com", "No Shop Player");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              firstSaleMission {
+                phase
+                shopBuildingId
+                blockers
+              }
+            }
+            """,
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var mission = result.GetProperty("data").GetProperty("firstSaleMission");
+        Assert.Equal("NO_SHOP", mission.GetProperty("phase").GetString());
+        Assert.Equal(JsonValueKind.Null, mission.GetProperty("shopBuildingId").ValueKind);
+    }
+
+    [Fact]
+    public async Task FirstSaleMission_ReturnsConfigureShop_WhenShopHasNoUnitsYet()
+    {
+        // Complete full onboarding, then remove all units from the shop to simulate no units.
+        var token = await RegisterAndGetTokenAsync($"mission-configure-{Guid.NewGuid()}@test.com", "Configure Player");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Configure Corp");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 80_000m, "Configure Shop Lot");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopBuildingId = Guid.Parse(finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!);
+
+        // Remove all units from the shop to simulate an empty/unconfigured shop
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var units = db.BuildingUnits.Where(u => u.BuildingId == shopBuildingId).ToList();
+        db.BuildingUnits.RemoveRange(units);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              firstSaleMission {
+                phase
+                shopBuildingId
+                blockers
+              }
+            }
+            """,
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var mission = result.GetProperty("data").GetProperty("firstSaleMission");
+        Assert.Equal("CONFIGURE_SHOP", mission.GetProperty("phase").GetString());
+        var blockers = mission.GetProperty("blockers").EnumerateArray().Select(b => b.GetString()).ToList();
+        Assert.Contains("PUBLIC_SALES_UNIT_MISSING", blockers);
+    }
+
+    [Fact]
+    public async Task FirstSaleMission_ReturnsAwaitingFirstSale_AfterShopConfiguredButNoSaleYet()
+    {
+        // FinishOnboarding creates a fully configured shop — should be AWAITING_FIRST_SALE
+        // with no ticks processed (inventory is empty, but shop IS configured with price).
+        var token = await RegisterAndGetTokenAsync($"mission-awaiting-{Guid.NewGuid()}@test.com", "Awaiting Seller");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Awaiting Seller Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Awaiting Shop Lot");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        // At this point the shop has a PUBLIC_SALES unit with a price but no inventory
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              firstSaleMission {
+                phase
+                shopBuildingId
+                shopName
+                blockers
+              }
+            }
+            """,
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var mission = result.GetProperty("data").GetProperty("firstSaleMission");
+        var phase = mission.GetProperty("phase").GetString();
+        // Phase must be either CONFIGURE_SHOP (no inventory) or AWAITING_FIRST_SALE (inventory present)
+        Assert.True(phase is "CONFIGURE_SHOP" or "AWAITING_FIRST_SALE",
+            $"Expected CONFIGURE_SHOP or AWAITING_FIRST_SALE, got {phase}");
+        Assert.NotNull(mission.GetProperty("shopBuildingId").GetString());
+        Assert.NotNull(mission.GetProperty("shopName").GetString());
+    }
+
+    [Fact]
+    public async Task FirstSaleMission_ReturnsFirstSaleRecorded_AfterRealSaleInSimulation()
+    {
+        var token = await RegisterAndGetTokenAsync($"mission-recorded-{Guid.NewGuid()}@test.com", "Recorded Seller");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Recorded Seller Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Recorded Shop Lot");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        // Process enough ticks for the starter supply chain to produce a real public sale
+        await ProcessTicksAsync(6);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              firstSaleMission {
+                phase
+                shopBuildingId
+                firstSaleRevenue
+                firstSaleProductName
+                firstSaleTick
+                firstSaleQuantity
+                firstSalePricePerUnit
+              }
+            }
+            """,
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var mission = result.GetProperty("data").GetProperty("firstSaleMission");
+        Assert.Equal("FIRST_SALE_RECORDED", mission.GetProperty("phase").GetString());
+        Assert.True(mission.GetProperty("firstSaleRevenue").GetDecimal() > 0m);
+        Assert.NotNull(mission.GetProperty("firstSaleProductName").GetString());
+        Assert.True(mission.GetProperty("firstSaleTick").GetInt64() > 0L);
+        Assert.True(mission.GetProperty("firstSaleQuantity").GetDecimal() > 0m);
+        Assert.True(mission.GetProperty("firstSalePricePerUnit").GetDecimal() > 0m);
+    }
+
+    [Fact]
+    public async Task FirstSaleMission_FoodProcessing_ReturnsFirstSaleRecorded_AfterRealSale()
+    {
+        var token = await RegisterAndGetTokenAsync($"mission-food-{Guid.NewGuid()}@test.com", "Food Seller");
+        var cityId = await GetCityIdByNameAsync("Bratislava");
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "Bread Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Food Shop Lot");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        // Food processing needs more ticks to process grain → bread → sale
+        await ProcessTicksAsync(8);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              firstSaleMission {
+                phase
+                firstSaleRevenue
+                firstSaleProductName
+              }
+            }
+            """,
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var mission = result.GetProperty("data").GetProperty("firstSaleMission");
+        Assert.Equal("FIRST_SALE_RECORDED", mission.GetProperty("phase").GetString());
+        Assert.True(mission.GetProperty("firstSaleRevenue").GetDecimal() > 0m);
+    }
+
+    [Fact]
+    public async Task FirstSaleMission_Healthcare_ReturnsFirstSaleRecorded_AfterRealSale()
+    {
+        var token = await RegisterAndGetTokenAsync($"mission-health-{Guid.NewGuid()}@test.com", "Health Seller");
+        var cityId = await GetCityIdByNameAsync("Bratislava");
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "Pharma Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Health Shop Lot");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        // Healthcare needs more ticks
+        await ProcessTicksAsync(8);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              firstSaleMission {
+                phase
+                firstSaleRevenue
+                firstSaleProductName
+              }
+            }
+            """,
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var mission = result.GetProperty("data").GetProperty("firstSaleMission");
+        Assert.Equal("FIRST_SALE_RECORDED", mission.GetProperty("phase").GetString());
+        Assert.True(mission.GetProperty("firstSaleRevenue").GetDecimal() > 0m);
+    }
+
+    [Fact]
+    public async Task FirstSaleMission_ReturnsAlreadyCompleted_AfterMilestoneAcknowledged()
+    {
+        var token = await RegisterAndGetTokenAsync($"mission-completed-{Guid.NewGuid()}@test.com", "Completed Seller");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Completed Seller Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Completed Shop Lot");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+        await ProcessTicksAsync(6);
+
+        // Complete the milestone
+        await ExecuteGraphQlAsync(
+            """
+            mutation {
+              completeFirstSaleMilestone {
+                onboardingFirstSaleCompletedAtUtc
+              }
+            }
+            """,
+            token: token);
+
+        // Mission should now be ALREADY_COMPLETED
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              firstSaleMission {
+                phase
+                shopBuildingId
+              }
+            }
+            """,
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var mission = result.GetProperty("data").GetProperty("firstSaleMission");
+        Assert.Equal("ALREADY_COMPLETED", mission.GetProperty("phase").GetString());
+        Assert.Equal(JsonValueKind.Null, mission.GetProperty("shopBuildingId").ValueKind);
+    }
+
+    [Fact]
+    public async Task FirstSaleMission_Unauthenticated_ReturnsError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              firstSaleMission {
+                phase
+              }
+            }
+            """);
+
+        Assert.True(result.TryGetProperty("errors", out var errors3));
+        Assert.NotEmpty(errors3.EnumerateArray().ToList());
     }
 
     [Fact]

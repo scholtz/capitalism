@@ -1111,6 +1111,113 @@ public sealed class Query
             ConsumerBuildingCount = consumers.Count,
         };
     }
+
+    /// <summary>
+    /// Returns the authenticated player's first-sale mission status.
+    /// The mission tracks the player's onboarding sales shop from initial configuration
+    /// through to the moment a real public-sales record is created in the simulation.
+    ///
+    /// Phase values:
+    ///   NO_SHOP          — onboarding is not yet complete (no shop building tracked).
+    ///   CONFIGURE_SHOP   — shop exists but has readiness blockers preventing the first sale.
+    ///   AWAITING_FIRST_SALE — shop is fully configured; waiting for the simulation to record a sale.
+    ///   FIRST_SALE_RECORDED — a real PublicSalesRecord exists for this shop; mission complete.
+    ///   ALREADY_COMPLETED   — the first-sale milestone was previously acknowledged and persisted.
+    ///
+    /// The <see cref="FirstSaleMissionStatus.Blockers"/> list explains WHY the shop is not ready
+    /// (only relevant when phase is CONFIGURE_SHOP).
+    /// </summary>
+    [Authorize]
+    public async Task<FirstSaleMissionStatus> GetFirstSaleMission(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var player = await db.Players
+            .Include(p => p.Companies)
+            .FirstOrDefaultAsync(p => p.Id == userId);
+
+        if (player is null)
+            return new FirstSaleMissionStatus { Phase = FirstSaleMissionPhase.NoShop };
+
+        // Already acknowledged by the player
+        if (player.OnboardingFirstSaleCompletedAtUtc is not null)
+            return new FirstSaleMissionStatus { Phase = FirstSaleMissionPhase.AlreadyCompleted };
+
+        // No shop being tracked
+        if (player.OnboardingShopBuildingId is null)
+            return new FirstSaleMissionStatus { Phase = FirstSaleMissionPhase.NoShop };
+
+        var shopBuilding = await db.Buildings
+            .Include(b => b.Units)
+            .FirstOrDefaultAsync(b => b.Id == player.OnboardingShopBuildingId);
+
+        if (shopBuilding is null)
+            return new FirstSaleMissionStatus { Phase = FirstSaleMissionPhase.NoShop };
+
+        // Check if a real sale has already happened for this shop
+        var firstSaleRecord = await db.PublicSalesRecords
+            .Include(r => r.ProductType)
+            .Where(r => r.BuildingId == shopBuilding.Id && r.QuantitySold > 0m)
+            .OrderBy(r => r.Tick)
+            .FirstOrDefaultAsync();
+
+        if (firstSaleRecord is not null)
+        {
+            return new FirstSaleMissionStatus
+            {
+                Phase = FirstSaleMissionPhase.FirstSaleRecorded,
+                ShopBuildingId = shopBuilding.Id,
+                ShopName = shopBuilding.Name,
+                FirstSaleRevenue = firstSaleRecord.Revenue,
+                FirstSaleProductName = firstSaleRecord.ProductType?.Name,
+                FirstSaleTick = firstSaleRecord.Tick,
+                FirstSaleQuantity = firstSaleRecord.QuantitySold,
+                FirstSalePricePerUnit = firstSaleRecord.PricePerUnit,
+            };
+        }
+
+        // Shop exists — compute blockers
+        var blockers = new List<string>();
+
+        if (shopBuilding.IsUnderConstruction)
+        {
+            blockers.Add(FirstSaleMissionBlocker.BuildingUnderConstruction);
+        }
+
+        var publicSalesUnit = shopBuilding.Units
+            .FirstOrDefault(u => string.Equals(u.UnitType, UnitType.PublicSales, StringComparison.Ordinal));
+
+        if (publicSalesUnit is null)
+        {
+            blockers.Add(FirstSaleMissionBlocker.PublicSalesUnitMissing);
+        }
+        else
+        {
+            if (publicSalesUnit.MinPrice is null or <= 0m)
+                blockers.Add(FirstSaleMissionBlocker.PriceNotSet);
+
+            // Check inventory in the shop's public-sales unit
+            var hasInventory = await db.Inventories
+                .AnyAsync(inv => inv.BuildingUnitId == publicSalesUnit.Id && inv.Quantity > 0m);
+
+            if (!hasInventory)
+                blockers.Add(FirstSaleMissionBlocker.NoInventory);
+        }
+
+        var phase = blockers.Count == 0
+            ? FirstSaleMissionPhase.AwaitingFirstSale
+            : FirstSaleMissionPhase.ConfigureShop;
+
+        return new FirstSaleMissionStatus
+        {
+            Phase = phase,
+            ShopBuildingId = shopBuilding.Id,
+            ShopName = shopBuilding.Name,
+            Blockers = blockers,
+        };
+    }
 }
 
 /// <summary>Payload for player ranking.</summary>
@@ -1327,4 +1434,80 @@ public sealed class ResearchBrandState
     /// This is NOT a direct brand gain — it only amplifies the effect of marketing spend.
     /// </summary>
     public decimal MarketingEfficiencyMultiplier { get; set; } = 1m;
+}
+
+/// <summary>Phase values for the first-sale onboarding mission.</summary>
+public static class FirstSaleMissionPhase
+{
+    /// <summary>Onboarding is not complete or no shop building is being tracked.</summary>
+    public const string NoShop = "NO_SHOP";
+
+    /// <summary>Shop exists but has at least one configuration blocker preventing the first sale.</summary>
+    public const string ConfigureShop = "CONFIGURE_SHOP";
+
+    /// <summary>Shop is fully configured; waiting for the next simulation tick to record a sale.</summary>
+    public const string AwaitingFirstSale = "AWAITING_FIRST_SALE";
+
+    /// <summary>A real PublicSalesRecord with QuantitySold &gt; 0 exists for the onboarding shop.</summary>
+    public const string FirstSaleRecorded = "FIRST_SALE_RECORDED";
+
+    /// <summary>The player has already acknowledged the first-sale milestone (OnboardingFirstSaleCompletedAtUtc is set).</summary>
+    public const string AlreadyCompleted = "ALREADY_COMPLETED";
+}
+
+/// <summary>Blocker codes returned when the first-sale mission phase is CONFIGURE_SHOP.</summary>
+public static class FirstSaleMissionBlocker
+{
+    /// <summary>The sales shop building is still under construction and cannot operate yet.</summary>
+    public const string BuildingUnderConstruction = "BUILDING_UNDER_CONSTRUCTION";
+
+    /// <summary>No PUBLIC_SALES unit is present in the shop building.</summary>
+    public const string PublicSalesUnitMissing = "PUBLIC_SALES_UNIT_MISSING";
+
+    /// <summary>The PUBLIC_SALES unit does not have a selling price set (MinPrice is null or zero).</summary>
+    public const string PriceNotSet = "PRICE_NOT_SET";
+
+    /// <summary>The PUBLIC_SALES unit has no inventory to sell yet (factory has not produced anything).</summary>
+    public const string NoInventory = "NO_INVENTORY";
+}
+
+/// <summary>
+/// Mission-status view model for the post-onboarding first-sale mission.
+/// Returned by the <c>firstSaleMission</c> query.
+/// </summary>
+public sealed class FirstSaleMissionStatus
+{
+    /// <summary>
+    /// Current phase of the first-sale mission.
+    /// One of: NO_SHOP, CONFIGURE_SHOP, AWAITING_FIRST_SALE, FIRST_SALE_RECORDED, ALREADY_COMPLETED.
+    /// </summary>
+    public string Phase { get; set; } = FirstSaleMissionPhase.NoShop;
+
+    /// <summary>The onboarding sales shop building ID being tracked (null when phase is NO_SHOP).</summary>
+    public Guid? ShopBuildingId { get; set; }
+
+    /// <summary>Display name of the onboarding sales shop (null when phase is NO_SHOP).</summary>
+    public string? ShopName { get; set; }
+
+    /// <summary>
+    /// List of blocker codes explaining why the shop is not yet ready.
+    /// Only populated when phase is CONFIGURE_SHOP.
+    /// See <see cref="FirstSaleMissionBlocker"/> for possible values.
+    /// </summary>
+    public List<string> Blockers { get; set; } = [];
+
+    /// <summary>Revenue from the first recorded sale (null until phase is FIRST_SALE_RECORDED).</summary>
+    public decimal? FirstSaleRevenue { get; set; }
+
+    /// <summary>Name of the product sold in the first sale (null until phase is FIRST_SALE_RECORDED).</summary>
+    public string? FirstSaleProductName { get; set; }
+
+    /// <summary>Game tick at which the first sale occurred (null until phase is FIRST_SALE_RECORDED).</summary>
+    public long? FirstSaleTick { get; set; }
+
+    /// <summary>Quantity sold in the first sale (null until phase is FIRST_SALE_RECORDED).</summary>
+    public decimal? FirstSaleQuantity { get; set; }
+
+    /// <summary>Price per unit in the first sale (null until phase is FIRST_SALE_RECORDED).</summary>
+    public decimal? FirstSalePricePerUnit { get; set; }
 }

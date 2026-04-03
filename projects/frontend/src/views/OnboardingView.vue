@@ -30,6 +30,7 @@ import { useTickCountdown } from '@/composables/useTickCountdown'
 import type {
   BuildingLot,
   City,
+  FirstSaleMission,
   GameState,
   OnboardingResult,
   OnboardingStartResult,
@@ -177,6 +178,8 @@ const companyName = ref('')
 const completionResult = ref<OnboardingResult | null>(null)
 const startupPackOffer = ref<StartupPackOffer | null>(null)
 const gameState = ref<GameState | null>(null)
+const firstSaleMission = ref<FirstSaleMission | null>(null)
+const firstSaleMissionLoading = ref(false)
 
 const { tickCountdown, startTickCountdown, stopTickCountdown } = useTickCountdown(gameState)
 
@@ -538,7 +541,7 @@ onMounted(async () => {
     if (isResumingConfigureStep.value) {
       // Player completed the lot flow but hasn't finished the configure-guide step.
       // Resume at step 5 with the guidance panel visible.
-      await loadGameState()
+      await Promise.all([loadGameState(), loadFirstSaleMission()])
       step.value = 5
       return
     }
@@ -747,7 +750,7 @@ async function completeOnboarding() {
       trackStartupPackEvent('view', { context: 'onboarding', status: startupPackOffer.value.status })
     }
     step.value = 5
-    await loadGameState()
+    await Promise.all([loadGameState(), loadFirstSaleMission()])
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : t('onboarding.lotUnavailableBody')
     await auth.fetchMe()
@@ -1100,10 +1103,63 @@ async function markMilestoneComplete() {
     await auth.fetchMe()
     milestoneCompleted.value = true
   } catch (e: unknown) {
-    milestoneError.value = e instanceof Error ? e.message : t('onboarding.milestoneError')
+    if (e instanceof GraphQLError && e.code === 'FIRST_SALE_NOT_RECORDED') {
+      milestoneError.value = t('onboarding.milestoneErrorFirstSaleNotRecorded')
+    } else {
+      milestoneError.value = (e instanceof Error ? e.message : '') || t('onboarding.milestoneError')
+    }
   } finally {
     milestoneLoading.value = false
   }
+}
+
+const FIRST_SALE_MISSION_QUERY = `
+  {
+    firstSaleMission {
+      phase
+      shopBuildingId
+      shopName
+      blockers
+      firstSaleRevenue
+      firstSaleProductName
+      firstSaleTick
+      firstSaleQuantity
+      firstSalePricePerUnit
+    }
+  }
+`
+
+async function loadFirstSaleMission() {
+  if (!auth.isAuthenticated || milestoneCompleted.value) return
+  firstSaleMissionLoading.value = true
+  try {
+    const data = await gqlRequest<{ firstSaleMission: FirstSaleMission }>(FIRST_SALE_MISSION_QUERY)
+    firstSaleMission.value = data.firstSaleMission
+
+    // Auto-complete the milestone when the simulation has recorded a real first sale
+    if (
+      data.firstSaleMission.phase === 'FIRST_SALE_RECORDED'
+      && !milestoneCompleted.value
+      && !milestoneLoading.value
+    ) {
+      await markMilestoneComplete()
+    }
+  } catch {
+    // ignore — best-effort polling
+  } finally {
+    firstSaleMissionLoading.value = false
+  }
+}
+
+/** Translates a blocker code into a human-readable explanation. */
+function blockerMessage(code: string): string {
+  const map: Record<string, string> = {
+    BUILDING_UNDER_CONSTRUCTION: t('onboarding.missionBlockerUnderConstruction'),
+    PUBLIC_SALES_UNIT_MISSING: t('onboarding.missionBlockerNoPublicSalesUnit'),
+    PRICE_NOT_SET: t('onboarding.missionBlockerPriceNotSet'),
+    NO_INVENTORY: t('onboarding.missionBlockerNoInventory'),
+  }
+  return map[code] ?? code
 }
 
 function navigateToDashboard() {
@@ -1155,6 +1211,11 @@ useTickRefresh(async () => {
   }
 
   await loadGameState()
+
+  // Poll first-sale mission for authenticated players who are still in the configure step
+  if (auth.isAuthenticated && !milestoneCompleted.value) {
+    await loadFirstSaleMission()
+  }
 })
 </script>
 
@@ -1794,6 +1855,46 @@ useTickRefresh(async () => {
             </RouterLink>
           </div>
 
+          <!-- Mission readiness status: shows blockers or "awaiting first sale" state -->
+          <div
+            v-if="firstSaleMission"
+            class="mission-status"
+            :class="{
+              'mission-status--blocking': firstSaleMission.phase === 'CONFIGURE_SHOP',
+              'mission-status--awaiting': firstSaleMission.phase === 'AWAITING_FIRST_SALE',
+            }"
+            role="status"
+            aria-label="Business readiness"
+          >
+            <div class="mission-status-header">
+              <span class="mission-status-icon">
+                {{ firstSaleMission.phase === 'AWAITING_FIRST_SALE' ? '⏳' : '⚠️' }}
+              </span>
+              <strong>{{ t('onboarding.missionStatusTitle') }}</strong>
+              <span
+                class="mission-phase-badge"
+                :class="{
+                  'badge-configure': firstSaleMission.phase === 'CONFIGURE_SHOP',
+                  'badge-awaiting': firstSaleMission.phase === 'AWAITING_FIRST_SALE',
+                }"
+              >
+                {{
+                  firstSaleMission.phase === 'CONFIGURE_SHOP'
+                    ? t('onboarding.missionPhaseConfigureShop')
+                    : t('onboarding.missionPhaseAwaiting')
+                }}
+              </span>
+            </div>
+            <ul v-if="firstSaleMission.blockers.length > 0" class="mission-blockers">
+              <li v-for="blocker in firstSaleMission.blockers" :key="blocker" class="mission-blocker">
+                {{ blockerMessage(blocker) }}
+              </li>
+            </ul>
+            <p v-else class="mission-awaiting-desc">
+              {{ t('onboarding.configureStepTickDesc') }}
+            </p>
+          </div>
+
           <div class="milestone-complete">
             <p class="milestone-complete-hint">{{ t('onboarding.milestoneCompleteHint') }}</p>
             <button
@@ -1818,6 +1919,39 @@ useTickRefresh(async () => {
             </div>
           </div>
 
+          <!-- First-sale celebration: concrete business feedback -->
+          <div
+            v-if="firstSaleMission && firstSaleMission.firstSaleRevenue !== null"
+            class="first-sale-celebration"
+            role="region"
+            aria-label="First sale details"
+          >
+            <h4>{{ t('onboarding.firstSaleCelebrationTitle') }}</h4>
+            <p>{{ t('onboarding.firstSaleCelebrationDesc') }}</p>
+            <dl class="first-sale-stats">
+              <div v-if="firstSaleMission.firstSaleProductName" class="first-sale-stat">
+                <dt>{{ t('onboarding.firstSaleCelebrationProduct') }}</dt>
+                <dd>{{ firstSaleMission.firstSaleProductName }}</dd>
+              </div>
+              <div v-if="firstSaleMission.firstSaleRevenue !== null" class="first-sale-stat">
+                <dt>{{ t('onboarding.firstSaleCelebrationRevenue') }}</dt>
+                <dd class="first-sale-revenue">${{ formatCurrency(firstSaleMission.firstSaleRevenue) }}</dd>
+              </div>
+              <div v-if="firstSaleMission.firstSaleQuantity !== null" class="first-sale-stat">
+                <dt>{{ t('onboarding.firstSaleCelebrationQuantity') }}</dt>
+                <dd>{{ firstSaleMission.firstSaleQuantity }}</dd>
+              </div>
+              <div v-if="firstSaleMission.firstSalePricePerUnit !== null" class="first-sale-stat">
+                <dt>{{ t('onboarding.firstSaleCelebrationPrice') }}</dt>
+                <dd>${{ formatCurrency(firstSaleMission.firstSalePricePerUnit) }}</dd>
+              </div>
+              <div v-if="firstSaleMission.firstSaleTick !== null" class="first-sale-stat">
+                <dt>{{ t('onboarding.firstSaleCelebrationTick') }}</dt>
+                <dd>{{ formatNumber(firstSaleMission.firstSaleTick) }}</dd>
+              </div>
+            </dl>
+          </div>
+
           <div v-if="gameState" class="business-live-tick">
             <p class="tick-status">{{ t('onboarding.businessLiveTickInfo', { tick: formatNumber(gameState.currentTick) }) }}</p>
             <p v-if="tickCountdown" class="tick-countdown" role="timer">{{ tickCountdown }}</p>
@@ -1834,7 +1968,11 @@ useTickRefresh(async () => {
 
           <div class="business-live-actions">
             <button class="btn btn-primary btn-lg" @click="navigateToDashboard">
-              {{ t('onboarding.businessLiveDashboardCta') }}
+              {{
+                firstSaleMission?.firstSaleRevenue !== null
+                  ? t('onboarding.firstSaleCelebrationCta')
+                  : t('onboarding.businessLiveDashboardCta')
+              }}
               <span class="btn-arrow">→</span>
             </button>
             <RouterLink to="/leaderboard" class="btn btn-secondary">
@@ -2696,6 +2834,137 @@ useTickRefresh(async () => {
   font-size: 0.9rem;
   color: var(--color-error, #ff4757);
   margin: 0;
+}
+
+/* Mission readiness status panel */
+.mission-status {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.mission-status--blocking {
+  border-color: rgba(255, 149, 0, 0.5);
+  background: rgba(255, 149, 0, 0.05);
+}
+
+.mission-status--awaiting {
+  border-color: rgba(0, 122, 255, 0.4);
+  background: rgba(0, 122, 255, 0.04);
+}
+
+.mission-status-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.mission-status-icon {
+  font-size: 1.1rem;
+}
+
+.mission-phase-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  margin-left: auto;
+}
+
+.badge-configure {
+  background: rgba(255, 149, 0, 0.15);
+  color: var(--color-warning, #ff9500);
+}
+
+.badge-awaiting {
+  background: rgba(0, 122, 255, 0.12);
+  color: var(--color-primary, #007aff);
+}
+
+.mission-blockers {
+  margin: 0;
+  padding: 0 0 0 1.25rem;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.mission-blocker {
+  color: var(--color-warning, #ff9500);
+}
+
+.mission-awaiting-desc {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+/* First-sale celebration stats inside business-live-panel */
+.first-sale-celebration {
+  background: rgba(0, 200, 83, 0.08);
+  border: 1px solid rgba(0, 200, 83, 0.3);
+  border-radius: 10px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.first-sale-celebration h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.first-sale-celebration > p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.first-sale-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  .first-sale-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+.first-sale-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.first-sale-stat dt {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.first-sale-stat dd {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.first-sale-revenue {
+  color: var(--color-success, #00c853);
+  font-size: 1.1rem;
 }
 
 /* Next-tick process list inside configure-step */

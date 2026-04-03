@@ -1778,7 +1778,7 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     await expect(page.getByRole('button', { name: /My Shop is Ready/i })).toBeVisible()
   })
 
-  test('milestone "My Shop is Ready" button shows business-live panel and then navigates to dashboard', async ({
+  test('first sale auto-detected: business-live panel shows with celebration details and navigates to dashboard', async ({
     page,
   }) => {
     const shopBuildingId = 'building-shop-milestone-test'
@@ -1829,25 +1829,38 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
     state.currentToken = `token-${player.id}`
+    // Add a real public sale record so auto-detection fires
+    state.publicSalesRecords = [
+      {
+        id: 'sale-1',
+        buildingId: shopBuildingId,
+        companyId: 'comp-milestone',
+        productTypeName: 'Wooden Chair',
+        tick: 42,
+        quantitySold: 3,
+        pricePerUnit: 45,
+        revenue: 135,
+      },
+    ]
 
     await authenticateViaLocalStorage(page, `token-${player.id}`)
 
     await page.goto('/onboarding')
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
 
-    // Click the milestone button
-    await page.getByRole('button', { name: /My Shop is Ready/i }).click()
-
-    // Should show the business-live panel (not immediately navigate)
+    // Business-live panel should appear automatically (auto-detection fired on load)
+    await expect(page.locator('.business-live-panel')).toBeVisible()
     await expect(
       page.getByRole('heading', { name: /Your Business is Now Operational/i }),
     ).toBeVisible()
-    await expect(page.locator('.business-live-panel')).toBeVisible()
 
-    // Click "Go to Dashboard" on the business-live panel
-    await page.getByRole('button', { name: /Go to Dashboard/i }).click()
+    // First-sale celebration should show concrete details
+    await expect(page.locator('.first-sale-celebration')).toBeVisible()
+    await expect(page.locator('.first-sale-celebration')).toContainText('Wooden Chair')
+    await expect(page.locator('.first-sale-celebration')).toContainText('135')
 
-    // Should redirect to dashboard
+    // Click dashboard CTA — should navigate to dashboard
+    await page.getByRole('button', { name: /Revenue|Dashboard/i }).click()
     await page.waitForURL('/dashboard')
     await expect(page).toHaveURL('/dashboard')
   })
@@ -1902,16 +1915,26 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     state.currentUserId = player.id
     state.currentToken = `token-${player.id}`
     state.gameState.currentTick = 55
+    // Add a real public sale record so auto-detection fires
+    state.publicSalesRecords = [
+      {
+        id: 'sale-live-1',
+        buildingId: shopBuildingId,
+        companyId: 'comp-live',
+        productTypeName: 'Wooden Chair',
+        tick: 54,
+        quantitySold: 2,
+        pricePerUnit: 45,
+        revenue: 90,
+      },
+    ]
 
     await authenticateViaLocalStorage(page, `token-${player.id}`)
 
     await page.goto('/onboarding')
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
 
-    // Click the milestone button
-    await page.getByRole('button', { name: /My Shop is Ready/i }).click()
-
-    // Business-live panel should be visible
+    // Business-live panel should appear automatically (auto-detection fired on load)
     await expect(page.locator('.business-live-panel')).toBeVisible()
 
     // Should show tick info mentioning the current tick
@@ -1985,6 +2008,260 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
 
     // Should NOT navigate away — URL stays on onboarding (with step=complete query param from resume)
     await expect(page).toHaveURL('/onboarding?step=complete')
+  })
+
+  test('milestone button shows FIRST_SALE_NOT_RECORDED error when no real sale yet', async ({
+    page,
+  }) => {
+    const shopBuildingId = 'building-shop-no-sale'
+    const player = makePlayer({
+      onboardingCompletedAtUtc: new Date().toISOString(),
+      onboardingShopBuildingId: shopBuildingId,
+      onboardingFirstSaleCompletedAtUtc: null,
+      companies: [
+        {
+          id: 'comp-no-sale',
+          playerId: 'player-1',
+          name: 'No Sale Corp',
+          cash: 300000,
+          foundedAtUtc: new Date().toISOString(),
+          buildings: [
+            {
+              id: shopBuildingId,
+              companyId: 'comp-no-sale',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'No Sale Corp Shop',
+              latitude: 48.145,
+              longitude: 17.107,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              units: [
+                {
+                  id: 'unit-no-sale-ps',
+                  buildingId: shopBuildingId,
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkDown: false,
+                  linkDiagonal: false,
+                  minPrice: 45,
+                },
+              ],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    // No publicSalesRecords — shop has not sold anything yet
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Configure Your First Business' })).toBeVisible()
+
+    // Mission status panel should show CONFIGURE_SHOP state (no inventory)
+    await expect(page.locator('.mission-status')).toBeVisible()
+
+    // Click the milestone button before any real sale
+    await page.getByRole('button', { name: /My Shop is Ready/i }).click()
+
+    // Should show the first-sale-not-recorded error
+    await expect(page.locator('.milestone-error')).toBeVisible()
+    await expect(page.locator('.milestone-error')).toContainText(/first real sale|next tick/i)
+  })
+
+  test('mission status panel shows blocker when shop has no PUBLIC_SALES unit', async ({
+    page,
+  }) => {
+    const shopBuildingId = 'building-shop-no-unit'
+    const player = makePlayer({
+      onboardingCompletedAtUtc: new Date().toISOString(),
+      onboardingShopBuildingId: shopBuildingId,
+      onboardingFirstSaleCompletedAtUtc: null,
+      companies: [
+        {
+          id: 'comp-no-unit',
+          playerId: 'player-1',
+          name: 'No Unit Corp',
+          cash: 300000,
+          foundedAtUtc: new Date().toISOString(),
+          buildings: [
+            {
+              id: shopBuildingId,
+              companyId: 'comp-no-unit',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'No Unit Corp Shop',
+              latitude: 48.145,
+              longitude: 17.107,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // Mission status panel should be visible with CONFIGURE_SHOP phase
+    await expect(page.locator('.mission-status')).toBeVisible()
+    await expect(page.locator('.mission-phase-badge')).toContainText(/Setting Up/i)
+
+    // Blocker about missing public sales unit should be displayed
+    await expect(page.locator('.mission-blockers')).toBeVisible()
+    await expect(page.locator('.mission-blockers')).toContainText(/PUBLIC_SALES|sales unit/i)
+  })
+
+  test('mission status panel shows awaiting state when shop is fully configured with real sale', async ({
+    page,
+  }) => {
+    const shopBuildingId = 'building-shop-awaiting'
+    const player = makePlayer({
+      onboardingCompletedAtUtc: new Date().toISOString(),
+      onboardingShopBuildingId: shopBuildingId,
+      onboardingFirstSaleCompletedAtUtc: null,
+      companies: [
+        {
+          id: 'comp-awaiting',
+          playerId: 'player-1',
+          name: 'Awaiting Corp',
+          cash: 300000,
+          foundedAtUtc: new Date().toISOString(),
+          buildings: [
+            {
+              id: shopBuildingId,
+              companyId: 'comp-awaiting',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Awaiting Corp Shop',
+              latitude: 48.145,
+              longitude: 17.107,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              units: [
+                {
+                  id: 'unit-awaiting-ps',
+                  buildingId: shopBuildingId,
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkDown: false,
+                  linkDiagonal: false,
+                  minPrice: 45,
+                },
+              ],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    // Include a real sale so the phase is FIRST_SALE_RECORDED (auto-completes)
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.publicSalesRecords = [
+      {
+        id: 'sale-awaiting-1',
+        buildingId: shopBuildingId,
+        companyId: 'comp-awaiting',
+        productTypeName: 'Wooden Chair',
+        tick: 40,
+        quantitySold: 5,
+        pricePerUnit: 45,
+        revenue: 225,
+      },
+    ]
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // Auto-detection fired: business-live panel should be visible
+    await expect(page.locator('.business-live-panel')).toBeVisible()
+    // First-sale celebration should show
+    await expect(page.locator('.first-sale-celebration')).toBeVisible()
+    await expect(page.locator('.first-sale-celebration')).toContainText('225')
+  })
+
+  test('mission panel is visible and usable on mobile narrow viewport', async ({ page }) => {
+    const shopBuildingId = 'building-shop-mobile'
+    const player = makePlayer({
+      onboardingCompletedAtUtc: new Date().toISOString(),
+      onboardingShopBuildingId: shopBuildingId,
+      onboardingFirstSaleCompletedAtUtc: null,
+      companies: [
+        {
+          id: 'comp-mobile',
+          playerId: 'player-1',
+          name: 'Mobile Corp',
+          cash: 300000,
+          foundedAtUtc: new Date().toISOString(),
+          buildings: [
+            {
+              id: shopBuildingId,
+              companyId: 'comp-mobile',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Mobile Corp Shop',
+              latitude: 48.145,
+              longitude: 17.107,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.setViewportSize({ width: 375, height: 667 })
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Configure Your First Business' })).toBeVisible()
+
+    // Mission status panel should be visible on mobile
+    await expect(page.locator('.mission-status')).toBeVisible()
+
+    // "Configure My Sales Shop" CTA should be accessible on mobile
+    await expect(page.getByRole('link', { name: 'Configure My Sales Shop' })).toBeVisible()
+
+    // "My Shop is Ready" button should be accessible on mobile
+    await expect(page.getByRole('button', { name: /My Shop is Ready/i })).toBeVisible()
   })
 
   test('configure-guide price step shows Food Processing benchmark price', async ({ page }) => {

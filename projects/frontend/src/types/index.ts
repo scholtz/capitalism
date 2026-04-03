@@ -648,3 +648,34 @@ export interface ResearchBrandState {
    */
   marketingEfficiencyMultiplier: number
 }
+
+/**
+ * First-sale mission status returned by the firstSaleMission query.
+ * Tracks the post-onboarding mission from shop configuration through to the first real public sale.
+ */
+export interface FirstSaleMission {
+  /**
+   * Current phase of the first-sale mission.
+   * Values: NO_SHOP | CONFIGURE_SHOP | AWAITING_FIRST_SALE | FIRST_SALE_RECORDED | ALREADY_COMPLETED
+   */
+  phase: 'NO_SHOP' | 'CONFIGURE_SHOP' | 'AWAITING_FIRST_SALE' | 'FIRST_SALE_RECORDED' | 'ALREADY_COMPLETED'
+  /** The onboarding sales shop building ID being tracked (null when phase is NO_SHOP). */
+  shopBuildingId: string | null
+  /** Display name of the onboarding sales shop. */
+  shopName: string | null
+  /**
+   * Blocker codes explaining why the shop is not yet ready.
+   * Values: BUILDING_UNDER_CONSTRUCTION | PUBLIC_SALES_UNIT_MISSING | PRICE_NOT_SET | NO_INVENTORY
+   */
+  blockers: string[]
+  /** Revenue from the first recorded sale. */
+  firstSaleRevenue: number | null
+  /** Name of the product sold in the first sale. */
+  firstSaleProductName: string | null
+  /** Game tick at which the first sale occurred. */
+  firstSaleTick: number | null
+  /** Quantity sold in the first sale. */
+  firstSaleQuantity: number | null
+  /** Price per unit in the first sale. */
+  firstSalePricePerUnit: number | null
+}

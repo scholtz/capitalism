@@ -1477,6 +1477,19 @@ public sealed class Mutation
                     .Build());
         }
 
+        // Check backend-authoritative condition: a real public sale must have occurred in the simulation
+        var hasRealSale = await db.PublicSalesRecords
+            .AnyAsync(r => r.BuildingId == shopBuilding.Id && r.QuantitySold > 0m);
+
+        if (!hasRealSale)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Your shop has not made its first real sale yet. Wait for the simulation to process the next tick and try again after your shop has sold at least one item.")
+                    .SetCode("FIRST_SALE_NOT_RECORDED")
+                    .Build());
+        }
+
         player.OnboardingFirstSaleCompletedAtUtc = DateTime.UtcNow;
         player.OnboardingShopBuildingId = null;
         await db.SaveChangesAsync();

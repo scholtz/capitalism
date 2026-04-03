@@ -331,6 +331,17 @@ export type MockResearchBrandState = {
   marketingEfficiencyMultiplier: number
 }
 
+export type MockPublicSalesRecord = {
+  id: string
+  buildingId: string
+  companyId: string
+  productTypeName: string | null
+  tick: number
+  quantitySold: number
+  pricePerUnit: number
+  revenue: number
+}
+
 export type MockState = {
   players: MockPlayer[]
   cities: MockCity[]
@@ -346,6 +357,8 @@ export type MockState = {
   forceStartupPackClaimError: boolean
   /** Research brand states keyed by companyId for the companyBrands query. */
   researchBrands: Record<string, MockResearchBrandState[]>
+  /** Public sales records for first-sale milestone detection. */
+  publicSalesRecords: MockPublicSalesRecord[]
 }
 
 const STARTING_CASH_FOR_ONBOARDING = 500000
@@ -968,6 +981,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     drillDownData: {},
     forceStartupPackClaimError: false,
     researchBrands: {},
+    publicSalesRecords: [],
     ...initial,
   }
 
@@ -2053,6 +2067,26 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         })
       }
 
+      // Validate backend-authoritative condition: a real public sale must have occurred
+      const hasRealSale = state.publicSalesRecords.some(
+        (r) => r.buildingId === player.onboardingShopBuildingId && r.quantitySold > 0,
+      )
+
+      if (!hasRealSale) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            errors: [
+              {
+                message: 'Your shop has not made its first real sale yet. Wait for the simulation to process the next tick and try again after your shop has sold at least one item.',
+                extensions: { code: 'FIRST_SALE_NOT_RECORDED' },
+              },
+            ],
+          }),
+        })
+      }
+
       player.onboardingFirstSaleCompletedAtUtc = new Date().toISOString()
       player.onboardingShopBuildingId = null
 
@@ -2064,6 +2098,118 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     }
 
     // Queries - order specific handlers before generic ones
+    if (query.includes('firstSaleMission') && !query.includes('CompleteFirstSaleMilestone') && !query.includes('completeFirstSaleMilestone')) {
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      if (!player) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }) })
+      }
+
+      // Already completed
+      if (player.onboardingFirstSaleCompletedAtUtc) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: {
+              firstSaleMission: {
+                phase: 'ALREADY_COMPLETED',
+                shopBuildingId: null,
+                shopName: null,
+                blockers: [],
+                firstSaleRevenue: null,
+                firstSaleProductName: null,
+                firstSaleTick: null,
+                firstSaleQuantity: null,
+                firstSalePricePerUnit: null,
+              },
+            },
+          }),
+        })
+      }
+
+      if (!player.onboardingShopBuildingId) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: {
+              firstSaleMission: {
+                phase: 'NO_SHOP',
+                shopBuildingId: null,
+                shopName: null,
+                blockers: [],
+                firstSaleRevenue: null,
+                firstSaleProductName: null,
+                firstSaleTick: null,
+                firstSaleQuantity: null,
+                firstSalePricePerUnit: null,
+              },
+            },
+          }),
+        })
+      }
+
+      const shopBuilding = player.companies.flatMap((c) => c.buildings).find((b) => b.id === player.onboardingShopBuildingId)
+
+      // Check for real sale
+      const firstSaleRecord = state.publicSalesRecords
+        .filter((r) => r.buildingId === player.onboardingShopBuildingId && r.quantitySold > 0)
+        .sort((a, b) => a.tick - b.tick)[0]
+
+      if (firstSaleRecord) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: {
+              firstSaleMission: {
+                phase: 'FIRST_SALE_RECORDED',
+                shopBuildingId: shopBuilding?.id ?? player.onboardingShopBuildingId,
+                shopName: shopBuilding?.name ?? null,
+                blockers: [],
+                firstSaleRevenue: firstSaleRecord.revenue,
+                firstSaleProductName: firstSaleRecord.productTypeName,
+                firstSaleTick: firstSaleRecord.tick,
+                firstSaleQuantity: firstSaleRecord.quantitySold,
+                firstSalePricePerUnit: firstSaleRecord.pricePerUnit,
+              },
+            },
+          }),
+        })
+      }
+
+      // Compute blockers
+      const blockers: string[] = []
+      const publicSalesUnit = shopBuilding?.units.find((u) => u.unitType === 'PUBLIC_SALES')
+      if (!publicSalesUnit) {
+        blockers.push('PUBLIC_SALES_UNIT_MISSING')
+      } else {
+        if ((publicSalesUnit.minPrice ?? 0) <= 0) blockers.push('PRICE_NOT_SET')
+        blockers.push('NO_INVENTORY') // simplified: no inventory simulation in mock
+      }
+
+      const phase = blockers.length === 0 ? 'AWAITING_FIRST_SALE' : 'CONFIGURE_SHOP'
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            firstSaleMission: {
+              phase,
+              shopBuildingId: shopBuilding?.id ?? player.onboardingShopBuildingId,
+              shopName: shopBuilding?.name ?? null,
+              blockers,
+              firstSaleRevenue: null,
+              firstSaleProductName: null,
+              firstSaleTick: null,
+              firstSaleQuantity: null,
+              firstSalePricePerUnit: null,
+            },
+          },
+        }),
+      })
+    }
     if (query.includes('starterIndustries')) {
       return route.fulfill({
         status: 200,
