@@ -84,6 +84,15 @@ const canSubmitPurchase = computed(() =>
   ),
 )
 
+const selectedCompany = computed(() =>
+  companies.value.find((c) => c.id === selectedCompanyId.value) ?? null,
+)
+
+const cashAfterPurchase = computed(() => {
+  if (!selectedCompany.value || !selectedLot.value) return null
+  return selectedCompany.value.cash - selectedLot.value.price
+})
+
 function getLotStatus(lot: BuildingLot): 'available' | 'owned' | 'yours' {
   return lotStatusFromOwnership(
     lot.ownerCompanyId,
@@ -730,6 +739,24 @@ watch(viewMode, async (mode) => {
                   </select>
                 </div>
 
+                <!-- Purchase cost summary -->
+                <div class="purchase-cost-summary" aria-label="Purchase cost summary">
+                  <div class="cost-row">
+                    <span class="cost-label">{{ t('cityMap.costLotPrice') }}</span>
+                    <span class="cost-value cost-debit">{{ selectedLot ? formatCurrency(selectedLot.price) : '—' }}</span>
+                  </div>
+                  <div v-if="selectedCompany" class="cost-row">
+                    <span class="cost-label">{{ t('cityMap.costCurrentCash') }}</span>
+                    <span class="cost-value">{{ formatCurrency(selectedCompany.cash) }}</span>
+                  </div>
+                  <div v-if="cashAfterPurchase !== null" class="cost-row cost-row-result">
+                    <span class="cost-label">{{ t('cityMap.costRemainingCash') }}</span>
+                    <span class="cost-value" :class="cashAfterPurchase < 0 ? 'cost-negative' : 'cost-positive'">
+                      {{ formatCurrency(cashAfterPurchase) }}
+                    </span>
+                  </div>
+                </div>
+
                 <div v-if="purchaseError" class="error-message" role="alert">
                   {{ purchaseError }}
                 </div>
@@ -1243,6 +1270,50 @@ watch(viewMode, async (mode) => {
   gap: 0.5rem;
   margin-top: 1rem;
 }
+
+.purchase-cost-summary {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.625rem 0.75rem;
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.cost-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.125rem 0;
+}
+
+.cost-row-result {
+  margin-top: 0.375rem;
+  padding-top: 0.375rem;
+  border-top: 1px solid var(--color-border);
+  font-weight: 600;
+}
+
+.cost-label {
+  color: var(--color-text-muted);
+}
+
+.cost-value {
+  font-weight: 500;
+}
+
+.cost-debit {
+  color: var(--color-text);
+}
+
+.cost-positive {
+  color: var(--color-success, #22c55e);
+}
+
+.cost-negative {
+  color: var(--color-danger, #ef4444);
+}
+
 
 .purchase-form {
   margin-top: 1rem;

@@ -946,3 +946,137 @@ test.describe('City Map — building type card picker', () => {
     await expect(page.getByRole('link', { name: /Set Up Your Building/i })).toBeVisible()
   })
 })
+
+test.describe('City Map — purchase cost summary and cash delta', () => {
+  test('purchase form shows lot price and available cash before confirming', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    // Select an available lot (Industrial Plot A1 costs $96,900)
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    // The purchase cost summary should be visible
+    const summary = page.locator('[aria-label="Purchase cost summary"]')
+    await expect(summary).toBeVisible()
+
+    // Lot price is shown
+    await expect(summary.getByText(/Lot price/i)).toBeVisible()
+    // Current cash is shown (player has $500,000)
+    await expect(summary.getByText(/Available cash/i)).toBeVisible()
+    // Remaining after purchase is shown
+    await expect(summary.getByText(/Remaining after purchase/i)).toBeVisible()
+  })
+
+  test('remaining cash after purchase shows positive value for affordable lot', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    // Industrial Plot A1 costs $96,900; player has $500,000 → remaining is $403,100
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    const summary = page.locator('[aria-label="Purchase cost summary"]')
+    await expect(summary).toBeVisible()
+    // Remaining cash should have cost-positive class (green)
+    await expect(summary.locator('.cost-positive')).toBeVisible()
+  })
+
+  test('cash balance decreases after successful purchase', async ({ page }) => {
+    const lots: MockBuildingLot[] = makeDefaultBuildingLots()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-1',
+          playerId: 'player-1',
+          name: 'Test Empire',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+        {
+          id: 'company-2',
+          playerId: 'player-1',
+          name: 'Second Empire',
+          cash: 200000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player], buildingLots: lots })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    // Industrial Plot A1 costs $96,900
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    // With 2 companies the company selector shows cash values
+    // Select company-1 ($500,000)
+    const companySelect = page.locator('.form-select')
+    await expect(companySelect).toBeVisible()
+    // The selector shows cash before purchase (contains $500,000)
+    await expect(companySelect).toContainText('500,000')
+
+    await page.locator('.building-type-card').filter({ hasText: /Factory/i }).click()
+    await page.locator('.form-input').fill('Iron Works')
+    await page.getByRole('button', { name: /Confirm Purchase/i }).click()
+
+    // Success banner appears — confirms the purchase went through
+    await expect(page.locator('.post-purchase-banner')).toBeVisible()
+
+    // Now select a second available lot and open the purchase form to verify the company
+    // cash has been reduced (500,000 - 96,900 = 403,100)
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: /Purchase Lot/i }).click()
+
+    // The company selector should now reflect the updated cash (contains $403,100)
+    await expect(companySelect).toBeVisible()
+    await expect(companySelect).toContainText('403,100')
+  })
+})
+
+test.describe('City Map — multi-city navigation and graceful empty state', () => {
+  test('Prague city map shows city name with no lots available', async ({ page }) => {
+    const { state, player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    // Clear lots so Prague has no building lots (not yet seeded in the game)
+    state.buildingLots = []
+
+    await page.goto('/city/city-pr')
+
+    // City name should appear
+    await expect(page.getByRole('heading', { name: /Prague/i })).toBeVisible()
+    // No lots: shows 0 lots or "no lots" message
+    await expect(
+      page.getByText(/0 lots/i).or(page.getByText(/No building lots/i)),
+    ).toBeVisible()
+  })
+
+  test('Vienna city map shows city name with no lots available', async ({ page }) => {
+    const { state, player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    // Clear lots so Vienna has no building lots (not yet seeded in the game)
+    state.buildingLots = []
+
+    await page.goto('/city/city-vi')
+
+    // City name should appear
+    await expect(page.getByRole('heading', { name: /Vienna/i })).toBeVisible()
+    // No lots: shows 0 lots or "no lots" message
+    await expect(
+      page.getByText(/0 lots/i).or(page.getByText(/No building lots/i)),
+    ).toBeVisible()
+  })
+})

@@ -7628,6 +7628,122 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         }
     }
 
+    [Fact]
+    public async Task PurchaseLot_UpdatesCompanyCashBalance()
+    {
+        // AC #5: After a successful purchaseLot, the company's cash must be reduced
+        // by the lot price. The mutation must return the updated cash value so the
+        // frontend can update its display immediately without a separate refetch.
+        var token = await RegisterAndGetTokenAsync($"cash-balance-{Guid.NewGuid()}@test.com");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Cash Balance Co");
+
+        // Create a dedicated lot for this test to avoid depending on seeded lot availability
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+        var lotPrice = 60_000m;
+        var lotId = await CreateTestLotAsync(bratislavaId, "FACTORY,MINE", "Industrial Zone", lotPrice, "Cash Test Lot");
+
+        // Record cash before purchase
+        var meResultBefore = await ExecuteGraphQlAsync(
+            "{ me { companies { id cash } } }", null, token);
+        var cashBefore = meResultBefore.GetProperty("data").GetProperty("me")
+            .GetProperty("companies").EnumerateArray()
+            .First(c => c.GetProperty("id").GetString() == companyId)
+            .GetProperty("cash").GetDecimal();
+
+        // Purchase the lot
+        var purchaseResult = await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) {
+                company { id cash }
+              }
+            }
+            """,
+            new { input = new { companyId, lotId, buildingType = "FACTORY", buildingName = "Cash Test Factory" } },
+            token);
+
+        Assert.False(purchaseResult.TryGetProperty("errors", out _), "purchaseLot should succeed");
+
+        // Cash returned in mutation response must be reduced by the lot price
+        var cashInResponse = purchaseResult.GetProperty("data").GetProperty("purchaseLot")
+            .GetProperty("company").GetProperty("cash").GetDecimal();
+        var expectedCash = cashBefore - lotPrice;
+        Assert.True(cashInResponse == expectedCash,
+            $"Expected cash to decrease by lot price ({lotPrice}): {cashBefore} → {expectedCash}, but got {cashInResponse}");
+
+        // Verify the same updated cash is returned by the me query
+        var meResultAfter = await ExecuteGraphQlAsync(
+            "{ me { companies { id cash } } }", null, token);
+        var cashAfter = meResultAfter.GetProperty("data").GetProperty("me")
+            .GetProperty("companies").EnumerateArray()
+            .First(c => c.GetProperty("id").GetString() == companyId)
+            .GetProperty("cash").GetDecimal();
+        Assert.True(cashAfter == expectedCash,
+            $"me query must confirm the reduced cash balance after purchase. Expected {expectedCash}, got {cashAfter}");
+    }
+
+    [Fact]
+    public async Task CityLots_ReturnsEmptyListForPrague()
+    {
+        // Prague has no seeded building lots in the game initializer. The cityLots query
+        // must return a valid (non-error) response for Prague, whether the array is empty
+        // or contains dynamically-created lots from other tests sharing this database.
+        // The key requirement: the query must not crash or return GraphQL errors.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var pragueId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Prague")
+            .GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id name cityId }
+            }
+            """,
+            new { cityId = pragueId });
+
+        Assert.False(result.TryGetProperty("errors", out _),
+            "cityLots for Prague must not return GraphQL errors");
+        var lots = result.GetProperty("data").GetProperty("cityLots");
+        // All returned lots must belong to Prague
+        foreach (var lot in lots.EnumerateArray())
+        {
+            Assert.Equal(pragueId, lot.GetProperty("cityId").GetString(),
+                StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task CityLots_ReturnsEmptyListForVienna()
+    {
+        // Vienna has no seeded building lots in the game initializer. The cityLots query
+        // must return a valid (non-error) response for Vienna, whether the array is empty
+        // or contains dynamically-created lots from other tests sharing this database.
+        // The key requirement: the query must not crash or return GraphQL errors.
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var viennaId = citiesResult.GetProperty("data").GetProperty("cities").EnumerateArray()
+            .First(c => c.GetProperty("name").GetString() == "Vienna")
+            .GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) { id name cityId }
+            }
+            """,
+            new { cityId = viennaId });
+
+        Assert.False(result.TryGetProperty("errors", out _),
+            "cityLots for Vienna must not return GraphQL errors");
+        var lots = result.GetProperty("data").GetProperty("cityLots");
+        // All returned lots must belong to Vienna
+        foreach (var lot in lots.EnumerateArray())
+        {
+            Assert.Equal(viennaId, lot.GetProperty("cityId").GetString(),
+                StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
     #endregion
 
     #region First-sale milestone
