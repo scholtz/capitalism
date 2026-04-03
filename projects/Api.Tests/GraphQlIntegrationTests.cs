@@ -5113,6 +5113,121 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GuestMigration_FactoryLotConflict_FoodProcessing_PlayerCanRestartAndComplete()
+    {
+        // Verifies conflict recovery works for the FOOD_PROCESSING industry, not just Furniture.
+        // ROADMAP: "If there is error such as the building was meanwhile purchased by someone else ...
+        // make sure to create their profile with the name they chose and start the wizard again."
+        var tokenA = await RegisterAndGetTokenAsync($"fp-conflict-a-{Guid.NewGuid()}@test.com", "FP Conflict A");
+        var cityId = await GetCityIdByNameAsync();
+
+        // Player A takes the shared factory lot
+        var sharedLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "Shared FP Factory Lot");
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "FP Conflict A Corp", factoryLotId = sharedLotId } },
+            tokenA);
+
+        // Player B (the guest-migrated user) attempts the same lot — must get LOT_ALREADY_OWNED
+        var tokenB = await RegisterAndGetTokenAsync($"fp-conflict-b-{Guid.NewGuid()}@test.com", "FP Conflict B");
+        var failedStart = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "FP Conflict B Corp", factoryLotId = sharedLotId } },
+            tokenB);
+
+        Assert.True(failedStart.TryGetProperty("errors", out var failErrors), "Expected LOT_ALREADY_OWNED error for Food Processing conflict");
+        var code = failErrors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("LOT_ALREADY_OWNED", code);
+
+        // Player B retries with a fresh lot — should succeed and preserve FOOD_PROCESSING industry
+        var freshLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "Fresh FP Factory Lot");
+        var retryStart = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "FP Conflict B Corp", factoryLotId = freshLotId } },
+            tokenB);
+
+        Assert.False(retryStart.TryGetProperty("errors", out _), "Retry with fresh lot must not fail for Food Processing");
+        Assert.Equal("SHOP_SELECTION", retryStart.GetProperty("data").GetProperty("startOnboardingCompany").GetProperty("nextStep").GetString());
+
+        // Finish onboarding with a Bread product — preserves FOOD_PROCESSING intent
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
+        var finishResult = await FinishOnboardingAsync(tokenB, productId, shopLotId);
+
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding after Food Processing conflict retry must succeed");
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+        Assert.NotNull(finishData.GetProperty("company").GetProperty("id").GetString());
+        Assert.NotNull(finishData.GetProperty("salesShop").GetProperty("id").GetString());
+
+        // Verify the selected product is Bread (Food Processing)
+        var selectedProductSlug = finishData.GetProperty("selectedProduct").GetProperty("slug").GetString();
+        Assert.Equal("bread", selectedProductSlug);
+    }
+
+    [Fact]
+    public async Task GuestMigration_ShopLotConflict_Healthcare_PlayerCanRetryWithDifferentShopLot()
+    {
+        // Verifies shop-lot conflict recovery works for the HEALTHCARE industry.
+        // Complements the Furniture-only GuestMigration_ShopLotConflict test.
+        var tokenA = await RegisterAndGetTokenAsync($"hc-shop-conflict-a-{Guid.NewGuid()}@test.com", "HC Shop A");
+        var cityId = await GetCityIdByNameAsync();
+
+        // Set up factory for Player B first
+        var tokenB = await RegisterAndGetTokenAsync($"hc-shop-conflict-b-{Guid.NewGuid()}@test.com", "HC Shop B");
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "HC Factory Lot");
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "HC Conflict B Corp", factoryLotId } },
+            tokenB);
+
+        // Player A takes the shared shop lot
+        var sharedShopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Shared HC Shop Lot");
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "HC Conflict A Corp", factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "HC Factory A Lot") } },
+            tokenA);
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+
+        // Player B tries to finish with the now-taken shop lot
+        var failedFinish = await FinishOnboardingAsync(tokenB, productId, sharedShopLotId);
+        Assert.True(failedFinish.TryGetProperty("errors", out var failErrors), "Expected LOT_ALREADY_OWNED for Healthcare shop conflict");
+        var code = failErrors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("LOT_ALREADY_OWNED", code);
+
+        // Player B retries with a different shop lot — must succeed and preserve Healthcare/Basic Medicine
+        var freshShopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "High Street", 95_000m, "Fresh HC Shop Lot");
+        var retryFinish = await FinishOnboardingAsync(tokenB, productId, freshShopLotId);
+
+        Assert.False(retryFinish.TryGetProperty("errors", out _), "Retry with fresh shop lot must succeed for Healthcare");
+        var retryData = retryFinish.GetProperty("data").GetProperty("finishOnboarding");
+        Assert.NotNull(retryData.GetProperty("salesShop").GetProperty("id").GetString());
+
+        var selectedProductSlug = retryData.GetProperty("selectedProduct").GetProperty("slug").GetString();
+        Assert.Equal("basic-medicine", selectedProductSlug);
+    }
+
+    [Fact]
     public async Task GuestMigration_HappyPath_SelectedIndustryAndProductArePreservedInFinalState()
     {
         // ROADMAP: "Do not store the progress for these users to the backend, but make sure to
