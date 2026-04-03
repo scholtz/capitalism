@@ -2969,6 +2969,148 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                 Assert.Equal(JsonValueKind.Null, building.GetProperty("pendingConfiguration").ValueKind);
             }
 
+    [Fact]
+    public async Task StoreBuildingConfiguration_Unauthenticated_ReturnsError()
+    {
+        // An unauthenticated call (no token) to storeBuildingConfiguration must be rejected.
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId = Guid.NewGuid().ToString(),
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token: null);
+
+        Assert.True(result.TryGetProperty("errors", out var errors),
+            "Unauthenticated storeBuildingConfiguration must return errors");
+        Assert.NotEmpty(errors.EnumerateArray().ToList());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_Mine_WithValidUnits_Succeeds()
+    {
+        // A MINE building can be configured with MINING, STORAGE, and B2B_SALES units.
+        // This proves that mine-specific unit types are accepted and the plan is queued.
+        var token = await RegisterAndGetTokenAsync($"mine-cfg-{Guid.NewGuid()}@test.com", "MineCfgTester");
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Mine Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        var cityId = await GetCityIdByNameAsync("Bratislava");
+        var mineLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "Mine Test Lot");
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PurchaseLot($input: PurchaseLotInput!) { purchaseLot(input: $input) { building { id } } }",
+            new { input = new { companyId, lotId = mineLotId, buildingType = "MINE", buildingName = "Iron Mine" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("purchaseLot").GetProperty("building").GetProperty("id").GetString()!;
+
+        // Configure the mine with MINING → STORAGE → B2B_SALES
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) {
+                    id
+                    appliesAtTick
+                    totalTicksRequired
+                    units { unitType gridX gridY isChanged }
+                }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "MINING",   gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = true,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "STORAGE",  gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = true,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "B2B_SALES", gridX = 2, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _),
+            "Configuring a MINE with MINING+STORAGE+B2B_SALES must succeed");
+        var plan = result.GetProperty("data").GetProperty("storeBuildingConfiguration");
+        Assert.True(plan.GetProperty("appliesAtTick").GetInt64() > 0,
+            "Mine configuration plan must have a future appliesAtTick");
+        Assert.Equal(3, plan.GetProperty("units").GetArrayLength());
+        Assert.True(plan.GetProperty("units").EnumerateArray().All(u => u.GetProperty("isChanged").GetBoolean()),
+            "All new mine units must be marked as changed (new addition)");
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_Mine_InvalidUnitType_ReturnsError()
+    {
+        // A FACTORY unit type (e.g. MANUFACTURING) cannot be placed in a MINE building.
+        // This is the inverse of the InvalidUnitTypeForBuildingType test which tests MINING in a FACTORY.
+        var token = await RegisterAndGetTokenAsync($"mine-inv-{Guid.NewGuid()}@test.com", "MineInvTester");
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Mine Inv Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        var cityId = await GetCityIdByNameAsync("Bratislava");
+        var mineLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "Mine Invalid Lot");
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PurchaseLot($input: PurchaseLotInput!) { purchaseLot(input: $input) { building { id } } }",
+            new { input = new { companyId, lotId = mineLotId, buildingType = "MINE", buildingName = "Bad Unit Mine" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("purchaseLot").GetProperty("building").GetProperty("id").GetString()!;
+
+        // MANUFACTURING is only valid in a FACTORY, not in a MINE
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "MANUFACTURING", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_BUILDING_UNIT_TYPE",
+            errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
     #region RecipeCompatibility
 
     [Fact]
@@ -3707,6 +3849,24 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         Assert.True(cancelResult.TryGetProperty("errors", out var errors));
         Assert.Equal("BUILDING_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CancelBuildingConfiguration_Unauthenticated_ReturnsError()
+    {
+        // An unauthenticated call (no token) to cancelBuildingConfiguration must be rejected.
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation CancelBuildingConfiguration($input: CancelBuildingConfigurationInput!) {
+                cancelBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new { input = new { buildingId = Guid.NewGuid().ToString() } },
+            token: null);
+
+        Assert.True(result.TryGetProperty("errors", out var errors),
+            "Unauthenticated cancelBuildingConfiguration must return errors");
+        Assert.NotEmpty(errors.EnumerateArray().ToList());
     }
 
     #endregion

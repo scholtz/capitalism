@@ -6376,3 +6376,262 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(page.locator('[aria-label="Market Intelligence"]')).toBeHidden()
   })
 })
+
+test.describe('Mine building edit mode', () => {
+  test('player adds MINING unit to empty mine in edit mode and sees pending state', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-mine-edit',
+      playerId: player.id,
+      name: 'Iron Mine Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-mine-edit',
+          companyId: 'company-mine-edit',
+          cityId: 'city-ba',
+          type: 'MINE',
+          name: 'Iron Mine',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [], // empty mine — no units yet
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-mine-edit')
+    await expect(page.getByRole('heading', { name: 'Iron Mine' })).toBeVisible()
+
+    // Enter edit mode
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    // The planned upgrade section should appear
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(plannedSection).toBeVisible()
+
+    // Click an empty cell at (0,0) to trigger the unit picker
+    const emptyCell = plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await emptyCell.click()
+
+    // Unit picker should appear with mine-specific units
+    await expect(page.getByText('Select a unit type to place')).toBeVisible()
+
+    // Mining unit option should be available (mine-specific)
+    const miningBtn = page.locator('.picker-option').filter({ hasText: 'Mining' })
+    await expect(miningBtn).toBeVisible()
+
+    // MANUFACTURING should NOT appear (factory-only unit)
+    await expect(page.locator('.picker-option').filter({ hasText: 'Manufacturing' })).toHaveCount(0)
+
+    // Place the MINING unit
+    await miningBtn.click()
+
+    // Cell should now show "Mining" in the draft grid
+    // After placing, selectedCell resets — click cell again to see it
+    await emptyCell.click()
+    await expect(emptyCell).toContainText('Mining')
+
+    // Store Upgrade button should be enabled (draft has changes)
+    const storeBtn = page.getByRole('button', { name: 'Store Upgrade' })
+    await expect(storeBtn).toBeEnabled()
+    await storeBtn.click()
+
+    // After saving, upgrade-in-progress banner must appear
+    await expect(page.locator('.upgrade-banner')).toBeVisible()
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+  })
+
+  test('mine edit mode: allowed unit types match mine building type (MINING, STORAGE, B2B_SALES)', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-mine-types',
+      playerId: player.id,
+      name: 'Type Check Mine Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-mine-types',
+          companyId: 'company-mine-types',
+          cityId: 'city-ba',
+          type: 'MINE',
+          name: 'Type Check Mine',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-mine-types')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(plannedSection).toBeVisible()
+
+    // Open unit picker for an empty cell
+    const emptyCell = plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await emptyCell.click()
+    await expect(page.getByText('Select a unit type to place')).toBeVisible()
+
+    // Mine-specific types must be present
+    await expect(page.locator('.picker-option').filter({ hasText: 'Mining' })).toBeVisible()
+    await expect(page.locator('.picker-option').filter({ hasText: 'Storage' })).toBeVisible()
+    await expect(page.locator('.picker-option').filter({ hasText: 'B2B Sales' })).toBeVisible()
+
+    // Factory/shop-only types must NOT appear in the picker
+    await expect(page.locator('.picker-option').filter({ hasText: 'Manufacturing' })).toHaveCount(0)
+    await expect(page.locator('.picker-option').filter({ hasText: 'Purchase' })).toHaveCount(0)
+    await expect(page.locator('.picker-option').filter({ hasText: 'Public Sales' })).toHaveCount(0)
+  })
+})
+
+test.describe('Building grid editor — mobile viewport (375px)', () => {
+  test('grid inspection and edit submission are usable on 375px viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-mobile',
+      playerId: player.id,
+      name: 'Mobile Factory Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-mobile',
+          companyId: 'company-mobile',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Mobile Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'mobile-u1',
+              buildingId: 'building-mobile',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            } satisfies MockBuildingUnit,
+            {
+              id: 'mobile-u2',
+              buildingId: 'building-mobile',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-mobile')
+    await expect(page.getByRole('heading', { name: 'Mobile Factory' })).toBeVisible()
+
+    // The 4x4 grid must be visible at 375px width without horizontal overflow
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await expect(activeSection).toBeVisible()
+
+    // Click the PURCHASE unit to inspect it (read-only)
+    const purchaseCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await purchaseCell.click()
+    await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
+
+    // Enter edit mode
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(plannedSection).toBeVisible()
+
+    // Add a unit in an empty cell
+    const emptyCell = plannedSection.locator('.unit-row').nth(1).locator('.grid-cell').nth(0)
+    await emptyCell.click()
+    await expect(page.getByText('Select a unit type to place')).toBeVisible()
+
+    // Pick Storage
+    const storageBtn = page.locator('.picker-option').filter({ hasText: 'Storage' })
+    await expect(storageBtn).toBeVisible()
+    await storageBtn.click()
+
+    // Store Upgrade button must be reachable and functional on mobile
+    const storeBtn = page.getByRole('button', { name: 'Store Upgrade' })
+    await expect(storeBtn).toBeVisible()
+    await expect(storeBtn).toBeEnabled()
+    await storeBtn.click()
+
+    // Confirm pending state appears
+    await expect(page.locator('.upgrade-banner')).toBeVisible()
+  })
+})
