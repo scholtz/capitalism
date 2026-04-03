@@ -1080,3 +1080,95 @@ test.describe('City Map — multi-city navigation and graceful empty state', () 
     ).toBeVisible()
   })
 })
+
+test.describe('City Map — strategic recommendation badge (decision support)', () => {
+  test('resource-oriented lot shows "Resource-oriented" recommendation badge', async ({ page }) => {
+    // Industrial Plot A1 has Iron Ore → should show resource-oriented label
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    const badge = page.locator('[data-testid="strategic-recommendation"]')
+    await expect(badge).toBeVisible()
+    await expect(badge).toContainText(/Resource-oriented/i)
+  })
+
+  test('high-population retail lot shows "Strong for retail demand" recommendation badge', async ({
+    page,
+  }) => {
+    // High Street Retail Space has populationIndex 1.42 + SALES_SHOP → strong retail
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+
+    const badge = page.locator('[data-testid="strategic-recommendation"]')
+    await expect(badge).toBeVisible()
+    await expect(badge).toContainText(/Strong for retail demand/i)
+  })
+
+  test('recommendation badge changes when switching between lots (decision support comparison)', async ({
+    page,
+  }) => {
+    // Players compare two lots and see how the recommendation changes —
+    // this is the core "why location matters" decision-support feature.
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+
+    // Select the industrial lot first
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    const badge = page.locator('[data-testid="strategic-recommendation"]')
+    await expect(badge).toBeVisible()
+    await expect(badge).toContainText(/Resource-oriented/i)
+
+    // Switch to the commercial lot — recommendation must update immediately
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await expect(badge).toContainText(/Strong for retail demand/i)
+
+    // Switch back to industrial — should revert
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await expect(badge).toContainText(/Resource-oriented/i)
+  })
+
+  test('mobile viewport shows recommendation badge and population index decision-support', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+
+    const panel = page.getByRole('complementary')
+    // Recommendation badge visible on mobile
+    await expect(panel.locator('[data-testid="strategic-recommendation"]')).toBeVisible()
+    await expect(
+      panel.locator('[data-testid="strategic-recommendation"]'),
+    ).toContainText(/Strong for retail demand/i)
+    // Population index educational hint visible on mobile
+    await expect(panel.getByText(/Higher index.*more nearby residents/i)).toBeVisible()
+  })
+
+  test('residential lot shows "Balanced starter location" recommendation', async ({ page }) => {
+    const { player } = setupAuthenticatedPlayer(page)
+    await authenticateViaLocalStorage(page, player.id)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Riverside Apartment Block/i }).click()
+
+    const badge = page.locator('[data-testid="strategic-recommendation"]')
+    await expect(badge).toBeVisible()
+    await expect(badge).toContainText(/Balanced starter location/i)
+  })
+})

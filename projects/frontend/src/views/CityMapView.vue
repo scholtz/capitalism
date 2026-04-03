@@ -122,6 +122,30 @@ function populationIndexLabel(value: number): string {
   return t('cityMap.populationIndexLow')
 }
 
+/**
+ * Returns a short strategic recommendation label for the lot based on its
+ * population index and resource data. This implements the ROADMAP requirement:
+ * "include a simple recommendation label such as 'strong for retail demand,'
+ * 'balanced starter location,' or 'resource-oriented.'"
+ */
+function strategicRecommendation(lot: BuildingLot): { key: string; cssClass: string } {
+  const suitable = lot.suitableTypes.split(',').map((s) => s.trim())
+  const hasMine = suitable.includes('MINE')
+  const hasRetail = suitable.includes('SALES_SHOP')
+  const hasFactory = suitable.includes('FACTORY')
+
+  if (hasMine && lot.resourceType) {
+    return { key: 'recommendationResourceOriented', cssClass: 'rec-resource' }
+  }
+  if (hasRetail && lot.populationIndex >= 1.3) {
+    return { key: 'recommendationStrongRetail', cssClass: 'rec-retail' }
+  }
+  if (hasFactory && lot.populationIndex < 0.9) {
+    return { key: 'recommendationIndustrialEfficiency', cssClass: 'rec-industrial' }
+  }
+  return { key: 'recommendationBalancedStarter', cssClass: 'rec-balanced' }
+}
+
 function materialQualityLabel(quality: number): string {
   if (quality >= 0.8) return t('cityMap.rawMaterialQualityExcellent')
   if (quality >= 0.6) return t('cityMap.rawMaterialQualityGood')
@@ -556,6 +580,16 @@ watch(viewMode, async (mode) => {
           </div>
 
           <p class="lot-description">{{ selectedLot.description }}</p>
+
+          <!-- Strategic recommendation badge -->
+          <div
+            class="strategic-recommendation"
+            :class="strategicRecommendation(selectedLot).cssClass"
+            data-testid="strategic-recommendation"
+          >
+            <span class="rec-icon">🎯</span>
+            <span class="rec-label">{{ t(`cityMap.${strategicRecommendation(selectedLot).key}`) }}</span>
+          </div>
 
           <div class="detail-grid">
             <div class="detail-item">
@@ -1055,8 +1089,45 @@ watch(viewMode, async (mode) => {
   font-size: 0.8125rem;
   color: var(--color-text-secondary);
   line-height: 1.5;
-  margin: 0 0 1rem;
+  margin: 0 0 0.625rem;
 }
+
+.strategic-recommendation {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-bottom: 0.875rem;
+  border: 1px solid currentColor;
+}
+
+.rec-icon {
+  font-size: 0.875rem;
+}
+
+.rec-retail {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.rec-resource {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.rec-industrial {
+  color: var(--color-text-secondary);
+  background: rgba(139, 148, 158, 0.08);
+}
+
+.rec-balanced {
+  color: var(--color-primary);
+  background: rgba(0, 71, 255, 0.06);
+}
+
 
 .detail-grid {
   display: grid;

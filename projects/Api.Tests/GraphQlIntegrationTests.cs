@@ -7744,6 +7744,86 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         }
     }
 
+    [Fact]
+    public async Task CityLots_StrategicRecommendationData_ResourceAndPopulationIndexCorrect()
+    {
+        // The frontend derives a "strategic recommendation" label from each lot's
+        // suitableTypes, populationIndex, and resourceType. This backend test verifies
+        // that the required data fields are all returned correctly so the frontend
+        // can show "Strong for retail demand", "Resource-oriented",
+        // "Industrial efficiency zone", or "Balanced starter location".
+
+        var bratislavaId = await GetCityIdByNameAsync("Bratislava");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityLots($cityId: UUID!) {
+              cityLots(cityId: $cityId) {
+                id name district suitableTypes populationIndex
+                resourceType { id name slug }
+                materialQuality materialQuantity
+              }
+            }
+            """,
+            new { cityId = bratislavaId });
+
+        Assert.False(result.TryGetProperty("errors", out _), "cityLots query must not return errors");
+        var lots = result.GetProperty("data").GetProperty("cityLots").EnumerateArray().ToList();
+
+        // Every lot must have a non-negative populationIndex (required for recommendation logic)
+        foreach (var lot in lots)
+        {
+            var name = lot.GetProperty("name").GetString();
+            var popIndex = lot.GetProperty("populationIndex").GetDecimal();
+            Assert.True(popIndex >= 0,
+                $"Lot '{name}' has negative populationIndex ({popIndex}); must be >= 0 for recommendation logic");
+        }
+
+        // At least one lot must be MINE-eligible with a resource (→ "Resource-oriented")
+        var resourceLot = lots.FirstOrDefault(
+            l => l.GetProperty("suitableTypes").GetString()!.Contains("MINE")
+              && l.GetProperty("resourceType").ValueKind != JsonValueKind.Null);
+        Assert.True(resourceLot.ValueKind != JsonValueKind.Undefined,
+            "Expected at least one MINE-eligible lot with a resourceType for the 'Resource-oriented' recommendation");
+        Assert.True(resourceLot.GetProperty("materialQuality").GetDecimal() > 0,
+            "Resource lot must have positive materialQuality for the raw-material panel");
+        Assert.True(resourceLot.GetProperty("materialQuantity").GetDecimal() > 0,
+            "Resource lot must have positive materialQuantity for the raw-material panel");
+
+        // At least one lot must support SALES_SHOP (retail recommendation input)
+        var salesShopLot = lots.FirstOrDefault(
+            l => l.GetProperty("suitableTypes").GetString()!.Contains("SALES_SHOP"));
+        Assert.True(salesShopLot.ValueKind != JsonValueKind.Undefined,
+            "Expected at least one SALES_SHOP lot for retail recommendation eligibility");
+
+        // At least one lot must support FACTORY (industrial recommendation input)
+        var factoryLot = lots.FirstOrDefault(
+            l => l.GetProperty("suitableTypes").GetString()!.Contains("FACTORY"));
+        Assert.True(factoryLot.ValueKind != JsonValueKind.Undefined,
+            "Expected at least one FACTORY lot for industrial recommendation eligibility");
+
+        // Commercial/retail lots should have a higher populationIndex than industrial lots on average.
+        // This is the spatial signal that makes land acquisition a real decision surface.
+        // Note: population index is recomputed from spatial data on every tick; in a fresh
+        // test database (no buildings), values are ~0.6-1.0 depending on distance to city center.
+        var commercialAvg = lots
+            .Where(l => l.GetProperty("suitableTypes").GetString()!.Contains("SALES_SHOP"))
+            .Select(l => l.GetProperty("populationIndex").GetDecimal())
+            .DefaultIfEmpty(0m)
+            .Average();
+
+        var industrialAvg = lots
+            .Where(l => l.GetProperty("district").GetString() == "Industrial Zone")
+            .Select(l => l.GetProperty("populationIndex").GetDecimal())
+            .DefaultIfEmpty(0m)
+            .Average();
+
+        Assert.True(
+            commercialAvg > industrialAvg,
+            $"Commercial lots avg populationIndex ({commercialAvg:F3}) should exceed industrial avg ({industrialAvg:F3}) — " +
+            "this is the spatial signal that makes land acquisition a real decision surface");
+    }
+
     #endregion
 
     #region First-sale milestone
