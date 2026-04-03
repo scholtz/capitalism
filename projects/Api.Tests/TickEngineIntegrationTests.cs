@@ -2015,6 +2015,96 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         });
     }
 
+    [Fact]
+    public async Task PurchasingPhase_GlobalExchange_InsufficientCash_BuysPartialAmount()
+    {
+        // AC#8: When a company does not have enough cash to fill the full purchase-unit
+        // capacity, the engine must buy as much as the available cash allows rather than
+        // skipping the purchase entirely or over-drawing the company balance.
+        //
+        // A single level-1 PURCHASE unit in Bratislava incurs ~$9.60/tick in operating costs
+        // (labor + energy) before the PurchasingPhase runs. Wood exchange price in Bratislava
+        // is ~$11.17/unit (BasePrice $10, abundance 0.7, AverageRentPerSqm 14). Full capacity
+        // at level 1 = 50 units ($558 total). Starting with $50 leaves ~$40.40 after operating
+        // costs, allowing only ~3.6 units to be purchased — well under the 50-unit capacity.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var (companyId, _, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "EXCHANGE");
+
+        // $50 covers operating costs (~$9.60) and leaves ~$40 for a partial exchange purchase.
+        var company = await db.Companies.FindAsync(companyId);
+        company!.Cash = 50m;
+        await db.SaveChangesAsync();
+
+        var cashBefore = company.Cash;
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        await db.Entry(company).ReloadAsync();
+
+        // Cash must have decreased (operating costs + partial purchase).
+        Assert.True(company.Cash < cashBefore,
+            "Company cash must have decreased after operating costs and partial exchange purchase.");
+
+        // Inventory must have been partially filled (positive, but less than full capacity).
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId)
+            .ToListAsync();
+
+        var totalQty = inventory.Sum(i => i.Quantity);
+        Assert.True(totalQty > 0m,
+            "Purchase unit must have acquired at least a partial amount when cash is limited.");
+
+        var capacity = Api.Engine.GameConstants.PurchaseCapacity(1);
+        Assert.True(totalQty < capacity,
+            $"Partial-cash purchase must result in less than full capacity ({capacity}). Got {totalQty}.");
+    }
+
+    [Fact]
+    public async Task PurchasingPhase_GlobalExchange_ZeroCash_SkipsPurchaseEntirely()
+    {
+        // AC#8: When a company has zero (or negative) cash at the time the PurchasingPhase
+        // runs, the global exchange purchase must be skipped gracefully — no inventory should
+        // be added and no PurchasingCost ledger entries should be created.
+        //
+        // Note: the OperatingCostPhase (order 450) runs before PurchasingPhase (order 600)
+        // and will charge ~$9.60 in labor and energy costs, making cash negative. This is
+        // expected game behavior. The test verifies that the PurchasingPhase correctly skips
+        // rather than buying with non-positive cash.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var (companyId, _, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "EXCHANGE");
+
+        // Drain cash to zero. Operating costs will make it slightly negative, but purchasing
+        // must detect this and skip the global exchange buy entirely.
+        var company = await db.Companies.FindAsync(companyId);
+        company!.Cash = 0m;
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        // No inventory should have been added by the exchange purchase.
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId)
+            .ToListAsync();
+
+        Assert.True(inventory.Sum(i => i.Quantity) == 0m,
+            "Purchase unit must not have acquired any inventory when company has zero or negative cash.");
+
+        // No PurchasingCost ledger entries should have been created for this unit
+        // (LaborCost and EnergyCost from OperatingCostPhase are expected and ignored here).
+        var purchasingEntries = await db.LedgerEntries
+            .Where(e => e.BuildingUnitId == purchaseUnitId && e.Category == LedgerCategory.PurchasingCost)
+            .ToListAsync();
+
+        Assert.Empty(purchasingEntries);
+    }
+
     #endregion
 
     #region Full supply-chain integration (onboarding AC#4)
