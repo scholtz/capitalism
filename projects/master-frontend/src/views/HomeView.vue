@@ -214,7 +214,7 @@ onMounted(() => {
             <div class="server-card-header">
               <div>
                 <p class="server-name">{{ server.displayName }}</p>
-                <p class="server-meta">{{ server.region }} · {{ server.environment }}</p>
+                <p class="server-meta">{{ server.region }} · {{ server.environment }} · v{{ server.version }}</p>
               </div>
               <span :class="['status-pill', server.isOnline ? 'status-online' : 'status-offline']">
                 {{ server.isOnline ? 'Online' : 'Offline' }}

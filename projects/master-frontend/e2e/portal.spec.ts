@@ -44,7 +44,7 @@ test.describe('Unauthenticated home page', () => {
     await page.goto('/')
 
     await expect(page.getByText('Capitalism EU #1')).toBeVisible()
-    await expect(page.getByText('EU · production')).toBeVisible()
+    await expect(page.getByText('EU · production · v1.0.0')).toBeVisible()
     await expect(page.locator('.status-pill.status-online')).toBeVisible()
     await expect(page.getByText('Play on server')).toBeVisible()
   })
@@ -327,5 +327,115 @@ test.describe('Mobile viewport', () => {
 
     await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
+  })
+
+  test('renders authenticated subscription dashboard on mobile', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    const player = makePlayer()
+    const state = setupMockApi(page, { servers: [] })
+    state.subscription = makeSubscription()
+    await loginAs(page, state, player)
+    await page.goto('/')
+
+    await expect(page.getByRole('heading', { name: 'Subscription' })).toBeVisible()
+    await expect(page.locator('#months-select')).toBeVisible()
+  })
+})
+
+// ── Expired subscription state ────────────────────────────────────────────────
+
+test.describe('Expired subscription', () => {
+  test('shows expired status label for expired subscriber', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { servers: [] })
+    state.subscription = {
+      tier: 'PRO',
+      status: 'EXPIRED',
+      isActive: false,
+      daysRemaining: null,
+      canProlong: true,
+      expiresAtUtc: '2020-01-01T00:00:00.000Z',
+      startsAtUtc: '2019-10-01T00:00:00.000Z',
+    }
+    await loginAs(page, state, player)
+    await page.goto('/')
+
+    // Status should show expired
+    await expect(page.locator('.status-pill.status-offline')).toBeVisible()
+    // Can still prolong
+    await expect(page.locator('#months-select')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Confirm' })).toBeVisible()
+  })
+
+  test('expired user can renew subscription via prolong CTA', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { servers: [] })
+    state.subscription = {
+      tier: 'PRO',
+      status: 'EXPIRED',
+      isActive: false,
+      daysRemaining: null,
+      canProlong: true,
+      expiresAtUtc: '2020-01-01T00:00:00.000Z',
+      startsAtUtc: '2019-10-01T00:00:00.000Z',
+    }
+    await loginAs(page, state, player)
+    await page.goto('/')
+
+    await page.getByRole('button', { name: 'Confirm' }).click()
+    await expect(page.locator('.prolong-success')).toBeVisible()
+    await expect(page.locator('.prolong-success')).toContainText('successfully')
+  })
+})
+
+// ── Server card details ────────────────────────────────────────────────────────
+
+test.describe('Server card details', () => {
+  test('shows server version', async ({ page }) => {
+    const server = makeServer({ version: '2.1.0' })
+    setupMockApi(page, { servers: [server] })
+    await page.goto('/')
+
+    // Version is shown in the server meta
+    await expect(page.getByText(/v2\.1\.0/)).toBeVisible()
+  })
+
+  test('shows heartbeat distance for recently active server', async ({ page }) => {
+    const server = makeServer({ isOnline: true, lastHeartbeatAtUtc: new Date().toISOString() })
+    setupMockApi(page, { servers: [server] })
+    await page.goto('/')
+
+    // Should show some recent heartbeat indicator
+    await expect(page.getByText('Capitalism EU #1')).toBeVisible()
+    // The heartbeat section should exist in the card
+    await expect(page.locator('.server-stats')).toBeVisible()
+  })
+
+  test('play button links to frontendUrl', async ({ page }) => {
+    const server = makeServer({ frontendUrl: 'https://game.example.com/app' })
+    setupMockApi(page, { servers: [server] })
+    await page.goto('/')
+
+    const playLink = page.getByText('Play on server')
+    await expect(playLink).toBeVisible()
+    await expect(playLink).toHaveAttribute('href', 'https://game.example.com/app')
+  })
+
+  test('region and environment shown in server meta', async ({ page }) => {
+    const server = makeServer({ region: 'US', environment: 'staging', version: '1.5.0' })
+    setupMockApi(page, { servers: [server] })
+    await page.goto('/')
+
+    await expect(page.getByText('US · staging · v1.5.0')).toBeVisible()
+  })
+
+  test('server description is visible', async ({ page }) => {
+    const server = makeServer({
+      description: 'Premium economy server for serious players',
+    })
+    setupMockApi(page, { servers: [server] })
+    await page.goto('/')
+
+    await expect(page.getByText('Premium economy server for serious players')).toBeVisible()
   })
 })

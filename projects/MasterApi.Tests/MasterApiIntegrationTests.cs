@@ -691,5 +691,203 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
         Assert.Equal("camelcase@example.com", player.GetProperty("email").GetString());
     }
 
+    [Fact]
+    public async Task Me_ReturnsAllProfileFields()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync(
+            "profile-fields@example.com", "Profile User", "password123");
+
+        var result = await GraphQlAsync("""
+            query { me { id email displayName createdAtUtc } }
+            """, token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var me = result.GetProperty("data").GetProperty("me");
+        Assert.Equal("profile-fields@example.com", me.GetProperty("email").GetString());
+        Assert.Equal("Profile User", me.GetProperty("displayName").GetString());
+        Assert.False(string.IsNullOrEmpty(me.GetProperty("id").GetString()));
+        Assert.False(string.IsNullOrEmpty(me.GetProperty("createdAtUtc").GetString()));
+    }
+
+    [Fact]
+    public async Task Register_TokenExpiry_IsSetInFuture()
+    {
+        var result = await GraphQlAsync("""
+            mutation {
+              register(input: { email: "expiry-test@example.com", password: "password123", displayName: "ExpiryTest" }) {
+                token
+                expiresAtUtc
+              }
+            }
+            """);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var payload = result.GetProperty("data").GetProperty("register");
+        var expiresAtStr = payload.GetProperty("expiresAtUtc").GetString()!;
+        var expiresAt = DateTime.Parse(expiresAtStr, null, System.Globalization.DateTimeStyles.RoundtripKind);
+        Assert.True(expiresAt > DateTime.UtcNow, "Token expiry must be in the future");
+    }
+
+    [Fact]
+    public async Task Login_ReturnsTokenAndPlayer()
+    {
+        await RegisterAndGetTokenAsync("login-fields@example.com", "Login Fields User", "password123");
+
+        var result = await GraphQlAsync("""
+            mutation {
+              login(input: { email: "login-fields@example.com", password: "password123" }) {
+                token
+                expiresAtUtc
+                player { id email displayName createdAtUtc }
+              }
+            }
+            """);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var payload = result.GetProperty("data").GetProperty("login");
+        Assert.False(string.IsNullOrEmpty(payload.GetProperty("token").GetString()));
+        Assert.False(string.IsNullOrEmpty(payload.GetProperty("expiresAtUtc").GetString()));
+        var player = payload.GetProperty("player");
+        Assert.Equal("login-fields@example.com", player.GetProperty("email").GetString());
+    }
+
+    [Fact]
+    public async Task MySubscription_FreeUser_CanProlong_IsTrue()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("canprolong@example.com");
+
+        var result = await GraphQlAsync("""
+            query { mySubscription { tier status isActive canProlong daysRemaining } }
+            """, token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var sub = result.GetProperty("data").GetProperty("mySubscription");
+        Assert.Equal("FREE", sub.GetProperty("tier").GetString());
+        Assert.Equal("NONE", sub.GetProperty("status").GetString());
+        Assert.False(sub.GetProperty("isActive").GetBoolean());
+        Assert.True(sub.GetProperty("canProlong").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ProlongSubscription_ThenMe_BothWorkWithSameToken()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("dual-auth@example.com");
+
+        // Both queries should work with the same token
+        var prolongResult = await GraphQlAsync("""
+            mutation Prolong($input: ProlongSubscriptionInput!) {
+              prolongSubscription(input: $input) { tier isActive }
+            }
+            """,
+            new { input = new { months = 2 } },
+            token: token);
+
+        var meResult = await GraphQlAsync("""
+            query { me { email } }
+            """, token: token);
+
+        Assert.False(prolongResult.TryGetProperty("errors", out _));
+        Assert.False(meResult.TryGetProperty("errors", out _));
+        Assert.True(prolongResult.GetProperty("data").GetProperty("prolongSubscription").GetProperty("isActive").GetBoolean());
+        Assert.Equal("dual-auth@example.com", meResult.GetProperty("data").GetProperty("me").GetProperty("email").GetString());
+    }
+
+    [Fact]
+    public async Task GameServers_IsOnline_BasedOnHeartbeatThreshold()
+    {
+        // A newly registered server should be considered online
+        var result = await GraphQlAsync("""
+            mutation Reg($input: RegisterGameServerInput!) {
+              registerGameServer(input: $input) { id isOnline lastHeartbeatAtUtc }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    registrationKey = "test-registration-key",
+                    serverKey = "heartbeat-threshold-test",
+                    displayName = "Heartbeat Test Server",
+                    description = "Test heartbeat threshold",
+                    region = "EU",
+                    environment = "test",
+                    backendUrl = "https://hb.example.com",
+                    graphqlUrl = "https://hb.example.com/graphql",
+                    frontendUrl = "https://hb.example.com/app",
+                    version = "1.0.0",
+                    playerCount = 0,
+                    companyCount = 0,
+                    currentTick = 0,
+                },
+            });
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var srv = result.GetProperty("data").GetProperty("registerGameServer");
+        Assert.True(srv.GetProperty("isOnline").GetBoolean(), "Freshly registered server should be online");
+    }
+
+    [Fact]
+    public async Task RegisterGameServer_Heartbeat_UpdatesExistingServer()
+    {
+        const string serverKey = "heartbeat-update-test";
+
+        // First registration
+        await GraphQlAsync("""
+            mutation Reg($input: RegisterGameServerInput!) {
+              registerGameServer(input: $input) { id playerCount }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    registrationKey = "test-registration-key",
+                    serverKey,
+                    displayName = "Update Test Server",
+                    description = "Tests heartbeat update",
+                    region = "EU",
+                    environment = "test",
+                    backendUrl = "https://upd.example.com",
+                    graphqlUrl = "https://upd.example.com/graphql",
+                    frontendUrl = "https://upd.example.com/app",
+                    version = "1.0.0",
+                    playerCount = 0,
+                    companyCount = 0,
+                    currentTick = 0,
+                },
+            });
+
+        // Second registration (heartbeat with updated playerCount)
+        var result = await GraphQlAsync("""
+            mutation Reg($input: RegisterGameServerInput!) {
+              registerGameServer(input: $input) { id playerCount currentTick }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    registrationKey = "test-registration-key",
+                    serverKey,
+                    displayName = "Update Test Server",
+                    description = "Tests heartbeat update",
+                    region = "EU",
+                    environment = "test",
+                    backendUrl = "https://upd.example.com",
+                    graphqlUrl = "https://upd.example.com/graphql",
+                    frontendUrl = "https://upd.example.com/app",
+                    version = "1.0.0",
+                    playerCount = 99,
+                    companyCount = 55,
+                    currentTick = 12345,
+                },
+            });
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var srv = result.GetProperty("data").GetProperty("registerGameServer");
+        Assert.Equal(99, srv.GetProperty("playerCount").GetInt32());
+        Assert.Equal(12345, srv.GetProperty("currentTick").GetInt32());
+    }
+
     #endregion
 }
