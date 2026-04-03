@@ -3804,7 +3804,7 @@ watch(
                     </div>
                     <div class="mi-metric" v-if="selectedPublicSalesUnit.minPrice != null">
                       <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.configuredPrice') }}</span>
-                      <strong class="mi-metric-value">${{ (selectedPublicSalesUnit.minPrice as number).toFixed(2) }}</strong>
+                      <strong class="mi-metric-value">{{ formatCurrency(selectedPublicSalesUnit.minPrice as number) }}</strong>
                     </div>
                     <div class="mi-metric" v-if="publicSalesAnalytics.revenueHistory.length > 0">
                       <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.recentUtilization') }}</span>

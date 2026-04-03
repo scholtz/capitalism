@@ -1036,6 +1036,12 @@ public sealed class Query
         string actionHint;
         decimal recentUtilization = 0m;
 
+        // Named thresholds for demand signal classification
+        const double SupplyConstrainedDemandOverSoldRatio = 1.4;
+        const decimal SupplyConstrainedUtilizationThreshold = 0.85m;
+        const decimal StrongDemandUtilizationThreshold = 0.7m;
+        const decimal ModerateDemandUtilizationThreshold = 0.3m;
+
         if (recentRecords.Count == 0)
         {
             demandSignal = "NO_DATA";
@@ -1051,19 +1057,19 @@ public sealed class Query
 
             // Demand >> sold means inventory or capacity was the bottleneck
             var supplyConstrained = avgDemand > 0 && avgQuantitySold > 0
-                && avgDemand >= avgQuantitySold * 1.4 && (decimal)avgQuantitySold >= capacity * 0.85m;
+                && avgDemand >= avgQuantitySold * SupplyConstrainedDemandOverSoldRatio && (decimal)avgQuantitySold >= capacity * SupplyConstrainedUtilizationThreshold;
 
             if (supplyConstrained)
             {
                 demandSignal = "SUPPLY_CONSTRAINED";
                 actionHint = "Demand is outpacing your stock. Increase factory output or storage to capture more sales.";
             }
-            else if (recentUtilization >= 0.7m)
+            else if (recentUtilization >= StrongDemandUtilizationThreshold)
             {
                 demandSignal = "STRONG";
                 actionHint = "Demand is strong. Consider testing a slightly higher price to improve your margin without losing customers.";
             }
-            else if (recentUtilization >= 0.3m)
+            else if (recentUtilization >= ModerateDemandUtilizationThreshold)
             {
                 demandSignal = "MODERATE";
                 actionHint = "Sales are healthy. Keep monitoring stock levels and brand awareness to sustain performance.";

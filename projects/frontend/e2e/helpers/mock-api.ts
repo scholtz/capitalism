@@ -2656,7 +2656,15 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
-    if (query.includes('me') && !query.includes('companyLedger') && !query.includes('ledgerDrillDown') && !query.includes('companyBrands') && !query.includes('publicSalesAnalytics')) {
+    // Helper: true if the query is a standalone `me` query (not a more-specific query whose field names happen to include "me" as a substring).
+    const isStandaloneMeQuery = (q: string) =>
+      q.includes('me') &&
+      !q.includes('companyLedger') &&
+      !q.includes('ledgerDrillDown') &&
+      !q.includes('companyBrands') &&
+      !q.includes('publicSalesAnalytics')
+
+    if (isStandaloneMeQuery(query)) {
       const player = state.players.find((p) => p.id === state.currentUserId)
       if (!player) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }) })
