@@ -60,6 +60,58 @@ export function canPurchaseLot(
 }
 
 /**
+ * Returns the construction cost for a given building type (mirrors backend GameConstants).
+ * This is charged in addition to the land purchase price.
+ */
+export function constructionCostForType(buildingType: string): number {
+  const costs: Record<string, number> = {
+    MINE: 5000,
+    FACTORY: 15000,
+    SALES_SHOP: 8000,
+    RESEARCH_DEVELOPMENT: 25000,
+    APARTMENT: 40000,
+    COMMERCIAL: 20000,
+    MEDIA_HOUSE: 30000,
+    BANK: 50000,
+    EXCHANGE: 60000,
+    POWER_PLANT: 80000,
+  }
+  return costs[buildingType] ?? 10000
+}
+
+/**
+ * Returns the construction ticks for a given building type (mirrors backend GameConstants).
+ * Each tick represents one in-game hour.
+ */
+export function constructionTicksForType(buildingType: string): number {
+  const ticks: Record<string, number> = {
+    MINE: 24,
+    FACTORY: 48,
+    SALES_SHOP: 24,
+    RESEARCH_DEVELOPMENT: 72,
+    APARTMENT: 96,
+    COMMERCIAL: 48,
+    MEDIA_HOUSE: 48,
+    BANK: 72,
+    EXCHANGE: 96,
+    POWER_PLANT: 120,
+  }
+  return ticks[buildingType] ?? 24
+}
+
+/**
+ * Returns remaining construction ticks for an under-construction building.
+ * Returns 0 if construction is complete or no completion tick is set.
+ */
+export function constructionTicksRemaining(
+  completesAtTick: number | null,
+  currentTick: number,
+): number {
+  if (completesAtTick === null) return 0
+  return Math.max(0, completesAtTick - currentTick)
+}
+
+/**
  * Returns whether the purchase-confirmation form can be submitted.
  * Building type, name, and company must be selected; purchase must not already be in flight.
  */

@@ -12,6 +12,9 @@ import {
   populationIndexClass,
   canPurchaseLot as isPurchasable,
   canSubmitPurchaseForm as isFormSubmittable,
+  constructionCostForType,
+  constructionTicksForType,
+  constructionTicksRemaining as computeConstructionTicksRemaining,
 } from '@/lib/cityMapHelpers'
 import type { City, BuildingLot, Company, PurchaseLotResult } from '@/types'
 import L from 'leaflet'
@@ -100,45 +103,10 @@ const cashAfterPurchase = computed(() => {
   return selectedCompany.value.cash - selectedLot.value.price - constructionCost
 })
 
-/** Returns the construction cost for a given building type (mirrors backend GameConstants). */
-function constructionCostForType(buildingType: string): number {
-  const costs: Record<string, number> = {
-    MINE: 5000,
-    FACTORY: 15000,
-    SALES_SHOP: 8000,
-    RESEARCH_DEVELOPMENT: 25000,
-    APARTMENT: 40000,
-    COMMERCIAL: 20000,
-    MEDIA_HOUSE: 30000,
-    BANK: 50000,
-    EXCHANGE: 60000,
-    POWER_PLANT: 80000,
-  }
-  return costs[buildingType] ?? 10000
-}
-
-/** Returns the construction ticks for a given building type (mirrors backend GameConstants). */
-function constructionTicksForType(buildingType: string): number {
-  const ticks: Record<string, number> = {
-    MINE: 24,
-    FACTORY: 48,
-    SALES_SHOP: 24,
-    RESEARCH_DEVELOPMENT: 72,
-    APARTMENT: 96,
-    COMMERCIAL: 48,
-    MEDIA_HOUSE: 48,
-    BANK: 72,
-    EXCHANGE: 96,
-    POWER_PLANT: 120,
-  }
-  return ticks[buildingType] ?? 24
-}
-
-/** Returns remaining construction ticks for an under-construction building. */
+/** Returns remaining construction ticks for the current building, using the live tick from the game state store. */
 function constructionTicksRemaining(completesAtTick: number | null): number {
-  if (completesAtTick === null) return 0
   const currentTick = gameStateStore.gameState?.currentTick ?? 0
-  return Math.max(0, completesAtTick - currentTick)
+  return computeConstructionTicksRemaining(completesAtTick, currentTick)
 }
 
 function getLotStatus(lot: BuildingLot): 'available' | 'owned' | 'yours' {

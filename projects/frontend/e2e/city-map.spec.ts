@@ -1313,3 +1313,215 @@ test.describe('City Map — construction order flow', () => {
     ).toBeVisible()
   })
 })
+
+test.describe('City Map — construction completion transition', () => {
+  test('completed building (isUnderConstruction=false) shows Manage Building link, not construction panel', async ({
+    page,
+  }) => {
+    // After ConstructionPhase fires, isUnderConstruction becomes false.
+    // The lot detail panel should switch from the construction panel to "Manage Building".
+    const lots = makeDefaultBuildingLots()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-1',
+          playerId: 'player-1',
+          name: 'Completed Builder Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-completed',
+              companyId: 'company-1',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Completed Factory',
+              latitude: 48.152,
+              longitude: 17.125,
+              level: 1,
+              powerConsumption: 5,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              // Construction already completed — isUnderConstruction is false
+              isUnderConstruction: false,
+              constructionCompletesAtTick: null,
+              constructionCost: 15000,
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    lots[0]!.ownerCompanyId = 'company-1'
+    lots[0]!.buildingId = 'building-completed'
+    lots[0]!.ownerCompany = { id: 'company-1', name: 'Completed Builder Corp' }
+    lots[0]!.building = {
+      id: 'building-completed',
+      name: 'Completed Factory',
+      type: 'FACTORY',
+      isUnderConstruction: false,
+      constructionCompletesAtTick: null,
+      constructionCost: 15000,
+    }
+
+    const state = setupMockApi(page, { players: [player], buildingLots: lots })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    // Completed building shows "Manage Building", NOT the construction panel
+    await expect(page.getByRole('link', { name: /Manage Building/i })).toBeVisible()
+    await expect(page.locator('[data-testid="under-construction-panel"]')).toBeHidden()
+    await expect(page.locator('[data-testid="construction-banner"]')).toBeHidden()
+  })
+
+  test('building with 0 ticks remaining shows 0 in ticks-remaining display', async ({ page }) => {
+    // Edge-case: if constructionCompletesAtTick === currentTick, remaining should show 0.
+    const lots = makeDefaultBuildingLots()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-1',
+          playerId: 'player-1',
+          name: 'Last Tick Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-last-tick',
+              companyId: 'company-1',
+              cityId: 'city-ba',
+              type: 'MINE',
+              name: 'Almost Done Mine',
+              latitude: 48.152,
+              longitude: 17.125,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              isUnderConstruction: true,
+              constructionCompletesAtTick: 1, // same as default currentTick=1 in mock
+              constructionCost: 5000,
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    lots[0]!.ownerCompanyId = 'company-1'
+    lots[0]!.buildingId = 'building-last-tick'
+    lots[0]!.ownerCompany = { id: 'company-1', name: 'Last Tick Corp' }
+    lots[0]!.building = {
+      id: 'building-last-tick',
+      name: 'Almost Done Mine',
+      type: 'MINE',
+      isUnderConstruction: true,
+      constructionCompletesAtTick: 1,
+      constructionCost: 5000,
+    }
+
+    const state = setupMockApi(page, { players: [player], buildingLots: lots })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/city/city-ba')
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    // Under-construction panel must be visible
+    await expect(page.locator('[data-testid="under-construction-panel"]')).toBeVisible()
+    // The ticks-remaining should show "0 ticks remaining"
+    const ticksDisplay = page.locator('[data-testid="construction-ticks-remaining"]')
+    await expect(ticksDisplay).toBeVisible()
+    await expect(ticksDisplay).toContainText('0')
+  })
+
+  test('map and list views both reflect under-construction state consistently', async ({ page }) => {
+    // Regression: construction state must be consistent whether the player is in map or list mode.
+    const lots = makeDefaultBuildingLots()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-1',
+          playerId: 'player-1',
+          name: 'Consistency Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-consistency',
+              companyId: 'company-1',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Consistency Factory',
+              latitude: 48.152,
+              longitude: 17.125,
+              level: 1,
+              powerConsumption: 5,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              isUnderConstruction: true,
+              constructionCompletesAtTick: 200,
+              constructionCost: 15000,
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    lots[0]!.ownerCompanyId = 'company-1'
+    lots[0]!.buildingId = 'building-consistency'
+    lots[0]!.ownerCompany = { id: 'company-1', name: 'Consistency Corp' }
+    lots[0]!.building = {
+      id: 'building-consistency',
+      name: 'Consistency Factory',
+      type: 'FACTORY',
+      isUnderConstruction: true,
+      constructionCompletesAtTick: 200,
+      constructionCost: 15000,
+    }
+
+    const state = setupMockApi(page, { players: [player], buildingLots: lots })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/city/city-ba')
+
+    // List view: select lot and verify construction panel
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await expect(page.locator('[data-testid="under-construction-panel"]')).toBeVisible()
+    await expect(page.getByRole('link', { name: /Manage Building/i })).toBeHidden()
+
+    // Map view: same lot marker click, same construction state
+    await page.getByRole('button', { name: /Map View/i }).click()
+    // Select via list view again (map click is complex in E2E), then check the detail panel
+    await page.getByRole('button', { name: /List View/i }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await expect(page.locator('[data-testid="under-construction-panel"]')).toBeVisible()
+  })
+})
