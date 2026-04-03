@@ -2485,6 +2485,176 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     await page.waitForURL('/dashboard')
     await expect(page).toHaveURL('/dashboard')
   })
+
+  test('first sale auto-detected for Food Processing (Bread): celebration shows correct product and revenue (AC2, AC7)', async ({
+    page,
+  }) => {
+    // AC2: "The onboarding flow includes industry selection for Furniture, Food processing, and Healthcare."
+    // AC7: "The player can observe visible tick progression and see the business generate an understandable first revenue."
+    // This test verifies that when a Food Processing player (Bread, ~$3/unit) has a first real sale,
+    // the business-live panel celebrates with the correct product name and revenue amount — not the
+    // Furniture default. Each industry must show its own first-profit moment.
+    const shopBuildingId = 'building-shop-bread-test'
+    const player = makePlayer({
+      onboardingCompletedAtUtc: new Date().toISOString(),
+      onboardingShopBuildingId: shopBuildingId,
+      onboardingFirstSaleCompletedAtUtc: null,
+      companies: [
+        {
+          id: 'comp-bread',
+          playerId: 'player-1',
+          name: 'Bread Empire',
+          cash: 300000,
+          foundedAtUtc: new Date().toISOString(),
+          buildings: [
+            {
+              id: shopBuildingId,
+              companyId: 'comp-bread',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Bread Empire Shop',
+              latitude: 48.145,
+              longitude: 17.107,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              units: [
+                {
+                  id: 'unit-bread-ps-1',
+                  buildingId: shopBuildingId,
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkDown: false,
+                  linkDiagonal: false,
+                  minPrice: 5,
+                },
+              ],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Bread sale: 10 units × $5 = $50 revenue
+    state.publicSalesRecords = [
+      {
+        id: 'sale-bread-1',
+        buildingId: shopBuildingId,
+        companyId: 'comp-bread',
+        productTypeName: 'Bread',
+        tick: 30,
+        quantitySold: 10,
+        pricePerUnit: 5,
+        revenue: 50,
+      },
+    ]
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/onboarding')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // Business-live panel auto-detects the first sale
+    await expect(page.locator('.business-live-panel')).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Your Business is Now Operational/i })).toBeVisible()
+
+    // First-sale celebration must show "Bread" (not Wooden Chair) and the Food Processing revenue
+    await expect(page.locator('.first-sale-celebration')).toBeVisible()
+    await expect(page.locator('.first-sale-celebration')).toContainText('Bread')
+    await expect(page.locator('.first-sale-celebration')).toContainText('50')
+  })
+
+  test('first sale auto-detected for Healthcare (Basic Medicine): celebration shows correct product and revenue (AC2, AC7)', async ({
+    page,
+  }) => {
+    // AC2: "The onboarding flow includes industry selection for Furniture, Food processing, and Healthcare."
+    // AC7: "The player can observe visible tick progression and see the business generate an understandable first revenue."
+    // This test verifies that when a Healthcare player (Basic Medicine, ~$50/unit) has a first real
+    // sale, the business-live panel celebrates with the correct product name and premium revenue
+    // amount — confirming that Healthcare's high-margin value proposition is demonstrated.
+    const shopBuildingId = 'building-shop-medicine-test'
+    const player = makePlayer({
+      onboardingCompletedAtUtc: new Date().toISOString(),
+      onboardingShopBuildingId: shopBuildingId,
+      onboardingFirstSaleCompletedAtUtc: null,
+      companies: [
+        {
+          id: 'comp-medicine',
+          playerId: 'player-1',
+          name: 'PharmaCo',
+          cash: 300000,
+          foundedAtUtc: new Date().toISOString(),
+          buildings: [
+            {
+              id: shopBuildingId,
+              companyId: 'comp-medicine',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'PharmaCo Shop',
+              latitude: 48.145,
+              longitude: 17.107,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: new Date().toISOString(),
+              units: [
+                {
+                  id: 'unit-med-ps-1',
+                  buildingId: shopBuildingId,
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkDown: false,
+                  linkDiagonal: false,
+                  minPrice: 75,
+                },
+              ],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Basic Medicine sale: 5 units × $75 = $375 revenue (premium margin)
+    state.publicSalesRecords = [
+      {
+        id: 'sale-med-1',
+        buildingId: shopBuildingId,
+        companyId: 'comp-medicine',
+        productTypeName: 'Basic Medicine',
+        tick: 28,
+        quantitySold: 5,
+        pricePerUnit: 75,
+        revenue: 375,
+      },
+    ]
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/onboarding')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // Business-live panel auto-detects the first sale
+    await expect(page.locator('.business-live-panel')).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Your Business is Now Operational/i })).toBeVisible()
+
+    // First-sale celebration must show "Basic Medicine" (not Wooden Chair) and the premium Healthcare revenue
+    await expect(page.locator('.first-sale-celebration')).toBeVisible()
+    await expect(page.locator('.first-sale-celebration')).toContainText('Basic Medicine')
+    await expect(page.locator('.first-sale-celebration')).toContainText('375')
+  })
 })
 
 test.describe('Onboarding skip and re-entry behavior', () => {
