@@ -93,3 +93,94 @@ export function computeTransitCostPerUnit(
 export function computeDeliveredPrice(exchangePrice: number, transitCost: number): number {
   return Number((exchangePrice + transitCost).toFixed(2))
 }
+
+// ── Offer filtering and optimal-source selection ───────────────────────────
+
+/**
+ * Reason why a global exchange offer is blocked for a purchase unit.
+ * - 'maxPrice' : delivered price exceeds the unit's maximum acceptable price.
+ * - 'minQuality': estimated quality falls below the unit's minimum quality threshold.
+ * - null       : the offer is eligible (not blocked).
+ */
+export type BlockedReason = 'maxPrice' | 'minQuality' | null
+
+/**
+ * A `GlobalExchangeOffer` annotated with whether it is blocked for a given
+ * purchase-unit configuration and, if blocked, why.
+ */
+export interface AnnotatedExchangeOffer {
+  cityId: string
+  cityName: string
+  resourceTypeId: string
+  resourceName: string
+  resourceSlug: string
+  unitSymbol: string
+  localAbundance: number
+  exchangePricePerUnit: number
+  estimatedQuality: number
+  transitCostPerUnit: number
+  deliveredPricePerUnit: number
+  distanceKm: number
+  blocked: boolean
+  blockedReason: BlockedReason
+}
+
+/**
+ * Annotates a list of global exchange offers with whether each is blocked for
+ * the given purchase-unit constraints.
+ *
+ * Rules (applied in order):
+ * 1. If `maxPrice` is set and `deliveredPricePerUnit > maxPrice` → blocked with reason 'maxPrice'.
+ * 2. If `minQuality` is set and `estimatedQuality < minQuality` → blocked with reason 'minQuality'.
+ * 3. Otherwise → not blocked.
+ *
+ * The input list is assumed to be pre-sorted by delivered price (server provides this ordering).
+ * The function does not mutate or re-sort the list.
+ *
+ * @param offers     List of offers from `globalExchangeOffers` query.
+ * @param maxPrice   Maximum acceptable delivered price per unit, or null for no cap.
+ * @param minQuality Minimum acceptable quality (0–1), or null for no floor.
+ */
+export function annotateExchangeOffers(
+  offers: readonly {
+    cityId: string
+    cityName: string
+    resourceTypeId: string
+    resourceName: string
+    resourceSlug: string
+    unitSymbol: string
+    localAbundance: number
+    exchangePricePerUnit: number
+    estimatedQuality: number
+    transitCostPerUnit: number
+    deliveredPricePerUnit: number
+    distanceKm: number
+  }[],
+  maxPrice: number | null,
+  minQuality: number | null,
+): AnnotatedExchangeOffer[] {
+  return offers.map((offer) => {
+    if (maxPrice !== null && offer.deliveredPricePerUnit > maxPrice) {
+      return { ...offer, blocked: true, blockedReason: 'maxPrice' as const }
+    }
+    if (minQuality !== null && offer.estimatedQuality < minQuality) {
+      return { ...offer, blocked: true, blockedReason: 'minQuality' as const }
+    }
+    return { ...offer, blocked: false, blockedReason: null }
+  })
+}
+
+/**
+ * Returns the optimal (cheapest eligible) exchange offer from an annotated list,
+ * or `null` if all offers are blocked or the list is empty.
+ *
+ * "Optimal" means the first non-blocked offer in the list. Since the server
+ * returns offers pre-sorted by delivered price ascending (and quality descending
+ * as a tiebreaker), the first non-blocked offer is the best available source.
+ *
+ * This mirrors the selection logic in `PurchasingPhase.BuyFromGlobalExchange`
+ * which calls `.OrderBy(o => o.deliveredPrice).ThenByDescending(o => o.quality).FirstOrDefault()`.
+ */
+export function selectOptimalOffer(offers: readonly AnnotatedExchangeOffer[]): AnnotatedExchangeOffer | null {
+  return offers.find((o) => !o.blocked) ?? null
+}

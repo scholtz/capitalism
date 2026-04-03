@@ -18,6 +18,11 @@ import {
   getVerticalLinkArrow,
   getVerticalLinkState,
 } from '@/lib/linkHelpers'
+import {
+  annotateExchangeOffers,
+  selectOptimalOffer,
+  type AnnotatedExchangeOffer,
+} from '@/lib/globalExchange'
 import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedResourceDescription, getLocalizedResourceName } from '@/lib/catalogPresentation'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { gqlRequest } from '@/lib/graphql'
@@ -375,27 +380,18 @@ const selectedPublicSalesUnit = computed(() =>
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
 
-type ExchangeOfferItem = GlobalExchangeOffer & { blocked: boolean; blockedReason: string | null }
+type ExchangeOfferItem = AnnotatedExchangeOffer
 
 const exchangeOfferItems = computed<ExchangeOfferItem[]>(() => {
   const maxPrice = selectedPurchaseUnit.value?.maxPrice ?? null
   const minQuality = selectedPurchaseUnit.value?.minQuality ?? null
-  return exchangeOffers.value.map((offer) => {
-    if (maxPrice !== null && offer.deliveredPricePerUnit > maxPrice) {
-      return { ...offer, blocked: true, blockedReason: 'maxPrice' }
-    }
-    if (minQuality !== null && offer.estimatedQuality < minQuality) {
-      return { ...offer, blocked: true, blockedReason: 'minQuality' }
-    }
-    return { ...offer, blocked: false, blockedReason: null }
-  })
+  return annotateExchangeOffers(exchangeOffers.value, maxPrice, minQuality)
 })
 
 const allExchangeOffersBlocked = computed(() => exchangeOfferItems.value.length > 0 && exchangeOfferItems.value.every((o) => o.blocked))
 
 const bestExchangeOfferCityId = computed<string | null>(() => {
-  const best = exchangeOfferItems.value.find((o) => !o.blocked)
-  return best?.cityId ?? null
+  return selectOptimalOffer(exchangeOfferItems.value)?.cityId ?? null
 })
 
 function formatBuildingType(type: string): string {
