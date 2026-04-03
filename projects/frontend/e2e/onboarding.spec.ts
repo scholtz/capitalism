@@ -1074,11 +1074,11 @@ test.describe('Guest onboarding wizard', () => {
     await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
 
     await page.evaluate(() => {
-      ;(window as unknown as Record<string, unknown[]>).__convertedEvents = []
+      (window as unknown as Record<string, unknown[]>).__convertedEvents = []
       window.addEventListener('capitalism:onboarding', (e: Event) => {
         const detail = (e as CustomEvent).detail
         if (detail?.eventName === 'onboarding_converted') {
-          ;((window as unknown as Record<string, unknown[]>).__convertedEvents).push(detail)
+          (window as unknown as Record<string, unknown[]>).__convertedEvents.push(detail)
         }
       })
     })
