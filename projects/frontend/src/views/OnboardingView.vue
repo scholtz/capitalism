@@ -246,6 +246,16 @@ const configureGuideCash = computed(() => {
   return auth.player?.companies[0]?.cash ?? 0
 })
 
+/**
+ * The auto-configured public sale price for the guest's shop.
+ * The backend sets MinPrice = basePrice × 1.5 for the PUBLIC_SALES unit during FinishOnboarding.
+ */
+const guestConfiguredShopPrice = computed(() => {
+  const base = selectedProduct.value?.basePrice
+  if (!base) return null
+  return Math.round(base * 1.5 * 100) / 100
+})
+
 /** Simulated first-tick profit for the guest completion preview. */
 const simulatedProfit = computed(() => {
   if (!selectedProduct.value) return null
@@ -910,6 +920,11 @@ async function saveGuestProgress() {
         // Guest progress has been successfully persisted to the backend — clear local state
         // so stale sandbox choices don't persist in localStorage or confuse future sessions.
         clearProgress()
+        trackOnboardingEvent('onboarding_converted', {
+          industry: selectedIndustry.value,
+          cityId: selectedCityId.value,
+          authMode: guestAuthMode.value,
+        })
       } catch (migrationErr: unknown) {
         const code = migrationErr instanceof GraphQLError ? migrationErr.code : undefined
         if (code === 'LOT_ALREADY_OWNED') {
@@ -1600,6 +1615,18 @@ useTickRefresh(async () => {
               </span>
             </div>
           </div>
+        </div>
+
+        <!-- Guest pricing explanation -->
+        <div v-if="isGuestMode && selectedProduct && guestConfiguredShopPrice" class="guest-price-panel" role="region" aria-label="Configured sale price">
+          <div class="price-panel-header">
+            <span class="price-panel-icon">💲</span>
+            <div>
+              <strong>{{ t('onboarding.guestPriceTitle') }}</strong>
+              <p>{{ t('onboarding.guestPriceDesc', { product: getProductName(selectedProduct), price: '$' + formatCurrency(guestConfiguredShopPrice), basePrice: '$' + formatCurrency(selectedProduct.basePrice) }) }}</p>
+            </div>
+          </div>
+          <p class="price-panel-tip">{{ t('onboarding.guestPriceTip') }}</p>
         </div>
 
         <!-- Guest save-progress section -->
@@ -3134,6 +3161,48 @@ useTickRefresh(async () => {
 
 .profit-stat-negative {
   color: var(--color-error, #ff4757);
+}
+
+.guest-price-panel {
+  background: linear-gradient(135deg, rgba(0, 71, 255, 0.06) 0%, rgba(0, 200, 83, 0.04) 100%);
+  border: 1px solid rgba(0, 71, 255, 0.3);
+  border-radius: 10px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.price-panel-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.price-panel-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.price-panel-header strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--color-text);
+}
+
+.price-panel-header p {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.price-panel-tip {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  border-top: 1px solid rgba(0, 71, 255, 0.15);
+  padding-top: 0.5rem;
+  margin: 0;
+  font-style: italic;
 }
 
 .guest-save-progress {

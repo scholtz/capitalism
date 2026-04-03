@@ -8,6 +8,33 @@ describe('trackOnboardingEvent', () => {
     expect(() => trackOnboardingEvent('industry_selected', { industry: 'FURNITURE' })).not.toThrow()
     expect(() => trackOnboardingEvent('completed')).not.toThrow()
   })
+
+  it('accepts onboarding_converted event without throwing', () => {
+    expect(() =>
+      trackOnboardingEvent('onboarding_converted', {
+        industry: 'FURNITURE',
+        cityId: 'city-ba',
+        authMode: 'register',
+      }),
+    ).not.toThrow()
+  })
+
+  it('accepts all defined event types without throwing', () => {
+    const events = [
+      'onboarding_start',
+      'industry_selected',
+      'city_selected',
+      'factory_configured',
+      'shop_configured',
+      'save_prompt_shown',
+      'first_profit_shown',
+      'completed',
+      'onboarding_converted',
+    ] as const
+    for (const evt of events) {
+      expect(() => trackOnboardingEvent(evt)).not.toThrow()
+    }
+  })
 })
 
 describe('computeSimulatedProfit', () => {

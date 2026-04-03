@@ -1037,6 +1037,67 @@ test.describe('Guest onboarding wizard', () => {
 
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
   })
+
+  test('guest completion screen shows configured sale price panel (AC 6)', async ({ page }) => {
+    // AC 6: "The player sets a public sale price during onboarding and receives clear explanation
+    // of the decision." The shop is auto-configured with MinPrice = basePrice × 1.5. The wizard
+    // must show this configured price and explain the pricing tradeoff.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+
+    // The price panel must be visible showing the configured shop price
+    const pricePanel = page.locator('.guest-price-panel')
+    await expect(pricePanel).toBeVisible()
+
+    // Panel should show the configured price (1.5× product base price)
+    // Wooden Chair base price = $45 → configured price = $67.5
+    await expect(pricePanel).toContainText('Your Configured Sale Price')
+    await expect(pricePanel).toContainText(/\$67\.5/)
+    await expect(pricePanel).toContainText('$45')
+
+    // Panel must include the pricing tradeoff tip
+    await expect(page.locator('.price-panel-tip')).toBeVisible()
+  })
+
+  test('guest completion screen fires onboarding_converted event on successful migration (AC 12)', async ({
+    page,
+  }) => {
+    // AC 12: Analytics for "onboarding_converted" must fire when a guest successfully
+    // registers and migrates their progress to an authenticated account.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+
+    await page.evaluate(() => {
+      ;(window as unknown as Record<string, unknown[]>).__convertedEvents = []
+      window.addEventListener('capitalism:onboarding', (e: Event) => {
+        const detail = (e as CustomEvent).detail
+        if (detail?.eventName === 'onboarding_converted') {
+          ;((window as unknown as Record<string, unknown[]>).__convertedEvents).push(detail)
+        }
+      })
+    })
+
+    await page.locator('#guestEmail').fill('converted@test.com')
+    await page.locator('#guestDisplayName').fill('Converted Player')
+    await page.locator('#guestPassword').fill('ConvertedPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    const events = await page.evaluate(
+      () => (window as unknown as Record<string, unknown[]>).__convertedEvents ?? [],
+    )
+    expect(events.length).toBeGreaterThan(0)
+    const firstEvent = events[0] as Record<string, unknown>
+    expect(firstEvent.eventName).toBe('onboarding_converted')
+    expect(firstEvent.industry).toBe('FURNITURE')
+  })
 })
 
 test.describe('Dashboard', () => {

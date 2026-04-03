@@ -7,6 +7,7 @@ export type OnboardingAnalyticsEvent =
   | 'save_prompt_shown'
   | 'first_profit_shown'
   | 'completed'
+  | 'onboarding_converted'
 
 /**
  * Lightweight analytics hook for onboarding step events.
