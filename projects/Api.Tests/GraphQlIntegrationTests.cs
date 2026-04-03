@@ -4994,6 +4994,10 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         }
     }
 
+    // NOTE: All product-identity assertions in the conflict-recovery tests below check the
+    // `industry` field (e.g. "FOOD_PROCESSING") rather than `slug` (e.g. "bread") because
+    // FinishOnboardingAsync returns `selectedProduct { id name industry }` — not slug.
+    // This is intentional: industry is sufficient to prove the guest's intent was preserved.
     [Fact]
     public async Task GuestMigration_FactoryLotConflict_PlayerCanRestartAndCompleteWithDifferentLot()
     {
@@ -5171,7 +5175,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.NotNull(finishData.GetProperty("company").GetProperty("id").GetString());
         Assert.NotNull(finishData.GetProperty("salesShop").GetProperty("id").GetString());
 
-        // Verify the selected product is in the FOOD_PROCESSING industry (FinishOnboardingAsync helper returns industry, not slug)
+        // Verify the selected product is in the FOOD_PROCESSING industry
         var selectedProductIndustry = finishData.GetProperty("selectedProduct").GetProperty("industry").GetString();
         Assert.Equal("FOOD_PROCESSING", selectedProductIndustry);
     }
@@ -5219,10 +5223,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         // Player B tries to finish with the now-taken shop lot — must fail
         var failedFinish = await FinishOnboardingAsync(tokenB, productId, sharedShopLotId);
         Assert.True(failedFinish.TryGetProperty("errors", out var failErrors), "Expected shop lot conflict error for Healthcare");
-        Assert.True(
-            failErrors[0].GetProperty("message").GetString()!.Contains("already been purchased") ||
-            (failErrors[0].TryGetProperty("extensions", out var ext) && ext.GetProperty("code").GetString() == "LOT_ALREADY_OWNED"),
-            "Error must indicate the lot is already owned");
+        Assert.Contains("already been purchased", failErrors[0].GetProperty("message").GetString());
 
         // Player B retries with a different shop lot — must succeed and preserve Healthcare/Basic Medicine
         var freshShopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "High Street", 95_000m, "Fresh HC Shop Lot");
