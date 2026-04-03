@@ -13,10 +13,12 @@
 
   <ItemGroup>
     <PackageReference Include="HotChocolate.AspNetCore" Version="15.1.12" />
+    <PackageReference Include="HotChocolate.AspNetCore.Authorization" Version="15.1.12" />
     <PackageReference Include="HotChocolate.Types.Analyzers" Version="15.1.12">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.5" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.5">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using MasterApi.Configuration;
 using MasterApi.Data;
+using MasterApi.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -26,6 +28,44 @@ public sealed class Query
             .ToList();
     }
 
+    [HotChocolate.Authorization.Authorize]
+    public async Task<MasterPlayerProfile> GetMe(
+        ClaimsPrincipal claimsPrincipal,
+        [Service] MasterDbContext db)
+    {
+        var userId = GetCurrentUserId(claimsPrincipal);
+        var player = await db.PlayerAccounts.FirstOrDefaultAsync(p => p.Id == userId)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+
+        return new MasterPlayerProfile
+        {
+            Id = player.Id,
+            Email = player.Email,
+            DisplayName = player.DisplayName,
+            CreatedAtUtc = player.CreatedAtUtc,
+        };
+    }
+
+    [HotChocolate.Authorization.Authorize]
+    public async Task<SubscriptionInfo> GetMySubscription(
+        ClaimsPrincipal claimsPrincipal,
+        [Service] MasterDbContext db)
+    {
+        var userId = GetCurrentUserId(claimsPrincipal);
+        var now = DateTime.UtcNow;
+
+        var activeSub = await db.ProSubscriptions
+            .Where(s => s.PlayerAccountId == userId && s.Status == SubscriptionStatus.Active)
+            .OrderByDescending(s => s.ExpiresAtUtc)
+            .FirstOrDefaultAsync();
+
+        return BuildSubscriptionInfo(activeSub, now);
+    }
+
     internal static GameServerSummary ToSummary(Data.Entities.GameServerNode server, DateTime cutoff)
     {
         return new GameServerSummary
@@ -46,6 +86,46 @@ public sealed class Query
             RegisteredAtUtc = server.RegisteredAtUtc,
             LastHeartbeatAtUtc = server.LastHeartbeatAtUtc,
             IsOnline = server.LastHeartbeatAtUtc >= cutoff,
+        };
+    }
+
+    internal static Guid GetCurrentUserId(ClaimsPrincipal principal)
+    {
+        var idClaim = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Authenticated user identity is missing.")
+                    .SetCode("IDENTITY_MISSING")
+                    .Build());
+
+        return Guid.Parse(idClaim);
+    }
+
+    internal static SubscriptionInfo BuildSubscriptionInfo(ProSubscription? sub, DateTime now)
+    {
+        if (sub is null)
+        {
+            return new SubscriptionInfo
+            {
+                Tier = "FREE",
+                Status = "NONE",
+                IsActive = false,
+                CanProlong = true,
+            };
+        }
+
+        var isActive = sub.ExpiresAtUtc > now;
+        var daysRemaining = isActive ? (int)Math.Ceiling((sub.ExpiresAtUtc - now).TotalDays) : 0;
+
+        return new SubscriptionInfo
+        {
+            Tier = sub.Tier.ToString().ToUpperInvariant(),
+            Status = isActive ? "ACTIVE" : "EXPIRED",
+            StartsAtUtc = sub.StartsAtUtc,
+            ExpiresAtUtc = sub.ExpiresAtUtc,
+            IsActive = isActive,
+            DaysRemaining = isActive ? daysRemaining : null,
+            CanProlong = true,
         };
     }
 }

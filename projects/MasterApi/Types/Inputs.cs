@@ -1,5 +1,27 @@
 namespace MasterApi.Types;
 
+public sealed class RegisterInput
+{
+    public string Email { get; set; } = string.Empty;
+
+    public string DisplayName { get; set; } = string.Empty;
+
+    public string Password { get; set; } = string.Empty;
+}
+
+public sealed class LoginInput
+{
+    public string Email { get; set; } = string.Empty;
+
+    public string Password { get; set; } = string.Empty;
+}
+
+public sealed class ProlongSubscriptionInput
+{
+    /// <summary>Number of months to extend the subscription (1–12).</summary>
+    public int Months { get; set; } = 1;
+}
+
 public sealed class RegisterGameServerInput
 {
     public string RegistrationKey { get; set; } = string.Empty;
@@ -62,4 +84,45 @@ public sealed class GameServerSummary
     public DateTime LastHeartbeatAtUtc { get; init; }
 
     public bool IsOnline { get; init; }
+}
+
+public sealed class MasterAuthPayload
+{
+    public string Token { get; set; } = string.Empty;
+
+    public DateTime ExpiresAtUtc { get; set; }
+
+    public MasterPlayerProfile Player { get; set; } = null!;
+}
+
+public sealed class MasterPlayerProfile
+{
+    public Guid Id { get; set; }
+
+    public string Email { get; set; } = string.Empty;
+
+    public string DisplayName { get; set; } = string.Empty;
+
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public sealed class SubscriptionInfo
+{
+    public string Tier { get; set; } = "FREE";
+
+    public string Status { get; set; } = "NONE";
+
+    /// <summary>Null if the player has no active subscription.</summary>
+    public DateTime? ExpiresAtUtc { get; set; }
+
+    /// <summary>Null if the player has no active subscription.</summary>
+    public DateTime? StartsAtUtc { get; set; }
+
+    public bool IsActive { get; set; }
+
+    /// <summary>Days remaining until expiry; null if no active subscription.</summary>
+    public int? DaysRemaining { get; set; }
+
+    /// <summary>Whether the player is eligible to prolong/renew.</summary>
+    public bool CanProlong { get; set; }
 }

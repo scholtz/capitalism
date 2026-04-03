@@ -7,6 +7,10 @@ public sealed class MasterDbContext(DbContextOptions<MasterDbContext> options) :
 {
     public DbSet<GameServerNode> GameServers => Set<GameServerNode>();
 
+    public DbSet<PlayerAccount> PlayerAccounts => Set<PlayerAccount>();
+
+    public DbSet<ProSubscription> ProSubscriptions => Set<ProSubscription>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         var gameServer = modelBuilder.Entity<GameServerNode>();
@@ -23,5 +27,18 @@ public sealed class MasterDbContext(DbContextOptions<MasterDbContext> options) :
         gameServer.Property(server => server.GraphqlUrl).HasMaxLength(240);
         gameServer.Property(server => server.FrontendUrl).HasMaxLength(240);
         gameServer.Property(server => server.Version).HasMaxLength(80);
+
+        var player = modelBuilder.Entity<PlayerAccount>();
+        player.HasKey(p => p.Id);
+        player.HasIndex(p => p.Email).IsUnique();
+        player.Property(p => p.Email).HasMaxLength(200);
+        player.Property(p => p.DisplayName).HasMaxLength(120);
+        player.Property(p => p.PasswordHash).HasMaxLength(512);
+
+        var sub = modelBuilder.Entity<ProSubscription>();
+        sub.HasKey(s => s.Id);
+        sub.HasOne(s => s.PlayerAccount)
+           .WithMany(p => p.Subscriptions)
+           .HasForeignKey(s => s.PlayerAccountId);
     }
 }

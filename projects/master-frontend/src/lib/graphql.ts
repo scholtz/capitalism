@@ -15,12 +15,19 @@ export class GraphQLError extends Error {
 export async function gqlRequest<T>(
   query: string,
   variables?: Record<string, unknown>,
+  token?: string | null,
 ): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
   const res = await fetch(GRAPHQL_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({ query, variables }),
   })
 
