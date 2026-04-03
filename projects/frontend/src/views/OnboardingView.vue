@@ -1744,6 +1744,7 @@ useTickRefresh(async () => {
             </div>
             <div class="startup-pack-header-right">
               <span class="startup-pack-price">{{ t('startupPack.price') }}</span>
+              <span class="startup-pack-pro-monthly">{{ t('startupPack.proMonthlyPrice') }}</span>
               <span class="startup-pack-status" :class="{ claimed: claimedStartupPackOffer, expired: expiredStartupPackOffer }">
                 {{ t(`startupPack.status.${startupPackOffer.status.toLowerCase()}`) }}
               </span>
@@ -1753,6 +1754,7 @@ useTickRefresh(async () => {
           <p class="startup-pack-subtitle">
             {{ t('startupPack.subtitle', { amount: '$' + formatCurrency(startupPackOffer.companyCashGrant) }) }}
           </p>
+          <p v-if="activeStartupPackOffer" class="startup-pack-savings">{{ t('startupPack.proSavings') }}</p>
 
           <div v-if="activeStartupPackOffer" class="startup-pack-active">
             <div class="startup-pack-benefits">
@@ -2629,6 +2631,19 @@ useTickRefresh(async () => {
   font-weight: 800;
   color: var(--color-primary);
   letter-spacing: -0.02em;
+}
+
+.startup-pack-pro-monthly {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.startup-pack-savings {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  color: var(--color-secondary);
+  font-weight: 600;
 }
 
 .startup-pack-eyebrow {

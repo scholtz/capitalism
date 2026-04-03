@@ -11,6 +11,7 @@ namespace Api.Utilities;
 public static class StartupPackService
 {
     public const decimal PriceUsd = 20m;
+    public const decimal ProMonthlyPriceUsd = 10m;
     public const decimal CompanyCashGrant = 250_000m;
     public const int ProDurationDays = 90;
     public const int MaxClaimRetryAttempts = 3;

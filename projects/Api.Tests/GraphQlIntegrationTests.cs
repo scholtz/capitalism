@@ -4242,10 +4242,16 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         // The ROADMAP defines the startup pack price as $20.
         // This test documents and enforces that contract so any accidental change is caught.
         Assert.Equal(20m, StartupPackService.PriceUsd);
+        // Pro monthly reference price must match the roadmap ($10/month).
+        Assert.Equal(10m, StartupPackService.ProMonthlyPriceUsd);
         // Pro and cash-grant constants must also stay within expected ranges.
         Assert.Equal(90, StartupPackService.ProDurationDays);
         Assert.True(StartupPackService.CompanyCashGrant > 0,
             "CompanyCashGrant must be a positive in-game currency amount.");
+        // The startup pack price must be less than the full-price equivalent so the savings are real.
+        var fullPriceEquivalent = StartupPackService.ProMonthlyPriceUsd * (StartupPackService.ProDurationDays / 30m);
+        Assert.True(StartupPackService.PriceUsd < fullPriceEquivalent,
+            $"Startup pack price ${StartupPackService.PriceUsd} must be less than full Pro price ${fullPriceEquivalent}.");
     }
 
     [Fact]

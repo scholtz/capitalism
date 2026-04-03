@@ -220,6 +220,8 @@ export default {
   startupPack: {
     eyebrow: 'Časovo obmedzený štartovací balík',
     price: '20 $',
+    proMonthlyPrice: '10 $/mesiac',
+    proSavings: 'Bežný Pro: 10 $/mesiac · Ušetríte 10 $ s týmto balíkom',
     title: 'Rastite rýchlejšie, keď sa váš prvý podnik rozbieha',
     revisitTitle: 'Váš štartovací balík je stále dostupný',
     subtitle: 'Získajte 3 mesiace Pro prístupu a {amount} rozširovacieho kapitálu pre ďalšiu fázu vášho impéria.',

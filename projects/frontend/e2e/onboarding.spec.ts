@@ -1335,6 +1335,11 @@ test.describe('Onboarding resume and progress persistence', () => {
     // AC #2: offer must clearly display the $20 price
     await expect(page.locator('.startup-pack-price')).toBeVisible()
     await expect(page.locator('.startup-pack-price')).toContainText('$20')
+    // AC #3: offer must clearly display the regular Pro reference price ($10/month)
+    await expect(page.locator('.startup-pack-pro-monthly')).toBeVisible()
+    await expect(page.locator('.startup-pack-pro-monthly')).toContainText('$10')
+    // AC #3: savings callout must be visible to make the value proposition understandable
+    await expect(page.locator('.startup-pack-savings')).toBeVisible()
     // AC #4: pro benefit copy must mention more products to manufacture and sell
     await expect(page.getByText(/more products to.*sell/i)).toBeVisible()
 
@@ -1454,6 +1459,9 @@ test.describe('Onboarding resume and progress persistence', () => {
     await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
     // AC #2: price must be visible on dashboard offer panel
     await expect(page.locator('.startup-pack-price')).toContainText('$20')
+    // AC #3: Pro reference price must be visible on dashboard offer panel
+    await expect(page.locator('.startup-pack-pro-monthly')).toContainText('$10')
+    await expect(page.locator('.startup-pack-savings')).toBeVisible()
 
     // Reload the page — offer must still be visible (state persisted in backend)
     await page.reload()
@@ -1461,6 +1469,8 @@ test.describe('Onboarding resume and progress persistence', () => {
     await expect(page.getByRole('heading', { name: 'Your startup pack is still available' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
     await expect(page.locator('.startup-pack-price')).toContainText('$20')
+    // AC #3: Pro reference price must still be visible after reload
+    await expect(page.locator('.startup-pack-pro-monthly')).toContainText('$10')
   })
 
   test('expired offer on dashboard shows expired message without claim button', async ({

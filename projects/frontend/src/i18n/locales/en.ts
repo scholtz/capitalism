@@ -220,6 +220,8 @@ export default {
   startupPack: {
     eyebrow: 'Limited-time startup pack',
     price: '$20',
+    proMonthlyPrice: '$10/month',
+    proSavings: 'Regular Pro: $10/month · You save $10 with this pack',
     title: 'Scale faster while your first business is taking off',
     revisitTitle: 'Your startup pack is still available',
     subtitle: 'Claim 3 months of Pro access and {amount} in expansion capital for the next phase of your empire.',

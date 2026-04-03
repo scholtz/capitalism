@@ -221,6 +221,8 @@ export default {
   startupPack: {
     eyebrow: 'Zeitlich begrenztes Startup-Paket',
     price: '20 $',
+    proMonthlyPrice: '10 $/Monat',
+    proSavings: 'Reguläres Pro: 10 $/Monat · Sie sparen 10 $ mit diesem Paket',
     title: 'Wachsen Sie schneller, während Ihr erstes Unternehmen Fahrt aufnimmt',
     revisitTitle: 'Ihr Startup-Paket ist weiterhin verfügbar',
     subtitle: 'Sichern Sie sich 3 Monate Pro-Zugang und {amount} Expansionskapital für die nächste Phase Ihres Imperiums.',
