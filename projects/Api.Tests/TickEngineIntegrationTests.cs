@@ -2044,9 +2044,9 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
 
         await db.Entry(company).ReloadAsync();
 
-        // Cash must have decreased (operating costs + partial purchase).
+        // Cash must have decreased (operating costs alone are enough to satisfy this).
         Assert.True(company.Cash < cashBefore,
-            "Company cash must have decreased after operating costs and partial exchange purchase.");
+            "Company cash must have decreased after operating costs and exchange purchase.");
 
         // Inventory must have been partially filled (positive, but less than full capacity).
         var inventory = await db.Inventories
@@ -2057,7 +2057,10 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         Assert.True(totalQty > 0m,
             "Purchase unit must have acquired at least a partial amount when cash is limited.");
 
-        var capacity = Api.Engine.GameConstants.PurchaseCapacity(1);
+        // The seeded unit is always level 1 (see SeedExchangePurchaseUnitAsync). Query the
+        // actual level to make the capacity comparison explicit and resilient to future changes.
+        var purchaseUnit = await db.BuildingUnits.FindAsync(purchaseUnitId);
+        var capacity = Api.Engine.GameConstants.PurchaseCapacity(purchaseUnit!.Level);
         Assert.True(totalQty < capacity,
             $"Partial-cash purchase must result in less than full capacity ({capacity}). Got {totalQty}.");
     }
@@ -2093,8 +2096,7 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             .Where(i => i.BuildingUnitId == purchaseUnitId)
             .ToListAsync();
 
-        Assert.True(inventory.Sum(i => i.Quantity) == 0m,
-            "Purchase unit must not have acquired any inventory when company has zero or negative cash.");
+        Assert.Equal(0m, inventory.Sum(i => i.Quantity));
 
         // No PurchasingCost ledger entries should have been created for this unit
         // (LaborCost and EnergyCost from OperatingCostPhase are expected and ignored here).
