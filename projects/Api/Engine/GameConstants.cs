@@ -144,4 +144,44 @@ public static class GameConstants
     /// Applied to manufacturing batches, mining rate, and sales capacity.
     /// </summary>
     public const decimal ConstrainedEfficiencyFactor = 0.5m;
+
+    // ── Construction constants ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Number of ticks required to construct a building of the given type.
+    /// One tick = one hour; 24 ticks = one in-game day.
+    /// </summary>
+    public static int ConstructionTicks(string buildingType) => buildingType switch
+    {
+        Data.Entities.BuildingType.Mine               => 24,   // 1 day
+        Data.Entities.BuildingType.Factory            => 48,   // 2 days
+        Data.Entities.BuildingType.SalesShop          => 24,   // 1 day
+        Data.Entities.BuildingType.ResearchDevelopment => 72,  // 3 days
+        Data.Entities.BuildingType.Apartment          => 96,   // 4 days
+        Data.Entities.BuildingType.Commercial         => 48,   // 2 days
+        Data.Entities.BuildingType.MediaHouse         => 48,   // 2 days
+        Data.Entities.BuildingType.Bank               => 72,   // 3 days
+        Data.Entities.BuildingType.Exchange           => 96,   // 4 days
+        Data.Entities.BuildingType.PowerPlant         => 120,  // 5 days
+        _                                             => 24
+    };
+
+    /// <summary>
+    /// Construction cost (in game currency) for a building of the given type.
+    /// This is charged in addition to the land purchase price.
+    /// </summary>
+    public static decimal ConstructionCost(string buildingType) => buildingType switch
+    {
+        Data.Entities.BuildingType.Mine               => 5_000m,
+        Data.Entities.BuildingType.Factory            => 15_000m,
+        Data.Entities.BuildingType.SalesShop          => 8_000m,
+        Data.Entities.BuildingType.ResearchDevelopment => 25_000m,
+        Data.Entities.BuildingType.Apartment          => 40_000m,
+        Data.Entities.BuildingType.Commercial         => 20_000m,
+        Data.Entities.BuildingType.MediaHouse         => 30_000m,
+        Data.Entities.BuildingType.Bank               => 50_000m,
+        Data.Entities.BuildingType.Exchange           => 60_000m,
+        Data.Entities.BuildingType.PowerPlant         => 80_000m,
+        _                                             => 10_000m
+    };
 }

@@ -95,6 +95,24 @@ public sealed class Building
     /// <summary>UTC timestamp when the building was constructed.</summary>
     public DateTime BuiltAtUtc { get; set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// When true the building is currently under construction and cannot be operated or configured.
+    /// The building becomes operational on tick <see cref="ConstructionCompletesAtTick"/>.
+    /// </summary>
+    public bool IsUnderConstruction { get; set; }
+
+    /// <summary>
+    /// Tick at which construction completes and the building transitions to operational.
+    /// Null for buildings that were not started via the construction-order flow.
+    /// </summary>
+    public long? ConstructionCompletesAtTick { get; set; }
+
+    /// <summary>
+    /// Cash cost (in game currency) charged to the company when construction was ordered.
+    /// Stored for auditing and future refund/cancel features.
+    /// </summary>
+    public decimal ConstructionCost { get; set; }
+
     /// <summary>Units installed in this building's 4x4 grid.</summary>
     public ICollection<BuildingUnit> Units { get; set; } = [];
 

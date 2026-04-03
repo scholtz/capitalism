@@ -88,6 +88,12 @@ export interface Building {
   mediaType: string | null
   interestRate: number | null
   builtAtUtc: string
+  /** True while the building is still under construction (before constructionCompletesAtTick). */
+  isUnderConstruction: boolean
+  /** Tick number when construction finishes and the building becomes operational. Null for legacy buildings. */
+  constructionCompletesAtTick: number | null
+  /** Cash cost charged for construction (separate from the land price). */
+  constructionCost: number
   units: BuildingUnit[]
   pendingConfiguration: BuildingConfigurationPlan | null
 }
@@ -452,7 +458,14 @@ export interface BuildingLot {
   ownerCompanyId: string | null
   buildingId: string | null
   ownerCompany: { id: string; name: string } | null
-  building: { id: string; name: string; type: string } | null
+  building: {
+    id: string
+    name: string
+    type: string
+    isUnderConstruction: boolean
+    constructionCompletesAtTick: number | null
+    constructionCost: number
+  } | null
   /** Raw material available for extraction — null when no resource on this lot */
   resourceType: { id: string; name: string; slug: string } | null
   /** Quality of the raw material (0.0–1.0); null when no resource */

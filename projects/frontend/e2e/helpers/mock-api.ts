@@ -149,6 +149,12 @@ export type MockBuilding = {
   mediaType?: string | null
   interestRate?: number | null
   builtAtUtc?: string
+  /** True while the building is still under construction */
+  isUnderConstruction?: boolean
+  /** Tick number when construction finishes; null if not under construction */
+  constructionCompletesAtTick?: number | null
+  /** Cash cost charged for construction */
+  constructionCost?: number
   units: MockBuildingUnit[]
   pendingConfiguration: MockBuildingConfigurationPlan | null
 }
@@ -262,7 +268,14 @@ export type MockBuildingLot = {
   ownerCompanyId: string | null
   buildingId: string | null
   ownerCompany: { id: string; name: string } | null
-  building: { id: string; name: string; type: string } | null
+  building: {
+    id: string
+    name: string
+    type: string
+    isUnderConstruction?: boolean
+    constructionCompletesAtTick?: number | null
+    constructionCost?: number
+  } | null
   resourceType: { id: string; name: string; slug: string } | null
   materialQuality: number | null
   materialQuantity: number | null
@@ -1915,17 +1928,29 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           body: JSON.stringify({ errors: [{ message: `Building type ${input.buildingType} is not suitable for this lot.`, extensions: { code: 'UNSUITABLE_BUILDING_TYPE' } }] }),
         })
       }
-      if (company.cash < lot.price) {
+      const constructionCostsByType: Record<string, number> = {
+        MINE: 5000, FACTORY: 15000, SALES_SHOP: 8000, RESEARCH_DEVELOPMENT: 25000,
+        APARTMENT: 40000, COMMERCIAL: 20000, MEDIA_HOUSE: 30000, BANK: 50000,
+        EXCHANGE: 60000, POWER_PLANT: 80000,
+      }
+      const constructionTicksByType: Record<string, number> = {
+        MINE: 24, FACTORY: 48, SALES_SHOP: 24, RESEARCH_DEVELOPMENT: 72,
+        APARTMENT: 96, COMMERCIAL: 48, MEDIA_HOUSE: 48, BANK: 72,
+        EXCHANGE: 96, POWER_PLANT: 120,
+      }
+      const constructionCost = constructionCostsByType[input.buildingType] ?? 10000
+      const constructionTicks = constructionTicksByType[input.buildingType] ?? 24
+      const currentTick = state.gameState?.currentTick ?? 1
+      if (company.cash < lot.price + constructionCost) {
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
-            errors: [{ message: `Insufficient funds. This lot costs $${lot.price.toLocaleString()} but you only have $${company.cash.toLocaleString()}.`, extensions: { code: 'INSUFFICIENT_FUNDS' } }],
+            errors: [{ message: `Insufficient funds. Total cost (lot + construction) is $${(lot.price + constructionCost).toLocaleString()} but you only have $${company.cash.toLocaleString()}.`, extensions: { code: 'INSUFFICIENT_FUNDS' } }],
           }),
         })
       }
-
-      company.cash -= lot.price
+      company.cash -= lot.price + constructionCost
       const isPowerPlant = input.buildingType === 'POWER_PLANT'
       const plantType = input.powerPlantType ?? (isPowerPlant ? 'COAL' : null)
       const defaultOutputByType: Record<string, number> = {
@@ -1950,6 +1975,9 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         powerStatus: 'POWERED',
         isForSale: false,
         builtAtUtc: new Date().toISOString(),
+        isUnderConstruction: true,
+        constructionCompletesAtTick: currentTick + constructionTicks,
+        constructionCost,
         units: [],
         pendingConfiguration: null,
       }
@@ -1957,7 +1985,14 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       lot.ownerCompanyId = company.id
       lot.buildingId = newBuilding.id
       lot.ownerCompany = { id: company.id, name: company.name }
-      lot.building = { id: newBuilding.id, name: newBuilding.name, type: newBuilding.type }
+      lot.building = {
+        id: newBuilding.id,
+        name: newBuilding.name,
+        type: newBuilding.type,
+        isUnderConstruction: true,
+        constructionCompletesAtTick: currentTick + constructionTicks,
+        constructionCost,
+      }
 
       return route.fulfill({
         status: 200,

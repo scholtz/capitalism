@@ -721,7 +721,8 @@ public sealed class Mutation
         decimal powerConsumption,
         DateTime builtAtUtc,
         Guid? expectedCityId = null,
-        string? powerPlantType = null)
+        string? powerPlantType = null,
+        bool applyConstructionDelay = false)
     {
         var lot = await db.BuildingLots
             .Include(candidate => candidate.City)
@@ -773,16 +774,22 @@ public sealed class Mutation
                     .Build());
         }
 
-        if (company.Cash < lot.Price)
+        var currentTick = (await db.GameStates.AsNoTracking().FirstOrDefaultAsync())?.CurrentTick ?? 0;
+        var constructionCost = applyConstructionDelay ? Engine.GameConstants.ConstructionCost(buildingType) : 0m;
+        var totalCost = lot.Price + constructionCost;
+
+        if (company.Cash < totalCost)
         {
             throw new GraphQLException(
                 ErrorBuilder.New()
-                    .SetMessage($"Insufficient funds. This lot costs ${lot.Price.ToString("N0", CultureInfo.InvariantCulture)} but you only have ${company.Cash.ToString("N0", CultureInfo.InvariantCulture)}.")
+                    .SetMessage($"Insufficient funds. This lot costs ${lot.Price.ToString("N0", CultureInfo.InvariantCulture)} and construction costs ${constructionCost.ToString("N0", CultureInfo.InvariantCulture)}, total ${totalCost.ToString("N0", CultureInfo.InvariantCulture)}, but you only have ${company.Cash.ToString("N0", CultureInfo.InvariantCulture)}.")
                     .SetCode("INSUFFICIENT_FUNDS")
                     .Build());
         }
 
-        company.Cash -= lot.Price;
+        company.Cash -= totalCost;
+
+        var constructionTicks = applyConstructionDelay ? Engine.GameConstants.ConstructionTicks(buildingType) : 0;
 
         var building = new Building
         {
@@ -799,7 +806,10 @@ public sealed class Mutation
             PowerOutput = buildingType == BuildingType.PowerPlant
                 ? Engine.GameConstants.DefaultPowerOutputMw(powerPlantType ?? Data.Entities.PowerPlantType.Coal)
                 : null,
-            BuiltAtUtc = builtAtUtc
+            BuiltAtUtc = builtAtUtc,
+            IsUnderConstruction = applyConstructionDelay,
+            ConstructionCompletesAtTick = applyConstructionDelay ? currentTick + constructionTicks : null,
+            ConstructionCost = constructionCost,
         };
 
         db.Buildings.Add(building);
@@ -807,7 +817,6 @@ public sealed class Mutation
         lot.BuildingId = building.Id;
         lot.ConcurrencyToken = Guid.NewGuid();
 
-        var currentTick = (await db.GameStates.AsNoTracking().FirstOrDefaultAsync())?.CurrentTick ?? 0;
         db.LedgerEntries.Add(new LedgerEntry
         {
             Id = Guid.NewGuid(),
@@ -819,6 +828,21 @@ public sealed class Mutation
             RecordedAtTick = currentTick,
             RecordedAtUtc = builtAtUtc,
         });
+
+        if (applyConstructionDelay && constructionCost > 0m)
+        {
+            db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = company.Id,
+                BuildingId = building.Id,
+                Category = LedgerCategory.ConstructionCost,
+                Description = $"Construction order: {buildingName} ({buildingType})",
+                Amount = -constructionCost,
+                RecordedAtTick = currentTick,
+                RecordedAtUtc = builtAtUtc,
+            });
+        }
 
         return (lot, building);
     }
@@ -1347,7 +1371,8 @@ public sealed class Mutation
             input.BuildingName,
             Engine.GameConstants.PowerDemandMw(input.BuildingType, 1),
             DateTime.UtcNow,
-            powerPlantType: input.PowerPlantType);
+            powerPlantType: input.PowerPlantType,
+            applyConstructionDelay: true);
 
         try
         {

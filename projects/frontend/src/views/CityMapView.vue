@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
+import { useGameStateStore } from '@/stores/gameState'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
 import {
   getLotStatus as lotStatusFromOwnership,
@@ -20,6 +21,7 @@ const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const gameStateStore = useGameStateStore()
 
 const cityId = computed(() => route.params.id as string)
 
@@ -42,6 +44,8 @@ const purchaseError = ref<string | null>(null)
 const purchaseSuccess = ref<string | null>(null)
 const justPurchasedBuildingId = ref<string | null>(null)
 const justPurchasedBuildingType = ref<string | null>(null)
+const justPurchasedIsUnderConstruction = ref(false)
+const justPurchasedConstructionCompletesAtTick = ref<number | null>(null)
 
 // Map reference
 const mapContainer = ref<HTMLDivElement | null>(null)
@@ -90,8 +94,52 @@ const selectedCompany = computed(() =>
 
 const cashAfterPurchase = computed(() => {
   if (!selectedCompany.value || !selectedLot.value) return null
-  return selectedCompany.value.cash - selectedLot.value.price
+  const constructionCost = selectedBuildingType.value
+    ? constructionCostForType(selectedBuildingType.value)
+    : 0
+  return selectedCompany.value.cash - selectedLot.value.price - constructionCost
 })
+
+/** Returns the construction cost for a given building type (mirrors backend GameConstants). */
+function constructionCostForType(buildingType: string): number {
+  const costs: Record<string, number> = {
+    MINE: 5000,
+    FACTORY: 15000,
+    SALES_SHOP: 8000,
+    RESEARCH_DEVELOPMENT: 25000,
+    APARTMENT: 40000,
+    COMMERCIAL: 20000,
+    MEDIA_HOUSE: 30000,
+    BANK: 50000,
+    EXCHANGE: 60000,
+    POWER_PLANT: 80000,
+  }
+  return costs[buildingType] ?? 10000
+}
+
+/** Returns the construction ticks for a given building type (mirrors backend GameConstants). */
+function constructionTicksForType(buildingType: string): number {
+  const ticks: Record<string, number> = {
+    MINE: 24,
+    FACTORY: 48,
+    SALES_SHOP: 24,
+    RESEARCH_DEVELOPMENT: 72,
+    APARTMENT: 96,
+    COMMERCIAL: 48,
+    MEDIA_HOUSE: 48,
+    BANK: 72,
+    EXCHANGE: 96,
+    POWER_PLANT: 120,
+  }
+  return ticks[buildingType] ?? 24
+}
+
+/** Returns remaining construction ticks for an under-construction building. */
+function constructionTicksRemaining(completesAtTick: number | null): number {
+  if (completesAtTick === null) return 0
+  const currentTick = gameStateStore.gameState?.currentTick ?? 0
+  return Math.max(0, completesAtTick - currentTick)
+}
 
 function getLotStatus(lot: BuildingLot): 'available' | 'owned' | 'yours' {
   return lotStatusFromOwnership(
@@ -212,7 +260,7 @@ async function fetchData() {
           populationIndex basePrice price suitableTypes
           ownerCompanyId buildingId
           ownerCompany { id name }
-          building { id name type }
+          building { id name type isUnderConstruction constructionCompletesAtTick constructionCost }
           resourceType { id name slug }
           materialQuality materialQuantity
         }
@@ -315,6 +363,8 @@ function selectLot(lot: BuildingLot) {
   purchaseSuccess.value = null
   justPurchasedBuildingId.value = null
   justPurchasedBuildingType.value = null
+  justPurchasedIsUnderConstruction.value = false
+  justPurchasedConstructionCompletesAtTick.value = null
   selectedBuildingType.value = ''
   buildingName.value = ''
 
@@ -347,9 +397,9 @@ async function confirmPurchase() {
             id cityId name description district latitude longitude price suitableTypes
             ownerCompanyId buildingId
             ownerCompany { id name }
-            building { id name type }
+            building { id name type isUnderConstruction constructionCompletesAtTick constructionCost }
           }
-          building { id name type }
+          building { id name type isUnderConstruction constructionCompletesAtTick constructionCost }
           company { id name cash }
         }
       }`,
@@ -379,6 +429,9 @@ async function confirmPurchase() {
     purchaseSuccess.value = t('cityMap.purchaseSuccess')
     justPurchasedBuildingId.value = data.purchaseLot.building.id
     justPurchasedBuildingType.value = data.purchaseLot.building.type
+    justPurchasedIsUnderConstruction.value = data.purchaseLot.building.isUnderConstruction ?? false
+    justPurchasedConstructionCompletesAtTick.value =
+      data.purchaseLot.building.constructionCompletesAtTick ?? null
     purchaseMode.value = false
     updateMarkers()
   } catch (e: unknown) {
@@ -396,7 +449,7 @@ async function confirmPurchase() {
                 id cityId name description district latitude longitude price suitableTypes
                 ownerCompanyId buildingId
                 ownerCompany { id name }
-                building { id name type }
+                building { id name type isUnderConstruction constructionCompletesAtTick constructionCost }
               }
             }`,
             { id: selectedLot.value?.id },
@@ -779,6 +832,16 @@ watch(viewMode, async (mode) => {
                     <span class="cost-label">{{ t('cityMap.costLotPrice') }}</span>
                     <span class="cost-value cost-debit">{{ selectedLot ? formatCurrency(selectedLot.price) : '—' }}</span>
                   </div>
+                  <div v-if="selectedBuildingType" class="cost-row">
+                    <span class="cost-label">{{ t('cityMap.costConstruction') }}</span>
+                    <span class="cost-value cost-debit">{{ formatCurrency(constructionCostForType(selectedBuildingType)) }}</span>
+                  </div>
+                  <div v-if="selectedBuildingType" class="cost-row construction-time-row">
+                    <span class="cost-label">{{ t('cityMap.constructionTime') }}</span>
+                    <span class="cost-value construction-ticks">
+                      {{ t('cityMap.constructionTicks', { ticks: constructionTicksForType(selectedBuildingType) }) }}
+                    </span>
+                  </div>
                   <div v-if="selectedCompany" class="cost-row">
                     <span class="cost-label">{{ t('cityMap.costCurrentCash') }}</span>
                     <span class="cost-value">{{ formatCurrency(selectedCompany.cash) }}</span>
@@ -811,8 +874,34 @@ watch(viewMode, async (mode) => {
             </template>
           </template>
 
-          <!-- Post-purchase setup guidance (shown immediately after a successful purchase) -->
-          <div v-if="justPurchasedBuildingId && isOwnedByPlayer" class="post-purchase-banner" role="status">
+          <!-- Post-purchase banner: under-construction state -->
+          <div
+            v-if="justPurchasedBuildingId && isOwnedByPlayer && justPurchasedIsUnderConstruction"
+            class="post-purchase-banner construction-banner"
+            role="status"
+            data-testid="construction-banner"
+          >
+            <div class="post-purchase-body">
+              <strong class="post-purchase-title">
+                🏗️ {{ t('cityMap.constructionStartedTitle') }}
+              </strong>
+              <p class="post-purchase-text">
+                {{ t('cityMap.constructionStartedBody', {
+                  type: formatBuildingType(justPurchasedBuildingType ?? 'FACTORY'),
+                  ticks: justPurchasedConstructionCompletesAtTick
+                    ? constructionTicksRemaining(justPurchasedConstructionCompletesAtTick)
+                    : constructionTicksForType(justPurchasedBuildingType ?? 'FACTORY')
+                }) }}
+              </p>
+              <div class="construction-progress-bar" aria-label="Construction progress">
+                <div class="construction-progress-fill" style="width: 0%"></div>
+              </div>
+              <p class="construction-hint">{{ t('cityMap.constructionHint') }}</p>
+            </div>
+          </div>
+
+          <!-- Post-purchase setup guidance (shown immediately after a successful purchase, operational) -->
+          <div v-else-if="justPurchasedBuildingId && isOwnedByPlayer" class="post-purchase-banner" role="status">
             <div class="post-purchase-body">
               <strong class="post-purchase-title">{{ t(`buildings.typeIcons.${justPurchasedBuildingType ?? 'FACTORY'}`) }} {{ t('cityMap.postPurchaseTitle') }}</strong>
               <p class="post-purchase-text">{{ t(`cityMap.${postPurchaseBodyKey(justPurchasedBuildingType ?? 'FACTORY')}`) }}</p>
@@ -825,7 +914,30 @@ watch(viewMode, async (mode) => {
             </RouterLink>
           </div>
 
-          <!-- Already owned by player (standard manage link) -->
+          <!-- Already owned by player: building under construction -->
+          <div
+            v-else-if="isOwnedByPlayer && selectedLot.building && selectedLot.building.isUnderConstruction"
+            class="your-building-actions construction-state"
+            data-testid="under-construction-panel"
+          >
+            <div class="construction-info">
+              <span class="construction-badge">🏗️ {{ t('cityMap.underConstruction') }}</span>
+              <p class="construction-detail">
+                {{ selectedLot.building.name }}
+                ({{ formatBuildingType(selectedLot.building.type) }})
+              </p>
+              <p class="construction-ticks-info" data-testid="construction-ticks-remaining">
+                {{ t('cityMap.ticksRemaining', {
+                  ticks: constructionTicksRemaining(selectedLot.building.constructionCompletesAtTick)
+                }) }}
+              </p>
+            </div>
+            <RouterLink :to="`/building/${selectedLot.buildingId}`" class="btn btn-ghost">
+              {{ t('cityMap.viewConstruction') }}
+            </RouterLink>
+          </div>
+
+          <!-- Already owned by player (standard manage link, building operational) -->
           <div v-else-if="isOwnedByPlayer && selectedLot.buildingId" class="your-building-actions">
             <RouterLink
               :to="`/building/${selectedLot.buildingId}`"
@@ -1503,6 +1615,73 @@ watch(viewMode, async (mode) => {
 
 .your-building-actions {
   margin-top: 1rem;
+}
+
+.your-building-actions.construction-state {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(255, 149, 0, 0.07);
+  border: 1px solid rgba(255, 149, 0, 0.3);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.construction-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.construction-badge {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #f59e0b;
+}
+
+.construction-detail {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.construction-ticks-info {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.construction-banner {
+  background: rgba(255, 149, 0, 0.07) !important;
+  border-color: rgba(255, 149, 0, 0.3) !important;
+}
+
+.construction-progress-bar {
+  margin-top: 0.5rem;
+  height: 6px;
+  background: rgba(255, 149, 0, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.construction-progress-fill {
+  height: 100%;
+  background: #f59e0b;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.construction-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin: 0.25rem 0 0;
+  font-style: italic;
+}
+
+.construction-time-row .construction-ticks {
+  color: #f59e0b;
+  font-weight: 500;
 }
 
 .post-purchase-banner {
