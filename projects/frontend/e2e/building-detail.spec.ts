@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test'
-import { makeChairProduct, makePlayer, setupMockApi, type MockBuildingUnit } from './helpers/mock-api'
+import {
+  makeChairProduct,
+  makePlayer,
+  setupMockApi,
+  type MockBuildingUnit,
+  type MockPublicSalesAnalytics,
+} from './helpers/mock-api'
 
 function getGridSection(page: Parameters<typeof test>[0]['page'], heading: string) {
   return page
@@ -5979,5 +5985,394 @@ test.describe('Global exchange market — per-industry resource coverage', () =>
 
     // The "no valid offers" banner must NOT appear (Prague still qualifies)
     await expect(page.getByText(/No offers meet your price and quality constraints/)).toBeHidden()
+  })
+})
+
+// ── Public Sales Market Intelligence Panel ────────────────────────────────────
+
+test.describe('Public Sales Market Intelligence panel', () => {
+  function makeShopPlayer() {
+    const player = makePlayer()
+    const chairProduct = makeChairProduct()
+    player.companies.push({
+      id: 'company-shop-mi',
+      playerId: player.id,
+      name: 'Market Intel Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-shop-mi',
+          companyId: 'company-shop-mi',
+          cityId: 'city-ba',
+          type: 'SALES_SHOP',
+          name: 'Market Intel Shop',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 3,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-shop-mi-ps',
+              buildingId: 'building-shop-mi',
+              unitType: 'PUBLIC_SALES',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              productTypeId: chairProduct.id,
+              resourceTypeId: null,
+              minPrice: chairProduct.basePrice * 1.5,
+              maxPrice: null,
+              purchaseSource: null,
+              saleVisibility: null,
+              budget: null,
+              mediaHouseBuildingId: null,
+              minQuality: null,
+              brandScope: null,
+              vendorLockCompanyId: null,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+    return { player, chairProduct }
+  }
+
+  test('shows market intelligence panel for PUBLIC_SALES unit with rich data', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 1500,
+      totalQuantitySold: 100,
+      averagePricePerUnit: 15,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong. Consider testing a slightly higher price to improve your margin.',
+      recentUtilization: 0.83,
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 150, quantitySold: 10 })),
+      priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice * 1.5 })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    // Click the PUBLIC_SALES unit to select it
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    // The market intelligence panel should be visible
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole('heading', { level: 5, name: 'Market Intelligence' })).toBeVisible()
+
+    // Summary metrics (scope to mi-summary-grid to avoid matching chart labels)
+    const summaryGrid = panel.locator('.mi-summary-grid')
+    await expect(summaryGrid.getByText('Total Revenue')).toBeVisible()
+    await expect(summaryGrid.getByText('Units Sold', { exact: true })).toBeVisible()
+
+    // Demand signal badge should show STRONG
+    await expect(panel.locator('.mi-demand-badge')).toContainText('Strong')
+    await expect(panel.locator('.mi-demand-card')).toHaveClass(/mi-demand-strong/)
+
+    // Action hint should be visible
+    await expect(panel.getByText('Recommended Action')).toBeVisible()
+    await expect(panel.getByText(/higher price/i)).toBeVisible()
+
+    // Revenue chart should be visible with bars
+    const revenueChart = panel.locator('[aria-label="Revenue per Tick"]')
+    await expect(revenueChart).toBeVisible()
+    await expect(revenueChart.locator('.mi-bar-revenue').first()).toBeVisible()
+
+    // Market share section should show the company
+    await expect(panel.getByText('Market Share (latest tick)')).toBeVisible()
+    await expect(panel.locator('.mi-share-row')).toHaveCount(1)
+    await expect(panel.locator('.mi-share-pct')).toContainText('100.0%')
+  })
+
+  test('shows empty state guidance when no sales history', async ({ page }) => {
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    // Analytics with empty history (just configured, no sales yet)
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 0,
+      totalQuantitySold: 0,
+      averagePricePerUnit: 0,
+      currentSalesCapacity: 120,
+      dataFromTick: 0,
+      dataToTick: 0,
+      demandSignal: 'NO_DATA',
+      actionHint: 'No sales recorded yet. Configure a product and price on this unit and let a few ticks pass.',
+      recentUtilization: 0,
+      revenueHistory: [],
+      priceHistory: [],
+      marketShare: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Should show empty state guidance
+    await expect(panel.locator('.mi-empty-state')).toBeVisible()
+    await expect(panel.locator('.mi-empty-state')).toContainText('No sales data yet')
+
+    // Demand signal should be NO_DATA
+    await expect(panel.locator('.mi-demand-badge')).toContainText('No Data')
+    await expect(panel.locator('.mi-demand-card')).toHaveClass(/mi-demand-no-data/)
+
+    // No market share section (empty)
+    await expect(panel.getByText('No market share data')).toBeVisible()
+  })
+
+  test('shows WEAK demand signal with lower price hint', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 50,
+      totalQuantitySold: 5,
+      averagePricePerUnit: chairProduct.basePrice * 3,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'WEAK',
+      actionHint: 'Sales are slow. Consider lowering your price.',
+      recentUtilization: 0.04,
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 5, quantitySold: 0.5 })),
+      priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice * 3 })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    await expect(panel.locator('.mi-demand-badge')).toContainText('Weak')
+    await expect(panel.locator('.mi-demand-card')).toHaveClass(/mi-demand-weak/)
+    await expect(panel.getByText(/lower/i)).toBeVisible()
+  })
+
+  test('shows SUPPLY_CONSTRAINED demand signal', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 1200,
+      totalQuantitySold: 120,
+      averagePricePerUnit: chairProduct.basePrice,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'SUPPLY_CONSTRAINED',
+      actionHint: 'Demand is outpacing your stock. Increase factory output or storage to capture more sales.',
+      recentUtilization: 0.92,
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 120, quantitySold: 12 })),
+      priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    await expect(panel.locator('.mi-demand-badge')).toContainText('Supply Constrained')
+    await expect(panel.locator('.mi-demand-card')).toHaveClass(/mi-demand-supply-constrained/)
+    await expect(panel.getByText(/factory output/i)).toBeVisible()
+  })
+
+  test('shows market intelligence panel on mobile viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 900,
+      totalQuantitySold: 60,
+      averagePricePerUnit: 15,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'MODERATE',
+      actionHint: 'Sales are healthy. Keep monitoring stock levels.',
+      recentUtilization: 0.5,
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 90, quantitySold: 6 })),
+      priceHistory: [],
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Summary grid should still be visible on mobile
+    await expect(panel.locator('.mi-summary-grid')).toBeVisible()
+
+    // Demand badge visible
+    await expect(panel.locator('.mi-demand-badge')).toContainText('Moderate')
+
+    // Panel should not overflow horizontally
+    const panelBox = await panel.boundingBox()
+    expect(panelBox).not.toBeNull()
+     
+    expect(panelBox!.width).toBeLessThanOrEqual(375)
+  })
+
+  test('panel does not appear for non-PUBLIC_SALES units', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-factory-mi',
+      playerId: player.id,
+      name: 'Factory MI Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-factory-mi',
+          companyId: 'company-factory-mi',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Factory MI',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 5,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-factory-mi-storage',
+              buildingId: 'building-factory-mi',
+              unitType: 'STORAGE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-factory-mi')
+
+    // Click the STORAGE unit
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const storageCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await storageCell.click()
+
+    // Market intelligence panel should NOT appear for STORAGE units
+    await expect(page.locator('[aria-label="Market Intelligence"]')).toBeHidden()
   })
 })

@@ -95,6 +95,15 @@ public sealed class PublicSalesAnalytics
     public List<SalesTickSnapshot> RevenueHistory { get; set; } = [];
     public List<MarketShareEntry> MarketShare { get; set; } = [];
     public List<PriceTickSnapshot> PriceHistory { get; set; } = [];
+    /// <summary>
+    /// Demand/elasticity signal derived from recent sales data.
+    /// Values: NO_DATA | SUPPLY_CONSTRAINED | STRONG | MODERATE | WEAK
+    /// </summary>
+    public string DemandSignal { get; set; } = "NO_DATA";
+    /// <summary>Short player-facing recommended action based on current market conditions.</summary>
+    public string ActionHint { get; set; } = string.Empty;
+    /// <summary>Average demand signal across recent ticks (0-1 ratio vs sales capacity).</summary>
+    public decimal RecentUtilization { get; set; }
 }
 
 public sealed class SalesTickSnapshot

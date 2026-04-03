@@ -35,6 +35,7 @@ import type {
   Company,
   GlobalExchangeOffer,
   ProductType,
+  PublicSalesAnalytics,
   ResearchBrandState,
   ResourceType,
 } from '@/types'
@@ -117,6 +118,10 @@ const exchangeOffersLoading = ref(false)
 // R&D research progress state
 const researchBrands = ref<ResearchBrandState[]>([])
 const researchBrandsLoading = ref(false)
+
+// Public Sales market intelligence analytics
+const publicSalesAnalytics = ref<PublicSalesAnalytics | null>(null)
+const publicSalesAnalyticsLoading = ref(false)
 const showSaleDialog = ref(false)
 const salePrice = ref<number | null>(null)
 const savingSale = ref(false)
@@ -364,6 +369,9 @@ const selectedDisplayUnit = computed<GridUnit | undefined>(() => {
   return getUnitAtFrom(activeUnits.value, selectedCell.value.x, selectedCell.value.y)
 })
 const selectedPurchaseUnit = computed(() => (selectedDisplayUnit.value?.unitType === 'PURCHASE' ? selectedDisplayUnit.value : undefined))
+const selectedPublicSalesUnit = computed(() =>
+  !isEditing.value && selectedDisplayUnit.value?.unitType === 'PUBLIC_SALES' ? selectedDisplayUnit.value : undefined,
+)
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
 
@@ -2053,6 +2061,46 @@ async function loadResearchBrands() {
   }
 }
 
+async function loadPublicSalesAnalytics(unitId: string | null) {
+  if (!unitId || !auth.token) {
+    publicSalesAnalytics.value = null
+    publicSalesAnalyticsLoading.value = false
+    return
+  }
+
+  publicSalesAnalyticsLoading.value = true
+  try {
+    const data = await gqlRequest<{ publicSalesAnalytics: PublicSalesAnalytics | null }>(
+      `query PublicSalesAnalytics($unitId: UUID!) {
+        publicSalesAnalytics(unitId: $unitId) {
+          buildingUnitId
+          buildingId
+          buildingName
+          cityName
+          totalRevenue
+          totalQuantitySold
+          averagePricePerUnit
+          currentSalesCapacity
+          dataFromTick
+          dataToTick
+          demandSignal
+          actionHint
+          recentUtilization
+          revenueHistory { tick revenue quantitySold }
+          priceHistory { tick pricePerUnit }
+          marketShare { label companyId share }
+        }
+      }`,
+      { unitId },
+    )
+    publicSalesAnalytics.value = data.publicSalesAnalytics ?? null
+  } catch {
+    publicSalesAnalytics.value = null
+  } finally {
+    publicSalesAnalyticsLoading.value = false
+  }
+}
+
 async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
   const requestId = ++activeBuildingLoadRequest
   const shouldShowLoading = !building.value
@@ -2282,6 +2330,11 @@ useTickRefresh(async () => {
   }
 
   await loadBuilding({ preserveDraft: isEditing.value })
+  // Refresh analytics for the selected PUBLIC_SALES unit on tick change
+  const unitId = getResolvedLiveUnitId(selectedPublicSalesUnit.value)
+  if (unitId) {
+    void loadPublicSalesAnalytics(unitId)
+  }
 })
 
 watch(
@@ -2313,6 +2366,14 @@ watch(
     if (!hasSelectedItem) {
       selectedHistoryItemKey.value = selectedHistoryItemOptions.value[0]?.key ?? null
     }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => getResolvedLiveUnitId(selectedPublicSalesUnit.value),
+  (unitId) => {
+    void loadPublicSalesAnalytics(unitId)
   },
   { immediate: true },
 )
@@ -3717,6 +3778,118 @@ watch(
                     </li>
                   </ul>
                 </template>
+              </div>
+
+              <!-- Market Intelligence panel for PUBLIC_SALES units -->
+              <div v-if="selectedPublicSalesUnit" class="unit-insight-card market-intelligence-panel" aria-label="Market Intelligence">
+                <h5>{{ t('buildingDetail.marketIntelligence.title') }}</h5>
+                <p class="config-help">{{ t('buildingDetail.marketIntelligence.subtitle') }}</p>
+
+                <p v-if="publicSalesAnalyticsLoading" class="config-help">{{ t('buildingDetail.marketIntelligence.loading') }}</p>
+
+                <template v-else-if="publicSalesAnalytics">
+                  <!-- Summary metrics -->
+                  <div class="mi-summary-grid">
+                    <div class="mi-metric">
+                      <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.totalRevenue') }}</span>
+                      <strong class="mi-metric-value">{{ formatCurrency(publicSalesAnalytics.totalRevenue) }}</strong>
+                    </div>
+                    <div class="mi-metric">
+                      <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.totalSold') }}</span>
+                      <strong class="mi-metric-value">{{ formatUnitQuantity(publicSalesAnalytics.totalQuantitySold) }}</strong>
+                    </div>
+                    <div class="mi-metric" v-if="publicSalesAnalytics.averagePricePerUnit > 0">
+                      <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.avgPrice') }}</span>
+                      <strong class="mi-metric-value">{{ formatCurrency(publicSalesAnalytics.averagePricePerUnit) }}</strong>
+                    </div>
+                    <div class="mi-metric" v-if="selectedPublicSalesUnit.minPrice != null">
+                      <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.configuredPrice') }}</span>
+                      <strong class="mi-metric-value">${{ (selectedPublicSalesUnit.minPrice as number).toFixed(2) }}</strong>
+                    </div>
+                    <div class="mi-metric" v-if="publicSalesAnalytics.revenueHistory.length > 0">
+                      <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.recentUtilization') }}</span>
+                      <strong class="mi-metric-value">{{ Math.round(publicSalesAnalytics.recentUtilization * 100) }}%</strong>
+                    </div>
+                  </div>
+
+                  <!-- No-history empty state -->
+                  <p v-if="publicSalesAnalytics.revenueHistory.length === 0" class="mi-empty-state">
+                    {{ t('buildingDetail.marketIntelligence.noHistory') }}
+                  </p>
+
+                  <template v-else>
+                    <!-- Revenue mini chart -->
+                    <div class="mi-chart-section">
+                      <span class="mi-chart-label">{{ t('buildingDetail.marketIntelligence.revenueChart') }}</span>
+                      <div class="mi-bar-chart" role="img" :aria-label="t('buildingDetail.marketIntelligence.revenueChart')">
+                        <div
+                          v-for="snap in publicSalesAnalytics.revenueHistory.slice(-30)"
+                          :key="snap.tick"
+                          class="mi-bar mi-bar-revenue"
+                          :style="{
+                            height: `${Math.max(2, publicSalesAnalytics.revenueHistory.reduce((m, s) => Math.max(m, s.revenue), 0) > 0 ? (snap.revenue / publicSalesAnalytics.revenueHistory.reduce((m, s) => Math.max(m, s.revenue), 0)) * 100 : 0).toFixed(1)}%`,
+                          }"
+                          :title="`T${snap.tick}: ${formatCurrency(snap.revenue)}`"
+                        ></div>
+                      </div>
+                    </div>
+
+                    <!-- Quantity mini chart -->
+                    <div class="mi-chart-section">
+                      <span class="mi-chart-label">{{ t('buildingDetail.marketIntelligence.quantityChart') }}</span>
+                      <div class="mi-bar-chart" role="img" :aria-label="t('buildingDetail.marketIntelligence.quantityChart')">
+                        <div
+                          v-for="snap in publicSalesAnalytics.revenueHistory.slice(-30)"
+                          :key="snap.tick"
+                          class="mi-bar mi-bar-quantity"
+                          :style="{
+                            height: `${Math.max(2, publicSalesAnalytics.revenueHistory.reduce((m, s) => Math.max(m, s.quantitySold), 0) > 0 ? (snap.quantitySold / publicSalesAnalytics.revenueHistory.reduce((m, s) => Math.max(m, s.quantitySold), 0)) * 100 : 0).toFixed(1)}%`,
+                          }"
+                          :title="`T${snap.tick}: ${formatUnitQuantity(snap.quantitySold)}`"
+                        ></div>
+                      </div>
+                    </div>
+                  </template>
+
+                  <!-- Market share -->
+                  <div class="mi-section">
+                    <span class="mi-chart-label">{{ t('buildingDetail.marketIntelligence.marketShare') }}</span>
+                    <p v-if="publicSalesAnalytics.marketShare.length === 0" class="config-help">
+                      {{ t('buildingDetail.marketIntelligence.noMarketShare') }}
+                    </p>
+                    <div v-else class="mi-market-share">
+                      <div
+                        v-for="entry in publicSalesAnalytics.marketShare"
+                        :key="entry.label"
+                        class="mi-share-row"
+                        :class="{ 'mi-share-row-you': entry.companyId === building?.companyId }"
+                      >
+                        <span class="mi-share-label">{{ entry.label }}{{ entry.companyId === building?.companyId ? ' ★' : '' }}</span>
+                        <div class="mi-share-bar-wrap">
+                          <div class="mi-share-bar" :style="{ width: `${(entry.share * 100).toFixed(1)}%` }"></div>
+                        </div>
+                        <span class="mi-share-pct">{{ (entry.share * 100).toFixed(1) }}%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Demand signal -->
+                  <div
+                    class="mi-demand-card"
+                    :class="`mi-demand-${publicSalesAnalytics.demandSignal.toLowerCase().replace(/_/g, '-')}`"
+                  >
+                    <div class="mi-demand-header">
+                      <span class="mi-demand-title">{{ t('buildingDetail.marketIntelligence.demandSignal.title') }}</span>
+                      <span class="mi-demand-badge">{{ t(`buildingDetail.marketIntelligence.demandSignal.${publicSalesAnalytics.demandSignal}`) }}</span>
+                    </div>
+                    <p class="mi-action-hint" v-if="publicSalesAnalytics.actionHint">
+                      <strong>{{ t('buildingDetail.marketIntelligence.actionHint') }}:</strong>
+                      {{ publicSalesAnalytics.actionHint }}
+                    </p>
+                  </div>
+                </template>
+
+                <p v-else class="config-help">{{ t('buildingDetail.marketIntelligence.loadFailed') }}</p>
               </div>
             </div>
           </div>
@@ -5545,4 +5718,221 @@ watch(
   flex-direction: column;
   gap: 0.125rem;
 }
-</style>
+
+/* ── Market Intelligence panel ── */
+.market-intelligence-panel {
+  margin-top: 1.25rem;
+}
+
+.mi-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.6rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.mi-metric {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.mi-metric-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mi-metric-value {
+  font-size: 0.9375rem;
+  color: var(--color-text);
+}
+
+.mi-empty-state {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.mi-chart-section {
+  margin-bottom: 1rem;
+}
+
+.mi-chart-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.35rem;
+}
+
+.mi-bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 48px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 4px 0;
+  overflow: hidden;
+}
+
+.mi-bar {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 2px 2px 0 0;
+  transition: height 0.2s ease;
+}
+
+.mi-bar-revenue {
+  background: var(--color-primary, #0047ff);
+  opacity: 0.8;
+}
+
+.mi-bar-quantity {
+  background: #16a34a;
+  opacity: 0.8;
+}
+
+.mi-section {
+  margin-bottom: 1rem;
+}
+
+.mi-market-share {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.mi-share-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.mi-share-row-you .mi-share-label {
+  font-weight: 600;
+  color: var(--color-primary, #0047ff);
+}
+
+.mi-share-label {
+  width: 6.5rem;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+}
+
+.mi-share-bar-wrap {
+  flex: 1;
+  height: 10px;
+  background: var(--color-border);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.mi-share-bar {
+  height: 100%;
+  background: var(--color-primary, #0047ff);
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+.mi-share-row-you .mi-share-bar {
+  background: #16a34a;
+}
+
+.mi-share-pct {
+  width: 3rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+
+.mi-demand-card {
+  margin-top: 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  padding: 0.75rem;
+}
+
+.mi-demand-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.mi-demand-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.mi-demand-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+}
+
+/* Demand signal color themes */
+.mi-demand-no-data .mi-demand-badge {
+  background: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.mi-demand-strong .mi-demand-badge {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.mi-demand-moderate .mi-demand-badge {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.mi-demand-weak .mi-demand-badge {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.mi-demand-supply-constrained .mi-demand-badge {
+  background: #ffe4e6;
+  color: #9f1239;
+}
+
+.mi-action-hint {
+  font-size: 0.8125rem;
+  color: var(--color-text);
+  margin: 0;
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .mi-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .mi-share-label {
+    width: 5rem;
+  }
+}</style>

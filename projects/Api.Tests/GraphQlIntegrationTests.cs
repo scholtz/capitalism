@@ -9560,6 +9560,264 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task PublicSalesAnalytics_WithSalesData_ReturnsDemandSignalAndHistory()
+    {
+        var token = await RegisterAndGetTokenAsync("analytics-data@test.com", "AnalyticsData");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Analytics Data Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+
+        var productType = await db.ProductTypes.FirstAsync(p => p.Id == Guid.Parse(productId));
+
+        // Seed 10 ticks of sales data with good utilization
+        for (var tick = 1; tick <= 10; tick++)
+        {
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(),
+                BuildingUnitId = unit.Id,
+                BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId,
+                CityId = unit.Building.CityId,
+                ProductTypeId = productType.Id,
+                Tick = tick,
+                RecordedAtUtc = DateTime.UtcNow,
+                QuantitySold = 80m, // high utilization vs capacity
+                PricePerUnit = productType.BasePrice,
+                Revenue = 80m * productType.BasePrice,
+                Demand = 90m,
+                SalesCapacity = 100m,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var analyticsResult = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ buildingUnitId totalRevenue totalQuantitySold averagePricePerUnit revenueHistory {{ tick revenue quantitySold }} priceHistory {{ tick pricePerUnit }} demandSignal actionHint recentUtilization marketShare {{ label companyId share }} }} }}",
+            token: token);
+
+        var analytics = analyticsResult.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.Equal(unit.Id.ToString(), analytics.GetProperty("buildingUnitId").GetString());
+
+        var totalRevenue = analytics.GetProperty("totalRevenue").GetDecimal();
+        Assert.True(totalRevenue > 0, "Total revenue should be positive when sales exist");
+
+        Assert.Equal(800m, analytics.GetProperty("totalQuantitySold").GetDecimal());
+        Assert.True(analytics.GetProperty("averagePricePerUnit").GetDecimal() > 0, "Average price should be positive");
+
+        Assert.Equal(10, analytics.GetProperty("revenueHistory").GetArrayLength());
+        Assert.Equal(10, analytics.GetProperty("priceHistory").GetArrayLength());
+
+        // Demand signal should be STRONG given high utilization
+        var demandSignal = analytics.GetProperty("demandSignal").GetString();
+        Assert.Equal("STRONG", demandSignal);
+
+        // Action hint should be non-empty
+        var actionHint = analytics.GetProperty("actionHint").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(actionHint));
+
+        // Recent utilization should be high
+        var utilization = analytics.GetProperty("recentUtilization").GetDecimal();
+        Assert.True(utilization >= 0.7m, $"Utilization should be >= 0.7 but was {utilization}");
+
+        // Market share should contain the current company
+        Assert.True(analytics.GetProperty("marketShare").GetArrayLength() > 0, "Market share should be populated");
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_LowUtilization_ReturnsWeakDemandSignal()
+    {
+        var token = await RegisterAndGetTokenAsync("analytics-weak@test.com", "AnalyticsWeak");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Analytics Weak Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+
+        var productType = await db.ProductTypes.FirstAsync(p => p.Id == Guid.Parse(productId));
+
+        // Seed 10 ticks with very low utilization (< 30%)
+        for (var tick = 1; tick <= 10; tick++)
+        {
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(),
+                BuildingUnitId = unit.Id,
+                BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId,
+                CityId = unit.Building.CityId,
+                ProductTypeId = productType.Id,
+                Tick = tick,
+                RecordedAtUtc = DateTime.UtcNow,
+                QuantitySold = 5m, // very low utilization
+                PricePerUnit = productType.BasePrice * 3m, // overpriced
+                Revenue = 5m * productType.BasePrice * 3m,
+                Demand = 10m,
+                SalesCapacity = 100m,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var analyticsResult = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ demandSignal actionHint recentUtilization }} }}",
+            token: token);
+
+        var analytics = analyticsResult.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.Equal("WEAK", analytics.GetProperty("demandSignal").GetString());
+        var actionHint = analytics.GetProperty("actionHint").GetString() ?? "";
+        Assert.Contains("lower", actionHint, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_SupplyConstrained_ReturnsCorrectSignal()
+    {
+        var token = await RegisterAndGetTokenAsync("analytics-supply@test.com", "AnalyticsSupply");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Analytics Supply Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+
+        var productType = await db.ProductTypes.FirstAsync(p => p.Id == Guid.Parse(productId));
+
+        // Seed 10 ticks: demand >> sold & sold = capacity → supply constrained
+        for (var tick = 1; tick <= 10; tick++)
+        {
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(),
+                BuildingUnitId = unit.Id,
+                BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId,
+                CityId = unit.Building.CityId,
+                ProductTypeId = productType.Id,
+                Tick = tick,
+                RecordedAtUtc = DateTime.UtcNow,
+                QuantitySold = 90m,
+                PricePerUnit = productType.BasePrice,
+                Revenue = 90m * productType.BasePrice,
+                Demand = 500m, // demand >> sold
+                SalesCapacity = 100m,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var analyticsResult = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ demandSignal actionHint }} }}",
+            token: token);
+
+        var analytics = analyticsResult.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.Equal("SUPPLY_CONSTRAINED", analytics.GetProperty("demandSignal").GetString());
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_Unauthorized_ReturnsNull()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync("analytics-owner@test.com", "AnalyticsOwner");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(ownerToken, "Analytics Owner Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial Zone");
+        var finishResult = await FinishOnboardingAsync(ownerToken, productId, shopLotId);
+
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+
+        // Other player should get null
+        var otherToken = await RegisterAndGetTokenAsync("analytics-other@test.com", "AnalyticsOther");
+        var analyticsResult = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ buildingUnitId }} }}",
+            token: otherToken);
+
+        var analytics = analyticsResult.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.Equal(JsonValueKind.Null, analytics.ValueKind);
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_MarketShare_SingleCompany_ReturnsFullShare()
+    {
+        var token = await RegisterAndGetTokenAsync("analytics-share@test.com", "AnalyticsShare");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Analytics Share Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+
+        var productType = await db.ProductTypes.FirstAsync(p => p.Id == Guid.Parse(productId));
+        var cityEntity = await db.Cities.FindAsync(Guid.Parse(cityId));
+
+        // Only this company sells in tick 1
+        db.PublicSalesRecords.Add(new PublicSalesRecord
+        {
+            Id = Guid.NewGuid(),
+            BuildingUnitId = unit.Id,
+            BuildingId = unit.BuildingId,
+            CompanyId = unit.Building.CompanyId,
+            CityId = unit.Building.CityId,
+            ProductTypeId = productType.Id,
+            Tick = 1,
+            RecordedAtUtc = DateTime.UtcNow,
+            QuantitySold = 50m,
+            PricePerUnit = productType.BasePrice,
+            Revenue = 50m * productType.BasePrice,
+            Demand = 60m,
+            SalesCapacity = 100m,
+        });
+        await db.SaveChangesAsync();
+
+        var analyticsResult = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ marketShare {{ label companyId share }} }} }}",
+            token: token);
+
+        var analytics = analyticsResult.GetProperty("data").GetProperty("publicSalesAnalytics");
+        var marketShare = analytics.GetProperty("marketShare");
+        Assert.True(marketShare.GetArrayLength() >= 1, "Market share should have at least one entry");
+
+        // The current company's share should be present and non-zero
+        var thisCompanyEntry = Enumerable.Range(0, marketShare.GetArrayLength())
+            .Select(i => marketShare[i])
+            .FirstOrDefault(e => e.GetProperty("companyId").GetString() == unit.Building.CompanyId.ToString());
+        Assert.True(thisCompanyEntry.ValueKind != System.Text.Json.JsonValueKind.Undefined, "Current company should have a market share entry");
+        Assert.True(thisCompanyEntry.GetProperty("share").GetDecimal() > 0, "Current company share should be > 0");
+    }
+
+    [Fact]
     public async Task CompanyLedger_RequiresOwnership_ForbidsOtherPlayer()
     {
         var ownerToken = await RegisterAndGetTokenAsync("ledger-owner@test.com", "LedgerOwner");

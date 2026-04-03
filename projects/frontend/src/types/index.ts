@@ -581,6 +581,10 @@ export interface PublicSalesAnalytics {
   revenueHistory: SalesTickSnapshot[]
   marketShare: MarketShareEntry[]
   priceHistory: PriceTickSnapshot[]
+  /** NO_DATA | SUPPLY_CONSTRAINED | STRONG | MODERATE | WEAK */
+  demandSignal: string
+  actionHint: string
+  recentUtilization: number
 }
 
 export interface SalesTickSnapshot {

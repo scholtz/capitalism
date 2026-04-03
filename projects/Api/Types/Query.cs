@@ -1029,6 +1029,52 @@ public sealed class Query
             }
         }
 
+        // Demand signal: analyse recent ticks (last 5) for utilisation vs capacity
+        var capacity = GameConstants.SalesCapacity(unit.Level);
+        var recentRecords = records.OrderByDescending(r => r.Tick).Take(5).ToList();
+        string demandSignal;
+        string actionHint;
+        decimal recentUtilization = 0m;
+
+        if (recentRecords.Count == 0)
+        {
+            demandSignal = "NO_DATA";
+            actionHint = "No sales recorded yet. Configure a product and price on this unit and let a few ticks pass to see demand insights.";
+        }
+        else
+        {
+            var avgQuantitySold = recentRecords.Average(r => (double)r.QuantitySold);
+            var avgDemand = recentRecords.Average(r => (double)r.Demand);
+            recentUtilization = capacity > 0m
+                ? Math.Min(1m, (decimal)avgQuantitySold / capacity)
+                : 0m;
+
+            // Demand >> sold means inventory or capacity was the bottleneck
+            var supplyConstrained = avgDemand > 0 && avgQuantitySold > 0
+                && avgDemand >= avgQuantitySold * 1.4 && (decimal)avgQuantitySold >= capacity * 0.85m;
+
+            if (supplyConstrained)
+            {
+                demandSignal = "SUPPLY_CONSTRAINED";
+                actionHint = "Demand is outpacing your stock. Increase factory output or storage to capture more sales.";
+            }
+            else if (recentUtilization >= 0.7m)
+            {
+                demandSignal = "STRONG";
+                actionHint = "Demand is strong. Consider testing a slightly higher price to improve your margin without losing customers.";
+            }
+            else if (recentUtilization >= 0.3m)
+            {
+                demandSignal = "MODERATE";
+                actionHint = "Sales are healthy. Keep monitoring stock levels and brand awareness to sustain performance.";
+            }
+            else
+            {
+                demandSignal = "WEAK";
+                actionHint = "Sales are slow. Consider lowering your price, improving product quality, or investing in marketing to attract more customers.";
+            }
+        }
+
         return new PublicSalesAnalytics
         {
             BuildingUnitId = unit.Id,
@@ -1038,12 +1084,15 @@ public sealed class Query
             TotalRevenue = totalRevenue,
             TotalQuantitySold = totalQuantity,
             AveragePricePerUnit = averagePrice,
-            CurrentSalesCapacity = GameConstants.SalesCapacity(unit.Level),
+            CurrentSalesCapacity = capacity,
             DataFromTick = dataFromTick,
             DataToTick = dataToTick,
             RevenueHistory = revenueHistory,
             MarketShare = marketShare,
             PriceHistory = priceHistory,
+            DemandSignal = demandSignal,
+            ActionHint = actionHint,
+            RecentUtilization = recentUtilization,
         };
     }
 

@@ -342,6 +342,25 @@ export type MockPublicSalesRecord = {
   revenue: number
 }
 
+export type MockPublicSalesAnalytics = {
+  buildingUnitId: string
+  buildingId: string
+  buildingName: string
+  cityName: string
+  totalRevenue: number
+  totalQuantitySold: number
+  averagePricePerUnit: number
+  currentSalesCapacity: number
+  dataFromTick: number
+  dataToTick: number
+  demandSignal: string
+  actionHint: string
+  recentUtilization: number
+  revenueHistory: Array<{ tick: number; revenue: number; quantitySold: number }>
+  priceHistory: Array<{ tick: number; pricePerUnit: number }>
+  marketShare: Array<{ label: string; companyId: string | null; share: number }>
+}
+
 export type MockState = {
   players: MockPlayer[]
   cities: MockCity[]
@@ -359,6 +378,8 @@ export type MockState = {
   researchBrands: Record<string, MockResearchBrandState[]>
   /** Public sales records for first-sale milestone detection. */
   publicSalesRecords: MockPublicSalesRecord[]
+  /** Public sales analytics by unit ID */
+  publicSalesAnalytics: Record<string, MockPublicSalesAnalytics>
 }
 
 const STARTING_CASH_FOR_ONBOARDING = 500000
@@ -982,6 +1003,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     forceStartupPackClaimError: false,
     researchBrands: {},
     publicSalesRecords: [],
+    publicSalesAnalytics: {},
     ...initial,
   }
 
@@ -2634,7 +2656,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
-    if (query.includes('me') && !query.includes('companyLedger') && !query.includes('ledgerDrillDown') && !query.includes('companyBrands')) {
+    if (query.includes('me') && !query.includes('companyLedger') && !query.includes('ledgerDrillDown') && !query.includes('companyBrands') && !query.includes('publicSalesAnalytics')) {
       const player = state.players.find((p) => p.id === state.currentUserId)
       if (!player) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Not authenticated' }] }) })
@@ -2739,6 +2761,16 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { companyBrands: brands } }),
+      })
+    }
+
+    if (query.includes('publicSalesAnalytics') || query.includes('PublicSalesAnalytics')) {
+      const unitId: string = body.variables?.unitId ?? ''
+      const analytics = state.publicSalesAnalytics[unitId] ?? null
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { publicSalesAnalytics: analytics } }),
       })
     }
 
