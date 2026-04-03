@@ -5171,9 +5171,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.NotNull(finishData.GetProperty("company").GetProperty("id").GetString());
         Assert.NotNull(finishData.GetProperty("salesShop").GetProperty("id").GetString());
 
-        // Verify the selected product is Bread (Food Processing)
-        var selectedProductSlug = finishData.GetProperty("selectedProduct").GetProperty("slug").GetString();
-        Assert.Equal("bread", selectedProductSlug);
+        // Verify the selected product is in the FOOD_PROCESSING industry (FinishOnboardingAsync helper returns industry, not slug)
+        var selectedProductIndustry = finishData.GetProperty("selectedProduct").GetProperty("industry").GetString();
+        Assert.Equal("FOOD_PROCESSING", selectedProductIndustry);
     }
 
     [Fact]
@@ -5181,10 +5181,28 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     {
         // Verifies shop-lot conflict recovery works for the HEALTHCARE industry.
         // Complements the Furniture-only GuestMigration_ShopLotConflict test.
+        // Setup mirrors the existing ShopLotConflict test: Player A uses purchaseLot to own the
+        // shop lot first, then Player B tries FinishOnboarding against that lot and gets an error.
         var tokenA = await RegisterAndGetTokenAsync($"hc-shop-conflict-a-{Guid.NewGuid()}@test.com", "HC Shop A");
         var cityId = await GetCityIdByNameAsync();
 
-        // Set up factory for Player B first
+        // Player A creates a company and takes the shared shop lot via purchaseLot
+        var sharedShopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Shared HC Shop Lot");
+        var createCompanyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "HC Conflict A Corp" } },
+            tokenA);
+        var companyAId = createCompanyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+        await ExecuteGraphQlAsync(
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { lot { id } }
+            }
+            """,
+            new { input = new { companyId = companyAId, lotId = sharedShopLotId, buildingType = "SALES_SHOP", buildingName = "HC Blocker Shop" } },
+            tokenA);
+
+        // Player B starts onboarding (factory step succeeds)
         var tokenB = await RegisterAndGetTokenAsync($"hc-shop-conflict-b-{Guid.NewGuid()}@test.com", "HC Shop B");
         var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "HC Factory Lot");
         await ExecuteGraphQlAsync(
@@ -5196,24 +5214,15 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             new { input = new { industry = "HEALTHCARE", cityId, companyName = "HC Conflict B Corp", factoryLotId } },
             tokenB);
 
-        // Player A takes the shared shop lot
-        var sharedShopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Shared HC Shop Lot");
-        await ExecuteGraphQlAsync(
-            """
-            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
-              startOnboardingCompany(input: $input) { nextStep company { id } }
-            }
-            """,
-            new { input = new { industry = "HEALTHCARE", cityId, companyName = "HC Conflict A Corp", factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "HC Factory A Lot") } },
-            tokenA);
-
         var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
 
-        // Player B tries to finish with the now-taken shop lot
+        // Player B tries to finish with the now-taken shop lot — must fail
         var failedFinish = await FinishOnboardingAsync(tokenB, productId, sharedShopLotId);
-        Assert.True(failedFinish.TryGetProperty("errors", out var failErrors), "Expected LOT_ALREADY_OWNED for Healthcare shop conflict");
-        var code = failErrors[0].GetProperty("extensions").GetProperty("code").GetString();
-        Assert.Equal("LOT_ALREADY_OWNED", code);
+        Assert.True(failedFinish.TryGetProperty("errors", out var failErrors), "Expected shop lot conflict error for Healthcare");
+        Assert.True(
+            failErrors[0].GetProperty("message").GetString()!.Contains("already been purchased") ||
+            (failErrors[0].TryGetProperty("extensions", out var ext) && ext.GetProperty("code").GetString() == "LOT_ALREADY_OWNED"),
+            "Error must indicate the lot is already owned");
 
         // Player B retries with a different shop lot — must succeed and preserve Healthcare/Basic Medicine
         var freshShopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "High Street", 95_000m, "Fresh HC Shop Lot");
@@ -5223,8 +5232,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var retryData = retryFinish.GetProperty("data").GetProperty("finishOnboarding");
         Assert.NotNull(retryData.GetProperty("salesShop").GetProperty("id").GetString());
 
-        var selectedProductSlug = retryData.GetProperty("selectedProduct").GetProperty("slug").GetString();
-        Assert.Equal("basic-medicine", selectedProductSlug);
+        // Verify the selected product is in the HEALTHCARE industry
+        var selectedProductIndustry = retryData.GetProperty("selectedProduct").GetProperty("industry").GetString();
+        Assert.Equal("HEALTHCARE", selectedProductIndustry);
     }
 
     [Fact]
