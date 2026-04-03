@@ -7917,11 +7917,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         // Use a lot priced just below current cash, but construction cost for FACTORY is 15,000
         // so if lot price = currentCash - 5,000 → company has 5,000 left → cannot afford 15,000 construction
         var lotPrice = currentCash - 5_000m;
-        if (lotPrice <= 0)
-        {
-            // Skip if the player somehow has less than 5001 cash (should not happen after onboarding)
-            return;
-        }
+        Assert.True(lotPrice > 0,
+            $"Onboarding must grant sufficient cash for this test. Expected currentCash > $5,000 but got {currentCash}.");
 
         var bratislavaId = await GetCityIdByNameAsync("Bratislava");
         var lotId = await CreateTestLotAsync(bratislavaId, "FACTORY,MINE", "Industrial Zone", lotPrice, "Broke Test Lot");

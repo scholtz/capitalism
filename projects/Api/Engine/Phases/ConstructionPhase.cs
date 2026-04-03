@@ -20,18 +20,14 @@ public sealed class ConstructionPhase : ITickPhase
 
     public async Task ProcessAsync(TickContext context)
     {
-        // Find all buildings that are still under construction but whose completion tick
-        // has now been reached (or passed, in case a tick was skipped).
-        var completedBuildings = await context.Db.Buildings
+        // Perform the state transition in a single database UPDATE rather than loading
+        // all completing buildings into memory.
+        await context.Db.Buildings
             .Where(b => b.IsUnderConstruction
                         && b.ConstructionCompletesAtTick.HasValue
                         && b.ConstructionCompletesAtTick.Value <= context.CurrentTick)
-            .ToListAsync();
-
-        foreach (var building in completedBuildings)
-        {
-            building.IsUnderConstruction = false;
-            building.ConstructionCompletesAtTick = null;
-        }
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(b => b.IsUnderConstruction, false)
+                .SetProperty(b => b.ConstructionCompletesAtTick, (long?)null));
     }
 }
