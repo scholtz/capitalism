@@ -4153,6 +4153,184 @@ test.describe('Cross-industry/city matrix — guest wizard completability (AC2, 
     // Vienna lots were used
     expect(state.buildingLots.some((lot) => lot.cityId === 'city-vi')).toBe(true)
   })
+
+  test('Prague + Healthcare: guest can complete wizard steps 1-5', async ({ page }) => {
+    // Proves the HEALTHCARE industry works in the Prague city — completes the AC2+AC8 matrix
+    // for the Prague row (Furniture+Prague already covered; this covers Healthcare+Prague).
+    const state = setupMockApi(page)
+    state.buildingLots = [
+      ...makeDefaultBuildingLots(),
+      {
+        id: 'lot-hc-prague-factory',
+        cityId: 'city-pr',
+        name: 'Prague Pharma Industrial Park',
+        description: 'Factory-capable lot in Prague for chemical processing.',
+        district: 'Industrial Zone',
+        latitude: 50.08,
+        longitude: 14.44,
+        populationIndex: 0.65,
+        basePrice: 79_000,
+        price: 81_000,
+        suitableTypes: 'FACTORY,MINE',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+      {
+        id: 'lot-hc-prague-shop',
+        cityId: 'city-pr',
+        name: 'Prague Medical Supply Shop',
+        description: "Retail space in Prague's health district.",
+        district: 'Commercial District',
+        latitude: 50.083,
+        longitude: 14.43,
+        populationIndex: 1.1,
+        basePrice: 73_000,
+        price: 75_000,
+        suitableTypes: 'SALES_SHOP,COMMERCIAL',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+    ]
+
+    await page.goto('/onboarding')
+
+    // Step 1: Healthcare
+    await page.locator('.industry-card', { hasText: 'Healthcare' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Prague
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Prague' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot in Prague
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Prague Pharma Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Prague Pharma Industrial Park/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Basic Medicine product + shop in Prague
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Basic Medicine' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Prague Medical Supply Shop/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress completion screen
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Factory and shop layout panels must be visible (ROADMAP: wizard shows configured areas)
+    await expect(page.locator('[aria-label="Factory layout"]')).toBeVisible()
+    await expect(page.locator('[aria-label="Sales shop layout"]')).toBeVisible()
+
+    // Save-progress form must be visible
+    await expect(page.locator('#guestEmail')).toBeVisible()
+
+    // Prague lots were used
+    expect(state.buildingLots.some((lot) => lot.cityId === 'city-pr')).toBe(true)
+  })
+
+  test('Vienna + Food Processing: guest can complete wizard steps 1-5', async ({ page }) => {
+    // Proves the FOOD_PROCESSING industry works in the Vienna city — completes the AC2+AC8 matrix
+    // for the Vienna row (Furniture+Vienna already covered; this covers FoodProcessing+Vienna).
+    const state = setupMockApi(page)
+    state.buildingLots = [
+      ...makeDefaultBuildingLots(),
+      {
+        id: 'lot-fp-vienna-factory',
+        cityId: 'city-vi',
+        name: 'Vienna Grain Mill Industrial Park',
+        description: 'Factory-capable lot near the Vienna grain district.',
+        district: 'Industrial Zone',
+        latitude: 48.21,
+        longitude: 16.38,
+        populationIndex: 0.6,
+        basePrice: 81_000,
+        price: 83_000,
+        suitableTypes: 'FACTORY,MINE',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+      {
+        id: 'lot-fp-vienna-shop',
+        cityId: 'city-vi',
+        name: 'Vienna Bread Shop',
+        description: 'Retail space in the Vienna city centre.',
+        district: 'Commercial District',
+        latitude: 48.209,
+        longitude: 16.375,
+        populationIndex: 1.15,
+        basePrice: 73_000,
+        price: 76_000,
+        suitableTypes: 'SALES_SHOP,COMMERCIAL',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+    ]
+
+    await page.goto('/onboarding')
+
+    // Step 1: Food Processing
+    await page.locator('.industry-card', { hasText: 'Food Processing' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Vienna
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Vienna' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot in Vienna
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Vienna Grain Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Vienna Grain Mill Industrial Park/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Bread product + shop in Vienna
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Bread' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Vienna Bread Shop/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress completion screen
+    await expect(page.getByRole('heading', { name: /Your Empire Preview is Ready/i })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Profit preview must show revenue
+    const revenueEl = page.locator('.profit-stat-revenue')
+    await expect(revenueEl).toBeVisible()
+    const revenueText = await revenueEl.textContent()
+    expect(revenueText).toMatch(/\$\d/)
+
+    // Save-progress form must be visible
+    await expect(page.locator('#guestEmail')).toBeVisible()
+
+    // Vienna lots were used
+    expect(state.buildingLots.some((lot) => lot.cityId === 'city-vi')).toBe(true)
+  })
 })
 
 test.describe('Startup pack offer — analytics events (AC 10)', () => {

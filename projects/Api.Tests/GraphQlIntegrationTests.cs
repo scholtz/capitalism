@@ -479,6 +479,126 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         }
     }
 
+    [Fact]
+    public async Task FinishOnboarding_PragueCity_FoodProcessingSupplyChainFeedsShopAndMakesFirstSale()
+    {
+        // AC2 + AC8: Supply chain tick-engine must work for non-default cities.
+        // Prague is the second seeded city. Food Processing (Grain→Bread) uses city-specific
+        // global exchange pricing, so this test proves the city-exchange integration works
+        // for Prague after onboarding — not just for the default Bratislava.
+        var token = await RegisterAndGetTokenAsync(email: $"finish-prague-food-{Guid.NewGuid():N}@test.com");
+        var cityId = await GetCityIdByNameAsync("Prague");
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Prague Industrial Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "Prague Bread Factory Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Prague Commercial District", 90_000m);
+
+        var result = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(result.TryGetProperty("errors", out _), "FinishOnboarding failed for FOOD_PROCESSING in Prague");
+
+        var payload = result.GetProperty("data").GetProperty("finishOnboarding");
+        var shopId = Guid.Parse(payload.GetProperty("salesShop").GetProperty("id").GetString()!);
+        var productGuid = Guid.Parse(productId);
+
+        await ProcessTicksAsync(4);
+
+        await using (var verificationScope = _factory.Services.CreateAsyncScope())
+        {
+            var db = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var shopPurchaseUnit = await db.BuildingUnits
+                .SingleAsync(unit => unit.BuildingId == shopId && unit.UnitType == UnitType.Purchase);
+            var purchasedInventory = await db.Inventories
+                .Where(entry => entry.BuildingUnitId == shopPurchaseUnit.Id && entry.ProductTypeId == productGuid)
+                .ToListAsync();
+
+            Assert.True(
+                purchasedInventory.Sum(entry => entry.Quantity) > 0m,
+                "Prague FOOD_PROCESSING starter shop should fill from factory output after ticks.");
+        }
+
+        await ProcessTicksAsync(2);
+
+        await using (var verificationScope = _factory.Services.CreateAsyncScope())
+        {
+            var db = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var salesRecords = await db.PublicSalesRecords
+                .Where(record => record.BuildingId == shopId && record.ProductTypeId == productGuid && record.QuantitySold > 0m)
+                .ToListAsync();
+
+            Assert.NotEmpty(salesRecords);
+        }
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_ViennaCity_HealthcareSupplyChainFeedsShopAndMakesFirstSale()
+    {
+        // AC2 + AC8: Supply chain tick-engine must work for non-default cities.
+        // Vienna is the third seeded city. Healthcare (Chemical Minerals→Basic Medicine) uses
+        // city-specific global exchange pricing, so this test proves the city-exchange integration
+        // works for Vienna after onboarding — not just for the default Bratislava.
+        var token = await RegisterAndGetTokenAsync(email: $"finish-vienna-health-{Guid.NewGuid():N}@test.com");
+        var cityId = await GetCityIdByNameAsync("Vienna");
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Vienna Industrial Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "Vienna Pharma Corp", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Vienna Commercial District", 90_000m);
+
+        var result = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(result.TryGetProperty("errors", out _), "FinishOnboarding failed for HEALTHCARE in Vienna");
+
+        var payload = result.GetProperty("data").GetProperty("finishOnboarding");
+        var shopId = Guid.Parse(payload.GetProperty("salesShop").GetProperty("id").GetString()!);
+        var productGuid = Guid.Parse(productId);
+
+        await ProcessTicksAsync(4);
+
+        await using (var verificationScope = _factory.Services.CreateAsyncScope())
+        {
+            var db = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var shopPurchaseUnit = await db.BuildingUnits
+                .SingleAsync(unit => unit.BuildingId == shopId && unit.UnitType == UnitType.Purchase);
+            var purchasedInventory = await db.Inventories
+                .Where(entry => entry.BuildingUnitId == shopPurchaseUnit.Id && entry.ProductTypeId == productGuid)
+                .ToListAsync();
+
+            Assert.True(
+                purchasedInventory.Sum(entry => entry.Quantity) > 0m,
+                "Vienna HEALTHCARE starter shop should fill from factory output after ticks.");
+        }
+
+        await ProcessTicksAsync(2);
+
+        await using (var verificationScope = _factory.Services.CreateAsyncScope())
+        {
+            var db = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var salesRecords = await db.PublicSalesRecords
+                .Where(record => record.BuildingId == shopId && record.ProductTypeId == productGuid && record.QuantitySold > 0m)
+                .ToListAsync();
+
+            Assert.NotEmpty(salesRecords);
+        }
+    }
+
     #endregion
 
     #region Authentication
