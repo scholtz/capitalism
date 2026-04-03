@@ -5,19 +5,25 @@ describe('trackStartupPackEvent', () => {
   it('returns without throwing when window is not defined (SSR/node)', () => {
     // In the node test environment window is undefined; the function must be a no-op.
     expect(() => trackStartupPackEvent('view')).not.toThrow()
+    expect(() => trackStartupPackEvent('countdown_active')).not.toThrow()
     expect(() => trackStartupPackEvent('dismiss')).not.toThrow()
+    expect(() => trackStartupPackEvent('continue')).not.toThrow()
     expect(() => trackStartupPackEvent('claim_click', { context: 'onboarding' })).not.toThrow()
     expect(() => trackStartupPackEvent('claim_success', { context: 'dashboard' })).not.toThrow()
     expect(() => trackStartupPackEvent('claim_error', { context: 'onboarding' })).not.toThrow()
+    expect(() => trackStartupPackEvent('offer_expired')).not.toThrow()
   })
 
   it('accepts all defined event names without throwing', () => {
     const events: Parameters<typeof trackStartupPackEvent>[0][] = [
       'view',
+      'countdown_active',
       'dismiss',
+      'continue',
       'claim_click',
       'claim_success',
       'claim_error',
+      'offer_expired',
     ]
     for (const eventName of events) {
       expect(() => trackStartupPackEvent(eventName)).not.toThrow()
@@ -36,5 +42,23 @@ describe('trackStartupPackEvent', () => {
         offerKey: 'STARTUP_PACK_V1',
       }),
     ).not.toThrow()
+  })
+
+  it('countdown_active accepts expiresAtUtc detail field', () => {
+    expect(() =>
+      trackStartupPackEvent('countdown_active', {
+        context: 'onboarding',
+        expiresAtUtc: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      }),
+    ).not.toThrow()
+  })
+
+  it('offer_expired accepts context detail field', () => {
+    expect(() => trackStartupPackEvent('offer_expired', { context: 'dashboard' })).not.toThrow()
+    expect(() => trackStartupPackEvent('offer_expired', { context: 'onboarding' })).not.toThrow()
+  })
+
+  it('continue accepts context detail field', () => {
+    expect(() => trackStartupPackEvent('continue', { context: 'onboarding' })).not.toThrow()
   })
 })

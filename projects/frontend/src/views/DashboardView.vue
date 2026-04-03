@@ -121,6 +121,14 @@ onMounted(async () => {
       await markStartupPackOfferShown()
     } else if (auth.startupPackOffer) {
       trackStartupPackEvent('view', { context: 'dashboard', status: auth.startupPackOffer.status })
+      if (['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(auth.startupPackOffer.status)) {
+        trackStartupPackEvent('countdown_active', {
+          context: 'dashboard',
+          expiresAtUtc: auth.startupPackOffer.expiresAtUtc,
+        })
+      } else if (auth.startupPackOffer.status === 'EXPIRED') {
+        trackStartupPackEvent('offer_expired', { context: 'dashboard' })
+      }
     }
 
     // Load city power balances for each unique city that has buildings.
@@ -216,6 +224,10 @@ async function markStartupPackOfferShown() {
   auth.setStartupPackOffer(data.markStartupPackOfferShown)
   if (data.markStartupPackOfferShown) {
     trackStartupPackEvent('view', { context: 'dashboard', status: data.markStartupPackOfferShown.status })
+    trackStartupPackEvent('countdown_active', {
+      context: 'dashboard',
+      expiresAtUtc: data.markStartupPackOfferShown.expiresAtUtc,
+    })
   }
 }
 

@@ -1,9 +1,12 @@
 export type StartupPackAnalyticsEvent =
   | 'view'
+  | 'countdown_active'
   | 'dismiss'
+  | 'continue'
   | 'claim_click'
   | 'claim_success'
   | 'claim_error'
+  | 'offer_expired'
 
 /**
  * Lightweight analytics hook for startup-pack interactions.

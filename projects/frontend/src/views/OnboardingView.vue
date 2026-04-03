@@ -758,6 +758,14 @@ async function completeOnboarding() {
       await markStartupPackOfferShown()
     } else if (startupPackOffer.value) {
       trackStartupPackEvent('view', { context: 'onboarding', status: startupPackOffer.value.status })
+      if (['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(startupPackOffer.value.status)) {
+        trackStartupPackEvent('countdown_active', {
+          context: 'onboarding',
+          expiresAtUtc: startupPackOffer.value.expiresAtUtc,
+        })
+      } else if (startupPackOffer.value.status === 'EXPIRED') {
+        trackStartupPackEvent('offer_expired', { context: 'onboarding' })
+      }
     }
     step.value = 5
     await Promise.all([loadGameState(), loadFirstSaleMission()])
@@ -805,6 +813,10 @@ async function markStartupPackOfferShown() {
     trackStartupPackEvent('view', {
       context: 'onboarding',
       status: data.markStartupPackOfferShown.status,
+    })
+    trackStartupPackEvent('countdown_active', {
+      context: 'onboarding',
+      expiresAtUtc: data.markStartupPackOfferShown.expiresAtUtc,
     })
   }
 }
@@ -1179,6 +1191,9 @@ function blockerMessage(code: string): string {
 }
 
 function navigateToDashboard() {
+  if (startupPackOffer.value && ['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(startupPackOffer.value.status)) {
+    trackStartupPackEvent('continue', { context: 'onboarding' })
+  }
   stopTickCountdown()
   router.push('/dashboard')
 }
