@@ -1,0 +1,10 @@
+{
+  "extends": "@tsconfig/node24/tsconfig.json",
+  "include": ["./**/*"],
+  "compilerOptions": {
+    "composite": false,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "types": ["node", "@playwright/test"]
+  }
+}

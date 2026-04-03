@@ -459,4 +459,237 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
     }
 
     #endregion
+
+    #region Additional edge-case tests
+
+    [Fact]
+    public async Task Register_EmptyEmail_ReturnsError()
+    {
+        var result = await GraphQlAsync("""
+            mutation {
+              register(input: { email: "", password: "password123", displayName: "Test" }) {
+                token
+              }
+            }
+            """);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("INVALID_EMAIL", code);
+    }
+
+    [Fact]
+    public async Task Register_EmptyDisplayName_ReturnsError()
+    {
+        var result = await GraphQlAsync("""
+            mutation {
+              register(input: { email: "test-display@example.com", password: "password123", displayName: "" }) {
+                token
+              }
+            }
+            """);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("DISPLAY_NAME_REQUIRED", code);
+    }
+
+    [Fact]
+    public async Task Register_EmptyPassword_ReturnsError()
+    {
+        var result = await GraphQlAsync("""
+            mutation {
+              register(input: { email: "test-emptypass@example.com", password: "", displayName: "Test" }) {
+                token
+              }
+            }
+            """);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("PASSWORD_TOO_SHORT", code);
+    }
+
+    [Fact]
+    public async Task GameServers_RegisteredServer_ReturnsAllFields()
+    {
+        var result = await GraphQlAsync("""
+            mutation Reg($input: RegisterGameServerInput!) {
+              registerGameServer(input: $input) { id displayName region environment playerCount }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    registrationKey = "test-registration-key",
+                    serverKey = "test-key-fields",
+                    displayName = "Field Test Server",
+                    description = "Verifying all fields",
+                    region = "EU",
+                    environment = "test",
+                    backendUrl = "https://test.example.com",
+                    graphqlUrl = "https://test.example.com/graphql",
+                    frontendUrl = "https://test.example.com/app",
+                    version = "2.0.0",
+                    playerCount = 7,
+                    companyCount = 14,
+                    currentTick = 999,
+                },
+            });
+
+        var srv = result.GetProperty("data").GetProperty("registerGameServer");
+        Assert.Equal("Field Test Server", srv.GetProperty("displayName").GetString());
+        Assert.Equal("EU", srv.GetProperty("region").GetString());
+        Assert.Equal("test", srv.GetProperty("environment").GetString());
+        Assert.Equal(7, srv.GetProperty("playerCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task GameServers_RegisteredByKey_AppearsInList()
+    {
+        // Register a server with a unique key
+        var uniqueKey = "list-test-" + Guid.NewGuid().ToString("N")[..8];
+        var uniqueName = "List Appearance Server " + uniqueKey;
+
+        await GraphQlAsync("""
+            mutation Reg($input: RegisterGameServerInput!) {
+              registerGameServer(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    registrationKey = "test-registration-key",
+                    serverKey = uniqueKey,
+                    displayName = uniqueName,
+                    description = "Multi test",
+                    region = "EU",
+                    environment = "test",
+                    backendUrl = $"https://{uniqueKey}.example.com",
+                    graphqlUrl = $"https://{uniqueKey}.example.com/graphql",
+                    frontendUrl = $"https://{uniqueKey}.example.com/app",
+                    version = "1.0.0",
+                    playerCount = 5,
+                    companyCount = 10,
+                    currentTick = 100,
+                },
+            });
+
+        var result = await GraphQlAsync("""
+            query { gameServers { id displayName } }
+            """);
+
+        var servers = result.GetProperty("data").GetProperty("gameServers");
+        var names = Enumerable.Range(0, servers.GetArrayLength())
+            .Select(i => servers[i].GetProperty("displayName").GetString())
+            .ToList();
+
+        Assert.Contains(uniqueName, names);
+    }
+
+    [Fact]
+    public async Task ProlongSubscription_ExpiredSubscription_ExtendsFromNow()
+    {
+        // Register and get a token
+        var registerResult = await GraphQlAsync("""
+            mutation {
+              register(input: { email: "expired-sub@example.com", password: "password123", displayName: "ExpiredTest" }) {
+                token
+              }
+            }
+            """);
+
+        var token = registerResult.GetProperty("data").GetProperty("register").GetProperty("token").GetString()!;
+
+        // First prolong: 1 month
+        await GraphQlAsync("""
+            mutation Prolong($input: ProlongSubscriptionInput!) {
+              prolongSubscription(input: $input) { daysRemaining }
+            }
+            """,
+            new { input = new { months = 1 } },
+            token: token);
+
+        // Second prolong: 3 more months
+        var result = await GraphQlAsync("""
+            mutation Prolong($input: ProlongSubscriptionInput!) {
+              prolongSubscription(input: $input) { tier status isActive daysRemaining expiresAtUtc }
+            }
+            """,
+            new { input = new { months = 3 } },
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var sub = result.GetProperty("data").GetProperty("prolongSubscription");
+        Assert.Equal("PRO", sub.GetProperty("tier").GetString());
+        Assert.True(sub.GetProperty("isActive").GetBoolean());
+        // Should have ~4 months total (120+ days)
+        Assert.True(sub.GetProperty("daysRemaining").GetInt32() >= 115);
+    }
+
+    [Fact]
+    public async Task MySubscription_AllFieldsPresent()
+    {
+        var registerResult = await GraphQlAsync("""
+            mutation {
+              register(input: { email: "fields-test@example.com", password: "password123", displayName: "FieldsTest" }) {
+                token
+              }
+            }
+            """);
+
+        var token = registerResult.GetProperty("data").GetProperty("register").GetProperty("token").GetString()!;
+
+        await GraphQlAsync("""
+            mutation Prolong($input: ProlongSubscriptionInput!) {
+              prolongSubscription(input: $input) { tier }
+            }
+            """,
+            new { input = new { months = 1 } },
+            token: token);
+
+        var result = await GraphQlAsync("""
+            query { mySubscription { tier status isActive daysRemaining canProlong startsAtUtc expiresAtUtc } }
+            """, token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var sub = result.GetProperty("data").GetProperty("mySubscription");
+        Assert.Equal("PRO", sub.GetProperty("tier").GetString());
+        Assert.Equal("ACTIVE", sub.GetProperty("status").GetString());
+        Assert.True(sub.GetProperty("isActive").GetBoolean());
+        Assert.True(sub.GetProperty("canProlong").GetBoolean());
+        Assert.False(string.IsNullOrEmpty(sub.GetProperty("startsAtUtc").GetString()));
+        Assert.False(string.IsNullOrEmpty(sub.GetProperty("expiresAtUtc").GetString()));
+    }
+
+    [Fact]
+    public async Task Login_IsCaseInsensitiveForEmail()
+    {
+        // Register with lowercase email
+        await GraphQlAsync("""
+            mutation {
+              register(input: { email: "camelcase@example.com", password: "password123", displayName: "CaseTest" }) {
+                token
+              }
+            }
+            """);
+
+        // Login with uppercase email should succeed
+        var result = await GraphQlAsync("""
+            mutation {
+              login(input: { email: "CAMELCASE@EXAMPLE.COM", password: "password123" }) {
+                token
+                player { email displayName }
+              }
+            }
+            """);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var player = result.GetProperty("data").GetProperty("login").GetProperty("player");
+        Assert.Equal("camelcase@example.com", player.GetProperty("email").GetString());
+    }
+
+    #endregion
 }

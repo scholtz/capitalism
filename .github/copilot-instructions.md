@@ -627,3 +627,21 @@ Root-cause of a quality failure (April 2026, PR #151):
 3. **Always add tests for the third option** (Vienna as the third city, Healthcare as the third industry, etc.) since tests tend to cover the first two and miss the third.
 4. **Do not stop at confirming existing tests pass.** The ask is for more tests, not for confirmation that the current ones work.
 5. **Commit the new tests before replying** — the reply should reference the commit hash and list what was specifically added.
+
+## Master portal mock-api — gameServers query contains "me" as substring
+
+Root-cause of a quality failure (April 2026, PR #180 master portal):
+- The master-frontend E2E mock-api helper intercepted `me` queries by checking `query.includes('me')`.
+- The GraphQL query for game servers is named `gameServers` — which contains "me" as a substring (ga**me**Servers).
+- This caused the `me` handler to fire instead of the `gameServers` handler, returning an auth error and showing `"Not authenticated."` as the server list error.
+- This is the same root-cause pattern documented in the game-frontend memory about `isStandaloneMeQuery`, but in the master-frontend mock it wasn't guarded.
+- All 11 server-list E2E tests failed silently until the debug approach of printing `state-message` content revealed the error.
+
+**Rules to prevent recurrence:**
+1. **In any `me` query handler in a mock-api helper, ALWAYS exclude other query names that contain "me" as a substring.** The guard must be:
+   ```ts
+   if (query.includes('me') && !query.includes('gameServers') && !query.includes('mySubscription') && !query.includes('prolongSubscription'))
+   ```
+2. **After writing a new mock-api helper, verify it with a debug test that prints the `.state-message` content** to confirm the correct handler is firing, not a false-positive substring match.
+3. **GraphQL field/query names containing "me" as a substring** (e.g., `gameServers`, `mySubscription`, `performance`, `schema`, `comment`, `rename`) must be explicitly excluded from the `me` query handler.
+4. **Apply the same pattern as the game-frontend `isStandaloneMeQuery()` helper** to master-frontend and any future portal mock-api helpers.
