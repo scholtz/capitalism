@@ -8455,17 +8455,18 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
-    public async Task FirstSaleMission_ReturnsAwaitingFirstSale_AfterShopConfiguredButNoSaleYet()
+    public async Task FirstSaleMission_ReturnsConfigureShop_WhenNoInventoryYet()
     {
-        // FinishOnboarding creates a fully configured shop — should be AWAITING_FIRST_SALE
-        // with no ticks processed (inventory is empty, but shop IS configured with price).
-        var token = await RegisterAndGetTokenAsync($"mission-awaiting-{Guid.NewGuid()}@test.com", "Awaiting Seller");
-        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Awaiting Seller Co");
+        // FinishOnboarding creates a fully configured shop — but with no inventory yet.
+        // Before any ticks process, the shop PUBLIC_SALES unit has no inventory.
+        // Phase should be CONFIGURE_SHOP with NO_INVENTORY blocker.
+        var token = await RegisterAndGetTokenAsync($"mission-noinv-{Guid.NewGuid()}@test.com", "No Inv Seller");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "No Inv Seller Co");
         var productId = await GetStarterProductIdAsync();
-        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Awaiting Shop Lot");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "No Inv Shop Lot");
         await FinishOnboardingAsync(token, productId, shopLotId);
 
-        // At this point the shop has a PUBLIC_SALES unit with a price but no inventory
+        // No ticks processed — shop has price but no inventory
         var result = await ExecuteGraphQlAsync(
             """
             {
@@ -8481,12 +8482,52 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         Assert.False(result.TryGetProperty("errors", out _));
         var mission = result.GetProperty("data").GetProperty("firstSaleMission");
-        var phase = mission.GetProperty("phase").GetString();
-        // Phase must be either CONFIGURE_SHOP (no inventory) or AWAITING_FIRST_SALE (inventory present)
-        Assert.True(phase is "CONFIGURE_SHOP" or "AWAITING_FIRST_SALE",
-            $"Expected CONFIGURE_SHOP or AWAITING_FIRST_SALE, got {phase}");
+        Assert.Equal("CONFIGURE_SHOP", mission.GetProperty("phase").GetString());
         Assert.NotNull(mission.GetProperty("shopBuildingId").GetString());
         Assert.NotNull(mission.GetProperty("shopName").GetString());
+        var blockers = mission.GetProperty("blockers").EnumerateArray().Select(b => b.GetString()).ToList();
+        Assert.Contains("NO_INVENTORY", blockers);
+        Assert.DoesNotContain("PRICE_NOT_SET", blockers);
+        Assert.DoesNotContain("PUBLIC_SALES_UNIT_MISSING", blockers);
+    }
+
+    [Fact]
+    public async Task FirstSaleMission_ReturnsAwaitingFirstSale_AfterInventoryArrives()
+    {
+        // After 4 ticks, the shop should have inventory in the PUBLIC_SALES unit
+        // but no public sale yet (sale requires 5+ ticks).
+        var token = await RegisterAndGetTokenAsync($"mission-await-inv-{Guid.NewGuid()}@test.com", "Awaiting Inv Seller");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Awaiting Inv Seller Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Awaiting Inv Shop Lot");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        // Process 4 ticks — enough for inventory to arrive in the shop but not for a sale
+        await ProcessTicksAsync(4);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            {
+              firstSaleMission {
+                phase
+                shopBuildingId
+                shopName
+                blockers
+              }
+            }
+            """,
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var mission = result.GetProperty("data").GetProperty("firstSaleMission");
+        Assert.NotNull(mission.GetProperty("shopBuildingId").GetString());
+        Assert.NotNull(mission.GetProperty("shopName").GetString());
+        // After 4 ticks with the starter supply chain, the shop's PUBLIC_SALES unit
+        // should have received inventory. Phase should be AWAITING_FIRST_SALE with no blockers.
+        // (If the factory hasn't transferred yet, phase may still be CONFIGURE_SHOP — either is valid)
+        var phase = mission.GetProperty("phase").GetString();
+        Assert.True(phase is "AWAITING_FIRST_SALE" or "CONFIGURE_SHOP",
+            $"Expected AWAITING_FIRST_SALE or CONFIGURE_SHOP but got {phase}");
     }
 
     [Fact]

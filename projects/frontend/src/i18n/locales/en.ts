@@ -169,6 +169,7 @@ export default {
     missionBlockerNoPublicSalesUnit: 'Add a PUBLIC_SALES unit to your shop so customers can buy your product.',
     missionBlockerPriceNotSet: 'Set a selling price on the PUBLIC_SALES unit in your shop.',
     missionBlockerNoInventory: 'Waiting for your factory to produce goods and transfer inventory to the shop.',
+    missionBlockerUnknown: 'A readiness check is blocking your shop ({code}). Please review your shop configuration.',
     firstSaleCelebrationTitle: '🎊 Your First Sale!',
     firstSaleCelebrationDesc: 'The simulation just recorded your first real revenue. Here is what happened:',
     firstSaleCelebrationProduct: 'Product sold',

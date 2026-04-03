@@ -169,6 +169,7 @@ export default {
     missionBlockerNoPublicSalesUnit: 'Pridajte predajnú jednotku (PUBLIC_SALES) do obchodu, aby si zákazníci mohli kúpiť váš produkt.',
     missionBlockerPriceNotSet: 'Nastavte predajnú cenu na jednotke PUBLIC_SALES v obchode.',
     missionBlockerNoInventory: 'Čakanie na výrobu tovaru a prenos zásoby do obchodu.',
+    missionBlockerUnknown: 'Kontrola pripravenosti blokuje váš obchod ({code}). Skontrolujte konfiguráciu obchodu.',
     firstSaleCelebrationTitle: '🎊 Váš prvý predaj!',
     firstSaleCelebrationDesc: 'Simulácia práve zaznamenala vaše prvé skutočné príjmy. Tu je čo sa stalo:',
     firstSaleCelebrationProduct: 'Predaný produkt',

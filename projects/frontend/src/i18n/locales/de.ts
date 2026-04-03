@@ -169,6 +169,7 @@ export default {
     missionBlockerNoPublicSalesUnit: 'Fügen Sie eine PUBLIC_SALES-Einheit zu Ihrem Laden hinzu, damit Kunden Ihr Produkt kaufen können.',
     missionBlockerPriceNotSet: 'Legen Sie einen Verkaufspreis für die PUBLIC_SALES-Einheit in Ihrem Laden fest.',
     missionBlockerNoInventory: 'Warten auf Produktion und Lagerübertragung in den Laden.',
+    missionBlockerUnknown: 'Eine Bereitschaftsprüfung blockiert Ihren Laden ({code}). Bitte überprüfen Sie die Laden-Konfiguration.',
     firstSaleCelebrationTitle: '🎊 Ihr erster Verkauf!',
     firstSaleCelebrationDesc: 'Die Simulation hat gerade Ihren ersten echten Umsatz erfasst. Hier ist was passiert ist:',
     firstSaleCelebrationProduct: 'Verkauftes Produkt',

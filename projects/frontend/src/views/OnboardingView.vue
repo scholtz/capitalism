@@ -1144,8 +1144,9 @@ async function loadFirstSaleMission() {
     ) {
       await markMilestoneComplete()
     }
-  } catch {
-    // ignore — best-effort polling
+  } catch (err) {
+    // Best-effort polling — log for debugging but don't surface to user
+    console.error('[firstSaleMission] Failed to load mission status:', err)
   } finally {
     firstSaleMissionLoading.value = false
   }
@@ -1159,7 +1160,7 @@ function blockerMessage(code: string): string {
     PRICE_NOT_SET: t('onboarding.missionBlockerPriceNotSet'),
     NO_INVENTORY: t('onboarding.missionBlockerNoInventory'),
   }
-  return map[code] ?? code
+  return map[code] ?? t('onboarding.missionBlockerUnknown', { code })
 }
 
 function navigateToDashboard() {
