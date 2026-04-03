@@ -4037,7 +4037,7 @@ test.describe('Startup pack offer — analytics events (AC 10)', () => {
 
     // The expired state must be visible
     await expect(page.getByText('Startup pack expired')).toBeVisible()
-    // The claim button must be hidden
+    // The claim button must not be visible for an expired offer
     await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeHidden()
   })
 

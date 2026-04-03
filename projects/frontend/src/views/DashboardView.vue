@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useGameStateStore } from '@/stores/gameState'
 import { gqlRequest } from '@/lib/graphql'
-import { trackStartupPackEvent } from '@/lib/startupPackAnalytics'
+import { trackStartupPackEvent, emitStartupPackViewEvents } from '@/lib/startupPackAnalytics'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useTickCountdown } from '@/composables/useTickCountdown'
 import { deepEqual } from '@/lib/utils'
@@ -120,15 +120,7 @@ onMounted(async () => {
     if (auth.startupPackOffer?.status === 'ELIGIBLE') {
       await markStartupPackOfferShown()
     } else if (auth.startupPackOffer) {
-      trackStartupPackEvent('view', { context: 'dashboard', status: auth.startupPackOffer.status })
-      if (['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(auth.startupPackOffer.status)) {
-        trackStartupPackEvent('countdown_active', {
-          context: 'dashboard',
-          expiresAtUtc: auth.startupPackOffer.expiresAtUtc,
-        })
-      } else if (auth.startupPackOffer.status === 'EXPIRED') {
-        trackStartupPackEvent('offer_expired', { context: 'dashboard' })
-      }
+      emitStartupPackViewEvents(auth.startupPackOffer, 'dashboard')
     }
 
     // Load city power balances for each unique city that has buildings.
@@ -223,11 +215,7 @@ async function markStartupPackOfferShown() {
 
   auth.setStartupPackOffer(data.markStartupPackOfferShown)
   if (data.markStartupPackOfferShown) {
-    trackStartupPackEvent('view', { context: 'dashboard', status: data.markStartupPackOfferShown.status })
-    trackStartupPackEvent('countdown_active', {
-      context: 'dashboard',
-      expiresAtUtc: data.markStartupPackOfferShown.expiresAtUtc,
-    })
+    emitStartupPackViewEvents(data.markStartupPackOfferShown, 'dashboard')
   }
 }
 

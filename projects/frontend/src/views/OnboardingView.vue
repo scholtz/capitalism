@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
-import { trackStartupPackEvent } from '@/lib/startupPackAnalytics'
+import { trackStartupPackEvent, emitStartupPackViewEvents } from '@/lib/startupPackAnalytics'
 import { computeSimulatedProfit, trackOnboardingEvent } from '@/lib/onboardingAnalytics'
 import {
   getLocalizedProductDescription,
@@ -757,15 +757,7 @@ async function completeOnboarding() {
     if (startupPackOffer.value?.status === 'ELIGIBLE') {
       await markStartupPackOfferShown()
     } else if (startupPackOffer.value) {
-      trackStartupPackEvent('view', { context: 'onboarding', status: startupPackOffer.value.status })
-      if (['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(startupPackOffer.value.status)) {
-        trackStartupPackEvent('countdown_active', {
-          context: 'onboarding',
-          expiresAtUtc: startupPackOffer.value.expiresAtUtc,
-        })
-      } else if (startupPackOffer.value.status === 'EXPIRED') {
-        trackStartupPackEvent('offer_expired', { context: 'onboarding' })
-      }
+      emitStartupPackViewEvents(startupPackOffer.value, 'onboarding')
     }
     step.value = 5
     await Promise.all([loadGameState(), loadFirstSaleMission()])
@@ -810,14 +802,7 @@ async function markStartupPackOfferShown() {
   startupPackOffer.value = data.markStartupPackOfferShown
   auth.setStartupPackOffer(data.markStartupPackOfferShown)
   if (data.markStartupPackOfferShown) {
-    trackStartupPackEvent('view', {
-      context: 'onboarding',
-      status: data.markStartupPackOfferShown.status,
-    })
-    trackStartupPackEvent('countdown_active', {
-      context: 'onboarding',
-      expiresAtUtc: data.markStartupPackOfferShown.expiresAtUtc,
-    })
+    emitStartupPackViewEvents(data.markStartupPackOfferShown, 'onboarding')
   }
 }
 

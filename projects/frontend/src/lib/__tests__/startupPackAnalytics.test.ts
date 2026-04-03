@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { trackStartupPackEvent } from '../startupPackAnalytics'
+import { trackStartupPackEvent, emitStartupPackViewEvents } from '../startupPackAnalytics'
 
 describe('trackStartupPackEvent', () => {
   it('returns without throwing when window is not defined (SSR/node)', () => {
@@ -60,5 +60,40 @@ describe('trackStartupPackEvent', () => {
 
   it('continue accepts context detail field', () => {
     expect(() => trackStartupPackEvent('continue', { context: 'onboarding' })).not.toThrow()
+  })
+})
+
+describe('emitStartupPackViewEvents', () => {
+  const futureExpiry = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+  const pastExpiry = new Date(Date.now() - 1000).toISOString()
+
+  it('does not throw for ELIGIBLE status', () => {
+    expect(() =>
+      emitStartupPackViewEvents({ status: 'ELIGIBLE', expiresAtUtc: futureExpiry }, 'onboarding'),
+    ).not.toThrow()
+  })
+
+  it('does not throw for SHOWN status', () => {
+    expect(() =>
+      emitStartupPackViewEvents({ status: 'SHOWN', expiresAtUtc: futureExpiry }, 'dashboard'),
+    ).not.toThrow()
+  })
+
+  it('does not throw for DISMISSED status', () => {
+    expect(() =>
+      emitStartupPackViewEvents({ status: 'DISMISSED', expiresAtUtc: futureExpiry }, 'dashboard'),
+    ).not.toThrow()
+  })
+
+  it('does not throw for EXPIRED status', () => {
+    expect(() =>
+      emitStartupPackViewEvents({ status: 'EXPIRED', expiresAtUtc: pastExpiry }, 'dashboard'),
+    ).not.toThrow()
+  })
+
+  it('does not throw for CLAIMED status', () => {
+    expect(() =>
+      emitStartupPackViewEvents({ status: 'CLAIMED', expiresAtUtc: pastExpiry }, 'onboarding'),
+    ).not.toThrow()
   })
 })
