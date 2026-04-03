@@ -5778,6 +5778,59 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GuestMigration_HappyPath_Healthcare_SelectedIndustryAndProductArePreserved()
+    {
+        // AC 2 + AC 9 + AC 13: "After a successful onboarding experience, the player is prompted to
+        // log in or sign up to save progress." Verifies the guest-to-authenticated migration happy
+        // path for the HEALTHCARE industry (Basic Medicine) — the third starter industry.
+        // Guest chose Healthcare/Basic Medicine → registers → StartOnboardingCompany + FinishOnboarding
+        // preserves the choice and deducts the correct lot costs from the starting cash balance.
+        var token = await RegisterAndGetTokenAsync($"guest-hc-{Guid.NewGuid()}@test.com", "Healthcare Migrator");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m);
+
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id name cash }
+                factory { id type }
+              }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "Pharmacy Migration Corp", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed for HEALTHCARE");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+        Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
+        Assert.Equal("FACTORY", startData.GetProperty("factory").GetProperty("type").GetString());
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding must succeed for HEALTHCARE migration");
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+
+        // Verify the selected product matches the guest's HEALTHCARE choice
+        var selectedProduct = finishData.GetProperty("selectedProduct");
+        Assert.Equal(productId, selectedProduct.GetProperty("id").GetString());
+        Assert.Equal("HEALTHCARE", selectedProduct.GetProperty("industry").GetString());
+
+        // Verify cash reduced by both lot purchases: $500,000 - $75,000 - $90,000 = $335,000
+        var cashAfterMigration = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
+        Assert.Equal(335_000m, cashAfterMigration);
+
+        // Verify onboarding is marked complete
+        var meResult = await ExecuteGraphQlAsync("query { me { onboardingCompletedAtUtc } }", null, token);
+        var completedAt = meResult.GetProperty("data").GetProperty("me").GetProperty("onboardingCompletedAtUtc").GetString();
+        Assert.NotNull(completedAt);
+        Assert.NotEmpty(completedAt);
+    }
+
+    [Fact]
     public async Task GuestMigration_HappyPath_StartupPackOfferActivatedAfterMigration()
     {
         // AC: "Support both onboarding completion paths: guest-to-authenticated migration and already

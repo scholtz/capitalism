@@ -1062,6 +1062,74 @@ test.describe('Guest onboarding wizard', () => {
     await expect(page.locator('.price-panel-tip')).toBeVisible()
   })
 
+  test('analytics events fire for industry_selected, city_selected, and factory_configured during guest steps (AC 12)', async ({
+    page,
+  }) => {
+    // AC 12: Analytics instrumentation must emit named events at each major onboarding step.
+    // Verifies: onboarding_start → industry_selected → city_selected → factory_configured → shop_configured.
+    setupMockApi(page)
+
+    const events: Array<{ eventName: string; [key: string]: unknown }> = []
+    await page.addInitScript(() => {
+      ;(window as unknown as Record<string, unknown>).__onboardingEvents = []
+      window.addEventListener('capitalism:onboarding', (e: Event) => {
+        ;(window as unknown as Record<string, Array<unknown>>).__onboardingEvents.push(
+          (e as CustomEvent).detail,
+        )
+      })
+    })
+
+    await page.goto('/onboarding')
+
+    // Collect events after the page loads — onboarding_start should fire on mount.
+    await page.locator('.industry-card', { hasText: 'Furniture' }).first().waitFor()
+    const afterLoad = await page.evaluate(
+      () => (window as unknown as Record<string, unknown[]>).__onboardingEvents ?? [],
+    )
+    expect(afterLoad.map((e) => (e as Record<string, string>).eventName)).toContain('onboarding_start')
+
+    // Select industry and advance to step 2.
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // city_selected fires when the player picks a city.
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // factory_configured fires after the player purchases the factory lot.
+    await page.getByLabel('Company Name').fill('Analytics Test Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // shop_configured fires after the player purchases the shop lot.
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+
+    const allEvents = (await page.evaluate(
+      () => (window as unknown as Record<string, unknown[]>).__onboardingEvents ?? [],
+    )) as Array<Record<string, unknown>>
+
+    events.push(...allEvents.map((e) => e as { eventName: string }))
+
+    const names = events.map((e) => e.eventName)
+    expect(names).toContain('onboarding_start')
+    expect(names).toContain('industry_selected')
+    expect(names).toContain('city_selected')
+    expect(names).toContain('factory_configured')
+    expect(names).toContain('shop_configured')
+    expect(names).toContain('save_prompt_shown')
+    expect(names).toContain('first_profit_shown')
+
+    // industry_selected event must carry the industry payload.
+    const industryEvent = events.find((e) => e.eventName === 'industry_selected')
+    expect(industryEvent?.industry).toBe('FURNITURE')
+  })
+
   test('guest completion screen fires onboarding_converted event on successful migration (AC 12)', async ({
     page,
   }) => {
