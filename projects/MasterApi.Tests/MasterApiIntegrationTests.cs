@@ -2,6 +2,9 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using MasterApi.Tests.Infrastructure;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 
 namespace MasterApi.Tests;
 
@@ -890,4 +893,186 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
     }
 
     #endregion
+
+    #region Subscription lifecycle tests
+
+    [Fact]
+    public async Task ProlongSubscription_ActiveSub_ExtendsInPlace_Stacks()
+    {
+        // Register and get an initial subscription
+        var (token, _) = await RegisterAndGetTokenAsync("lifecycle-stack@example.com");
+
+        // Prolong for 1 month (creates first Active subscription)
+        await GraphQlAsync("""
+            mutation Prolong($input: ProlongSubscriptionInput!) {
+              prolongSubscription(input: $input) { tier status isActive daysRemaining }
+            }
+            """,
+            new { input = new { months = 1 } },
+            token: token);
+
+        // Prolong again while still active — should extend the existing record in place,
+        // not create a new record. daysRemaining should reflect ~60 days (2 months stacked).
+        var result = await GraphQlAsync("""
+            mutation Prolong($input: ProlongSubscriptionInput!) {
+              prolongSubscription(input: $input) { tier status isActive daysRemaining }
+            }
+            """,
+            new { input = new { months = 1 } },
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var sub = result.GetProperty("data").GetProperty("prolongSubscription");
+        Assert.Equal("ACTIVE", sub.GetProperty("status").GetString());
+        Assert.True(sub.GetProperty("isActive").GetBoolean());
+        var daysRemaining = sub.GetProperty("daysRemaining").GetInt32();
+        Assert.True(daysRemaining > 50, $"Expected daysRemaining > 50 but got {daysRemaining}");
+    }
+
+    [Fact]
+    public async Task MySubscription_AfterProlong_ShowsActiveStatus()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("sub-active-query@example.com");
+
+        await GraphQlAsync("""
+            mutation Prolong($input: ProlongSubscriptionInput!) {
+              prolongSubscription(input: $input) { tier }
+            }
+            """,
+            new { input = new { months = 3 } },
+            token: token);
+
+        var result = await GraphQlAsync("""
+            query { mySubscription { tier status isActive daysRemaining canProlong expiresAtUtc } }
+            """, token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var sub = result.GetProperty("data").GetProperty("mySubscription");
+        Assert.Equal("PRO", sub.GetProperty("tier").GetString());
+        Assert.Equal("ACTIVE", sub.GetProperty("status").GetString());
+        Assert.True(sub.GetProperty("isActive").GetBoolean());
+        Assert.True(sub.GetProperty("canProlong").GetBoolean());
+        var daysRemaining = sub.GetProperty("daysRemaining").GetInt32();
+        Assert.True(daysRemaining > 85, $"Expected ~90 days remaining but got {daysRemaining}");
+    }
+
+    [Fact]
+    public async Task MySubscription_FreshUser_ShowsFreeNone()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("fresh-free@example.com");
+
+        var result = await GraphQlAsync("""
+            query { mySubscription { tier status isActive canProlong daysRemaining } }
+            """, token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var sub = result.GetProperty("data").GetProperty("mySubscription");
+        Assert.Equal("FREE", sub.GetProperty("tier").GetString());
+        Assert.Equal("NONE", sub.GetProperty("status").GetString());
+        Assert.False(sub.GetProperty("isActive").GetBoolean());
+        Assert.True(sub.GetProperty("canProlong").GetBoolean());
+        Assert.True(sub.GetProperty("daysRemaining").ValueKind == System.Text.Json.JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task ProlongSubscription_MaxMonths_12_IsAccepted()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("max-months@example.com");
+
+        var result = await GraphQlAsync("""
+            mutation Prolong($input: ProlongSubscriptionInput!) {
+              prolongSubscription(input: $input) { tier status isActive daysRemaining }
+            }
+            """,
+            new { input = new { months = 12 } },
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var sub = result.GetProperty("data").GetProperty("prolongSubscription");
+        Assert.Equal("ACTIVE", sub.GetProperty("status").GetString());
+        var days = sub.GetProperty("daysRemaining").GetInt32();
+        Assert.True(days > 360, $"Expected ~365 days remaining but got {days}");
+    }
+
+    [Fact]
+    public async Task ProlongSubscription_MonthsOutOfRange_ReturnsError()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("months-range@example.com");
+
+        var tooFew = await GraphQlAsync("""
+            mutation Prolong($input: ProlongSubscriptionInput!) {
+              prolongSubscription(input: $input) { tier }
+            }
+            """,
+            new { input = new { months = 0 } },
+            token: token);
+
+        var tooMany = await GraphQlAsync("""
+            mutation Prolong($input: ProlongSubscriptionInput!) {
+              prolongSubscription(input: $input) { tier }
+            }
+            """,
+            new { input = new { months = 13 } },
+            token: token);
+
+        Assert.True(tooFew.TryGetProperty("errors", out var fewErrors));
+        Assert.Equal("INVALID_MONTHS", fewErrors[0].GetProperty("extensions").GetProperty("code").GetString());
+
+        Assert.True(tooMany.TryGetProperty("errors", out var manyErrors));
+        Assert.Equal("INVALID_MONTHS", manyErrors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task JwtOptions_DefaultSigningKey_ConstantMatchesAppsettings()
+    {
+        // Verifies that the constant used in Program.cs startup guard matches
+        // the value in appsettings.json so the guard cannot silently become a no-op.
+        Assert.Equal("ChangeThisSigningKeyBeforeProduction123!", MasterApi.Security.JwtOptions.DefaultSigningKey);
+    }
+
+    #endregion
+}
+
+// ── Startup guard test ────────────────────────────────────────────────────────
+// Separate class + factory so it does not share the singleton with the main tests.
+
+public sealed class ProductionStartupGuardFactory : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        // Simulate a production deployment that forgot to set the JWT signing key.
+        builder.UseEnvironment("Production");
+
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MasterServer:RegistrationKey"] = "any-key",
+                // Deliberately leave Jwt:SigningKey at the default value from appsettings.json
+                // (which is the DefaultSigningKey constant) to trigger the startup guard.
+            });
+        });
+    }
+}
+
+public sealed class JwtStartupGuardTests : IClassFixture<ProductionStartupGuardFactory>
+{
+    private readonly ProductionStartupGuardFactory _factory;
+
+    public JwtStartupGuardTests(ProductionStartupGuardFactory factory)
+    {
+        _factory = factory;
+    }
+
+    [Fact]
+    public void Startup_Production_WithDefaultSigningKey_ThrowsInvalidOperation()
+    {
+        // The startup guard in Program.cs must throw when the default JWT key is used
+        // in Production so that misconfigured deployments fail immediately rather than
+        // silently accepting forgeable tokens.
+        var ex = Assert.Throws<InvalidOperationException>(() => _factory.CreateClient());
+
+        Assert.Contains("JWT SigningKey", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("default", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

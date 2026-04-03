@@ -58,12 +58,15 @@ public sealed class Query
         var userId = GetCurrentUserId(claimsPrincipal);
         var now = DateTime.UtcNow;
 
-        var activeSub = await db.ProSubscriptions
-            .Where(s => s.PlayerAccountId == userId && s.Status == SubscriptionStatus.Active)
+        // Return the most recent subscription regardless of DB status so that
+        // players with an expired Pro plan see "EXPIRED" rather than "FREE/NONE".
+        // BuildSubscriptionInfo uses the expiry timestamp to compute the live state.
+        var latestSub = await db.ProSubscriptions
+            .Where(s => s.PlayerAccountId == userId)
             .OrderByDescending(s => s.ExpiresAtUtc)
             .FirstOrDefaultAsync();
 
-        return BuildSubscriptionInfo(activeSub, now);
+        return BuildSubscriptionInfo(latestSub, now);
     }
 
     internal static GameServerSummary ToSummary(Data.Entities.GameServerNode server, DateTime cutoff)

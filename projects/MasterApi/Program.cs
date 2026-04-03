@@ -17,6 +17,20 @@ builder.Services.Configure<JwtOptions>(
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? new JwtOptions();
 
+// Fail fast: prevent using the default JWT signing key in non-Development environments.
+// If the key has not been changed from the shipped default, tokens could be forged by anyone
+// who has read this source. Deployment must supply a strong unique key via configuration or
+// environment variables (Jwt__SigningKey).
+if (!builder.Environment.IsDevelopment()
+    && !builder.Environment.IsEnvironment("Testing")
+    && string.Equals(jwtOptions.SigningKey, JwtOptions.DefaultSigningKey, StringComparison.Ordinal))
+{
+    throw new InvalidOperationException(
+        "The JWT SigningKey has not been changed from its default value. " +
+        "Set a strong unique secret in the 'Jwt:SigningKey' configuration entry " +
+        "(or environment variable 'Jwt__SigningKey') before running outside Development.");
+}
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("frontend", policy =>

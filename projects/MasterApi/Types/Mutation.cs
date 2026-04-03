@@ -142,20 +142,37 @@ public sealed class Mutation
         var userId = Query.GetCurrentUserId(claimsPrincipal);
         var now = DateTime.UtcNow;
 
-        var activeSub = await db.ProSubscriptions
-            .Where(s => s.PlayerAccountId == userId && s.Status == SubscriptionStatus.Active)
+        // Find the most recent subscription for this player (any status).
+        // We use this to determine whether to extend or to create a new one.
+        var latestSub = await db.ProSubscriptions
+            .Where(s => s.PlayerAccountId == userId)
             .OrderByDescending(s => s.ExpiresAtUtc)
             .FirstOrDefaultAsync();
 
-        if (activeSub is not null && activeSub.ExpiresAtUtc > now)
+        ProSubscription resultSub;
+
+        if (latestSub is not null
+            && latestSub.Status == SubscriptionStatus.Active
+            && latestSub.ExpiresAtUtc > now)
         {
-            // Extend existing active subscription
-            activeSub.ExpiresAtUtc = activeSub.ExpiresAtUtc.AddMonths(input.Months);
-            activeSub.UpdatedAtUtc = now;
+            // Genuinely active subscription — extend it in place.
+            latestSub.ExpiresAtUtc = latestSub.ExpiresAtUtc.AddMonths(input.Months);
+            latestSub.UpdatedAtUtc = now;
+            resultSub = latestSub;
         }
         else
         {
-            // Create a new subscription starting now
+            // No subscription, or the latest one has expired.
+            // Explicitly mark any stale "Active" record as Expired so the DB status
+            // stays consistent with the time-based reality, preventing duplicate
+            // Active records from accumulating.
+            if (latestSub is not null && latestSub.Status == SubscriptionStatus.Active)
+            {
+                latestSub.Status = SubscriptionStatus.Expired;
+                latestSub.UpdatedAtUtc = now;
+            }
+
+            // Create a fresh Active subscription starting now.
             var newSub = new ProSubscription
             {
                 Id = Guid.NewGuid(),
@@ -168,12 +185,12 @@ public sealed class Mutation
                 UpdatedAtUtc = now,
             };
             db.ProSubscriptions.Add(newSub);
-            activeSub = newSub;
+            resultSub = newSub;
         }
 
         await db.SaveChangesAsync();
 
-        return Query.BuildSubscriptionInfo(activeSub, now);
+        return Query.BuildSubscriptionInfo(resultSub, now);
     }
 
     public async Task<GameServerSummary> RegisterGameServer(
