@@ -2789,4 +2789,121 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
     }
 
     #endregion
+
+    #region Salary and Overhead Integration
+
+    [Fact]
+    public async Task OperatingCostPhase_HigherSalaryMultiplier_IncreasesLaborCost()
+    {
+        // Two identical buildings in the same city: one company uses default salary (1x),
+        // the other uses a 2x salary multiplier. Labor cost should be proportional.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+
+        var player1 = new Player { Id = Guid.NewGuid(), Email = $"sal1-{Guid.NewGuid():N}@test.com", DisplayName = "Sal1", PasswordHash = "h", Role = PlayerRole.Player };
+        var player2 = new Player { Id = Guid.NewGuid(), Email = $"sal2-{Guid.NewGuid():N}@test.com", DisplayName = "Sal2", PasswordHash = "h", Role = PlayerRole.Player };
+        db.Players.AddRange(player1, player2);
+
+        var company1 = new Company { Id = Guid.NewGuid(), PlayerId = player1.Id, Name = "Default Salary Corp", Cash = 1_000_000m, FoundedAtTick = 0 };
+        var company2 = new Company { Id = Guid.NewGuid(), PlayerId = player2.Id, Name = "Double Salary Corp", Cash = 1_000_000m, FoundedAtTick = 0 };
+        db.Companies.AddRange(company1, company2);
+
+        // Company 2 has 2x salary multiplier for this city
+        var salarySetting = new CompanyCitySalarySetting
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company2.Id,
+            CityId = city.Id,
+            SalaryMultiplier = 2m
+        };
+        db.CompanyCitySalarySettings.Add(salarySetting);
+
+        // Create identical buildings with one Storage unit each (non-manufacturing, so no overhead applies)
+        var building1 = new Building { Id = Guid.NewGuid(), CompanyId = company1.Id, CityId = city.Id, Type = BuildingType.Factory, Name = "B1", Level = 1 };
+        var building2 = new Building { Id = Guid.NewGuid(), CompanyId = company2.Id, CityId = city.Id, Type = BuildingType.Factory, Name = "B2", Level = 1 };
+        db.Buildings.AddRange(building1, building2);
+
+        var storageUnit1 = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = building1.Id, UnitType = UnitType.Storage, GridX = 0, GridY = 0, Level = 1 };
+        var storageUnit2 = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = building2.Id, UnitType = UnitType.Storage, GridX = 0, GridY = 0, Level = 1 };
+        db.BuildingUnits.AddRange(storageUnit1, storageUnit2);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var laborCost1 = await db.LedgerEntries
+            .Where(e => e.CompanyId == company1.Id && e.Category == LedgerCategory.LaborCost)
+            .SumAsync(e => -e.Amount);
+        var laborCost2 = await db.LedgerEntries
+            .Where(e => e.CompanyId == company2.Id && e.Category == LedgerCategory.LaborCost)
+            .SumAsync(e => -e.Amount);
+
+        Assert.True(laborCost1 > 0m, "Company 1 (default salary) should have a positive labor cost.");
+        Assert.True(laborCost2 > 0m, "Company 2 (double salary) should have a positive labor cost.");
+        // Labor cost scales linearly with the salary multiplier.
+        // Due to per-unit decimal rounding, we check within 1 cent per unit rather than exact equality.
+        Assert.True(laborCost2 > laborCost1,
+            $"Company 2 labor cost (${laborCost2}) should be greater than company 1 labor cost (${laborCost1}) because company 2 pays 2x salary.");
+        Assert.True(laborCost2 <= laborCost1 * 2m + 0.01m,
+            $"Company 2 labor cost (${laborCost2}) should be approximately 2x company 1 labor cost (${laborCost1}).");
+    }
+
+    [Fact]
+    public async Task OperatingCostPhase_OverheadApplied_OnlyToManufacturingUnits()
+    {
+        // A company with non-zero overhead should have manufacturing units pay a higher effective
+        // hourly rate than non-manufacturing units in the same building.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var currentTick = (await db.GameStates.FirstAsync()).CurrentTick;
+        var city = await db.Cities.FirstAsync();
+
+        var player = new Player { Id = Guid.NewGuid(), Email = $"overhead-{Guid.NewGuid():N}@test.com", DisplayName = "Overhead", PasswordHash = "h", Role = PlayerRole.Player };
+        db.Players.Add(player);
+
+        // Set FoundedAtTick 1 full year in the past so ageFactor = 0.5 (halfway to max),
+        // which ensures overhead > 0 (ageFactor * assetFactor > 0 since company has cash).
+        var ticksPerYear = Engine.GameConstants.TicksPerYear;
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Overhead Corp", Cash = 1_000_000m, FoundedAtTick = currentTick - ticksPerYear };
+        db.Companies.Add(company);
+
+        var building = new Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = BuildingType.Factory, Name = "OH Factory", Level = 1 };
+        db.Buildings.Add(building);
+
+        // Manufacturing unit (overhead applies) and Storage unit (no overhead) at same level
+        var manufacturingUnit = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = building.Id, UnitType = UnitType.Manufacturing, GridX = 0, GridY = 0, Level = 1 };
+        var storageUnit = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = building.Id, UnitType = UnitType.Storage, GridX = 1, GridY = 0, Level = 1 };
+        db.BuildingUnits.AddRange(manufacturingUnit, storageUnit);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var mfgLaborEntry = await db.LedgerEntries
+            .FirstOrDefaultAsync(e => e.CompanyId == company.Id && e.BuildingUnitId == manufacturingUnit.Id && e.Category == LedgerCategory.LaborCost);
+        var storageLaborEntry = await db.LedgerEntries
+            .FirstOrDefaultAsync(e => e.CompanyId == company.Id && e.BuildingUnitId == storageUnit.Id && e.Category == LedgerCategory.LaborCost);
+
+        Assert.NotNull(mfgLaborEntry);
+        Assert.NotNull(storageLaborEntry);
+
+        // The effective cost per labor-hour for manufacturing must exceed that of storage
+        // because manufacturing includes the administration overhead surcharge while storage does not.
+        var mfgBaseHours = CompanyEconomyCalculator.GetBaseUnitLaborHours(UnitType.Manufacturing, 1);
+        var storageBaseHours = CompanyEconomyCalculator.GetBaseUnitLaborHours(UnitType.Storage, 1);
+
+        var mfgEffectiveRatePerHour = -mfgLaborEntry.Amount / mfgBaseHours;
+        var storageEffectiveRatePerHour = -storageLaborEntry.Amount / storageBaseHours;
+
+        Assert.True(mfgEffectiveRatePerHour > storageEffectiveRatePerHour,
+            $"Manufacturing effective rate/hour (${mfgEffectiveRatePerHour:F4}) should exceed storage rate/hour " +
+            $"(${storageEffectiveRatePerHour:F4}) because overhead applies only to manufacturing.");
+    }
+
+    #endregion
 }

@@ -153,6 +153,16 @@ public sealed class Mutation
                     .SetCode("COMPANY_NOT_FOUND")
                     .Build());
 
+        var trimmedName = input.Name.Trim();
+        if (string.IsNullOrEmpty(trimmedName))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Company name cannot be empty.")
+                    .SetCode("INVALID_COMPANY_NAME")
+                    .Build());
+        }
+
         var validCityIds = await db.Cities
             .Select(city => city.Id)
             .ToListAsync();
@@ -170,7 +180,7 @@ public sealed class Mutation
             }
         }
 
-        company.Name = input.Name.Trim();
+        company.Name = trimmedName;
 
         foreach (var salarySetting in input.CitySalarySettings
                      .GroupBy(setting => setting.CityId)

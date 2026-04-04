@@ -2381,6 +2381,102 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task UpdateCompanySettings_EmptyNameAfterTrim_ReturnsInvalidCompanyNameError()
+    {
+        var token = await RegisterAndGetTokenAsync("empty-name@test.com", "Empty Name User");
+
+        var createResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Before Empty" } },
+            token);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdateCompanySettings($input: UpdateCompanySettingsInput!) {
+              updateCompanySettings(input: $input) { id name }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    companyId,
+                    name = "   ",
+                    citySalarySettings = Array.Empty<object>()
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_COMPANY_NAME", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task UpdateCompanySettings_WhitespaceOnlyName_ReturnsInvalidCompanyNameError()
+    {
+        var token = await RegisterAndGetTokenAsync("ws-name@test.com", "Whitespace Name User");
+
+        var createResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Before Whitespace" } },
+            token);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdateCompanySettings($input: UpdateCompanySettingsInput!) {
+              updateCompanySettings(input: $input) { id name }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    companyId,
+                    name = "\t \n",
+                    citySalarySettings = Array.Empty<object>()
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_COMPANY_NAME", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task UpdateCompanySettings_LeadingAndTrailingSpaces_TrimsAndPersists()
+    {
+        var token = await RegisterAndGetTokenAsync("trim-name@test.com", "Trim Name User");
+
+        var createResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Before Trim" } },
+            token);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdateCompanySettings($input: UpdateCompanySettingsInput!) {
+              updateCompanySettings(input: $input) { id name }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    companyId,
+                    name = "  Trimmed Name  ",
+                    citySalarySettings = Array.Empty<object>()
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        Assert.Equal("Trimmed Name", result.GetProperty("data").GetProperty("updateCompanySettings").GetProperty("name").GetString());
+    }
+
+    [Fact]
     public async Task CompanyLedger_IncludesLaborAndEnergyTotals()
     {
         var token = await RegisterAndGetTokenAsync("ledger-costs@test.com", "Ledger Costs User");
