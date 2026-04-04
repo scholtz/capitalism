@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { BuildingUnit } from '@/types'
+import type { BuildingUnit, BuildingUnitOperationalStatus } from '@/types'
 
 interface Props {
   units: BuildingUnit[]
+  /** Optional per-unit operational statuses fetched from buildingUnitOperationalStatuses query. */
+  statuses?: BuildingUnitOperationalStatus[]
 }
 
 const props = defineProps<Props>()
@@ -29,6 +31,14 @@ const chainUnits = computed<BuildingUnit[]>(() => {
   return [...props.units].sort((a, b) => a.gridX - b.gridX || a.gridY - b.gridY)
 })
 
+const statusMap = computed<Record<string, BuildingUnitOperationalStatus>>(() => {
+  const map: Record<string, BuildingUnitOperationalStatus> = {}
+  for (const s of props.statuses ?? []) {
+    map[s.buildingUnitId] = s
+  }
+  return map
+})
+
 function unitIcon(unitType: string): string {
   return UNIT_TYPE_ICONS[unitType] ?? '🔲'
 }
@@ -36,6 +46,31 @@ function unitIcon(unitType: string): string {
 function unitLabel(unitType: string): string {
   const key = `supplyChain.unitTypes.${unitType}` as Parameters<typeof t>[0]
   return t(key)
+}
+
+function unitStatusClass(unitId: string): string {
+  const s = statusMap.value[unitId]
+  if (!s) return ''
+  return `unit-node--${s.status.toLowerCase()}`
+}
+
+function unitStatusBadge(unitId: string): string {
+  const s = statusMap.value[unitId]
+  if (!s || s.status === 'ACTIVE') return ''
+  const badges: Record<string, string> = {
+    IDLE: '💤',
+    BLOCKED: '⛔',
+    FULL: '📊',
+    UNCONFIGURED: '❓',
+  }
+  return badges[s.status] ?? ''
+}
+
+function unitStatusTitle(unitId: string): string {
+  const s = statusMap.value[unitId]
+  if (!s) return ''
+  if (s.blockedReason) return s.blockedReason
+  return s.status
 }
 </script>
 
@@ -47,9 +82,17 @@ function unitLabel(unitType: string): string {
     </div>
     <div v-else class="supply-chain-flow" role="list">
       <template v-for="(unit, index) in chainUnits" :key="unit.id">
-        <div class="unit-node" role="listitem">
+        <div
+          class="unit-node"
+          :class="unitStatusClass(unit.id)"
+          :title="unitStatusTitle(unit.id)"
+          role="listitem"
+        >
           <span class="unit-icon" :aria-hidden="true">{{ unitIcon(unit.unitType) }}</span>
           <span class="unit-label">{{ unitLabel(unit.unitType) }}</span>
+          <span v-if="unitStatusBadge(unit.id)" class="unit-status-badge" :aria-label="statusMap[unit.id]?.status">
+            {{ unitStatusBadge(unit.id) }}
+          </span>
         </div>
         <span v-if="index < chainUnits.length - 1" class="unit-arrow" aria-hidden="true">→</span>
       </template>
@@ -98,6 +141,31 @@ function unitLabel(unitType: string): string {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   min-width: 4rem;
+  position: relative;
+}
+
+.unit-node--active {
+  border-color: var(--color-secondary);
+  background: rgba(0, 200, 83, 0.06);
+}
+
+.unit-node--blocked {
+  border-color: var(--color-danger);
+  background: rgba(248, 113, 113, 0.06);
+}
+
+.unit-node--full {
+  border-color: var(--color-primary);
+  background: rgba(0, 71, 255, 0.06);
+}
+
+.unit-node--idle {
+  opacity: 0.7;
+}
+
+.unit-node--unconfigured {
+  opacity: 0.5;
+  border-style: dashed;
 }
 
 .unit-icon {
@@ -111,6 +179,11 @@ function unitLabel(unitType: string): string {
   color: var(--color-text-secondary);
   text-align: center;
   white-space: nowrap;
+}
+
+.unit-status-badge {
+  font-size: 0.625rem;
+  line-height: 1;
 }
 
 .unit-arrow {

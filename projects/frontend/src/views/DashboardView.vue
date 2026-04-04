@@ -22,6 +22,7 @@ import type {
   CityPowerBalance,
   CompanyLedgerSummary,
   City,
+  BuildingUnitOperationalStatus,
 } from '@/types'
 
 const { t, locale } = useI18n()
@@ -42,6 +43,8 @@ const cityPowerBalances = ref<Record<string, CityPowerBalance>>({})
 const companyLedgers = ref<Record<string, CompanyLedgerSummary>>({})
 const ledgerLoading = ref(false)
 const cityNames = ref<Record<string, string>>({})
+/** Map from buildingId → per-unit operational statuses for supply-chain live status display. */
+const buildingUnitStatuses = ref<Record<string, BuildingUnitOperationalStatus[]>>({})
 
 const { tickCountdown, startTickCountdown, stopTickCountdown } = useTickCountdown(gameState)
 
@@ -140,10 +143,12 @@ onMounted(async () => {
     // Load city power balances for each unique city that has buildings.
     const cityIds = [...new Set(companiesData.myCompanies.flatMap((c) => c.buildings.map((b) => b.cityId)))]
     const companyIds = companiesData.myCompanies.map((c) => c.id)
+    const buildingIds = companiesData.myCompanies.flatMap((c) => c.buildings.map((b) => b.id))
     await Promise.all([
       loadCityPowerBalances(cityIds),
       loadCityNames(),
       loadLedgers(companyIds),
+      loadBuildingUnitStatuses(buildingIds),
     ])
 
     await loadPendingActions()
@@ -161,9 +166,10 @@ useTickRefresh(async () => {
 
   await Promise.all([loadDashboardData(), loadPendingActions()])
   startTickCountdown()
-  // Refresh ledger data on tick but keep loading state quiet (non-critical).
+  // Refresh ledger and unit statuses on tick but keep loading state quiet (non-critical).
   const companyIds = companies.value.map((c) => c.id)
-  await loadLedgers(companyIds, true)
+  const buildingIds = companies.value.flatMap((c) => c.buildings.map((b) => b.id))
+  await Promise.all([loadLedgers(companyIds, true), loadBuildingUnitStatuses(buildingIds)])
 })
 
 onUnmounted(stopTickCountdown)
@@ -253,6 +259,31 @@ async function loadLedgers(companyIds: string[], isRefresh = false) {
     // best-effort — ledger data is non-critical
   } finally {
     if (!isRefresh) ledgerLoading.value = false
+  }
+}
+
+async function loadBuildingUnitStatuses(buildingIds: string[]) {
+  if (buildingIds.length === 0) return
+  try {
+    const results = await Promise.allSettled(
+      buildingIds.map((buildingId) =>
+        gqlRequest<{ buildingUnitOperationalStatuses: BuildingUnitOperationalStatus[] }>(
+          `query BuildingUnitOperationalStatuses($buildingId: UUID!) {
+            buildingUnitOperationalStatuses(buildingId: $buildingId) {
+              buildingUnitId status blockedCode blockedReason idleTicks
+            }
+          }`,
+          { buildingId },
+        ).then((data) => ({ buildingId, statuses: data.buildingUnitOperationalStatuses })),
+      ),
+    )
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        buildingUnitStatuses.value[result.value.buildingId] = result.value.statuses
+      }
+    }
+  } catch {
+    // best-effort — unit status is non-critical
   }
 }
 
@@ -612,7 +643,11 @@ function formatTimeRemaining(expiresAtUtc: string): string {
                   </span>
                 </div>
               </RouterLink>
-              <SupplyChainPanel v-if="building.units.length > 0" :units="building.units" />
+              <SupplyChainPanel
+                v-if="building.units.length > 0"
+                :units="building.units"
+                :statuses="buildingUnitStatuses[building.id]"
+              />
             </div>
           </div>
 

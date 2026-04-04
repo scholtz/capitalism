@@ -12645,6 +12645,400 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
     #endregion
 
+
+    #region StarterDashboard
+
+    /// <summary>
+    /// After completing Furniture onboarding, myCompanies returns both factory and shop
+    /// with configured building units visible for dashboard supply-chain display.
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_Furniture_MyCompanies_HasFactoryAndShopWithUnits()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"dash-furn-{Guid.NewGuid():N}@test.com");
+        var (companyId, factoryLotId, cityId, _) = await StartOnboardingCompanyAsync(token, "Furniture Dashboard Co");
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        var result = await ExecuteGraphQlAsync(
+            @"{ myCompanies {
+                id name cash
+                buildings { id name type units { id unitType gridX gridY } }
+            } }",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var companies = result.GetProperty("data").GetProperty("myCompanies").EnumerateArray().ToList();
+        Assert.Single(companies);
+
+        var buildings = companies[0].GetProperty("buildings").EnumerateArray().ToList();
+        Assert.Equal(2, buildings.Count);
+
+        var factory = buildings.First(b => b.GetProperty("type").GetString() == "FACTORY");
+        var shop = buildings.First(b => b.GetProperty("type").GetString() == "SALES_SHOP");
+
+        var factoryUnits = factory.GetProperty("units").EnumerateArray().ToList();
+        var shopUnits = shop.GetProperty("units").EnumerateArray().ToList();
+
+        Assert.True(factoryUnits.Count >= 2, "Factory should have at least PURCHASE and MANUFACTURING units after Furniture onboarding.");
+        Assert.True(shopUnits.Count >= 1, "Shop should have at least one unit after Furniture onboarding.");
+
+        var factoryUnitTypes = factoryUnits.Select(u => u.GetProperty("unitType").GetString()!).ToList();
+        Assert.Contains("PURCHASE", factoryUnitTypes);
+        Assert.Contains("MANUFACTURING", factoryUnitTypes);
+
+        var shopUnitTypes = shopUnits.Select(u => u.GetProperty("unitType").GetString()!).ToList();
+        Assert.Contains("PUBLIC_SALES", shopUnitTypes);
+    }
+
+    /// <summary>
+    /// After completing Food Processing onboarding, myCompanies shows the bread factory and shop with units.
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_FoodProcessing_MyCompanies_HasFactoryAndShopWithUnits()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"dash-food-{Guid.NewGuid():N}@test.com");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "Bread Dashboard Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        var result = await ExecuteGraphQlAsync(
+            @"{ myCompanies {
+                id name cash
+                buildings { id name type units { id unitType gridX gridY } }
+            } }",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var companies = result.GetProperty("data").GetProperty("myCompanies").EnumerateArray().ToList();
+        Assert.Single(companies);
+
+        var buildings = companies[0].GetProperty("buildings").EnumerateArray().ToList();
+        Assert.Equal(2, buildings.Count);
+
+        var factory = buildings.First(b => b.GetProperty("type").GetString() == "FACTORY");
+        var factoryUnitTypes = factory.GetProperty("units").EnumerateArray()
+            .Select(u => u.GetProperty("unitType").GetString()!).ToList();
+
+        Assert.Contains("PURCHASE", factoryUnitTypes);
+        Assert.Contains("MANUFACTURING", factoryUnitTypes);
+
+        var shop = buildings.First(b => b.GetProperty("type").GetString() == "SALES_SHOP");
+        var shopUnitTypes = shop.GetProperty("units").EnumerateArray()
+            .Select(u => u.GetProperty("unitType").GetString()!).ToList();
+        Assert.Contains("PUBLIC_SALES", shopUnitTypes);
+    }
+
+    /// <summary>
+    /// After completing Healthcare onboarding, myCompanies shows the medicine factory and shop with units.
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_Healthcare_MyCompanies_HasFactoryAndShopWithUnits()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"dash-health-{Guid.NewGuid():N}@test.com");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "Medicine Dashboard Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        var result = await ExecuteGraphQlAsync(
+            @"{ myCompanies {
+                id name cash
+                buildings { id name type units { id unitType gridX gridY } }
+            } }",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var companies = result.GetProperty("data").GetProperty("myCompanies").EnumerateArray().ToList();
+        Assert.Single(companies);
+
+        var buildings = companies[0].GetProperty("buildings").EnumerateArray().ToList();
+        Assert.Equal(2, buildings.Count);
+
+        var factory = buildings.First(b => b.GetProperty("type").GetString() == "FACTORY");
+        var factoryUnitTypes = factory.GetProperty("units").EnumerateArray()
+            .Select(u => u.GetProperty("unitType").GetString()!).ToList();
+
+        Assert.Contains("PURCHASE", factoryUnitTypes);
+        Assert.Contains("MANUFACTURING", factoryUnitTypes);
+
+        var shop = buildings.First(b => b.GetProperty("type").GetString() == "SALES_SHOP");
+        var shopUnitTypes = shop.GetProperty("units").EnumerateArray()
+            .Select(u => u.GetProperty("unitType").GetString()!).ToList();
+        Assert.Contains("PUBLIC_SALES", shopUnitTypes);
+    }
+
+    /// <summary>
+    /// After completing Furniture onboarding, companyLedger returns a valid initial state
+    /// with zero revenue, non-zero cash, and correct structure for the dashboard financial card.
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_Furniture_CompanyLedger_InitialStateHasZeroRevenueAndPositiveCash()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"ledger-dash-furn-{Guid.NewGuid():N}@test.com");
+        var (companyId, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Ledger Furn Co");
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        var result = await ExecuteGraphQlAsync(
+            $@"{{ companyLedger(companyId: ""{companyId}"") {{
+                companyId companyName currentCash
+                totalRevenue totalPurchasingCosts totalLaborCosts totalEnergyCosts netIncome
+                buildingSummaries {{ buildingId buildingName buildingType revenue costs }}
+            }} }}",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var ledger = result.GetProperty("data").GetProperty("companyLedger");
+
+        Assert.Equal(companyId, ledger.GetProperty("companyId").GetString());
+        Assert.True(ledger.GetProperty("currentCash").GetDecimal() > 0m, "Company should have positive cash immediately after onboarding.");
+        Assert.Equal(0m, ledger.GetProperty("totalRevenue").GetDecimal()); // No revenue expected before any ticks run
+
+        var summaries = ledger.GetProperty("buildingSummaries").EnumerateArray().ToList();
+        Assert.Equal(2, summaries.Count);
+
+        var types = summaries.Select(s => s.GetProperty("buildingType").GetString()!).ToList();
+        Assert.Contains("FACTORY", types);
+        Assert.Contains("SALES_SHOP", types);
+    }
+
+    /// <summary>
+    /// After completing Food Processing onboarding, companyLedger returns correct initial state.
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_FoodProcessing_CompanyLedger_InitialStateHasZeroRevenueAndPositiveCash()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"ledger-dash-food-{Guid.NewGuid():N}@test.com");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "Ledger Food Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var companyId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("company").GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            $@"{{ companyLedger(companyId: ""{companyId}"") {{
+                companyId currentCash totalRevenue netIncome
+                buildingSummaries {{ buildingType }}
+            }} }}",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var ledger = result.GetProperty("data").GetProperty("companyLedger");
+
+        Assert.True(ledger.GetProperty("currentCash").GetDecimal() > 0m, "Food Processing company should have positive cash after onboarding.");
+        Assert.Equal(0m, ledger.GetProperty("totalRevenue").GetDecimal()); // No revenue before first tick cycle
+        var types = ledger.GetProperty("buildingSummaries").EnumerateArray()
+            .Select(s => s.GetProperty("buildingType").GetString()!).ToList();
+        Assert.Contains("FACTORY", types);
+        Assert.Contains("SALES_SHOP", types);
+    }
+
+    /// <summary>
+    /// After completing Healthcare onboarding, companyLedger returns correct initial state.
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_Healthcare_CompanyLedger_InitialStateHasZeroRevenueAndPositiveCash()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"ledger-dash-health-{Guid.NewGuid():N}@test.com");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "Ledger Health Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var companyId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("company").GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            $@"{{ companyLedger(companyId: ""{companyId}"") {{
+                companyId currentCash totalRevenue netIncome
+                buildingSummaries {{ buildingType }}
+            }} }}",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var ledger = result.GetProperty("data").GetProperty("companyLedger");
+
+        Assert.True(ledger.GetProperty("currentCash").GetDecimal() > 0m, "Healthcare company should have positive cash after onboarding.");
+        Assert.Equal(0m, ledger.GetProperty("totalRevenue").GetDecimal()); // No revenue before first tick cycle
+        var types = ledger.GetProperty("buildingSummaries").EnumerateArray()
+            .Select(s => s.GetProperty("buildingType").GetString()!).ToList();
+        Assert.Contains("FACTORY", types);
+        Assert.Contains("SALES_SHOP", types);
+    }
+
+    /// <summary>
+    /// Unauthenticated access to companyLedger returns null (not an error explosion).
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_CompanyLedger_Unauthenticated_ReturnsNull()
+    {
+        var adminToken = await RegisterAndGetTokenAsync(email: $"ledger-unauth-owner-{Guid.NewGuid():N}@test.com");
+        var (companyId, _, cityId, _) = await StartOnboardingCompanyAsync(adminToken, "Ledger Unauth Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        await FinishOnboardingAsync(adminToken, productId, shopLotId);
+
+        // Query as an unauthenticated client
+        var result = await ExecuteGraphQlAsync(
+            $@"{{ companyLedger(companyId: ""{companyId}"") {{ companyId }} }}");
+
+        // GraphQL auth failures return null for the field (or an error extension), not a server crash
+        var data = result.GetProperty("data");
+        Assert.True(
+            data.GetProperty("companyLedger").ValueKind == JsonValueKind.Null ||
+            result.TryGetProperty("errors", out _),
+            "Unauthenticated companyLedger query should return null or an auth error.");
+    }
+
+    /// <summary>
+    /// myPendingActions returns an empty list for a freshly onboarded company (no queued upgrades).
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_MyPendingActions_FreshOnboarding_ReturnsEmptyList()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"pending-fresh-{Guid.NewGuid():N}@test.com");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Pending Fresh Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        var result = await ExecuteGraphQlAsync(
+            @"{ myPendingActions {
+                id actionType buildingId buildingName buildingType
+                submittedAtTick appliesAtTick ticksRemaining totalTicksRequired
+            } }",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var actions = result.GetProperty("data").GetProperty("myPendingActions").EnumerateArray().ToList();
+        Assert.Empty(actions);
+    }
+
+    /// <summary>
+    /// After processing ticks, the companyLedger shows purchasing costs as raw materials are bought.
+    /// This validates the dashboard's financial summary card shows real economic activity.
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_Furniture_AfterTicks_LedgerShowsPurchasingCosts()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"ledger-ticks-furn-{Guid.NewGuid():N}@test.com");
+        var (companyId, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Ticked Furniture Co");
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        // Process several ticks so the purchase units can buy raw materials
+        await ProcessTicksAsync(4);
+
+        var result = await ExecuteGraphQlAsync(
+            $@"{{ companyLedger(companyId: ""{companyId}"") {{
+                totalRevenue totalPurchasingCosts totalLaborCosts netIncome currentCash
+            }} }}",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var ledger = result.GetProperty("data").GetProperty("companyLedger");
+
+        // After 4 ticks the purchase unit should have acquired raw materials → purchasing costs > 0
+        var purchasingCosts = ledger.GetProperty("totalPurchasingCosts").GetDecimal();
+        Assert.True(purchasingCosts > 0m, "Purchasing costs should be positive after ticks (raw materials bought).");
+    }
+
+    /// <summary>
+    /// After processing enough ticks, the Furniture company shows revenue in companyLedger.
+    /// This proves the dashboard financial card will display real sales data.
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_Furniture_AfterManySales_LedgerShowsRevenue()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"ledger-sales-furn-{Guid.NewGuid():N}@test.com");
+        var (companyId, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Sales Furniture Co");
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        // Process enough ticks for the full supply chain: buy → manufacture → transfer → sell
+        await ProcessTicksAsync(8);
+
+        var result = await ExecuteGraphQlAsync(
+            $@"{{ companyLedger(companyId: ""{companyId}"") {{
+                totalRevenue totalPurchasingCosts netIncome cashFromOperations
+            }} }}",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var ledger = result.GetProperty("data").GetProperty("companyLedger");
+
+        var revenue = ledger.GetProperty("totalRevenue").GetDecimal();
+        Assert.True(revenue > 0m, "Furniture company should have revenue after 8 ticks of supply chain activity.");
+    }
+
+    /// <summary>
+    /// gameState query returns valid tick data for the dashboard tick clock widget.
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_GameState_ReturnsValidTickData()
+    {
+        var result = await ExecuteGraphQlAsync(
+            @"{ gameState {
+                currentTick lastTickAtUtc tickIntervalSeconds
+                currentGameYear currentGameTimeUtc
+                nextTaxTick nextTaxGameTimeUtc
+            } }");
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var gameState = result.GetProperty("data").GetProperty("gameState");
+
+        Assert.True(gameState.GetProperty("currentTick").GetInt64() >= 0, "currentTick must be non-negative.");
+        Assert.True(gameState.GetProperty("tickIntervalSeconds").GetInt32() > 0, "tickIntervalSeconds must be positive.");
+        Assert.False(string.IsNullOrEmpty(gameState.GetProperty("currentGameTimeUtc").GetString()), "currentGameTimeUtc must be set.");
+        Assert.True(gameState.GetProperty("currentGameYear").GetInt32() > 0, "currentGameYear must be positive.");
+    }
+
+    #endregion
+
 }
 
 /// <summary>
