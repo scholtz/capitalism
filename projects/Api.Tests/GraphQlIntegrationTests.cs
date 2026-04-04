@@ -2070,7 +2070,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         await using var verifyScope = _factory.Services.CreateAsyncScope();
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
         var persisted = await verifyDb.CompanyCitySalarySettings
-            .SingleAsync(s => s.CityId == cityId);
+            .SingleAsync(s => s.CompanyId == Guid.Parse(companyId) && s.CityId == cityId);
         Assert.Equal(CompanyEconomyCalculator.MaximumSalaryMultiplier, persisted.SalaryMultiplier);
     }
 
@@ -2203,6 +2203,181 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         // assetFactor is 0–1; it is accessible and numeric (exact value depends on other companies in the test db)
         var assetFactor = settings.GetProperty("assetFactor").GetDecimal();
         Assert.InRange(assetFactor, 0m, 1m);
+    }
+
+    [Fact]
+    public async Task UpdateCompanySettings_Unauthenticated_ReturnsAuthorizationError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdateCompanySettings($input: UpdateCompanySettingsInput!) {
+              updateCompanySettings(input: $input) { id name }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    companyId = Guid.NewGuid(),
+                    name = "Hijack Attempt",
+                    citySalarySettings = Array.Empty<object>(),
+                }
+            },
+            token: null);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        var firstError = errors[0];
+        var message = firstError.GetProperty("message").GetString();
+        Assert.Contains("authorized", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetCompanySettings_Unauthenticated_ReturnsAuthorizationError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetCompanySettings($companyId: UUID!) {
+              companySettings(companyId: $companyId) {
+                companyId
+                companyName
+              }
+            }
+            """,
+            new { companyId = Guid.NewGuid() },
+            token: null);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        var firstError = errors[0];
+        var message = firstError.GetProperty("message").GetString();
+        Assert.Contains("authorized", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateCompanySettings_InvalidCityId_ReturnsCityNotFoundError()
+    {
+        var token = await RegisterAndGetTokenAsync("invalid-city@test.com", "Invalid City User");
+
+        var createResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "City Test Corp" } },
+            token);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdateCompanySettings($input: UpdateCompanySettingsInput!) {
+              updateCompanySettings(input: $input) { id name }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    companyId,
+                    name = "City Test Corp",
+                    citySalarySettings = new[]
+                    {
+                        new { cityId = Guid.NewGuid(), salaryMultiplier = 1.0 }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("CITY_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task UpdateCompanySettings_SalaryMultiplierBelowMin_GetsClampedToHalf()
+    {
+        var token = await RegisterAndGetTokenAsync("salary-clamp-min@test.com", "Salary Clamp Min User");
+
+        var createResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Clamp Min Corp" } },
+            token);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        Guid cityId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            cityId = await db.Cities.OrderBy(c => c.Name).Select(c => c.Id).FirstAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdateCompanySettings($input: UpdateCompanySettingsInput!) {
+              updateCompanySettings(input: $input) { id name }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    companyId,
+                    name = "Clamp Min Corp",
+                    citySalarySettings = new[] { new { cityId, salaryMultiplier = 0.0 } }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+
+        await using var verifyScope = _factory.Services.CreateAsyncScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var persisted = await verifyDb.CompanyCitySalarySettings
+            .SingleAsync(s => s.CompanyId == Guid.Parse(companyId) && s.CityId == cityId);
+        Assert.Equal(CompanyEconomyCalculator.MinimumSalaryMultiplier, persisted.SalaryMultiplier);
+    }
+
+    [Fact]
+    public async Task UpdateCompanySettings_DuplicateCityInInput_UsesLastEntry()
+    {
+        var token = await RegisterAndGetTokenAsync("dup-city@test.com", "Dup City User");
+
+        var createResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Dup City Corp" } },
+            token);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        Guid cityId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            cityId = await db.Cities.OrderBy(c => c.Name).Select(c => c.Id).FirstAsync();
+        }
+
+        // Submit the same city twice — the last entry should win
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdateCompanySettings($input: UpdateCompanySettingsInput!) {
+              updateCompanySettings(input: $input) { id name }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    companyId,
+                    name = "Dup City Corp",
+                    citySalarySettings = new[]
+                    {
+                        new { cityId, salaryMultiplier = 1.2 },
+                        new { cityId, salaryMultiplier = 1.8 },
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+
+        await using var verifyScope = _factory.Services.CreateAsyncScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var persisted = await verifyDb.CompanyCitySalarySettings
+            .SingleAsync(s => s.CompanyId == Guid.Parse(companyId) && s.CityId == cityId);
+        Assert.Equal(1.8m, persisted.SalaryMultiplier);
     }
 
     [Fact]
