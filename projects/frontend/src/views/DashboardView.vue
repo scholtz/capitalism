@@ -11,7 +11,18 @@ import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useTickCountdown } from '@/composables/useTickCountdown'
 import { deepEqual } from '@/lib/utils'
 import PendingActionsTimeline from '@/components/dashboard/PendingActionsTimeline.vue'
-import type { Company, GameState, ScheduledActionSummary, StartupPackOffer, CityPowerBalance } from '@/types'
+import SupplyChainPanel from '@/components/dashboard/SupplyChainPanel.vue'
+import FinancialSummaryCard from '@/components/dashboard/FinancialSummaryCard.vue'
+import StarterGuidance from '@/components/dashboard/StarterGuidance.vue'
+import type {
+  Company,
+  GameState,
+  ScheduledActionSummary,
+  StartupPackOffer,
+  CityPowerBalance,
+  CompanyLedgerSummary,
+  City,
+} from '@/types'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -28,6 +39,9 @@ const offerMessage = ref<string | null>(null)
 const pendingActions = ref<ScheduledActionSummary[]>([])
 const pendingActionsLoading = ref(false)
 const cityPowerBalances = ref<Record<string, CityPowerBalance>>({})
+const companyLedgers = ref<Record<string, CompanyLedgerSummary>>({})
+const ledgerLoading = ref(false)
+const cityNames = ref<Record<string, string>>({})
 
 const { tickCountdown, startTickCountdown, stopTickCountdown } = useTickCountdown(gameState)
 
@@ -125,7 +139,12 @@ onMounted(async () => {
 
     // Load city power balances for each unique city that has buildings.
     const cityIds = [...new Set(companiesData.myCompanies.flatMap((c) => c.buildings.map((b) => b.cityId)))]
-    await loadCityPowerBalances(cityIds)
+    const companyIds = companiesData.myCompanies.map((c) => c.id)
+    await Promise.all([
+      loadCityPowerBalances(cityIds),
+      loadCityNames(),
+      loadLedgers(companyIds),
+    ])
 
     await loadPendingActions()
   } catch (e: unknown) {
@@ -142,6 +161,9 @@ useTickRefresh(async () => {
 
   await Promise.all([loadDashboardData(), loadPendingActions()])
   startTickCountdown()
+  // Refresh ledger data on tick but keep loading state quiet (non-critical).
+  const companyIds = companies.value.map((c) => c.id)
+  await loadLedgers(companyIds)
 })
 
 onUnmounted(stopTickCountdown)
@@ -187,6 +209,50 @@ async function loadPendingActions() {
     // best-effort — pending actions list is non-critical
   } finally {
     pendingActionsLoading.value = false
+  }
+}
+
+async function loadCityNames() {
+  try {
+    const data = await gqlRequest<{ cities: City[] }>('{ cities { id name } }')
+    const map: Record<string, string> = {}
+    for (const city of data.cities) {
+      map[city.id] = city.name
+    }
+    cityNames.value = map
+  } catch {
+    // best-effort — city names are non-critical
+  }
+}
+
+async function loadLedgers(companyIds: string[]) {
+  if (companyIds.length === 0) return
+  ledgerLoading.value = true
+  try {
+    const results = await Promise.allSettled(
+      companyIds.map((companyId) =>
+        gqlRequest<{ companyLedger: CompanyLedgerSummary | null }>(
+          `query CompanyLedger($companyId: UUID!) {
+            companyLedger(companyId: $companyId) {
+              companyId companyName gameYear isCurrentGameYear currentCash
+              totalRevenue totalPurchasingCosts totalLaborCosts totalEnergyCosts
+              totalMarketingCosts totalOtherCosts netIncome cashFromOperations
+            }
+          }`,
+          { companyId },
+        ),
+      ),
+    )
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value.companyLedger) {
+        const ledger = result.value.companyLedger
+        companyLedgers.value[ledger.companyId] = ledger
+      }
+    }
+  } catch {
+    // best-effort — ledger data is non-critical
+  } finally {
+    ledgerLoading.value = false
   }
 }
 
@@ -486,6 +552,10 @@ function formatTimeRemaining(expiresAtUtc: string): string {
                   <span class="meta-label">{{ t('dashboard.buildings') }}</span>
                   <span>{{ company.buildings.length }}</span>
                 </span>
+                <span v-if="company.buildings.length > 0 && company.buildings[0] && cityNames[company.buildings[0].cityId]" class="meta-item">
+                  <span class="meta-label">{{ t('dashboard.city') }}</span>
+                  <span class="city-name">📍 {{ cityNames[company.buildings[0].cityId] }}</span>
+                </span>
               </div>
             </div>
             <RouterLink :to="`/buy-building/${company.id}`" class="btn btn-primary">
@@ -496,26 +566,42 @@ function formatTimeRemaining(expiresAtUtc: string): string {
             <RouterLink :to="`/company/${company.id}/settings`" class="btn btn-ghost"> ⚙️ {{ t('dashboard.companySettings') }} </RouterLink>
           </div>
 
+          <!-- Financial summary and guidance row -->
+          <div class="operations-row">
+            <FinancialSummaryCard
+              :ledger="companyLedgers[company.id] ?? null"
+              :loading="ledgerLoading"
+            />
+            <StarterGuidance
+              :company="company"
+              :revenue="companyLedgers[company.id]?.totalRevenue ?? 0"
+              :costs="(companyLedgers[company.id]?.totalPurchasingCosts ?? 0) + (companyLedgers[company.id]?.totalLaborCosts ?? 0) + (companyLedgers[company.id]?.totalEnergyCosts ?? 0) + (companyLedgers[company.id]?.totalMarketingCosts ?? 0) + (companyLedgers[company.id]?.totalOtherCosts ?? 0)"
+            />
+          </div>
+
           <div v-if="company.buildings.length === 0" class="no-buildings">
             <p>{{ t('dashboard.noBuildings') }}</p>
           </div>
 
           <div v-else class="buildings-grid">
-            <RouterLink v-for="building in company.buildings" :key="building.id" :to="`/building/${building.id}`" class="building-card">
-              <div class="building-icon">{{ getBuildingIcon(building.type) }}</div>
-              <div class="building-info">
-                <span class="building-name">{{ building.name }}</span>
-                <span class="building-type-label">{{ formatBuildingType(building.type) }}</span>
-              </div>
-              <div class="building-stats">
-                <span class="building-level">Lv.{{ building.level }}</span>
-                <span class="building-units">{{ building.units.length }} units</span>
-                <span v-if="building.powerStatus && building.powerStatus !== 'POWERED'" :class="powerStatusClass(building.powerStatus)" :aria-label="getBuildingPowerLabel(building.powerStatus)">
-                  {{ building.powerStatus === 'OFFLINE' ? '🔴' : '🟡' }}
-                  {{ getBuildingPowerLabel(building.powerStatus) }}
-                </span>
-              </div>
-            </RouterLink>
+            <div v-for="building in company.buildings" :key="building.id" class="building-card-wrapper">
+              <RouterLink :to="`/building/${building.id}`" class="building-card">
+                <div class="building-icon">{{ getBuildingIcon(building.type) }}</div>
+                <div class="building-info">
+                  <span class="building-name">{{ building.name }}</span>
+                  <span class="building-type-label">{{ formatBuildingType(building.type) }}</span>
+                </div>
+                <div class="building-stats">
+                  <span class="building-level">Lv.{{ building.level }}</span>
+                  <span class="building-units">{{ building.units.length }} units</span>
+                  <span v-if="building.powerStatus && building.powerStatus !== 'POWERED'" :class="powerStatusClass(building.powerStatus)" :aria-label="getBuildingPowerLabel(building.powerStatus)">
+                    {{ building.powerStatus === 'OFFLINE' ? '🔴' : '🟡' }}
+                    {{ getBuildingPowerLabel(building.powerStatus) }}
+                  </span>
+                </div>
+              </RouterLink>
+              <SupplyChainPanel v-if="building.units.length > 0" :units="building.units" :building-type="building.type" />
+            </div>
           </div>
 
           <!-- City power summary for this company's city -->
@@ -838,6 +924,24 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   color: var(--color-success);
 }
 
+.city-name {
+  font-weight: 500;
+  font-size: 0.9375rem;
+}
+
+.operations-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 700px) {
+  .operations-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .no-buildings {
   text-align: center;
   padding: 1.5rem;
@@ -849,6 +953,11 @@ function formatTimeRemaining(expiresAtUtc: string): string {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 0.75rem;
+}
+
+.building-card-wrapper {
+  display: flex;
+  flex-direction: column;
 }
 
 .building-card {

@@ -745,3 +745,531 @@ test.describe('Dashboard — power grid summary', () => {
     await expect(page.locator('.power-badge--constrained').first()).toBeVisible()
   })
 })
+
+test.describe('Dashboard — starter operations (supply chain, financials, guidance)', () => {
+  function makeStarterCompanyWithBuildings() {
+    const factory: MockBuilding = {
+      id: 'building-factory-ops',
+      companyId: 'comp-ops',
+      cityId: 'city-ba',
+      type: 'FACTORY',
+      name: 'Furniture Factory',
+      latitude: 48.14,
+      longitude: 17.12,
+      level: 1,
+      powerConsumption: 5,
+      powerStatus: 'POWERED',
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      units: [
+        {
+          id: 'unit-purchase',
+          buildingId: 'building-factory-ops',
+          unitType: 'PURCHASE',
+          gridX: 0,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: true,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+        {
+          id: 'unit-manufacturing',
+          buildingId: 'building-factory-ops',
+          unitType: 'MANUFACTURING',
+          gridX: 1,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: true,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+        {
+          id: 'unit-storage',
+          buildingId: 'building-factory-ops',
+          unitType: 'STORAGE',
+          gridX: 2,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: true,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+        {
+          id: 'unit-b2b',
+          buildingId: 'building-factory-ops',
+          unitType: 'B2B_SALES',
+          gridX: 3,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: false,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+      ],
+      pendingConfiguration: null,
+    }
+    const shop: MockBuilding = {
+      id: 'building-shop-ops',
+      companyId: 'comp-ops',
+      cityId: 'city-ba',
+      type: 'SALES_SHOP',
+      name: 'Furniture Shop',
+      latitude: 48.15,
+      longitude: 17.11,
+      level: 1,
+      powerConsumption: 2,
+      powerStatus: 'POWERED',
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      units: [
+        {
+          id: 'unit-shop-purchase',
+          buildingId: 'building-shop-ops',
+          unitType: 'PURCHASE',
+          gridX: 0,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: true,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+        {
+          id: 'unit-public-sales',
+          buildingId: 'building-shop-ops',
+          unitType: 'PUBLIC_SALES',
+          gridX: 1,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: false,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+      ],
+      pendingConfiguration: null,
+    }
+    return { factory, shop }
+  }
+
+  test('shows supply chain panel for factory with unit types', async ({ page }) => {
+    const { factory, shop } = makeStarterCompanyWithBuildings()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-ops',
+          playerId: 'player-1',
+          name: 'Furniture Co',
+          cash: 250000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [factory, shop],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // Supply chain panels should be visible for buildings with units
+    await expect(page.locator('.supply-chain-panel').first()).toBeVisible()
+    // Factory supply chain should show unit labels
+    await expect(page.locator('.supply-chain-panel').first()).toContainText('Purchase')
+    await expect(page.locator('.supply-chain-panel').first()).toContainText('Manufacturing')
+  })
+
+  test('shows supply chain for sales shop with purchase and public sales units', async ({ page }) => {
+    const { factory, shop } = makeStarterCompanyWithBuildings()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-ops',
+          playerId: 'player-1',
+          name: 'Furniture Co',
+          cash: 250000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [factory, shop],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // Shop supply chain should show public sales
+    await expect(page.locator('.supply-chain-panel').nth(1)).toContainText('Public Sales')
+  })
+
+  test('shows financial summary card with revenue and costs', async ({ page }) => {
+    const { factory, shop } = makeStarterCompanyWithBuildings()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-ops',
+          playerId: 'player-1',
+          name: 'Furniture Co',
+          cash: 250000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [factory, shop],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Provide ledger data for this company
+    state.ledgerData['comp-ops'] = {
+      companyId: 'comp-ops',
+      companyName: 'Furniture Co',
+      currentCash: 250000,
+      totalRevenue: 5000,
+      totalPurchasingCosts: 1200,
+      totalLaborCosts: 800,
+      totalEnergyCosts: 200,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 0,
+      totalOtherCosts: 0,
+      netIncome: 2800,
+      propertyValue: 100000,
+      propertyAppreciation: 0,
+      buildingValue: 400000,
+      inventoryValue: 5000,
+      totalAssets: 755000,
+      totalPropertyPurchases: 100000,
+      cashFromOperations: 2800,
+      cashFromInvestments: -100000,
+      firstRecordedTick: 1,
+      lastRecordedTick: 10,
+      buildingSummaries: [],
+    }
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.locator('.financial-summary-card')).toBeVisible()
+    await expect(page.locator('.financial-summary-card')).toContainText('Revenue')
+    await expect(page.locator('.financial-summary-card')).toContainText('Costs')
+    await expect(page.locator('.financial-summary-card')).toContainText('Net Profit')
+    // Revenue should show $5,000
+    await expect(page.locator('.financial-summary-card')).toContainText('5,000')
+  })
+
+  test('shows no-data state in financial summary before any transactions', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-new',
+          playerId: 'player-1',
+          name: 'New Corp',
+          cash: 100000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // Financial summary should appear even with zero data
+    await expect(page.locator('.financial-summary-card')).toBeVisible()
+  })
+
+  test('shows starter guidance panel with next steps', async ({ page }) => {
+    const { factory, shop } = makeStarterCompanyWithBuildings()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-ops',
+          playerId: 'player-1',
+          name: 'Furniture Co',
+          cash: 250000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [factory, shop],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.locator('.starter-guidance')).toBeVisible()
+    await expect(page.locator('.starter-guidance')).toContainText('Next Steps')
+  })
+
+  test('guidance shows awaiting revenue for new company with no sales', async ({ page }) => {
+    const { factory, shop } = makeStarterCompanyWithBuildings()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-ops',
+          playerId: 'player-1',
+          name: 'New Furniture Co',
+          cash: 250000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [factory, shop],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // No ledger data → 0 revenue
+    state.ledgerData['comp-ops'] = {
+      companyId: 'comp-ops',
+      companyName: 'New Furniture Co',
+      currentCash: 250000,
+      totalRevenue: 0,
+      totalPurchasingCosts: 0,
+      totalLaborCosts: 0,
+      totalEnergyCosts: 0,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 0,
+      totalOtherCosts: 0,
+      netIncome: 0,
+      propertyValue: 0,
+      propertyAppreciation: 0,
+      buildingValue: 0,
+      inventoryValue: 0,
+      totalAssets: 250000,
+      totalPropertyPurchases: 0,
+      cashFromOperations: 0,
+      cashFromInvestments: 0,
+      firstRecordedTick: 0,
+      lastRecordedTick: 0,
+      buildingSummaries: [],
+    }
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.locator('.starter-guidance')).toContainText('Awaiting first sales')
+  })
+
+  test('guidance shows profitable message when revenue exceeds costs', async ({ page }) => {
+    const { factory, shop } = makeStarterCompanyWithBuildings()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-profit',
+          playerId: 'player-1',
+          name: 'Profitable Co',
+          cash: 350000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [factory, shop],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.ledgerData['comp-profit'] = {
+      companyId: 'comp-profit',
+      companyName: 'Profitable Co',
+      currentCash: 350000,
+      totalRevenue: 10000,
+      totalPurchasingCosts: 3000,
+      totalLaborCosts: 1000,
+      totalEnergyCosts: 500,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 0,
+      totalOtherCosts: 0,
+      netIncome: 5500,
+      propertyValue: 0,
+      propertyAppreciation: 0,
+      buildingValue: 0,
+      inventoryValue: 0,
+      totalAssets: 350000,
+      totalPropertyPurchases: 0,
+      cashFromOperations: 5500,
+      cashFromInvestments: 0,
+      firstRecordedTick: 1,
+      lastRecordedTick: 20,
+      buildingSummaries: [],
+    }
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.locator('.starter-guidance')).toContainText('Business is profitable')
+  })
+
+  test('shows city name in company meta section', async ({ page }) => {
+    const { factory, shop } = makeStarterCompanyWithBuildings()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-ops',
+          playerId: 'player-1',
+          name: 'Bratislava Co',
+          cash: 250000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [factory, shop],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // City name should be visible in the company meta section
+    await expect(page.locator('.company-card').first()).toContainText('Bratislava')
+  })
+
+  test('shows all three starter industries supply chains correctly', async ({ page }) => {
+    // Food Processing: PURCHASE → MANUFACTURING → PUBLIC_SALES
+    const foodFactory: MockBuilding = {
+      id: 'building-food-factory',
+      companyId: 'comp-food',
+      cityId: 'city-ba',
+      type: 'FACTORY',
+      name: 'Bread Factory',
+      latitude: 48.14,
+      longitude: 17.12,
+      level: 1,
+      powerConsumption: 5,
+      powerStatus: 'POWERED',
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      units: [
+        {
+          id: 'fp-unit-purchase',
+          buildingId: 'building-food-factory',
+          unitType: 'PURCHASE',
+          gridX: 0,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: true,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+        {
+          id: 'fp-unit-manufacturing',
+          buildingId: 'building-food-factory',
+          unitType: 'MANUFACTURING',
+          gridX: 1,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: false,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+      ],
+      pendingConfiguration: null,
+    }
+
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-food',
+          playerId: 'player-1',
+          name: 'Bread Co',
+          cash: 200000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [foodFactory],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // Food processing factory shows PURCHASE and MANUFACTURING units
+    await expect(page.locator('.supply-chain-panel').first()).toContainText('Purchase')
+    await expect(page.locator('.supply-chain-panel').first()).toContainText('Manufacturing')
+  })
+
+  test('shows operations dashboard on mobile viewport', async ({ page }) => {
+    const { factory, shop } = makeStarterCompanyWithBuildings()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-mobile',
+          playerId: 'player-1',
+          name: 'Mobile Co',
+          cash: 250000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [factory, shop],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.setViewportSize({ width: 375, height: 812 })
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // Core elements should be visible on mobile
+    await expect(page.locator('.financial-summary-card')).toBeVisible()
+    await expect(page.locator('.starter-guidance')).toBeVisible()
+    await expect(page.locator('.supply-chain-panel').first()).toBeVisible()
+  })
+})

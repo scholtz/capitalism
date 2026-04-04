@@ -262,6 +262,7 @@ export default {
     manageBuildings: 'Manage',
     cash: 'Cash',
     buildings: 'Buildings',
+    city: 'City',
     founded: 'Founded',
     viewBuilding: 'View Details',
     viewLedger: 'View Ledger',
@@ -1074,5 +1075,64 @@ export default {
     qualityEffect: 'Contributes up to {pct}% quality bonus to manufactured output for this product.',
     awarenessEffect: 'Brand recognition with customers: {pct}%.',
     marketingEfficiencyEffect: 'Each unit of marketing budget produces {multiplier}× more brand awareness than baseline.',
+  },
+  supplyChain: {
+    title: 'Supply Chain',
+    empty: 'No units configured yet.',
+    unitTypes: {
+      PURCHASE: 'Purchase',
+      MINING: 'Mining',
+      MANUFACTURING: 'Manufacturing',
+      STORAGE: 'Storage',
+      B2B_SALES: 'B2B Sales',
+      PUBLIC_SALES: 'Public Sales',
+      BRANDING: 'Branding',
+      MARKETING: 'Marketing',
+      PRODUCT_QUALITY: 'Quality R&D',
+      BRAND_QUALITY: 'Brand R&D',
+    },
+  },
+  financialSummary: {
+    title: 'Financials (This Year)',
+    revenue: 'Revenue',
+    costs: 'Costs',
+    netProfit: 'Net Profit',
+    noData: 'No financial data available yet.',
+    viewFullLedger: 'View full ledger',
+  },
+  starterGuidance: {
+    title: 'Next Steps',
+    noBuildings: {
+      title: 'No buildings yet',
+      body: 'Purchase your first building to start producing and selling goods.',
+      action: 'Buy a building',
+    },
+    awaitingRevenue: {
+      title: 'Awaiting first sales',
+      body: 'Your supply chain is running. Wait a few ticks for raw materials to be purchased, manufactured into products, and sold through your shop.',
+    },
+    unprofitable: {
+      title: 'Review your pricing',
+      body: 'Costs exceed revenue. Check your product price in the shop, ensure raw material purchase prices are reasonable, and confirm the supply chain is flowing.',
+    },
+    profitable: {
+      title: 'Business is profitable',
+      body: 'Your company is generating profit. Keep an eye on inventory levels and consider expanding once cash grows.',
+    },
+    checkFactory: {
+      title: 'Review your factory',
+      body: 'Open the factory detail to monitor unit throughput, adjust the product configuration, and ensure materials are flowing through the supply chain.',
+      action: 'Open factory',
+    },
+    checkShop: {
+      title: 'Review your shop',
+      body: 'Open the shop detail to check product prices, review recent sales, and adjust pricing if products are not selling.',
+      action: 'Open shop',
+    },
+    expand: {
+      title: 'Ready to expand',
+      body: 'Your starter company is profitable. Consider buying an additional building to increase production capacity.',
+      action: 'Buy building',
+    },
   },
 }
