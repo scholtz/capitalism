@@ -387,6 +387,73 @@ const draftLinkChanges = computed<LinkChangeSummaryEntry[]>(() => {
 
   return changes
 })
+
+type UnitChangeSummaryEntry = {
+  changeType: 'added' | 'removed' | 'replaced'
+  gridX: number
+  gridY: number
+  unitType: string
+  previousUnitType?: string
+  ticks: number
+  cost: number
+}
+
+/**
+ * Computes a list of individual unit structural changes (additions, removals, type
+ * changes) between the edit baseline and the current draft layout.  Link-only
+ * adjustments on unchanged units are excluded here — they appear in draftLinkChanges.
+ */
+const draftUnitChanges = computed<UnitChangeSummaryEntry[]>(() => {
+  if (!isEditing.value) return []
+  const entries: UnitChangeSummaryEntry[] = []
+
+  const baselineByPos = new Map(editBaselineUnits.value.map((u) => [`${u.gridX},${u.gridY}`, u]))
+  const draftByPos = new Map(draftUnits.value.map((u) => [`${u.gridX},${u.gridY}`, u]))
+  const allPositions = new Set([...Array.from(baselineByPos.keys()), ...Array.from(draftByPos.keys())])
+
+  for (const pos of Array.from(allPositions)) {
+    const baseline = baselineByPos.get(pos)
+    const draft = draftByPos.get(pos)
+    const [gx = 0, gy = 0] = pos.split(',').map(Number)
+
+    if (!baseline && draft) {
+      // New unit added
+      entries.push({
+        changeType: 'added',
+        gridX: gx,
+        gridY: gy,
+        unitType: draft.unitType,
+        ticks: UNIT_PLAN_CHANGE_TICKS,
+        cost: getUnitConstructionCost(draft.unitType),
+      })
+    } else if (baseline && !draft) {
+      // Existing unit removed
+      entries.push({
+        changeType: 'removed',
+        gridX: gx,
+        gridY: gy,
+        unitType: baseline.unitType,
+        ticks: UNIT_PLAN_CHANGE_TICKS,
+        cost: 0,
+      })
+    } else if (baseline && draft && baseline.unitType !== draft.unitType) {
+      // Unit type replaced
+      entries.push({
+        changeType: 'replaced',
+        gridX: gx,
+        gridY: gy,
+        unitType: draft.unitType,
+        previousUnitType: baseline.unitType,
+        ticks: UNIT_PLAN_CHANGE_TICKS,
+        cost: getUnitConstructionCost(draft.unitType),
+      })
+    }
+  }
+
+  entries.sort((a, b) => a.gridY - b.gridY || a.gridX - b.gridX)
+  return entries
+})
+
 const selectedDisplayUnit = computed<GridUnit | undefined>(() => {
   if (!selectedCell.value) return undefined
 
@@ -3111,6 +3178,41 @@ watch(
               </ul>
             </div>
 
+            <div v-if="draftUnitChanges.length > 0" class="unit-changes-summary" role="region" :aria-label="t('buildingDetail.unitChangesSummaryTitle')">
+              <h4 class="unit-changes-title">{{ t('buildingDetail.unitChangesSummaryTitle') }}</h4>
+              <ul class="unit-changes-list">
+                <li
+                  v-for="(change, i) in draftUnitChanges"
+                  :key="i"
+                  class="unit-change-item"
+                  :class="{
+                    'unit-change-added': change.changeType === 'added',
+                    'unit-change-removed': change.changeType === 'removed',
+                    'unit-change-replaced': change.changeType === 'replaced',
+                  }"
+                >
+                  <span class="unit-change-badge" aria-hidden="true">
+                    {{ change.changeType === 'added' ? '+' : change.changeType === 'removed' ? '−' : '↺' }}
+                  </span>
+                  <span class="unit-change-description">
+                    <template v-if="change.changeType === 'added'">
+                      {{ t('buildingDetail.unitChangeAdded', { type: t(`buildingDetail.unitTypes.${change.unitType}`), x: change.gridX, y: change.gridY }) }}
+                    </template>
+                    <template v-else-if="change.changeType === 'removed'">
+                      {{ t('buildingDetail.unitChangeRemoved', { type: t(`buildingDetail.unitTypes.${change.unitType}`), x: change.gridX, y: change.gridY }) }}
+                    </template>
+                    <template v-else>
+                      {{ t('buildingDetail.unitChangeReplaced', { from: t(`buildingDetail.unitTypes.${change.previousUnitType}`), to: t(`buildingDetail.unitTypes.${change.unitType}`), x: change.gridX, y: change.gridY }) }}
+                    </template>
+                  </span>
+                  <span class="unit-change-meta">
+                    <span class="unit-change-ticks">{{ t('buildingDetail.unitChangeTicks', { ticks: change.ticks }) }}</span>
+                    <span v-if="change.cost > 0" class="unit-change-cost">{{ formatCurrency(change.cost) }}</span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+
             <div class="unit-grid">
               <template v-for="y in gridIndexes" :key="`planned-row-${y}`">
                 <div class="grid-row unit-row">
@@ -4323,6 +4425,90 @@ watch(
 .link-change-removed .link-change-badge {
   background: rgba(220, 38, 38, 0.12);
   color: var(--color-danger, #dc2626);
+}
+
+/* Unit-level planned changes summary panel */
+.unit-changes-summary {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+}
+
+.unit-changes-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.unit-changes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.unit-change-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.unit-change-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.unit-change-added .unit-change-badge {
+  background: rgba(0, 200, 83, 0.12);
+  color: var(--color-secondary, #00c853);
+}
+
+.unit-change-removed .unit-change-badge {
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--color-danger, #dc2626);
+}
+
+.unit-change-replaced .unit-change-badge {
+  background: rgba(234, 179, 8, 0.12);
+  color: var(--color-warning, #ca8a04);
+}
+
+.unit-change-description {
+  flex: 1;
+}
+
+.unit-change-meta {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.unit-change-ticks {
+  white-space: nowrap;
+}
+
+.unit-change-cost {
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 
 .meta-pill,

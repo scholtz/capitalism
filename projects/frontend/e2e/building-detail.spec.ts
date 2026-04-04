@@ -6886,6 +6886,40 @@ test.describe('Sales shop edit mode — unit type picker', () => {
     // After save, the upgrade banner should confirm the pending upgrade
     await expect(page.locator('.upgrade-banner')).toBeVisible()
   })
+
+  test('unit changes summary panel lists each addition with tick cost', async ({ page }) => {
+    const player = makeEmptySalesShopForPicker()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-shop-picker')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(plannedSection).toBeVisible()
+
+    // Add a PURCHASE unit
+    const cell00 = plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await cell00.click()
+    await page.locator('.picker-option').filter({ hasText: 'Purchase' }).click()
+
+    // The planned unit changes panel should appear and list the added unit
+    const changesPanel = page.locator('.unit-changes-summary')
+    await expect(changesPanel).toBeVisible()
+
+    // Should list "Purchase" as an addition
+    await expect(changesPanel.getByText(/Purchase/)).toBeVisible()
+    // Should show tick cost (3 ticks for a new unit)
+    await expect(changesPanel.getByText(/3 ticks/)).toBeVisible()
+  })
 })
 
 test.describe('Building grid editor — mobile viewport (375px)', () => {
