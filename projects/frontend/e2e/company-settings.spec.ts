@@ -146,10 +146,9 @@ test.describe('Company Settings – salary multiplier', () => {
 
     // All three salary inputs should default to 1
     const salaryInputs = page.locator('.salary-input')
-    const count = salaryInputs
-    await expect(count).toHaveCount(3)
+    await expect(salaryInputs).toHaveCount(3)
 
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < 3; i++) {
       const value = await salaryInputs.nth(i).inputValue()
       expect(parseFloat(value)).toBe(1)
     }
@@ -231,9 +230,7 @@ test.describe('Company Settings – dashboard navigation', () => {
     await page.goto('/dashboard')
 
     // The settings link for this company must be present
-    await expect(
-      page.getByRole('link', { name: 'Settings' }).or(page.getByRole('link', { name: /settings/i })).first(),
-    ).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Settings' }).first()).toBeVisible()
   })
 
   test('settings link navigates to the company settings page', async ({ page }) => {
@@ -261,10 +258,7 @@ test.describe('Company Settings – dashboard navigation', () => {
 
     await page.goto('/dashboard')
 
-    const settingsLink = page
-      .getByRole('link', { name: 'Settings' })
-      .or(page.getByRole('link', { name: /settings/i }))
-      .first()
+    const settingsLink = page.getByRole('link', { name: 'Settings' }).first()
     await settingsLink.click()
 
     await expect(page).toHaveURL(`/company/${company.id}/settings`)
