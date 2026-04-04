@@ -6670,6 +6670,170 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GuestMigration_HappyPath_PragueCity_Furniture_PreservesChoices()
+    {
+        // ROADMAP city coverage: guest migration must work for Prague with the Furniture industry.
+        // Completes the Prague column in the city×industry matrix (FoodProcessing is covered separately).
+        var token = await RegisterAndGetTokenAsync($"guest-prague-furn-{Guid.NewGuid()}@test.com", "Prague Woodworker");
+        var cityId = await GetCityIdByNameAsync("Prague");
+
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Prague Woodworking Park", 75_000m);
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id name cash }
+                factory { id type }
+              }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Prague Furniture Corp", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed for Prague/FURNITURE");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+        Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
+
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Prague Furniture Row", 90_000m);
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding must succeed for Prague/FURNITURE migration");
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+        Assert.Equal("FURNITURE", finishData.GetProperty("selectedProduct").GetProperty("industry").GetString());
+
+        // Verify onboarding is marked complete
+        var meResult = await ExecuteGraphQlAsync("query { me { onboardingCompletedAtUtc } }", null, token);
+        var completedAt = meResult.GetProperty("data").GetProperty("me").GetProperty("onboardingCompletedAtUtc").GetString();
+        Assert.NotNull(completedAt);
+        Assert.NotEmpty(completedAt);
+    }
+
+    [Fact]
+    public async Task GuestMigration_HappyPath_ViennaCity_Furniture_PreservesChoices()
+    {
+        // ROADMAP city coverage: guest migration must work for Vienna with the Furniture industry.
+        // Completes the Vienna column in the city×industry matrix (Healthcare is covered separately).
+        var token = await RegisterAndGetTokenAsync($"guest-vienna-furn-{Guid.NewGuid()}@test.com", "Vienna Woodworker");
+        var cityId = await GetCityIdByNameAsync("Vienna");
+
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Vienna Woodworking Park", 75_000m);
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id name cash }
+                factory { id type }
+              }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Vienna Furniture Corp", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed for Vienna/FURNITURE");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+        Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
+
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Vienna Furniture Row", 90_000m);
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding must succeed for Vienna/FURNITURE migration");
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+        Assert.Equal("FURNITURE", finishData.GetProperty("selectedProduct").GetProperty("industry").GetString());
+
+        // Verify onboarding is marked complete
+        var meResult = await ExecuteGraphQlAsync("query { me { onboardingCompletedAtUtc } }", null, token);
+        var completedAt = meResult.GetProperty("data").GetProperty("me").GetProperty("onboardingCompletedAtUtc").GetString();
+        Assert.NotNull(completedAt);
+        Assert.NotEmpty(completedAt);
+    }
+
+    [Fact]
+    public async Task GuestMigration_HappyPath_PragueCity_Healthcare_PreservesChoices()
+    {
+        // ROADMAP city coverage: guest migration must work for Prague with the Healthcare industry.
+        // Completes full 3×3 matrix coverage for GuestMigration happy-path tests.
+        var token = await RegisterAndGetTokenAsync($"guest-prague-hc-{Guid.NewGuid()}@test.com", "Prague Pharmacist");
+        var cityId = await GetCityIdByNameAsync("Prague");
+
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Prague Medical Park", 75_000m);
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id name cash }
+                factory { id type }
+              }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "Prague Pharma Corp", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed for Prague/HEALTHCARE");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+        Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Prague Pharmacy Row", 90_000m);
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding must succeed for Prague/HEALTHCARE migration");
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+        Assert.Equal("HEALTHCARE", finishData.GetProperty("selectedProduct").GetProperty("industry").GetString());
+
+        // Verify onboarding is marked complete
+        var meResult = await ExecuteGraphQlAsync("query { me { onboardingCompletedAtUtc } }", null, token);
+        var completedAt = meResult.GetProperty("data").GetProperty("me").GetProperty("onboardingCompletedAtUtc").GetString();
+        Assert.NotNull(completedAt);
+        Assert.NotEmpty(completedAt);
+    }
+
+    [Fact]
+    public async Task GuestMigration_HappyPath_ViennaCity_FoodProcessing_PreservesChoices()
+    {
+        // ROADMAP city coverage: guest migration must work for Vienna with the Food Processing industry.
+        // Completes full 3×3 matrix coverage for GuestMigration happy-path tests.
+        var token = await RegisterAndGetTokenAsync($"guest-vienna-food-{Guid.NewGuid()}@test.com", "Vienna Baker");
+        var cityId = await GetCityIdByNameAsync("Vienna");
+
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Vienna Bakery Industrial Park", 75_000m);
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id name cash }
+                factory { id type }
+              }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "Vienna Bakery Corp", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed for Vienna/FOOD_PROCESSING");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+        Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
+
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Vienna Bread Shop Row", 90_000m);
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding must succeed for Vienna/FOOD_PROCESSING migration");
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+        Assert.Equal("FOOD_PROCESSING", finishData.GetProperty("selectedProduct").GetProperty("industry").GetString());
+
+        // Verify onboarding is marked complete
+        var meResult = await ExecuteGraphQlAsync("query { me { onboardingCompletedAtUtc } }", null, token);
+        var completedAt = meResult.GetProperty("data").GetProperty("me").GetProperty("onboardingCompletedAtUtc").GetString();
+        Assert.NotNull(completedAt);
+        Assert.NotEmpty(completedAt);
+    }
+
+    [Fact]
     public async Task FullOnboarding_ViennaCity_CompletesSuccessfully()
     {
         // ROADMAP: "The game will start in single city and later other cities will be added."

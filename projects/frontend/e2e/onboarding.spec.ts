@@ -4112,6 +4112,188 @@ test.describe('Guest migration — all starter industries (AC2, AC9, AC13)', () 
     await expect(page.locator('.achievement-item', { hasText: 'Wooden Chair' })).toBeVisible()
     expect(state.currentUserId).toBeTruthy()
   })
+
+  test('guest can register and migrate Furniture progress in Vienna city to authenticated account', async ({
+    page,
+  }) => {
+    // ROADMAP city coverage: guest migration must work for all three seeded cities.
+    // This test verifies guest → register → empire launched for Furniture in Vienna (the third city).
+    const state = setupMockApi(page)
+    state.buildingLots = [
+      ...state.buildingLots,
+      {
+        id: 'lot-vienna-factory-mig',
+        cityId: 'city-vi',
+        name: 'Vienna Industrial Mig Park',
+        description: 'Factory-capable lot in Vienna for migration test.',
+        district: 'Industrial Zone',
+        latitude: 48.21,
+        longitude: 16.38,
+        populationIndex: 0.7,
+        basePrice: 75_000,
+        price: 75_000,
+        suitableTypes: 'FACTORY,MINE',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+      {
+        id: 'lot-vienna-shop-mig',
+        cityId: 'city-vi',
+        name: 'Vienna High Street Mig Shop',
+        description: 'Retail space in Vienna for migration test.',
+        district: 'Commercial District',
+        latitude: 48.209,
+        longitude: 16.375,
+        populationIndex: 1.1,
+        basePrice: 90_000,
+        price: 90_000,
+        suitableTypes: 'SALES_SHOP,COMMERCIAL',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+    ]
+
+    await page.goto('/onboarding')
+
+    // Step 1: Furniture
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Vienna (the third city)
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Vienna' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot in Vienna
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Vienna Furniture Migration Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Vienna Industrial Mig Park/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Wooden Chair + Vienna shop lot
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Vienna High Street Mig Shop/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress screen
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Register to migrate
+    await page.locator('#guestEmail').fill('vienna-furniture-migration@test.com')
+    await page.locator('#guestDisplayName').fill('Vienna Furniture Tycoon')
+    await page.locator('#guestPassword').fill('ViennaPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Completion screen confirms empire launched in Vienna
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.locator('.achievement-item', { hasText: 'Wooden Chair' })).toBeVisible()
+    expect(state.currentUserId).toBeTruthy()
+  })
+
+  test('guest can register and migrate Food Processing progress in Vienna city to authenticated account', async ({
+    page,
+  }) => {
+    // ROADMAP city coverage: guest migration must work for all starter industries in all cities.
+    // This test verifies guest → register → empire launched for Food Processing in Vienna.
+    const state = setupMockApi(page)
+    state.buildingLots = [
+      ...state.buildingLots,
+      {
+        id: 'lot-vienna-fp-factory-mig',
+        cityId: 'city-vi',
+        name: 'Vienna Bakery Mig Park',
+        description: 'Factory-capable lot in Vienna for Food Processing migration test.',
+        district: 'Industrial Zone',
+        latitude: 48.215,
+        longitude: 16.382,
+        populationIndex: 0.65,
+        basePrice: 78_000,
+        price: 78_000,
+        suitableTypes: 'FACTORY,MINE',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+      {
+        id: 'lot-vienna-fp-shop-mig',
+        cityId: 'city-vi',
+        name: 'Vienna Bread Shop Mig Row',
+        description: 'Retail space in Vienna for Food Processing migration test.',
+        district: 'Commercial District',
+        latitude: 48.207,
+        longitude: 16.371,
+        populationIndex: 1.0,
+        basePrice: 85_000,
+        price: 85_000,
+        suitableTypes: 'SALES_SHOP,COMMERCIAL',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+    ]
+
+    await page.goto('/onboarding')
+
+    // Step 1: Food Processing
+    await page.locator('.industry-card', { hasText: 'Food Processing' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Vienna (the third city)
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Vienna' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot in Vienna
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Vienna Bakery Migration Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Vienna Bakery Mig Park/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Bread + Vienna shop lot
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Bread' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Vienna Bread Shop Mig Row/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress screen
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Register to migrate
+    await page.locator('#guestEmail').fill('vienna-food-migration@test.com')
+    await page.locator('#guestDisplayName').fill('Vienna Baker Tycoon')
+    await page.locator('#guestPassword').fill('ViennaFoodPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Completion screen confirms empire launched in Vienna with Food Processing product
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.locator('.achievement-item', { hasText: 'Bread' })).toBeVisible()
+    expect(state.currentUserId).toBeTruthy()
+  })
 })
 
 test.describe('Cross-industry/city matrix — guest wizard completability (AC2, AC8)', () => {
