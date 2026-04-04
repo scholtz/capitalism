@@ -6728,6 +6728,166 @@ test.describe('Mine building edit mode', () => {
   })
 })
 
+// ── Sales shop unit-type picker coverage ─────────────────────────────────────
+
+test.describe('Sales shop edit mode — unit type picker', () => {
+  function makeEmptySalesShopForPicker() {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-shop-picker',
+      playerId: player.id,
+      name: 'Picker Shop Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-shop-picker',
+          companyId: 'company-shop-picker',
+          cityId: 'city-ba',
+          type: 'SALES_SHOP',
+          name: 'Picker Sales Shop',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 1,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [],
+        },
+      ],
+    })
+    return player
+  }
+
+  test('sales shop unit picker shows exactly PURCHASE, MARKETING, and PUBLIC_SALES options', async ({
+    page,
+  }) => {
+    const player = makeEmptySalesShopForPicker()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-shop-picker')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(plannedSection).toBeVisible()
+
+    // Click an empty cell to open the picker
+    const emptyCell = plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await emptyCell.click()
+    await expect(page.getByText('Select a unit type to place')).toBeVisible()
+
+    // Sales-shop-specific unit types must be present
+    await expect(page.locator('.picker-option').filter({ hasText: 'Purchase' })).toBeVisible()
+    await expect(page.locator('.picker-option').filter({ hasText: 'Marketing' })).toBeVisible()
+    await expect(page.locator('.picker-option').filter({ hasText: 'Public Sales' })).toBeVisible()
+
+    // Factory-only types must NOT appear
+    await expect(page.locator('.picker-option').filter({ hasText: 'Manufacturing' })).toHaveCount(0)
+    await expect(page.locator('.picker-option').filter({ hasText: 'Mining' })).toHaveCount(0)
+    await expect(page.locator('.picker-option').filter({ hasText: 'B2B Sales' })).toHaveCount(0)
+  })
+
+  test('player adds MARKETING unit to empty sales shop and sees it in the planned grid', async ({
+    page,
+  }) => {
+    const player = makeEmptySalesShopForPicker()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-shop-picker')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(plannedSection).toBeVisible()
+
+    // Click an empty cell and select MARKETING
+    const emptyCell = plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await emptyCell.click()
+    await expect(page.getByText('Select a unit type to place')).toBeVisible()
+
+    const marketingOption = page.locator('.picker-option').filter({ hasText: 'Marketing' })
+    await expect(marketingOption).toBeVisible()
+    await marketingOption.click()
+
+    // After placing, the cell should show the Marketing label
+    const placedCell = plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await expect(placedCell).toContainText('Marketing')
+
+    // The Store Upgrade button should now be enabled
+    const storeBtn = page.getByRole('button', { name: /Store Upgrade/i })
+    await expect(storeBtn).toBeVisible()
+    await expect(storeBtn).toBeEnabled()
+  })
+
+  test('full flow: PURCHASE → MARKETING → PUBLIC_SALES shop layout saved as pending upgrade', async ({
+    page,
+  }) => {
+    const player = makeEmptySalesShopForPicker()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-shop-picker')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(plannedSection).toBeVisible()
+
+    // Place PURCHASE at (0,0)
+    const cell00 = plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await cell00.click()
+    await page.locator('.picker-option').filter({ hasText: 'Purchase' }).click()
+
+    // After placing PURCHASE, click cell (1,0) for MARKETING
+    const cell10 = plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await cell10.click()
+    await page.locator('.picker-option').filter({ hasText: 'Marketing' }).click()
+
+    // Click cell (2,0) for PUBLIC_SALES
+    const cell20 = plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(2)
+    await cell20.click()
+    await page.locator('.picker-option').filter({ hasText: 'Public Sales' }).click()
+
+    // All three cells should be filled
+    await expect(plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)).toContainText('Purchase')
+    await expect(plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)).toContainText('Marketing')
+    await expect(plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(2)).toContainText('Public Sales')
+
+    // Save the plan
+    const storeBtn = page.getByRole('button', { name: /Store Upgrade/i })
+    await expect(storeBtn).toBeEnabled()
+    await storeBtn.click()
+
+    // After save, the upgrade banner should confirm the pending upgrade
+    await expect(page.locator('.upgrade-banner')).toBeVisible()
+  })
+})
+
 test.describe('Building grid editor — mobile viewport (375px)', () => {
   test('grid inspection and edit submission are usable on 375px viewport', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 })

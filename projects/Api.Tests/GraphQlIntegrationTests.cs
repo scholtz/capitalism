@@ -4127,6 +4127,198 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal("BUILDING_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString());
     }
 
+    [Fact]
+    public async Task StoreBuildingConfiguration_SalesShop_WithMarketingUnit_Succeeds()
+    {
+        // The ROADMAP specifies that Sales Shops allow PURCHASE, MARKETING, and PUBLIC_SALES units.
+        // This test verifies MARKETING is accepted when placed in a SALES_SHOP.
+        var token = await RegisterAndGetTokenAsync($"shop-mkt-{Guid.NewGuid()}@test.com", "Shop Marketing");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Marketing Shop Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "SALES_SHOP", name = "Marketing Shop" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // Configure the shop with PURCHASE (0,0) → MARKETING (1,0) → PUBLIC_SALES (2,0)
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) {
+                id
+                units { unitType gridX }
+              }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",     gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true,  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MARKETING",    gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true,  linkRight = true,  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "PUBLIC_SALES", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = true,  linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _),
+            "MARKETING unit in a SALES_SHOP must be accepted.");
+        var units = result.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units").EnumerateArray().ToList();
+        Assert.Equal(3, units.Count);
+        Assert.Contains(units, u => u.GetProperty("unitType").GetString() == "MARKETING" && u.GetProperty("gridX").GetInt32() == 1);
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_SalesShop_InvalidUnitType_ManufacturingRejected()
+    {
+        // MANUFACTURING is only valid in FACTORY buildings.  Placing it in a SALES_SHOP
+        // must be rejected with INVALID_BUILDING_UNIT_TYPE.
+        var token = await RegisterAndGetTokenAsync($"shop-mfg-{Guid.NewGuid()}@test.com", "Shop Mfg Reject");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "MfgReject Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "SALES_SHOP", name = "Mfg Reject Shop" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "MANUFACTURING", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_BUILDING_UNIT_TYPE",
+            errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_LinkOnlyChange_RequiresOneTick()
+    {
+        // ROADMAP: "Change in the links between the units takes one tick to apply."
+        // After an existing unit is active, re-submitting it with only a link change must
+        // produce a plan with totalTicksRequired == 1 (LinkChangeTicks), not 3 (UnitPlanChangeTicks).
+        var token = await RegisterAndGetTokenAsync($"link-tick-{Guid.NewGuid()}@test.com", "Link Tick Tester");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Link Tick Corp" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Link Tick Factory" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // First, configure two units with no links and wait for them to activate.
+        await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",       gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING",  gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        // Advance enough ticks to activate the first configuration.
+        await AdvanceGameTicksAsync(BuildingConfigurationService.UnitPlanChangeTicks + 1);
+
+        // Now change ONLY the link between the two existing units.
+        var linkChangeResult = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) {
+                    totalTicksRequired
+                    units { unitType ticksRequired }
+                }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",       gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING",  gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true,  linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(linkChangeResult.TryGetProperty("errors", out _),
+            "Re-configuring existing units with only link changes must succeed.");
+
+        var plan = linkChangeResult.GetProperty("data").GetProperty("storeBuildingConfiguration");
+        var totalTicks = plan.GetProperty("totalTicksRequired").GetInt32();
+        Assert.True(
+            totalTicks == BuildingConfigurationService.LinkChangeTicks,
+            $"A link-only change must require exactly {BuildingConfigurationService.LinkChangeTicks} tick(s), got {totalTicks}.");
+
+        var units = plan.GetProperty("units").EnumerateArray().ToList();
+        foreach (var unit in units)
+        {
+            var unitTicks = unit.GetProperty("ticksRequired").GetInt32();
+            Assert.True(
+                unitTicks == BuildingConfigurationService.LinkChangeTicks,
+                $"Each changed unit must require exactly {BuildingConfigurationService.LinkChangeTicks} tick(s).");
+        }
+    }
+
     #endregion
 
     #region CancelBuildingConfiguration
