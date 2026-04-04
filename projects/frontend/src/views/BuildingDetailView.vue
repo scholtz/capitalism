@@ -136,8 +136,16 @@ const researchBrands = ref<ResearchBrandState[]>([])
 const researchBrandsLoading = ref(false)
 
 // City media houses — loaded lazily when a MARKETING unit is selected
-const cityMediaHouses = ref<import('@/types').CityMediaHouseInfo[]>([])
+const cityMediaHouses = ref<CityMediaHouseInfo[]>([])
 const cityMediaHousesLoading = ref(false)
+
+/** The media house selected in the current draft marketing unit (if any). */
+const selectedDraftMediaHouse = computed(() => {
+  if (!selectedCell.value) return null
+  const unit = getDraftUnitAt(selectedCell.value.x, selectedCell.value.y)
+  if (!unit?.mediaHouseBuildingId) return null
+  return cityMediaHouses.value.find((mh) => mh.id === unit.mediaHouseBuildingId) ?? null
+})
 
 // Public Sales market intelligence analytics
 const publicSalesAnalytics = ref<PublicSalesAnalytics | null>(null)
@@ -3451,12 +3459,8 @@ watch(
                     <p v-if="cityMediaHouses.length === 0 && !cityMediaHousesLoading" class="config-hint">
                       {{ t('buildingDetail.config.noMediaHouseAvailable') }}
                     </p>
-                    <p v-else-if="selectedCell && getDraftUnitAt(selectedCell.x, selectedCell.y)?.mediaHouseBuildingId" class="config-hint">
-                      {{
-                        cityMediaHouses.find(mh => selectedCell && mh.id === getDraftUnitAt(selectedCell.x, selectedCell.y)?.mediaHouseBuildingId)
-                          ? `${t('buildingDetail.config.channelEffect')} \xd7${cityMediaHouses.find(mh => selectedCell && mh.id === getDraftUnitAt(selectedCell.x, selectedCell.y)?.mediaHouseBuildingId)!.effectivenessMultiplier.toFixed(1)}`
-                          : ''
-                      }}
+                    <p v-else-if="selectedDraftMediaHouse" class="config-hint">
+                      {{ t('buildingDetail.config.channelEffect') }} ×{{ selectedDraftMediaHouse.effectivenessMultiplier.toFixed(1) }}
                     </p>
                   </div>
                 </template>

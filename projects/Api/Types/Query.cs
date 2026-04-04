@@ -1668,16 +1668,41 @@ public sealed class Query
     }
 
     /// <summary>
-    /// Returns brand awareness and quality metrics for products of a company. Public query.
+    /// Returns brand awareness and quality metrics for products of a company. Requires authentication.
     /// Consumers: building-detail marketing unit configuration, analytics dashboards.
+    /// Delegates to companyBrands — use that query for brand awareness reads.
     /// </summary>
-    public async Task<List<CityMediaHouseInfo>> GetCompanyMarketingStats(
+    [Authorize]
+    public async Task<List<ResearchBrandState>> GetCompanyMarketingStats(
         Guid companyId,
-        [Service] AppDbContext db)
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
     {
-        // Forward to companyBrands for awareness (companyBrands already exists under auth).
-        // This stub allows future marketing analytics without auth gate for city-level views.
-        return [];
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var company = await db.Companies.FirstOrDefaultAsync(c => c.Id == companyId && c.PlayerId == userId);
+        if (company is null) return [];
+
+        var brands = await db.Brands.Where(b => b.CompanyId == companyId).ToListAsync();
+        var productTypeIds = brands.Where(b => b.ProductTypeId.HasValue).Select(b => b.ProductTypeId!.Value).Distinct().ToList();
+        var productTypes = await db.ProductTypes.Where(pt => productTypeIds.Contains(pt.Id)).ToListAsync();
+
+        return brands.Select(b =>
+        {
+            var pt = b.ProductTypeId.HasValue ? productTypes.FirstOrDefault(p => p.Id == b.ProductTypeId.Value) : null;
+            return new ResearchBrandState
+            {
+                Id = b.Id,
+                CompanyId = b.CompanyId,
+                Name = b.Name,
+                Scope = b.Scope,
+                ProductTypeId = b.ProductTypeId,
+                ProductName = pt?.Name,
+                IndustryCategory = b.IndustryCategory,
+                Awareness = b.Awareness,
+                Quality = b.Quality,
+                MarketingEfficiencyMultiplier = b.MarketingEfficiencyMultiplier,
+            };
+        }).ToList();
     }
 }
 

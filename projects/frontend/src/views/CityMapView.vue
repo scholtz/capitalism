@@ -1871,7 +1871,8 @@ watch(viewMode, async (mode) => {
   font-style: italic;
 }
 
-.media-houses-section {  margin-top: 2.5rem;
+.media-houses-section {
+  margin-top: 2.5rem;
   padding-top: 1.5rem;
   border-top: 1px solid var(--color-border);
 }
