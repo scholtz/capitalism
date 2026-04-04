@@ -4020,6 +4020,98 @@ test.describe('Guest migration — all starter industries (AC2, AC9, AC13)', () 
     await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeHidden()
     expect(state.currentUserId).toBeTruthy()
   })
+
+  test('guest can register and migrate Furniture progress in Prague city to authenticated account', async ({
+    page,
+  }) => {
+    // ROADMAP city coverage: guest migration must work for non-default cities.
+    // This test verifies guest → register → empire launched for Furniture in Prague (the second city).
+    // Complements the Bratislava-based Food Processing and Healthcare migration tests.
+    const state = setupMockApi(page)
+    state.buildingLots = [
+      ...state.buildingLots,
+      {
+        id: 'lot-prague-factory-mig',
+        cityId: 'city-pr',
+        name: 'Prague Industrial Mig Park',
+        description: 'Factory-capable lot in Prague for migration test.',
+        district: 'Industrial Zone',
+        latitude: 50.08,
+        longitude: 14.44,
+        populationIndex: 0.7,
+        basePrice: 75_000,
+        price: 75_000,
+        suitableTypes: 'FACTORY,MINE',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+      {
+        id: 'lot-prague-shop-mig',
+        cityId: 'city-pr',
+        name: 'Prague High Street Mig Shop',
+        description: 'Retail space in Prague for migration test.',
+        district: 'Commercial District',
+        latitude: 50.083,
+        longitude: 14.43,
+        populationIndex: 1.2,
+        basePrice: 90_000,
+        price: 90_000,
+        suitableTypes: 'SALES_SHOP,COMMERCIAL',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+    ]
+
+    await page.goto('/onboarding')
+
+    // Step 1: Furniture
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Prague (not the default Bratislava)
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Prague' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot in Prague
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Prague Furniture Migration Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Prague Industrial Mig Park/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Wooden Chair + Prague shop lot
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Wooden Chair' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Prague High Street Mig Shop/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress screen
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Register to migrate
+    await page.locator('#guestEmail').fill('prague-furniture-migration@test.com')
+    await page.locator('#guestDisplayName').fill('Prague Furniture Tycoon')
+    await page.locator('#guestPassword').fill('PraguePass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Completion screen confirms empire launched in Prague
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.locator('.achievement-item', { hasText: 'Wooden Chair' })).toBeVisible()
+    expect(state.currentUserId).toBeTruthy()
+  })
 })
 
 test.describe('Cross-industry/city matrix — guest wizard completability (AC2, AC8)', () => {
