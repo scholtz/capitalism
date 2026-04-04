@@ -5288,7 +5288,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         // Must be in the future
         Assert.True(proEndsAt > DateTime.UtcNow, $"proSubscriptionEndsAtUtc ({proEndsAt:O}) must be in the future");
         // Must be at least 89 days from now (allowing 1-day clock tolerance)
-        Assert.True((proEndsAt - DateTime.UtcNow).TotalDays >= 89,
+        Assert.True((proEndsAt - DateTime.UtcNow).TotalDays >= StartupPackService.ProDurationDays - 1,
             $"proSubscriptionEndsAtUtc should be ~{StartupPackService.ProDurationDays} days ahead; got {(proEndsAt - DateTime.UtcNow).TotalDays:F1} days");
     }
 

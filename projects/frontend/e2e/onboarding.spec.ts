@@ -1443,7 +1443,7 @@ test.describe('Onboarding resume and progress persistence', () => {
     await expect(page.getByText('Startup pack activated')).toBeVisible()
   })
 
-  test('AC5: pro subscription end date is displayed on dashboard after claiming startup pack (AC5)', async ({
+  test('pro subscription end date is displayed on dashboard after claiming startup pack (AC5)', async ({
     page,
   }) => {
     // AC5: "The user can verify their new subscription/pack status in the relevant account
