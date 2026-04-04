@@ -567,6 +567,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
         <div class="empty-icon">🏗️</div>
         <p>{{ t('dashboard.noCompanies') }}</p>
         <RouterLink to="/onboarding" class="btn btn-primary btn-lg">{{ t('dashboard.startOnboarding') }}</RouterLink>
+        <RouterLink to="/encyclopedia" class="btn btn-secondary encyclopedia-link">{{ t('dashboard.browseEncyclopedia') }}</RouterLink>
       </div>
 
       <div v-else class="companies-section">

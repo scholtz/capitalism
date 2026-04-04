@@ -2008,6 +2008,9 @@ useTickRefresh(async () => {
             <RouterLink to="/leaderboard" class="btn btn-secondary">
               {{ t('onboarding.completionViewLeaderboard') }}
             </RouterLink>
+            <RouterLink to="/encyclopedia" class="btn btn-secondary encyclopedia-link">
+              {{ t('onboarding.completionBrowseEncyclopedia') }}
+            </RouterLink>
           </div>
         </section>
 
@@ -2020,6 +2023,9 @@ useTickRefresh(async () => {
             </RouterLink>
             <RouterLink to="/leaderboard" class="btn btn-secondary">
               {{ t('onboarding.completionViewLeaderboard') }}
+            </RouterLink>
+            <RouterLink to="/encyclopedia" class="btn btn-secondary encyclopedia-link">
+              {{ t('onboarding.completionBrowseEncyclopedia') }}
             </RouterLink>
           </div>
         </div>

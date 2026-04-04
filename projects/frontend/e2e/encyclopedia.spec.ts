@@ -757,3 +757,39 @@ test.describe('Encyclopedia discoverability and routing', () => {
     await expect(page).toHaveURL('/encyclopedia')
   })
 })
+
+test.describe('Encyclopedia contextual entry points', () => {
+  test('encyclopedia is reachable from dashboard empty state when player has no companies', async ({
+    page,
+  }) => {
+    // AC 6: relevant user flows expose entry points into the encyclopedia from current product surfaces.
+    // A player with completed onboarding but no companies should see a "Browse Encyclopedia" link
+    // in the dashboard empty state.
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [],
+    })
+    const state = setupMockApi(page, {
+      players: [player],
+      resourceTypes: [woodResource],
+      productTypes: [electronicTableProduct],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/dashboard')
+
+    // The encyclopedia link should appear in the dashboard empty state
+    const encyclopediaLink = page.getByRole('link', { name: /Browse Manufacturing Encyclopedia/i })
+    await expect(encyclopediaLink).toBeVisible()
+
+    // Clicking it navigates to the encyclopedia
+    await encyclopediaLink.click()
+    await expect(page).toHaveURL('/encyclopedia')
+    await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
+  })
+})

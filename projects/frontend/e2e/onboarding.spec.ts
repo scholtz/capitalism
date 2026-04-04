@@ -220,6 +220,8 @@ test.describe('Onboarding wizard', () => {
     ).toBeVisible()
     await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'View Leaderboard' })).toBeVisible()
+    // AC 6: encyclopedia entry point is visible from the onboarding completion screen
+    await expect(page.getByRole('link', { name: /Explore Manufacturing Encyclopedia/i }).first()).toBeVisible()
 
     // Navigate to dashboard
     await page.getByRole('link', { name: 'Go to Dashboard' }).click()
