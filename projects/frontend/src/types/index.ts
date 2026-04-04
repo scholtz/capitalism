@@ -725,3 +725,19 @@ export interface BuildingRecentActivityEvent {
   resourceTypeId: string | null
   productTypeId: string | null
 }
+
+/** A media house building in a city, returned by cityMediaHouses query. */
+export interface CityMediaHouseInfo {
+  id: string
+  name: string
+  cityId: string
+  /** NEWSPAPER | RADIO | TV — null if not yet configured */
+  mediaType: string | null
+  ownerCompanyId: string
+  ownerCompanyName: string
+  /** 1.0 = Newspaper, 1.5 = Radio, 2.0 = TV */
+  effectivenessMultiplier: number
+  /** POWERED | CONSTRAINED | OFFLINE */
+  powerStatus: string
+  isUnderConstruction: boolean
+}

@@ -119,3 +119,25 @@ public sealed class Building
     /// <summary>Queued building configuration that will replace the active units on a future tick.</summary>
     public BuildingConfigurationPlan? PendingConfiguration { get; set; }
 }
+
+/// <summary>Valid media types for MEDIA_HOUSE buildings.</summary>
+public static class MediaType
+{
+    public const string Newspaper = "NEWSPAPER";
+    public const string Radio = "RADIO";
+    public const string Tv = "TV";
+
+    public static readonly string[] All = [Newspaper, Radio, Tv];
+
+    /// <summary>
+    /// Channel effectiveness multiplier applied to brand-awareness gain per unit of budget spent.
+    /// TV has the widest reach; radio has moderate; newspaper is the baseline.
+    /// </summary>
+    public static decimal EffectivenessMultiplier(string? mediaType) => mediaType switch
+    {
+        Newspaper => 1.0m,
+        Radio     => 1.5m,
+        Tv        => 2.0m,
+        _         => 1.0m
+    };
+}

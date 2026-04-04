@@ -233,6 +233,19 @@ public sealed class Mutation
                     .Build());
         }
 
+        // Validate media type when placing a media house.
+        if (input.Type == BuildingType.MediaHouse)
+        {
+            if (string.IsNullOrWhiteSpace(input.MediaType) || !Data.Entities.MediaType.All.Contains(input.MediaType))
+            {
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetMessage("A media house requires a valid MediaType: NEWSPAPER, RADIO, or TV.")
+                        .SetCode("INVALID_MEDIA_TYPE")
+                        .Build());
+            }
+        }
+
         var city = await db.Cities.FindAsync(input.CityId);
         if (city is null)
         {
@@ -259,6 +272,10 @@ public sealed class Mutation
             Engine.GameConstants.PowerDemandMw(input.Type, 1),
             DateTime.UtcNow,
             city.Id);
+
+        // Apply media type for media houses.
+        if (input.Type == BuildingType.MediaHouse && !string.IsNullOrWhiteSpace(input.MediaType))
+            building.MediaType = input.MediaType;
 
         await LandService.EnsureMinimumAvailableLotsAsync(db, currentTick, [city.Id]);
         await db.SaveChangesAsync();
@@ -933,6 +950,58 @@ public sealed class Mutation
                     && unit.ProductTypeId == productTypeId) ?? false);
     }
 
+    /// <summary>
+    /// Validates that any MediaHouseBuildingId on MARKETING units references an actual
+    /// MEDIA_HOUSE building in the same city as the shop being configured.
+    /// </summary>
+    private static async Task ValidateMediaHouseReferencesAsync(
+        AppDbContext db,
+        Building building,
+        IReadOnlyCollection<BuildingConfigurationUnitInput> submittedUnits)
+    {
+        var mediaHouseIds = submittedUnits
+            .Where(u => u.UnitType == UnitType.Marketing && u.MediaHouseBuildingId.HasValue)
+            .Select(u => u.MediaHouseBuildingId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (mediaHouseIds.Count == 0) return;
+
+        foreach (var mediaHouseId in mediaHouseIds)
+        {
+            var mediaHouse = await db.Buildings
+                .AsNoTracking()
+                .FirstOrDefaultAsync(b => b.Id == mediaHouseId);
+
+            if (mediaHouse is null)
+            {
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetMessage($"Media house building {mediaHouseId} not found.")
+                        .SetCode("MEDIA_HOUSE_NOT_FOUND")
+                        .Build());
+            }
+
+            if (mediaHouse.Type != BuildingType.MediaHouse)
+            {
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetMessage($"Building {mediaHouseId} is not a media house.")
+                        .SetCode("BUILDING_NOT_MEDIA_HOUSE")
+                        .Build());
+            }
+
+            if (mediaHouse.CityId != building.CityId)
+            {
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetMessage("The selected media house must be in the same city as the marketing building.")
+                        .SetCode("MEDIA_HOUSE_WRONG_CITY")
+                        .Build());
+            }
+        }
+    }
+
     /// <summary>Queues a building configuration update that becomes active after the required ticks have passed.</summary>
     [Authorize]
     public async Task<BuildingConfigurationPlan> StoreBuildingConfiguration(
@@ -984,6 +1053,7 @@ public sealed class Mutation
             .FirstOrDefaultAsync();
         var hasActiveProSubscription = ProductAccessService.HasActiveProSubscription(subscriptionEndsAtUtc, DateTime.UtcNow);
         await EnsureSubmittedProductsAreAccessibleAsync(db, building, input.Units, hasActiveProSubscription);
+        await ValidateMediaHouseReferencesAsync(db, building, input.Units);
 
         var plan = await BuildingConfigurationService.StoreConfigurationAsync(db, building, input.Units, gameState.CurrentTick);
         await db.SaveChangesAsync();
@@ -1373,6 +1443,20 @@ public sealed class Mutation
             DateTime.UtcNow,
             powerPlantType: input.PowerPlantType,
             applyConstructionDelay: true);
+
+        // Validate and apply media house channel type.
+        if (input.BuildingType == BuildingType.MediaHouse)
+        {
+            if (string.IsNullOrEmpty(input.MediaType) || !Data.Entities.MediaType.All.Contains(input.MediaType))
+            {
+                throw new GraphQLException(
+                    ErrorBuilder.New()
+                        .SetMessage($"A valid mediaType (NEWSPAPER, RADIO, TV) is required for media house buildings. Received: '{input.MediaType}'.")
+                        .SetCode("INVALID_MEDIA_TYPE")
+                        .Build());
+            }
+            building.MediaType = input.MediaType;
+        }
 
         try
         {

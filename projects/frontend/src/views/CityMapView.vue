@@ -16,7 +16,7 @@ import {
   constructionTicksForType,
   constructionTicksRemaining as computeConstructionTicksRemaining,
 } from '@/lib/cityMapHelpers'
-import type { City, BuildingLot, Company, PurchaseLotResult } from '@/types'
+import type { City, BuildingLot, Company, PurchaseLotResult, CityMediaHouseInfo } from '@/types'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -42,6 +42,7 @@ const purchaseMode = ref(false)
 const selectedBuildingType = ref('')
 const buildingName = ref('')
 const selectedCompanyId = ref('')
+const selectedMediaType = ref('')
 const purchasing = ref(false)
 const purchaseError = ref<string | null>(null)
 const purchaseSuccess = ref<string | null>(null)
@@ -53,6 +54,10 @@ const justPurchasedConstructionCompletesAtTick = ref<number | null>(null)
 // Map reference
 const mapContainer = ref<HTMLDivElement | null>(null)
 let map: L.Map | null = null
+
+// City media houses
+const cityMediaHouses = ref<CityMediaHouseInfo[]>([])
+const mediaHousesLoading = ref(false)
 let markers: L.Marker[] = []
 
 const filteredLots = computed(() => {
@@ -82,14 +87,17 @@ const canPurchase = computed(() =>
     : false,
 )
 
-const canSubmitPurchase = computed(() =>
-  isFormSubmittable(
+const canSubmitPurchase = computed(() => {
+  const baseValid = isFormSubmittable(
     selectedBuildingType.value,
     buildingName.value,
     selectedCompanyId.value,
     purchasing.value,
-  ),
-)
+  )
+  // Media houses require a channel type selection.
+  if (selectedBuildingType.value === 'MEDIA_HOUSE' && !selectedMediaType.value) return false
+  return baseValid
+})
 
 const selectedCompany = computed(() =>
   companies.value.find((c) => c.id === selectedCompanyId.value) ?? null,
@@ -255,6 +263,26 @@ async function fetchData() {
   }
 }
 
+async function fetchMediaHouses() {
+  if (!cityId.value) return
+  mediaHousesLoading.value = true
+  try {
+    const data = await gqlRequest<{ cityMediaHouses: CityMediaHouseInfo[] }>(
+      `query CityMediaHouses($cityId: UUID!) {
+        cityMediaHouses(cityId: $cityId) {
+          id name mediaType effectivenessMultiplier ownerCompanyName powerStatus isUnderConstruction
+        }
+      }`,
+      { cityId: cityId.value },
+    )
+    cityMediaHouses.value = data.cityMediaHouses ?? []
+  } catch {
+    cityMediaHouses.value = []
+  } finally {
+    mediaHousesLoading.value = false
+  }
+}
+
 function createMarkerIcon(color: string, isSelected: boolean): L.DivIcon {
   const size = isSelected ? 18 : 12
   const border = isSelected ? '3px solid #fff' : '2px solid rgba(255,255,255,0.8)'
@@ -335,6 +363,7 @@ function selectLot(lot: BuildingLot) {
   justPurchasedConstructionCompletesAtTick.value = null
   selectedBuildingType.value = ''
   buildingName.value = ''
+  selectedMediaType.value = ''
 
   // Update markers to show selection
   updateMarkers()
@@ -377,6 +406,7 @@ async function confirmPurchase() {
           lotId: selectedLot.value.id,
           buildingType: selectedBuildingType.value,
           buildingName: buildingName.value,
+          mediaType: selectedBuildingType.value === 'MEDIA_HOUSE' ? selectedMediaType.value || null : null,
         },
       },
     )
@@ -454,6 +484,7 @@ watch(filteredLots, () => {
 
 onMounted(async () => {
   await fetchData()
+  void fetchMediaHouses()
   await nextTick()
   if (viewMode.value === 'map') {
     initMap()
@@ -794,6 +825,18 @@ watch(viewMode, async (mode) => {
                   </select>
                 </div>
 
+                <!-- Media house channel type (only for MEDIA_HOUSE) -->
+                <div v-if="selectedBuildingType === 'MEDIA_HOUSE'" class="form-group">
+                  <label>{{ t('cityMap.mediaHouseChannelType') }}</label>
+                  <select v-model="selectedMediaType" class="form-select" required>
+                    <option value="">{{ t('cityMap.selectMediaType') }}</option>
+                    <option value="NEWSPAPER">📰 {{ t('cityMap.mediaTypeNewspaper') }} (×1.0)</option>
+                    <option value="RADIO">📻 {{ t('cityMap.mediaTypeRadio') }} (×1.5)</option>
+                    <option value="TV">📺 {{ t('cityMap.mediaTypeTv') }} (×2.0)</option>
+                  </select>
+                  <p class="form-hint">{{ t('cityMap.mediaTypeHint') }}</p>
+                </div>
+
                 <!-- Purchase cost summary -->
                 <div class="purchase-cost-summary" aria-label="Purchase cost summary">
                   <div class="cost-row">
@@ -922,6 +965,55 @@ watch(viewMode, async (mode) => {
         </aside>
       </div>
     </template>
+
+    <!-- City media houses section -->
+    <section class="media-houses-section" aria-labelledby="media-houses-heading">
+      <h2 id="media-houses-heading" class="section-heading">
+        📺 {{ t('cityMap.mediaHouses.title') }}
+      </h2>
+      <p class="section-subtitle">{{ t('cityMap.mediaHouses.subtitle') }}</p>
+      <div v-if="mediaHousesLoading" class="media-houses-loading">{{ t('common.loading') }}</div>
+      <div v-else-if="cityMediaHouses.length === 0" class="media-houses-empty">
+        <p>{{ t('cityMap.mediaHouses.empty') }}</p>
+        <p class="hint">{{ t('cityMap.mediaHouses.emptyHint') }}</p>
+      </div>
+      <div v-else class="media-houses-grid">
+        <div
+          v-for="mh in cityMediaHouses"
+          :key="mh.id"
+          class="media-house-card"
+          :class="{ 'mh-offline': mh.powerStatus === 'OFFLINE', 'mh-construction': mh.isUnderConstruction }"
+        >
+          <div class="mh-channel-icon">
+            <span v-if="mh.mediaType === 'TV'">📺</span>
+            <span v-else-if="mh.mediaType === 'RADIO'">📻</span>
+            <span v-else>📰</span>
+          </div>
+          <div class="mh-info">
+            <strong class="mh-name">{{ mh.name }}</strong>
+            <span class="mh-type-badge">{{ mh.mediaType ?? '?' }}</span>
+            <span v-if="mh.isUnderConstruction" class="mh-status-badge construction">
+              {{ t('cityMap.mediaHouses.underConstruction') }}
+            </span>
+            <span v-else-if="mh.powerStatus === 'OFFLINE'" class="mh-status-badge offline">
+              {{ t('cityMap.mediaHouses.offline') }}
+            </span>
+            <div class="mh-owner">{{ t('cityMap.mediaHouses.owner') }}: {{ mh.ownerCompanyName }}</div>
+            <div class="mh-effectiveness">
+              {{ t('cityMap.mediaHouses.effectiveness') }}:
+              <strong>×{{ mh.effectivenessMultiplier.toFixed(1) }}</strong>
+              <span class="effectiveness-hint">
+                {{
+                  mh.mediaType === 'TV' ? t('cityMap.mediaHouses.tvHint') :
+                  mh.mediaType === 'RADIO' ? t('cityMap.mediaHouses.radioHint') :
+                  t('cityMap.mediaHouses.newspaperHint')
+                }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -1769,5 +1861,145 @@ watch(viewMode, async (mode) => {
   .page-header {
     flex-direction: column;
   }
+}
+
+/* Media houses section */
+.form-hint {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  margin: 0.25rem 0 0;
+  font-style: italic;
+}
+
+.media-houses-section {  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.section-heading {
+  font-size: 1.25rem;
+  margin: 0 0 0.5rem;
+}
+
+.section-subtitle {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  margin: 0 0 1.25rem;
+}
+
+.media-houses-loading {
+  color: var(--color-text-secondary);
+  padding: 0.75rem 0;
+}
+
+.media-houses-empty {
+  padding: 1.5rem;
+  background: var(--color-surface-elevated);
+  border-radius: 0.5rem;
+  border: 1px dashed var(--color-border);
+}
+
+.media-houses-empty p {
+  margin: 0 0 0.5rem;
+  color: var(--color-text-secondary);
+}
+
+.media-houses-empty .hint {
+  font-size: 0.875rem;
+  font-style: italic;
+}
+
+.media-houses-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.media-house-card {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  transition: border-color 0.15s;
+}
+
+.media-house-card:hover {
+  border-color: var(--color-primary);
+}
+
+.media-house-card.mh-offline {
+  opacity: 0.6;
+}
+
+.media-house-card.mh-construction {
+  border-style: dashed;
+}
+
+.mh-channel-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.mh-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mh-name {
+  display: block;
+  font-size: 0.9375rem;
+  margin-bottom: 0.25rem;
+}
+
+.mh-type-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  background: var(--color-primary);
+  color: #fff;
+  margin-right: 0.5rem;
+  margin-bottom: 0.375rem;
+}
+
+.mh-status-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  margin-bottom: 0.375rem;
+}
+
+.mh-status-badge.construction {
+  background: var(--color-warning, #f59e0b);
+  color: #000;
+}
+
+.mh-status-badge.offline {
+  background: var(--color-error, #ef4444);
+  color: #fff;
+}
+
+.mh-owner {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.375rem;
+}
+
+.mh-effectiveness {
+  font-size: 0.8125rem;
+}
+
+.effectiveness-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+  margin-top: 0.125rem;
 }
 </style>

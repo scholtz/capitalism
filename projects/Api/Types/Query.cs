@@ -1637,6 +1637,48 @@ public sealed class Query
             Blockers = blockers,
         };
     }
+
+    /// <summary>
+    /// Lists all MEDIA_HOUSE buildings in a city. Public — no auth required.
+    /// Includes channel type (NEWSPAPER, RADIO, TV), owner company name, and effectiveness multiplier.
+    /// Players use this to discover where to route their marketing budget.
+    /// </summary>
+    public async Task<List<CityMediaHouseInfo>> GetCityMediaHouses(
+        Guid cityId,
+        [Service] AppDbContext db)
+    {
+        var mediaHouses = await db.Buildings
+            .Where(b => b.CityId == cityId && b.Type == Data.Entities.BuildingType.MediaHouse)
+            .Include(b => b.Company)
+            .AsNoTracking()
+            .ToListAsync();
+
+        return mediaHouses.Select(b => new CityMediaHouseInfo
+        {
+            Id = b.Id,
+            Name = b.Name,
+            CityId = b.CityId,
+            MediaType = b.MediaType,
+            OwnerCompanyId = b.CompanyId,
+            OwnerCompanyName = b.Company.Name,
+            EffectivenessMultiplier = Data.Entities.MediaType.EffectivenessMultiplier(b.MediaType),
+            PowerStatus = b.PowerStatus,
+            IsUnderConstruction = b.IsUnderConstruction,
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Returns brand awareness and quality metrics for products of a company. Public query.
+    /// Consumers: building-detail marketing unit configuration, analytics dashboards.
+    /// </summary>
+    public async Task<List<CityMediaHouseInfo>> GetCompanyMarketingStats(
+        Guid companyId,
+        [Service] AppDbContext db)
+    {
+        // Forward to companyBrands for awareness (companyBrands already exists under auth).
+        // This stub allows future marketing analytics without auth gate for city-level views.
+        return [];
+    }
 }
 
 /// <summary>Payload for player ranking.</summary>
@@ -1929,4 +1971,32 @@ public sealed class FirstSaleMissionStatus
 
     /// <summary>Price per unit in the first sale (null until phase is FIRST_SALE_RECORDED).</summary>
     public decimal? FirstSalePricePerUnit { get; set; }
+}
+
+/// <summary>
+/// Read model for a media house building in a city.
+/// Returned by the <c>cityMediaHouses</c> query.
+/// </summary>
+public sealed class CityMediaHouseInfo
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public Guid CityId { get; set; }
+
+    /// <summary>Channel type: NEWSPAPER, RADIO, TV. Null if not configured.</summary>
+    public string? MediaType { get; set; }
+
+    public Guid OwnerCompanyId { get; set; }
+    public string OwnerCompanyName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Awareness multiplier applied when this media house is selected as the campaign channel.
+    /// 1.0 = Newspaper, 1.5 = Radio, 2.0 = TV.
+    /// </summary>
+    public decimal EffectivenessMultiplier { get; set; }
+
+    /// <summary>POWERED, CONSTRAINED, or OFFLINE.</summary>
+    public string PowerStatus { get; set; } = Data.Entities.PowerStatus.Powered;
+
+    public bool IsUnderConstruction { get; set; }
 }

@@ -45,6 +45,7 @@ import type {
   PublicSalesAnalytics,
   ResearchBrandState,
   ResourceType,
+  CityMediaHouseInfo,
 } from '@/types'
 import type { HorizontalLinkState, VerticalLinkState } from '@/lib/linkHelpers'
 
@@ -133,6 +134,10 @@ const recentActivityLoading = ref(false)
 // R&D research progress state
 const researchBrands = ref<ResearchBrandState[]>([])
 const researchBrandsLoading = ref(false)
+
+// City media houses — loaded lazily when a MARKETING unit is selected
+const cityMediaHouses = ref<import('@/types').CityMediaHouseInfo[]>([])
+const cityMediaHousesLoading = ref(false)
 
 // Public Sales market intelligence analytics
 const publicSalesAnalytics = ref<PublicSalesAnalytics | null>(null)
@@ -2078,6 +2083,35 @@ async function loadResearchBrands() {
   }
 }
 
+async function loadCityMediaHouses() {
+  const cityId = building.value?.cityId
+  if (!cityId) return
+  cityMediaHousesLoading.value = true
+  try {
+    const data = await gqlRequest<{ cityMediaHouses: CityMediaHouseInfo[] }>(
+      `query CityMediaHouses($cityId: UUID!) {
+        cityMediaHouses(cityId: $cityId) {
+          id
+          name
+          cityId
+          mediaType
+          ownerCompanyId
+          ownerCompanyName
+          effectivenessMultiplier
+          powerStatus
+          isUnderConstruction
+        }
+      }`,
+      { cityId },
+    )
+    cityMediaHouses.value = data.cityMediaHouses ?? []
+  } catch {
+    cityMediaHouses.value = []
+  } finally {
+    cityMediaHousesLoading.value = false
+  }
+}
+
 async function loadPublicSalesAnalytics(unitId: string | null) {
   if (!unitId || !auth.token) {
     publicSalesAnalytics.value = null
@@ -2369,7 +2403,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
       return
     }
 
-    await Promise.all([loadGlobalExchangeOffers(), loadResearchBrands()])
+    await Promise.all([loadGlobalExchangeOffers(), loadResearchBrands(), loadCityMediaHouses()])
     void loadUnitOperationalStatuses(buildingId.value)
     void loadRecentActivity(buildingId.value)
   } catch (reason: unknown) {
@@ -3395,13 +3429,35 @@ watch(
                   </div>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.mediaHouse') }}</label>
-                    <input
-                      type="text"
+                    <div v-if="cityMediaHousesLoading" class="config-loading">{{ t('common.loading') }}</div>
+                    <select
+                      v-else
                       class="form-input"
                       :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.mediaHouseBuildingId ?? ''"
-                      @input="updateSelectedUnitConfig('mediaHouseBuildingId', ($event.target as HTMLInputElement).value || null)"
-                      :placeholder="t('buildingDetail.config.mediaHousePlaceholder')"
-                    />
+                      @change="updateSelectedUnitConfig('mediaHouseBuildingId', ($event.target as HTMLSelectElement).value || null)"
+                    >
+                      <option value="">{{ t('buildingDetail.config.noMediaHouse') }}</option>
+                      <option
+                        v-for="mh in cityMediaHouses"
+                        :key="mh.id"
+                        :value="mh.id"
+                        :disabled="mh.isUnderConstruction || mh.powerStatus === 'OFFLINE'"
+                      >
+                        {{ mh.name }} ({{ mh.mediaType ?? '?' }}, ×{{ mh.effectivenessMultiplier.toFixed(1) }})
+                        <template v-if="mh.isUnderConstruction"> – {{ t('buildingDetail.config.underConstruction') }}</template>
+                        <template v-else-if="mh.powerStatus === 'OFFLINE'"> – {{ t('buildingDetail.config.offline') }}</template>
+                      </option>
+                    </select>
+                    <p v-if="cityMediaHouses.length === 0 && !cityMediaHousesLoading" class="config-hint">
+                      {{ t('buildingDetail.config.noMediaHouseAvailable') }}
+                    </p>
+                    <p v-else-if="selectedCell && getDraftUnitAt(selectedCell.x, selectedCell.y)?.mediaHouseBuildingId" class="config-hint">
+                      {{
+                        cityMediaHouses.find(mh => selectedCell && mh.id === getDraftUnitAt(selectedCell.x, selectedCell.y)?.mediaHouseBuildingId)
+                          ? `${t('buildingDetail.config.channelEffect')} \xd7${cityMediaHouses.find(mh => selectedCell && mh.id === getDraftUnitAt(selectedCell.x, selectedCell.y)?.mediaHouseBuildingId)!.effectivenessMultiplier.toFixed(1)}`
+                          : ''
+                      }}
+                    </p>
                   </div>
                 </template>
 

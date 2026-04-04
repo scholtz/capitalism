@@ -4,8 +4,10 @@ namespace Api.Engine.Phases;
 
 /// <summary>
 /// Processes MARKETING units inside SALES_SHOP buildings.
-/// Deducts the configured budget from the owning company's cash and
-/// increases brand awareness for products sold in linked PUBLIC_SALES units.
+/// Deducts the configured budget from the owning company's cash,
+/// routes the spend as income to the media-house owner (if a media house is selected),
+/// applies channel effectiveness (TV > Radio > Newspaper) and R&amp;D efficiency multipliers,
+/// and increases brand awareness for products sold in linked PUBLIC_SALES units.
 /// </summary>
 public sealed class MarketingPhase : ITickPhase
 {
@@ -66,6 +68,25 @@ public sealed class MarketingPhase : ITickPhase
 
         if (productIds.Count == 0) return;
 
+        // Resolve the selected media house and compute channel effectiveness.
+        Building? mediaHouse = null;
+        var channelMultiplier = 1.0m;
+        var channelDescription = "direct";
+
+        if (unit.MediaHouseBuildingId.HasValue)
+        {
+            mediaHouse = context.BuildingsById.TryGetValue(unit.MediaHouseBuildingId.Value, out var mh)
+                && mh.Type == BuildingType.MediaHouse
+                && mh.CityId == building.CityId
+                ? mh : null;
+
+            if (mediaHouse is not null)
+            {
+                channelMultiplier = MediaType.EffectivenessMultiplier(mediaHouse.MediaType);
+                channelDescription = mediaHouse.MediaType?.ToLowerInvariant() ?? "media";
+            }
+        }
+
         company.Cash -= budget;
 
         context.Db.LedgerEntries.Add(new LedgerEntry
@@ -75,11 +96,30 @@ public sealed class MarketingPhase : ITickPhase
             BuildingId = building.Id,
             BuildingUnitId = unit.Id,
             Category = LedgerCategory.Marketing,
-            Description = "Marketing spend",
+            Description = $"Marketing spend via {channelDescription}",
             Amount = -budget,
             RecordedAtTick = context.CurrentTick,
             RecordedAtUtc = DateTime.UtcNow,
         });
+
+        // Route income to the media house owner, if applicable and if a different company.
+        if (mediaHouse is not null
+            && context.CompaniesById.TryGetValue(mediaHouse.CompanyId, out var mediaOwner)
+            && mediaOwner.Id != company.Id)
+        {
+            mediaOwner.Cash += budget;
+            context.Db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = mediaOwner.Id,
+                BuildingId = mediaHouse.Id,
+                Category = LedgerCategory.MediaHouseIncome,
+                Description = $"Advertising revenue ({channelDescription})",
+                Amount = budget,
+                RecordedAtTick = context.CurrentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+            });
+        }
 
         var budgetPerProduct = budget / productIds.Count;
 
@@ -93,7 +133,8 @@ public sealed class MarketingPhase : ITickPhase
             var efficiencyBrand = context.FindBrand(building.CompanyId, productId, pt?.Industry);
             var efficiencyMultiplier = efficiencyBrand?.MarketingEfficiencyMultiplier ?? 1m;
 
-            brand.Awareness = Math.Min(1m, brand.Awareness + budgetPerProduct * GameConstants.BrandAwarenessPerBudget * efficiencyMultiplier);
+            // Combined: channel reach × R&D efficiency.
+            brand.Awareness = Math.Min(1m, brand.Awareness + budgetPerProduct * GameConstants.BrandAwarenessPerBudget * channelMultiplier * efficiencyMultiplier);
         }
     }
 }

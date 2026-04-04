@@ -75,6 +75,10 @@ public sealed class PlaceBuildingInput
 
     /// <summary>First product to manufacture (for onboarding factory setup).</summary>
     public Guid? InitialProductTypeId { get; set; }
+
+    /// <summary>Media type for MEDIA_HOUSE buildings: NEWSPAPER, RADIO, TV. Required when Type is MEDIA_HOUSE.</summary>
+    [MaxLength(20)]
+    public string? MediaType { get; set; }
 }
 
 /// <summary>Input for selecting onboarding choices.</summary>
@@ -194,6 +198,13 @@ public sealed class PurchaseLotInput
     /// </summary>
     [MaxLength(20)]
     public string? PowerPlantType { get; set; }
+
+    /// <summary>
+    /// Media house channel type: NEWSPAPER, RADIO, TV.
+    /// Required when BuildingType is MEDIA_HOUSE; ignored otherwise.
+    /// </summary>
+    [MaxLength(20)]
+    public string? MediaType { get; set; }
 }
 
 /// <summary>User-editable portion of a building unit configuration.</summary>

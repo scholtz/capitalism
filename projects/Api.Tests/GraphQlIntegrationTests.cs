@@ -12700,4 +12700,500 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
 
     #endregion
 
+    #region Media Houses and Marketing Campaigns
+
+    [Fact]
+    public async Task PlaceBuilding_MediaHouse_WithValidMediaType_SetsMediaType()
+    {
+        var token = await RegisterAndGetTokenAsync($"mh-place-{Guid.NewGuid():N}@test.com", "MH Placer");
+        var result = await ExecuteGraphQlAsync(
+            """mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }""",
+            new { input = new { name = "Media Corp" } },
+            token);
+        var companyId = result.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync();
+
+        var placeResult = await ExecuteGraphQlAsync(
+            """
+            mutation PlaceBuilding($input: PlaceBuildingInput!) {
+              placeBuilding(input: $input) {
+                id
+                type
+                mediaType
+              }
+            }
+            """,
+            new { input = new { companyId, cityId = city.Id, type = "MEDIA_HOUSE", name = "City Newspaper", mediaType = "NEWSPAPER" } },
+            token);
+
+        var building = placeResult.GetProperty("data").GetProperty("placeBuilding");
+        Assert.Equal("MEDIA_HOUSE", building.GetProperty("type").GetString());
+        Assert.Equal("NEWSPAPER", building.GetProperty("mediaType").GetString());
+    }
+
+    [Fact]
+    public async Task PlaceBuilding_MediaHouse_WithoutMediaType_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"mh-notype-{Guid.NewGuid():N}@test.com", "MH NoType");
+        var result = await ExecuteGraphQlAsync(
+            """mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }""",
+            new { input = new { name = "No Type Corp" } },
+            token);
+        var companyId = result.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync();
+
+        var placeResult = await ExecuteGraphQlAsync(
+            """
+            mutation PlaceBuilding($input: PlaceBuildingInput!) {
+              placeBuilding(input: $input) { id }
+            }
+            """,
+            new { input = new { companyId, cityId = city.Id, type = "MEDIA_HOUSE", name = "No Type House", mediaType = (string?)null } },
+            token);
+
+        var errors = placeResult.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0, "Placing a media house without mediaType must return an error.");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("INVALID_MEDIA_TYPE", code);
+    }
+
+    [Fact]
+    public async Task PlaceBuilding_MediaHouse_WithInvalidMediaType_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"mh-badtype-{Guid.NewGuid():N}@test.com", "MH BadType");
+        var result = await ExecuteGraphQlAsync(
+            """mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }""",
+            new { input = new { name = "Bad Type Corp" } },
+            token);
+        var companyId = result.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync();
+
+        var placeResult = await ExecuteGraphQlAsync(
+            """
+            mutation PlaceBuilding($input: PlaceBuildingInput!) {
+              placeBuilding(input: $input) { id }
+            }
+            """,
+            new { input = new { companyId, cityId = city.Id, type = "MEDIA_HOUSE", name = "Bad Type House", mediaType = "PODCAST" } },
+            token);
+
+        var errors = placeResult.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0, "Placing a media house with invalid mediaType must return an error.");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("INVALID_MEDIA_TYPE", code);
+    }
+
+    [Fact]
+    public async Task CityMediaHouses_Query_ReturnsPlacedMediaHouses()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var player = new Player
+        {
+            Id = Guid.NewGuid(),
+            Email = $"mh-query-{Guid.NewGuid():N}@test.com",
+            DisplayName = "MH Query Tester",
+            PasswordHash = "hash",
+            Role = PlayerRole.Player
+        };
+        db.Players.Add(player);
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Media Query Corp", Cash = 1_000_000m };
+        db.Companies.Add(company);
+        var mediaHouse = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = BuildingType.MediaHouse,
+            Name = "Test TV Station",
+            MediaType = Data.Entities.MediaType.Tv,
+            Level = 1
+        };
+        db.Buildings.Add(mediaHouse);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query CityMediaHouses($cityId: UUID!) {
+              cityMediaHouses(cityId: $cityId) {
+                id
+                name
+                mediaType
+                effectivenessMultiplier
+                ownerCompanyName
+                powerStatus
+                isUnderConstruction
+              }
+            }
+            """,
+            new { cityId = city.Id });
+
+        var houses = result.GetProperty("data").GetProperty("cityMediaHouses");
+        Assert.True(houses.GetArrayLength() >= 1, "Should find at least the newly seeded media house.");
+
+        var tv = houses.EnumerateArray().FirstOrDefault(h => h.GetProperty("id").GetString() == mediaHouse.Id.ToString());
+        Assert.NotEqual(default, tv);
+        Assert.Equal("Test TV Station", tv.GetProperty("name").GetString());
+        Assert.Equal("TV", tv.GetProperty("mediaType").GetString());
+        Assert.Equal(2.0m, tv.GetProperty("effectivenessMultiplier").GetDecimal());
+        Assert.Equal("Media Query Corp", tv.GetProperty("ownerCompanyName").GetString());
+    }
+
+    [Fact]
+    public async Task CityMediaHouses_Newspaper_HasEffectivenessMultiplier_1_0()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync();
+        var player = new Player { Id = Guid.NewGuid(), Email = $"mh-np-{Guid.NewGuid():N}@test.com", DisplayName = "NP", PasswordHash = "h", Role = PlayerRole.Player };
+        db.Players.Add(player);
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Newspaper Co", Cash = 1m };
+        db.Companies.Add(company);
+        var mh = new Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = BuildingType.MediaHouse, Name = "Daily News", MediaType = Data.Entities.MediaType.Newspaper, Level = 1 };
+        db.Buildings.Add(mh);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ cityMediaHouses(cityId: \"{city.Id}\") {{ id mediaType effectivenessMultiplier }} }}");
+
+        var np = result.GetProperty("data").GetProperty("cityMediaHouses")
+            .EnumerateArray().First(h => h.GetProperty("id").GetString() == mh.Id.ToString());
+        Assert.Equal(1.0m, np.GetProperty("effectivenessMultiplier").GetDecimal());
+    }
+
+    [Fact]
+    public async Task CityMediaHouses_Radio_HasEffectivenessMultiplier_1_5()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync();
+        var player = new Player { Id = Guid.NewGuid(), Email = $"mh-radio-{Guid.NewGuid():N}@test.com", DisplayName = "Radio", PasswordHash = "h", Role = PlayerRole.Player };
+        db.Players.Add(player);
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Radio Co", Cash = 1m };
+        db.Companies.Add(company);
+        var mh = new Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = BuildingType.MediaHouse, Name = "City Radio", MediaType = Data.Entities.MediaType.Radio, Level = 1 };
+        db.Buildings.Add(mh);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ cityMediaHouses(cityId: \"{city.Id}\") {{ id mediaType effectivenessMultiplier }} }}");
+
+        var radio = result.GetProperty("data").GetProperty("cityMediaHouses")
+            .EnumerateArray().First(h => h.GetProperty("id").GetString() == mh.Id.ToString());
+        Assert.Equal(1.5m, radio.GetProperty("effectivenessMultiplier").GetDecimal());
+    }
+
+    [Fact]
+    public async Task MarketingPhase_WithTvMediaHouse_AppliesChannelMultiplierAndRoutesIncome()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        var advertiserPlayer = new Player { Id = Guid.NewGuid(), Email = $"tv-adv-{Guid.NewGuid():N}@test.com", DisplayName = "Advertiser", PasswordHash = "h", Role = PlayerRole.Player };
+        var mediaOwnerPlayer = new Player { Id = Guid.NewGuid(), Email = $"tv-own-{Guid.NewGuid():N}@test.com", DisplayName = "TV Owner", PasswordHash = "h", Role = PlayerRole.Player };
+        db.Players.AddRange(advertiserPlayer, mediaOwnerPlayer);
+
+        var advertiserCompany = new Company { Id = Guid.NewGuid(), PlayerId = advertiserPlayer.Id, Name = "Advertiser Corp", Cash = 100_000m };
+        var mediaOwnerCompany = new Company { Id = Guid.NewGuid(), PlayerId = mediaOwnerPlayer.Id, Name = "TV Station Corp", Cash = 0m };
+        db.Companies.AddRange(advertiserCompany, mediaOwnerCompany);
+
+        var tvStation = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = mediaOwnerCompany.Id,
+            CityId = city.Id,
+            Type = BuildingType.MediaHouse,
+            Name = "Big TV",
+            MediaType = Data.Entities.MediaType.Tv,
+            Level = 1
+        };
+        db.Buildings.Add(tvStation);
+
+        var shop = new Building { Id = Guid.NewGuid(), CompanyId = advertiserCompany.Id, CityId = city.Id, Type = BuildingType.SalesShop, Name = "Shop", Level = 1 };
+        db.Buildings.Add(shop);
+
+        var salesUnit = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = shop.Id, UnitType = UnitType.PublicSales, GridX = 0, GridY = 0, Level = 1, ProductTypeId = product.Id, MinPrice = product.BasePrice };
+        var marketingUnit = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = shop.Id, UnitType = UnitType.Marketing, GridX = 1, GridY = 0, Level = 1, Budget = 1_000m, MediaHouseBuildingId = tvStation.Id };
+        db.BuildingUnits.AddRange(salesUnit, marketingUnit);
+        await db.SaveChangesAsync();
+
+        var cashBefore = advertiserCompany.Cash;
+        var mediaCashBefore = mediaOwnerCompany.Cash;
+
+        var phases = scope.ServiceProvider.GetServices<ITickPhase>();
+        var processor = new TickProcessor(db, phases, new NullLogger<TickProcessor>());
+        await processor.ProcessTickAsync();
+
+        Assert.True(advertiserCompany.Cash < cashBefore, "Advertiser cash should decrease.");
+        Assert.True(mediaOwnerCompany.Cash > mediaCashBefore, "Media house owner should receive advertising income.");
+        // Media house owner should receive exactly the marketing budget (other phases don't affect the media owner).
+        Assert.Equal(1_000m, mediaOwnerCompany.Cash - mediaCashBefore);
+
+        var incomeEntry = await db.LedgerEntries
+            .Where(e => e.CompanyId == mediaOwnerCompany.Id && e.Category == LedgerCategory.MediaHouseIncome)
+            .FirstOrDefaultAsync();
+        Assert.NotNull(incomeEntry);
+        Assert.True(incomeEntry.Amount > 0, "Media house income ledger entry must be positive.");
+
+        var brand = await db.Brands
+            .Where(b => b.CompanyId == advertiserCompany.Id && b.ProductTypeId == product.Id)
+            .FirstOrDefaultAsync();
+        Assert.NotNull(brand);
+        Assert.True(brand.Awareness > 0, "Brand awareness should increase after TV marketing.");
+    }
+
+    [Fact]
+    public async Task MarketingPhase_TvVsNewspaper_TvGeneratesMoreAwareness()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        var player1 = new Player { Id = Guid.NewGuid(), Email = $"tv-cmp-{Guid.NewGuid():N}@test.com", DisplayName = "TV Adv", PasswordHash = "h", Role = PlayerRole.Player };
+        var company1 = new Company { Id = Guid.NewGuid(), PlayerId = player1.Id, Name = "TV Advertiser", Cash = 100_000m };
+
+        var player2 = new Player { Id = Guid.NewGuid(), Email = $"np-cmp-{Guid.NewGuid():N}@test.com", DisplayName = "NP Adv", PasswordHash = "h", Role = PlayerRole.Player };
+        var company2 = new Company { Id = Guid.NewGuid(), PlayerId = player2.Id, Name = "NP Advertiser", Cash = 100_000m };
+
+        var ownerPlayer = new Player { Id = Guid.NewGuid(), Email = $"owner-cmp-{Guid.NewGuid():N}@test.com", DisplayName = "Owner", PasswordHash = "h", Role = PlayerRole.Player };
+        var ownerCompany = new Company { Id = Guid.NewGuid(), PlayerId = ownerPlayer.Id, Name = "Owner Corp", Cash = 0m };
+
+        db.Players.AddRange(player1, player2, ownerPlayer);
+        db.Companies.AddRange(company1, company2, ownerCompany);
+
+        var tvHouse = new Building { Id = Guid.NewGuid(), CompanyId = ownerCompany.Id, CityId = city.Id, Type = BuildingType.MediaHouse, Name = "TV", MediaType = Data.Entities.MediaType.Tv, Level = 1 };
+        var npHouse = new Building { Id = Guid.NewGuid(), CompanyId = ownerCompany.Id, CityId = city.Id, Type = BuildingType.MediaHouse, Name = "NP", MediaType = Data.Entities.MediaType.Newspaper, Level = 1 };
+        var shop1 = new Building { Id = Guid.NewGuid(), CompanyId = company1.Id, CityId = city.Id, Type = BuildingType.SalesShop, Name = "Shop1", Level = 1 };
+        var shop2 = new Building { Id = Guid.NewGuid(), CompanyId = company2.Id, CityId = city.Id, Type = BuildingType.SalesShop, Name = "Shop2", Level = 1 };
+        db.Buildings.AddRange(tvHouse, npHouse, shop1, shop2);
+
+        var su1 = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = shop1.Id, UnitType = UnitType.PublicSales, GridX = 0, GridY = 0, Level = 1, ProductTypeId = product.Id, MinPrice = product.BasePrice };
+        var mu1 = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = shop1.Id, UnitType = UnitType.Marketing, GridX = 1, GridY = 0, Level = 1, Budget = 500m, MediaHouseBuildingId = tvHouse.Id };
+        var su2 = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = shop2.Id, UnitType = UnitType.PublicSales, GridX = 0, GridY = 0, Level = 1, ProductTypeId = product.Id, MinPrice = product.BasePrice };
+        var mu2 = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = shop2.Id, UnitType = UnitType.Marketing, GridX = 1, GridY = 0, Level = 1, Budget = 500m, MediaHouseBuildingId = npHouse.Id };
+        db.BuildingUnits.AddRange(su1, mu1, su2, mu2);
+        await db.SaveChangesAsync();
+
+        var phases = scope.ServiceProvider.GetServices<ITickPhase>();
+        var processor = new TickProcessor(db, phases, new NullLogger<TickProcessor>());
+        await processor.ProcessTickAsync();
+
+        var brand1 = await db.Brands.FirstOrDefaultAsync(b => b.CompanyId == company1.Id && b.ProductTypeId == product.Id);
+        var brand2 = await db.Brands.FirstOrDefaultAsync(b => b.CompanyId == company2.Id && b.ProductTypeId == product.Id);
+
+        Assert.NotNull(brand1);
+        Assert.NotNull(brand2);
+        Assert.True(brand1.Awareness > brand2.Awareness,
+            $"TV channel (x2.0) should generate more brand awareness than Newspaper (x1.0). TV={brand1.Awareness}, NP={brand2.Awareness}");
+    }
+
+    [Fact]
+    public async Task MarketingPhase_SameCompanyMediaHouse_DoesNotDoubleCountCash()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        var player = new Player { Id = Guid.NewGuid(), Email = $"self-mh-{Guid.NewGuid():N}@test.com", DisplayName = "Self MH", PasswordHash = "h", Role = PlayerRole.Player };
+        db.Players.Add(player);
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "Self Media Corp", Cash = 10_000m };
+        db.Companies.Add(company);
+
+        var tvHouse = new Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = BuildingType.MediaHouse, Name = "Own TV", MediaType = Data.Entities.MediaType.Tv, Level = 1 };
+        var shop = new Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = BuildingType.SalesShop, Name = "Own Shop", Level = 1 };
+        db.Buildings.AddRange(tvHouse, shop);
+
+        var salesUnit = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = shop.Id, UnitType = UnitType.PublicSales, GridX = 0, GridY = 0, Level = 1, ProductTypeId = product.Id, MinPrice = product.BasePrice };
+        var marketingUnit = new BuildingUnit { Id = Guid.NewGuid(), BuildingId = shop.Id, UnitType = UnitType.Marketing, GridX = 1, GridY = 0, Level = 1, Budget = 1_000m, MediaHouseBuildingId = tvHouse.Id };
+        db.BuildingUnits.AddRange(salesUnit, marketingUnit);
+        await db.SaveChangesAsync();
+
+        var cashBefore = company.Cash;
+
+        var phases = scope.ServiceProvider.GetServices<ITickPhase>();
+        var processor = new TickProcessor(db, phases, new NullLogger<TickProcessor>());
+        await processor.ProcessTickAsync();
+
+        Assert.True(company.Cash < cashBefore, "Cash should still be deducted when owning the media house.");
+        // Marketing ledger entry should show the deduction (the tick processes other phases too, so just verify the ledger).
+        var marketingEntry = await db.LedgerEntries
+            .Where(e => e.CompanyId == company.Id && e.Category == LedgerCategory.Marketing)
+            .FirstOrDefaultAsync();
+        Assert.NotNull(marketingEntry);
+        Assert.Equal(-1_000m, marketingEntry.Amount, precision: 2);
+        // No MEDIA_HOUSE_INCOME entry should exist for the company advertising on its own station.
+        var selfIncomeEntry = await db.LedgerEntries
+            .Where(e => e.CompanyId == company.Id && e.Category == LedgerCategory.MediaHouseIncome)
+            .FirstOrDefaultAsync();
+        Assert.Null(selfIncomeEntry);
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_WithInvalidMediaHouseId_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"mh-cfg-{Guid.NewGuid():N}@test.com", "MH Config Tester");
+        // Seed a shop directly to avoid depending on CompleteOnboardingAsync.
+        await using var seedScope = _factory.Services.CreateAsyncScope();
+        var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var seedPlayer = await seedDb.Players.FirstAsync(p => p.Email.StartsWith("mh-cfg-"));
+        var seedCompany = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = seedPlayer.Id, Name = "MH Cfg Co", Cash = 100_000m };
+        seedDb.Companies.Add(seedCompany);
+        var seedCity = await seedDb.Cities.FirstAsync();
+        var seedShop = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = seedCompany.Id, CityId = seedCity.Id, Type = Api.Data.Entities.BuildingType.SalesShop, Name = "Shop", Level = 1 };
+        seedDb.Buildings.Add(seedShop);
+        await seedDb.SaveChangesAsync();
+        var shopId = seedShop.Id.ToString();
+
+        var fakeMediaHouseId = Guid.NewGuid();
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId = shopId,
+                    units = new[]
+                    {
+                        new { unitType = "MARKETING", gridX = 0, gridY = 0, budget = 500.0m, mediaHouseBuildingId = fakeMediaHouseId,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0, "Should return error for non-existent media house.");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("MEDIA_HOUSE_NOT_FOUND", code);
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_WithNonMediaHouseBuilding_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"mh-cfg2-{Guid.NewGuid():N}@test.com", "MH Config2 Tester");
+        // Seed shop and factory directly.
+        await using var seedScope = _factory.Services.CreateAsyncScope();
+        var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var seedPlayer = await seedDb.Players.FirstAsync(p => p.Email.StartsWith("mh-cfg2-"));
+        var seedCompany = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = seedPlayer.Id, Name = "MH Cfg2 Co", Cash = 100_000m };
+        seedDb.Companies.Add(seedCompany);
+        var seedCity = await seedDb.Cities.FirstAsync();
+        var seedShop = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = seedCompany.Id, CityId = seedCity.Id, Type = Api.Data.Entities.BuildingType.SalesShop, Name = "Shop2", Level = 1 };
+        var seedFactory = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = seedCompany.Id, CityId = seedCity.Id, Type = Api.Data.Entities.BuildingType.Factory, Name = "Factory2", Level = 1 };
+        seedDb.Buildings.AddRange(seedShop, seedFactory);
+        await seedDb.SaveChangesAsync();
+        var shopId = seedShop.Id.ToString();
+        var factoryId = seedFactory.Id.ToString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId = shopId,
+                    units = new[]
+                    {
+                        new { unitType = "MARKETING", gridX = 0, gridY = 0, budget = 500.0m, mediaHouseBuildingId = factoryId,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0, "Should return error when target is not a media house.");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("BUILDING_NOT_MEDIA_HOUSE", code);
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_WithMediaHouseInDifferentCity_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"mh-city-{Guid.NewGuid():N}@test.com", "MH City Tester");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var seedPlayer = await db.Players.FirstAsync(p => p.Email.StartsWith("mh-city-"));
+        var homeCity = await db.Cities.FirstAsync();
+        var otherCity = await db.Cities.FirstAsync(c => c.Id != homeCity.Id);
+        var seedCompany = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = seedPlayer.Id, Name = "MH City Co", Cash = 100_000m };
+        db.Companies.Add(seedCompany);
+        var seedShop = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = seedCompany.Id, CityId = homeCity.Id, Type = Api.Data.Entities.BuildingType.SalesShop, Name = "City Shop", Level = 1 };
+        db.Buildings.Add(seedShop);
+        await db.SaveChangesAsync();
+        var shopId = seedShop.Id.ToString();
+
+        var mhOwner = seedCompany;
+        var mh = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = mhOwner.Id,
+            CityId = otherCity.Id,
+            Type = BuildingType.MediaHouse,
+            Name = "Other City TV",
+            MediaType = Data.Entities.MediaType.Tv,
+            Level = 1
+        };
+        db.Buildings.Add(mh);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId = shopId,
+                    units = new[]
+                    {
+                        new { unitType = "MARKETING", gridX = 0, gridY = 0, budget = 500.0m, mediaHouseBuildingId = mh.Id,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0, "Should return error when media house is in a different city.");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("MEDIA_HOUSE_WRONG_CITY", code);
+    }
+
+    #endregion
+
 }
