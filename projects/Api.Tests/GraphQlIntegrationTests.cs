@@ -11814,6 +11814,239 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(5000m, ledger.GetProperty("netIncome").GetDecimal());
     }
 
+    [Fact]
+    public async Task CompanyLedger_Unauthenticated_ReturnsError()
+    {
+        // Create a company while authenticated so we have a valid companyId
+        var ownerToken = await RegisterAndGetTokenAsync("ledger-unauth@test.com", "LedgerUnauth");
+        var createResult = await ExecuteGraphQlAsync(
+            """mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }""",
+            new { input = new { name = "Unauth Ledger Co" } },
+            ownerToken);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        // Access without auth token
+        var ledgerResult = await ExecuteGraphQlAsync(
+            $"{{ companyLedger(companyId: \"{companyId}\") {{ companyId }} }}");
+
+        Assert.True(ledgerResult.TryGetProperty("errors", out _),
+            "Unauthenticated companyLedger query should return an error.");
+    }
+
+    [Fact]
+    public async Task LedgerDrillDown_Unauthenticated_ReturnsError()
+    {
+        // Create a company while authenticated so we have a valid companyId
+        var ownerToken = await RegisterAndGetTokenAsync("drill-unauth@test.com", "DrillUnauth");
+        var createResult = await ExecuteGraphQlAsync(
+            """mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }""",
+            new { input = new { name = "Unauth Drill Co" } },
+            ownerToken);
+        var companyId = createResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!;
+
+        // Access without auth token
+        var drillResult = await ExecuteGraphQlAsync(
+            $"{{ ledgerDrillDown(companyId: \"{companyId}\", category: \"REVENUE\") {{ id }} }}");
+
+        Assert.True(drillResult.TryGetProperty("errors", out _),
+            "Unauthenticated ledgerDrillDown query should return an error.");
+    }
+
+    [Fact]
+    public async Task LedgerDrillDown_MarketingCost_ReturnsEntries()
+    {
+        var token = await RegisterAndGetTokenAsync("ledger-mktg-drill@test.com", "MktgDrillUser");
+        Guid companyId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-mktg-drill@test.com");
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Mktg Drill Co",
+                Cash = 90_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            db.LedgerEntries.AddRange(
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Marketing, Description = "Marketing spend tick 5",
+                    Amount = -600m, RecordedAtTick = 5, RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Marketing, Description = "Marketing spend tick 10",
+                    Amount = -400m, RecordedAtTick = 10, RecordedAtUtc = DateTime.UtcNow,
+                });
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        var drillResult = await ExecuteGraphQlAsync(
+            $"{{ ledgerDrillDown(companyId: \"{companyId}\", category: \"MARKETING\") {{ id category description amount }} }}",
+            token: token);
+
+        var entries = drillResult.GetProperty("data").GetProperty("ledgerDrillDown").EnumerateArray().ToList();
+        Assert.Equal(2, entries.Count);
+        Assert.All(entries, e => Assert.Equal("MARKETING", e.GetProperty("category").GetString()));
+        Assert.All(entries, e => Assert.True(e.GetProperty("amount").GetDecimal() < 0, "Marketing cost amounts must be negative"));
+    }
+
+    [Fact]
+    public async Task LedgerDrillDown_EnergyCost_ReturnsEntries()
+    {
+        var token = await RegisterAndGetTokenAsync("ledger-energy-drill@test.com", "EnergyDrillUser");
+        Guid companyId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-energy-drill@test.com");
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Energy Drill Co",
+                Cash = 70_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(), CompanyId = company.Id,
+                Category = LedgerCategory.EnergyCost, Description = "Power grid cost",
+                Amount = -250m, RecordedAtTick = 7, RecordedAtUtc = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        var drillResult = await ExecuteGraphQlAsync(
+            $"{{ ledgerDrillDown(companyId: \"{companyId}\", category: \"ENERGY_COST\") {{ id category description amount }} }}",
+            token: token);
+
+        var entries = drillResult.GetProperty("data").GetProperty("ledgerDrillDown").EnumerateArray().ToList();
+        Assert.Single(entries);
+        Assert.Equal("ENERGY_COST", entries[0].GetProperty("category").GetString());
+        Assert.Equal(-250m, entries[0].GetProperty("amount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task LedgerDrillDown_UnitUpgrade_ReturnsEntries()
+    {
+        var token = await RegisterAndGetTokenAsync("ledger-upgrade-drill@test.com", "UpgradeDrillUser");
+        Guid companyId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-upgrade-drill@test.com");
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Upgrade Drill Co",
+                Cash = 120_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(), CompanyId = company.Id,
+                Category = LedgerCategory.UnitUpgrade, Description = "MANUFACTURING unit upgrade to level 2",
+                Amount = -3000m, RecordedAtTick = 15, RecordedAtUtc = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        var drillResult = await ExecuteGraphQlAsync(
+            $"{{ ledgerDrillDown(companyId: \"{companyId}\", category: \"UNIT_UPGRADE\") {{ id category description amount }} }}",
+            token: token);
+
+        var entries = drillResult.GetProperty("data").GetProperty("ledgerDrillDown").EnumerateArray().ToList();
+        Assert.Single(entries);
+        Assert.Equal("UNIT_UPGRADE", entries[0].GetProperty("category").GetString());
+        Assert.Equal(-3000m, entries[0].GetProperty("amount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task CompanyLedger_BuildingSummaries_ShowsMultipleBuildings()
+    {
+        var token = await RegisterAndGetTokenAsync("ledger-multi-bld@test.com", "MultiBldUser");
+        Guid companyId;
+        Guid building1Id;
+        Guid building2Id;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-multi-bld@test.com");
+            var city = await db.Cities.FirstAsync();
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Multi Building Corp",
+                Cash = 500_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+
+            building1Id = Guid.NewGuid();
+            building2Id = Guid.NewGuid();
+            db.Buildings.AddRange(
+                new Building
+                {
+                    Id = building1Id, CompanyId = company.Id, CityId = city.Id,
+                    Type = BuildingType.Factory, Name = "Factory Alpha", Level = 1,
+                },
+                new Building
+                {
+                    Id = building2Id, CompanyId = company.Id, CityId = city.Id,
+                    Type = BuildingType.SalesShop, Name = "Shop Beta", Level = 1,
+                });
+
+            db.LedgerEntries.AddRange(
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id, BuildingId = building1Id,
+                    Category = LedgerCategory.Revenue, Description = "Factory sales",
+                    Amount = 5000m, RecordedAtTick = 10, RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id, BuildingId = building2Id,
+                    Category = LedgerCategory.Revenue, Description = "Shop sales",
+                    Amount = 3000m, RecordedAtTick = 10, RecordedAtUtc = DateTime.UtcNow,
+                });
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        var ledgerResult = await ExecuteGraphQlAsync(
+            $"{{ companyLedger(companyId: \"{companyId}\") {{ totalRevenue buildingSummaries {{ buildingId buildingName buildingType revenue costs }} }} }}",
+            token: token);
+
+        var ledger = ledgerResult.GetProperty("data").GetProperty("companyLedger");
+        Assert.Equal(8000m, ledger.GetProperty("totalRevenue").GetDecimal());
+
+        var summaries = ledger.GetProperty("buildingSummaries").EnumerateArray().ToList();
+        Assert.Equal(2, summaries.Count);
+        var factory = summaries.First(s => s.GetProperty("buildingId").GetString() == building1Id.ToString());
+        var shop = summaries.First(s => s.GetProperty("buildingId").GetString() == building2Id.ToString());
+        Assert.Equal("Factory Alpha", factory.GetProperty("buildingName").GetString());
+        Assert.Equal(5000m, factory.GetProperty("revenue").GetDecimal());
+        Assert.Equal("Shop Beta", shop.GetProperty("buildingName").GetString());
+        Assert.Equal(3000m, shop.GetProperty("revenue").GetDecimal());
+    }
+
     #endregion
 
     #region R&D Building Configuration

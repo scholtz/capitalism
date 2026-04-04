@@ -650,4 +650,212 @@ test.describe('Company Ledger', () => {
     // Should show the year-2000-specific entry
     await expect(page.getByText('Wooden Table')).toBeVisible()
   })
+
+  test('balance sheet property asset drill-down shows purchase entries', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, {
+      players: [player],
+      cities: makeDefaultCities(),
+      resourceTypes: makeDefaultResources(),
+      productTypes: makeDefaultProducts(),
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    const buildingId = 'building-lot-asset'
+    const company = {
+      id: 'company-asset-drill',
+      playerId: player.id,
+      name: 'Asset Drill Corp',
+      cash: 200000,
+      foundedAtUtc: new Date().toISOString(),
+      buildings: [
+        {
+          id: buildingId,
+          companyId: 'company-asset-drill',
+          cityId: 'bratislava',
+          type: 'FACTORY',
+          name: 'Main Factory',
+          latitude: 48.1,
+          longitude: 17.1,
+          level: 1,
+          powerConsumption: 0,
+          isForSale: false,
+          builtAtUtc: new Date().toISOString(),
+          units: [],
+          pendingConfiguration: null,
+        },
+      ],
+    }
+    player.companies = [company]
+    player.onboardingCompletedAtUtc = new Date().toISOString()
+
+    const ledger: MockLedgerSummary = {
+      companyId: company.id,
+      companyName: 'Asset Drill Corp',
+      currentCash: 200000,
+      totalRevenue: 0,
+      totalPurchasingCosts: 0,
+      totalLaborCosts: 0,
+      totalEnergyCosts: 0,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 0,
+      totalOtherCosts: 0,
+      netIncome: 0,
+      buildingValue: 150000,
+      inventoryValue: 0,
+      propertyValue: 150000,
+      propertyAppreciation: 0,
+      totalAssets: 350000,
+      totalPropertyPurchases: 150000,
+      cashFromOperations: 0,
+      cashFromInvestments: -150000,
+      firstRecordedTick: 2,
+      lastRecordedTick: 5,
+      buildingSummaries: [
+        { buildingId, buildingName: 'Main Factory', buildingType: 'FACTORY', revenue: 0, costs: 0 },
+      ],
+    }
+    state.ledgerData[company.id] = ledger
+
+    const entries: MockLedgerEntry[] = [
+      {
+        id: 'entry-prop-1',
+        category: 'PROPERTY_PURCHASE',
+        description: 'Lot purchase - Industrial District',
+        amount: -150000,
+        recordedAtTick: 2,
+        buildingId,
+        buildingName: 'Main Factory',
+        buildingUnitId: null,
+        productTypeId: null,
+        productName: null,
+        resourceTypeId: null,
+        resourceName: null,
+      },
+    ]
+    state.drillDownData[`${company.id}:PROPERTY_PURCHASE`] = entries
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto(`/ledger/${company.id}`)
+
+    // Verify balance sheet is visible
+    await expect(page.getByRole('heading', { name: 'Balance Sheet' })).toBeVisible()
+
+    // Click the Property Value drill-down button
+    const propertyRow = page.locator('.statement-row').filter({ hasText: 'Land Value' }).first()
+    await propertyRow.locator('.drill-btn').click()
+
+    // Should show purchase entry description
+    await expect(page.getByText('Lot purchase - Industrial District')).toBeVisible()
+
+    // Should show the building name as a link
+    await expect(page.getByRole('link', { name: 'Main Factory' })).toBeVisible()
+  })
+
+  test('buildings performance section shows building list with manage links', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, {
+      players: [player],
+      cities: makeDefaultCities(),
+      resourceTypes: makeDefaultResources(),
+      productTypes: makeDefaultProducts(),
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    const buildingId1 = 'bld-perf-1'
+    const buildingId2 = 'bld-perf-2'
+    const company = {
+      id: 'company-perf-test',
+      playerId: player.id,
+      name: 'Perf Corp',
+      cash: 500000,
+      foundedAtUtc: new Date().toISOString(),
+      buildings: [
+        {
+          id: buildingId1,
+          companyId: 'company-perf-test',
+          cityId: 'bratislava',
+          type: 'FACTORY',
+          name: 'Alpha Factory',
+          latitude: 48.1,
+          longitude: 17.1,
+          level: 1,
+          powerConsumption: 0,
+          isForSale: false,
+          builtAtUtc: new Date().toISOString(),
+          units: [],
+          pendingConfiguration: null,
+        },
+        {
+          id: buildingId2,
+          companyId: 'company-perf-test',
+          cityId: 'bratislava',
+          type: 'SALES_SHOP',
+          name: 'Beta Shop',
+          latitude: 48.15,
+          longitude: 17.15,
+          level: 1,
+          powerConsumption: 0,
+          isForSale: false,
+          builtAtUtc: new Date().toISOString(),
+          units: [],
+          pendingConfiguration: null,
+        },
+      ],
+    }
+    player.companies = [company]
+    player.onboardingCompletedAtUtc = new Date().toISOString()
+
+    state.ledgerData[company.id] = {
+      companyId: company.id,
+      companyName: 'Perf Corp',
+      currentCash: 500000,
+      totalRevenue: 12000,
+      totalPurchasingCosts: 4000,
+      totalLaborCosts: 800,
+      totalEnergyCosts: 200,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 0,
+      totalOtherCosts: 0,
+      netIncome: 7000,
+      buildingValue: 200000,
+      inventoryValue: 0,
+      propertyValue: 150000,
+      propertyAppreciation: 0,
+      totalAssets: 700000,
+      totalPropertyPurchases: 200000,
+      cashFromOperations: 7000,
+      cashFromInvestments: -200000,
+      firstRecordedTick: 1,
+      lastRecordedTick: 50,
+      buildingSummaries: [
+        { buildingId: buildingId1, buildingName: 'Alpha Factory', buildingType: 'FACTORY', revenue: 8000, costs: 3000 },
+        { buildingId: buildingId2, buildingName: 'Beta Shop', buildingType: 'SALES_SHOP', revenue: 4000, costs: 2000 },
+      ],
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto(`/ledger/${company.id}`)
+
+    // Buildings Performance section should be visible
+    await expect(page.getByRole('heading', { name: 'Buildings Performance' })).toBeVisible()
+
+    // Both buildings should be listed
+    await expect(page.getByText('Alpha Factory')).toBeVisible()
+    await expect(page.getByText('Beta Shop')).toBeVisible()
+
+    // Manage links should navigate to building detail
+    const factoryManageLink = page.locator('tr').filter({ hasText: 'Alpha Factory' }).getByRole('link')
+    await expect(factoryManageLink).toHaveAttribute('href', `/building/${buildingId1}`)
+  })
 })
