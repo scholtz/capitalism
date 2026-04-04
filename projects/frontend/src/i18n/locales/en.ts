@@ -730,6 +730,7 @@ export default {
       FULL: 'Full',
       UNCONFIGURED: 'Not configured',
       loadFailed: 'Could not load unit status.',
+      idleTicks: '{count}t idle',
     },
     recentActivity: {
       title: 'Recent Activity',

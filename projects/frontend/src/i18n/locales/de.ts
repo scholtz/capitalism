@@ -733,6 +733,7 @@ export default {
       FULL: 'Voll',
       UNCONFIGURED: 'Nicht konfiguriert',
       loadFailed: 'Einheitenstatus konnte nicht geladen werden.',
+      idleTicks: '{count}t inaktiv',
     },
     recentActivity: {
       title: 'Letzte Aktivität',

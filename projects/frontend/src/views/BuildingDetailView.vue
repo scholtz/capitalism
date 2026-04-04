@@ -1684,6 +1684,12 @@ function getUnitOperationalStatus(unit: GridUnit | undefined): BuildingUnitOpera
   return unitOperationalStatuses.value.find((s) => s.buildingUnitId === unit.id) ?? null
 }
 
+const selectedActiveUnitOperationalStatus = computed<BuildingUnitOperationalStatus | null>(() => {
+  if (!selectedCell.value) return null
+  const unit = getUnitAtFrom(activeUnits.value, selectedCell.value.x, selectedCell.value.y)
+  return getUnitOperationalStatus(unit)
+})
+
 function formatCurrency(value: number | null | undefined): string {
   const amount = value ?? 0
   const formatter = new Intl.NumberFormat(locale.value, {
@@ -3736,28 +3742,28 @@ watch(
 
               <!-- Operational status badge for active units -->
               <div
-                v-if="getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))"
+                v-if="selectedActiveUnitOperationalStatus"
                 class="unit-insight-card operational-status-card"
-                :data-status="getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.status"
+                :data-status="selectedActiveUnitOperationalStatus.status"
                 aria-label="Unit operational status"
               >
                 <h5>{{ t('buildingDetail.operationalStatus.title') }}</h5>
                 <div class="operational-status-row">
                   <span
                     class="status-badge"
-                    :class="`status-${getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.status.toLowerCase()}`"
+                    :class="`status-${selectedActiveUnitOperationalStatus.status.toLowerCase()}`"
                   >
-                    {{ t(`buildingDetail.operationalStatus.${getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.status}`) }}
+                    {{ t(`buildingDetail.operationalStatus.${selectedActiveUnitOperationalStatus.status}`) }}
                   </span>
-                  <span v-if="getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.idleTicks > 0" class="idle-ticks-label">
-                    {{ getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.idleTicks }}t idle
+                  <span v-if="selectedActiveUnitOperationalStatus.idleTicks > 0" class="idle-ticks-label">
+                    {{ t('buildingDetail.operationalStatus.idleTicks', { count: selectedActiveUnitOperationalStatus.idleTicks }) }}
                   </span>
                 </div>
                 <p
-                  v-if="getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.blockedReason"
+                  v-if="selectedActiveUnitOperationalStatus.blockedReason"
                   class="blocked-reason-text"
                 >
-                  {{ getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.blockedReason }}
+                  {{ selectedActiveUnitOperationalStatus.blockedReason }}
                 </p>
               </div>
 

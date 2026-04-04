@@ -729,6 +729,7 @@ export default {
       FULL: 'Plná',
       UNCONFIGURED: 'Nenakonfigurovaná',
       loadFailed: 'Stav jednotky sa nepodarilo načítať.',
+      idleTicks: '{count}t nečinná',
     },
     recentActivity: {
       title: 'Nedávna aktivita',
