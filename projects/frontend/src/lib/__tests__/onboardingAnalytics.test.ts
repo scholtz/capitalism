@@ -94,4 +94,58 @@ describe('computeSimulatedProfit', () => {
     expect(result.cost).toBe(50)
     expect(result.profit).toBe(-40)
   })
+
+  // Industry-specific tests using actual seed data values:
+  // These document the expected simulated profit for each starter industry
+  // when the backend provides exact resource costs in the recipe.
+  // Seed values: Wood=$10/t, Grain=$5/t, Chemical Minerals=$30/t
+
+  it('Furniture (Wooden Chair): basePrice=45, outputQty=20, woodCost=10 → profit=890', () => {
+    // Wooden Chair: 20 chairs @ $45 each = $900 revenue, 1 wood @ $10 = $10 cost
+    const result = computeSimulatedProfit(45, 20, 10)
+    expect(result.revenue).toBe(900)
+    expect(result.cost).toBe(10)
+    expect(result.profit).toBe(890)
+  })
+
+  it('Food Processing (Bread): basePrice=3, outputQty=12, grainCost=5 → profit=31', () => {
+    // Bread: 12 loaves @ $3 each = $36 revenue, 1 grain @ $5 = $5 cost
+    const result = computeSimulatedProfit(3, 12, 5)
+    expect(result.revenue).toBe(36)
+    expect(result.cost).toBe(5)
+    expect(result.profit).toBe(31)
+  })
+
+  it('Healthcare (Basic Medicine): basePrice=50, outputQty=8, chemMineralsCost=30 → profit=370', () => {
+    // Basic Medicine: 8 bottles @ $50 each = $400 revenue, 1 chemical minerals @ $30 = $30 cost
+    const result = computeSimulatedProfit(50, 8, 30)
+    expect(result.revenue).toBe(400)
+    expect(result.cost).toBe(30)
+    expect(result.profit).toBe(370)
+  })
+
+  it('Furniture fallback (no recipeCost): uses 40% estimate on $900 revenue → profit=540', () => {
+    // When resource basePrice is not available from the API, 40% of revenue is used as cost estimate.
+    // This matches the guest-mode mock behavior where resourceType.basePrice is undefined.
+    const result = computeSimulatedProfit(45, 20)
+    expect(result.revenue).toBe(900)
+    expect(result.cost).toBe(360) // round(900 * 0.4)
+    expect(result.profit).toBe(540)
+  })
+
+  it('Food Processing fallback (no recipeCost): uses 40% estimate on $36 revenue → profit=22', () => {
+    // When grain basePrice is not available, cost estimate = 40% of $36 = $14 (rounded).
+    const result = computeSimulatedProfit(3, 12)
+    expect(result.revenue).toBe(36)
+    expect(result.cost).toBe(Math.round(36 * 0.4)) // 14
+    expect(result.profit).toBe(22)
+  })
+
+  it('Healthcare fallback (no recipeCost): uses 40% estimate on $400 revenue → profit=240', () => {
+    // When chemical minerals basePrice is not available, cost estimate = 40% of $400 = $160.
+    const result = computeSimulatedProfit(50, 8)
+    expect(result.revenue).toBe(400)
+    expect(result.cost).toBe(160) // round(400 * 0.4)
+    expect(result.profit).toBe(240)
+  })
 })

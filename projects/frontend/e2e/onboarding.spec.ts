@@ -1280,6 +1280,89 @@ test.describe('Full onboarding journey', () => {
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
   })
+
+  test('guest → home page → Food Processing → complete wizard → register → empire launched', async ({
+    page,
+  }) => {
+    // AC2 + AC9: Food Processing (Bread) industry must be completable end-to-end from the home page CTA.
+    // This test mirrors the Furniture home-page test to ensure all starter industries
+    // work through the same acquisition funnel entry point.
+    setupMockApi(page)
+
+    await page.goto('/')
+    await page.getByRole('link', { name: 'Get Started' }).click()
+    await page.waitForURL(/\/onboarding/)
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+
+    // Select Food Processing and complete the wizard
+    await page.locator('.industry-card', { hasText: 'Food Processing' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Bakery Guest Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+    await page.locator('.product-card', { hasText: 'Bread' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress screen
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Register to save progress
+    await page.locator('#guestEmail').fill('food-home-guest@test.com')
+    await page.locator('#guestDisplayName').fill('Bakery Founder')
+    await page.locator('#guestPassword').fill('BreadPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Migration completes → authenticated completion screen
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
+  })
+
+  test('guest → home page → Healthcare → complete wizard → register → empire launched', async ({
+    page,
+  }) => {
+    // AC2 + AC9: Healthcare (Basic Medicine) industry must be completable end-to-end from the home page CTA.
+    // This test completes the 3-industry matrix for the home-page acquisition funnel.
+    setupMockApi(page)
+
+    await page.goto('/')
+    await page.getByRole('link', { name: 'Get Started' }).click()
+    await page.waitForURL(/\/onboarding/)
+    await expect(page.getByRole('heading', { name: 'Choose Your Industry' })).toBeVisible()
+
+    // Select Healthcare and complete the wizard
+    await page.locator('.industry-card', { hasText: 'Healthcare' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Pharma Guest Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+    await page.locator('.product-card', { hasText: 'Basic Medicine' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress screen
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Register to save progress
+    await page.locator('#guestEmail').fill('pharma-home-guest@test.com')
+    await page.locator('#guestDisplayName').fill('Pharma Founder')
+    await page.locator('#guestPassword').fill('PharmaPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Migration completes → authenticated completion screen
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Go to Dashboard' })).toBeVisible()
+  })
 })
 
 test.describe('Onboarding resume and progress persistence', () => {
