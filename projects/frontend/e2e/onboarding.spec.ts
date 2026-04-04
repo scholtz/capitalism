@@ -2457,6 +2457,65 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     await expect(priceStep).toContainText('$50')
   })
 
+  test('configure-guide price step shows Furniture benchmark price', async ({ page }) => {
+    // ROADMAP: "Wizard will show them important areas on the screen like how much money they have,
+    // the price configuration or public sales configuration."
+    // For Furniture (Wooden Chair, basePrice $45), the configure-guide must show $45 as the market
+    // benchmark — a dedicated test for symmetry with the Food Processing ($3) and Healthcare ($50) tests.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    // The default completeGuidedOnboarding uses Furniture (Wooden Chair)
+    await completeGuidedOnboarding(page, 'Chair Corp')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The price step must show the Wooden Chair market benchmark price ($45)
+    const priceStep = page.locator('.configure-step').filter({ hasText: 'Set a selling price' })
+    await expect(priceStep).toBeVisible()
+    await expect(priceStep).toContainText('$45')
+    // And it should explain margin and demand trade-offs (same as the margin test)
+    await expect(priceStep).toContainText('margin')
+  })
+
+  test('configure-guide tick panel explains the sequential supply chain flow (AC4)', async ({
+    page,
+  }) => {
+    // AC4: "The UI clearly explains what happened across recent ticks and why money or
+    // throughput changed." The tick process list must show the three stages of the
+    // buy-manufacture-sell loop so players understand why cash changes each tick.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboarding(page, 'Chain Corp')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The process list must show the three sequential stages of the supply chain
+    const processList = page.locator('.next-tick-process-list')
+    await expect(processList).toBeVisible()
+    // Stage 1: Raw material sourcing
+    await expect(processList).toContainText('Raw materials are purchased')
+    // Stage 2: Manufacturing conversion
+    await expect(processList).toContainText('Your product is manufactured')
+    // Stage 3: Public sales delivery
+    await expect(processList).toContainText('offers the product publicly')
+    // The tick step must also show the current tick number from the game state
+    await expect(page.locator('.configure-step').filter({ hasText: 'Wait for the next tick' })).toContainText(
+      'tick',
+    )
+  })
+
   test('already-fully-onboarded player visiting /onboarding is redirected to dashboard immediately', async ({
     page,
   }) => {

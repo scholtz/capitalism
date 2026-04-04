@@ -5479,6 +5479,154 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task FinishOnboarding_WithNonExistentProductId_ReturnsInvalidProductError()
+    {
+        // Validates that FinishOnboarding rejects a completely non-existent product UUID
+        // rather than producing a null-reference error or bypassing validation.
+        var token = await RegisterAndGetTokenAsync($"finish-noexist-product-{Guid.NewGuid()}@test.com", "NoExistProduct");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Phantom Product Co");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
+        var phantomProductId = Guid.NewGuid();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { productTypeId = phantomProductId, shopLotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_PRODUCT", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_WithNonStarterProduct_ReturnsInvalidProductError()
+    {
+        // Validates that products seeded in the game (e.g. wooden-table) but NOT designated
+        // as the starter product for that industry (starter = wooden-chair) are rejected.
+        // This ensures the IsStarterOnboardingProduct guard in Mutation.cs is exercised.
+        var token = await RegisterAndGetTokenAsync($"finish-nonstarter-product-{Guid.NewGuid()}@test.com", "NonStarterProduct");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Fancy Furniture Co");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
+
+        // wooden-table is a valid FURNITURE product but is NOT the starter product (wooden-chair is).
+        var nonStarterProductId = await GetStarterProductIdAsync("FURNITURE", "wooden-table");
+
+        var result = await FinishOnboardingAsync(token, nonStarterProductId, shopLotId);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_PRODUCT", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StartOnboardingCompany_WithNonExistentLot_ReturnsError()
+    {
+        // Validates that StartOnboardingCompany rejects a factory lot UUID that doesn't exist
+        // in the database, rather than throwing an unhandled exception.
+        var token = await RegisterAndGetTokenAsync($"start-noexist-lot-{Guid.NewGuid()}@test.com", "PhantomLot");
+        var cityId = await GetCityIdByNameAsync();
+        var phantomLotId = Guid.NewGuid();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Phantom Lot Corp", factoryLotId = phantomLotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_FoodProcessing_ReturnsEligibleStartupPackOffer()
+    {
+        // Verifies that the startup-pack offer is activated for FOOD_PROCESSING industry
+        // via the staged FinishOnboarding mutation — not only via the legacy CompleteOnboarding.
+        // This is a critical monetization path: the offer must appear for every starter industry.
+        var token = await RegisterAndGetTokenAsync($"startup-pack-food-{Guid.NewGuid()}@test.com", "FoodStartupPack");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m);
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "Bread Empire", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) {
+                company { id }
+                startupPackOffer { status companyCashGrant proDurationDays expiresAtUtc }
+              }
+            }
+            """,
+            new { input = new { productTypeId = productId, shopLotId } },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "FinishOnboarding failed for FOOD_PROCESSING startup pack test");
+
+        var offer = result.GetProperty("data").GetProperty("finishOnboarding").GetProperty("startupPackOffer");
+        Assert.Equal("ELIGIBLE", offer.GetProperty("status").GetString());
+        Assert.Equal(StartupPackService.CompanyCashGrant, offer.GetProperty("companyCashGrant").GetDecimal());
+        Assert.Equal(StartupPackService.ProDurationDays, offer.GetProperty("proDurationDays").GetInt32());
+        Assert.True(DateTime.TryParse(offer.GetProperty("expiresAtUtc").GetString(), out _));
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_Healthcare_ReturnsEligibleStartupPackOffer()
+    {
+        // Verifies that the startup-pack offer is activated for HEALTHCARE industry
+        // via the staged FinishOnboarding mutation.
+        var token = await RegisterAndGetTokenAsync($"startup-pack-health-{Guid.NewGuid()}@test.com", "HealthStartupPack");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m);
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "Medicine Empire", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) {
+                company { id }
+                startupPackOffer { status companyCashGrant proDurationDays expiresAtUtc }
+              }
+            }
+            """,
+            new { input = new { productTypeId = productId, shopLotId } },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "FinishOnboarding failed for HEALTHCARE startup pack test");
+
+        var offer = result.GetProperty("data").GetProperty("finishOnboarding").GetProperty("startupPackOffer");
+        Assert.Equal("ELIGIBLE", offer.GetProperty("status").GetString());
+        Assert.Equal(StartupPackService.CompanyCashGrant, offer.GetProperty("companyCashGrant").GetDecimal());
+        Assert.Equal(StartupPackService.ProDurationDays, offer.GetProperty("proDurationDays").GetInt32());
+        Assert.True(DateTime.TryParse(offer.GetProperty("expiresAtUtc").GetString(), out _));
+    }
+
+    [Fact]
     public async Task FullOnboardingCycle_AllThreeIndustries_ProducesValidState()
     {
         // Verify each starter industry produces a valid completed onboarding state
