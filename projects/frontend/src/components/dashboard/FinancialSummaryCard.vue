@@ -19,13 +19,15 @@ const totalCosts = computed(() => {
     l.totalLaborCosts +
     l.totalEnergyCosts +
     l.totalMarketingCosts +
-    l.totalOtherCosts
+    l.totalOtherCosts +
+    l.totalTaxPaid
   )
 })
 
+/** Use the backend-authoritative netIncome (includes taxes) as the single source of truth. */
 const netProfit = computed(() => {
   if (!props.ledger) return 0
-  return props.ledger.totalRevenue - totalCosts.value
+  return props.ledger.netIncome
 })
 
 function formatAmount(value: number): string {

@@ -13037,6 +13037,53 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.True(gameState.GetProperty("currentGameYear").GetInt32() > 0, "currentGameYear must be positive.");
     }
 
+    /// <summary>
+    /// companyLedger returns an authoritative netIncome that includes tax.
+    /// The dashboard must use netIncome, not revenue - operating costs.
+    /// After ticks + a tax cycle, netIncome reflects the true after-tax result.
+    /// </summary>
+    [Fact]
+    public async Task StarterDashboard_CompanyLedger_NetIncome_IsAuthoritative_IncludesTax()
+    {
+        var token = await RegisterAndGetTokenAsync(email: $"ledger-tax-net-{Guid.NewGuid():N}@test.com");
+        var (companyId, _, cityId, _) = await StartOnboardingCompanyAsync(token, "NetIncome Tax Co");
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        await FinishOnboardingAsync(token, productId, shopLotId);
+
+        // Process enough ticks to generate sales and let netIncome be calculated
+        await ProcessTicksAsync(8);
+
+        var result = await ExecuteGraphQlAsync(
+            $@"{{ companyLedger(companyId: ""{companyId}"") {{
+                totalRevenue totalPurchasingCosts totalLaborCosts totalEnergyCosts
+                totalTaxPaid totalOtherCosts netIncome
+            }} }}",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var ledger = result.GetProperty("data").GetProperty("companyLedger");
+
+        var totalRevenue = ledger.GetProperty("totalRevenue").GetDecimal();
+        var totalPurchasingCosts = ledger.GetProperty("totalPurchasingCosts").GetDecimal();
+        var totalLaborCosts = ledger.GetProperty("totalLaborCosts").GetDecimal();
+        var totalEnergyCosts = ledger.GetProperty("totalEnergyCosts").GetDecimal();
+        var totalTaxPaid = ledger.GetProperty("totalTaxPaid").GetDecimal();
+        var totalOtherCosts = ledger.GetProperty("totalOtherCosts").GetDecimal();
+        var netIncome = ledger.GetProperty("netIncome").GetDecimal();
+
+        // netIncome = revenue - all costs including tax (backend formula)
+        var expectedNetIncome = totalRevenue - totalPurchasingCosts - totalLaborCosts
+                                - totalEnergyCosts - totalTaxPaid - totalOtherCosts;
+        Assert.Equal(expectedNetIncome, netIncome);
+
+        // Confirm the backend netIncome field exists and is a valid decimal (positive or negative)
+        // The dashboard MUST use this value, not a frontend-derived revenue - operating_costs estimate
+        Assert.True(
+            netIncome <= totalRevenue,
+            "netIncome must be ≤ totalRevenue since at minimum purchasing/labor/energy costs are subtracted.");
+    }
+
     #endregion
 
 }

@@ -1274,6 +1274,118 @@ test.describe('Dashboard — starter operations (supply chain, financials, guida
     await expect(page.locator('.starter-guidance')).toBeVisible()
     await expect(page.locator('.supply-chain-panel').first()).toBeVisible()
   })
+
+  test('guidance uses backend netIncome (after tax) not frontend-derived profit — shows unprofitable when tax makes netIncome negative', async ({
+    page,
+  }) => {
+    // Scenario: revenue=5000, operating costs=3000 → pre-tax "profit" would be +2000
+    // But totalTaxPaid=2500 → netIncome = -500 (loss after tax)
+    // The dashboard MUST show "Review your pricing", NOT "Business is profitable"
+    const { factory, shop } = makeStarterCompanyWithBuildings()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-tax-loss',
+          playerId: 'player-1',
+          name: 'Tax Loss Co',
+          cash: 290000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [factory, shop],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.ledgerData['comp-tax-loss'] = {
+      companyId: 'comp-tax-loss',
+      companyName: 'Tax Loss Co',
+      currentCash: 290000,
+      totalRevenue: 5000,
+      totalPurchasingCosts: 2000,
+      totalLaborCosts: 500,
+      totalEnergyCosts: 500,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 2500, // large tax makes the company a net loser
+      totalOtherCosts: 0,
+      netIncome: -500, // backend authoritative: loss after tax
+      propertyValue: 0,
+      propertyAppreciation: 0,
+      buildingValue: 200000,
+      inventoryValue: 0,
+      totalAssets: 490000,
+      totalPropertyPurchases: 200000,
+      cashFromOperations: -500,
+      cashFromInvestments: -200000,
+      firstRecordedTick: 1,
+      lastRecordedTick: 10,
+      buildingSummaries: [],
+    }
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // Should show "Review your pricing" (netIncome is negative even though revenue > operating costs)
+    await expect(page.locator('.starter-guidance')).toContainText('Review your pricing')
+    // Must NOT show "Business is profitable"
+    await expect(page.locator('.starter-guidance')).not.toContainText('Business is profitable')
+    // Financial card should display the backend net income as negative
+    await expect(page.locator('.financial-summary-card')).toContainText('-$500')
+  })
+
+  test('guidance shows profitable when netIncome is positive even if pre-tax margins are thin', async ({
+    page,
+  }) => {
+    // Scenario: revenue=1000, costs=900, tax=0 → netIncome=100 (positive)
+    // Guidance MUST show "Business is profitable" (netIncome > 0)
+    const { factory, shop } = makeStarterCompanyWithBuildings()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-thin-profit',
+          playerId: 'player-1',
+          name: 'Thin Margin Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [factory, shop],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.ledgerData['comp-thin-profit'] = {
+      companyId: 'comp-thin-profit',
+      companyName: 'Thin Margin Co',
+      currentCash: 300000,
+      totalRevenue: 1000,
+      totalPurchasingCosts: 700,
+      totalLaborCosts: 100,
+      totalEnergyCosts: 100,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 0,
+      totalOtherCosts: 0,
+      netIncome: 100, // positive after all costs
+      propertyValue: 0,
+      propertyAppreciation: 0,
+      buildingValue: 200000,
+      inventoryValue: 0,
+      totalAssets: 500000,
+      totalPropertyPurchases: 200000,
+      cashFromOperations: 100,
+      cashFromInvestments: -200000,
+      firstRecordedTick: 1,
+      lastRecordedTick: 5,
+      buildingSummaries: [],
+    }
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.locator('.starter-guidance')).toContainText('Business is profitable')
+  })
 })
 
 test.describe('Dashboard — unit operational status in supply chain', () => {

@@ -414,18 +414,6 @@ function formatCurrency(value: number): string {
   return value.toLocaleString(locale.value)
 }
 
-/** Sum all operating cost categories from a ledger summary. */
-function getLedgerTotalCosts(ledger: CompanyLedgerSummary | null | undefined): number {
-  if (!ledger) return 0
-  return (
-    ledger.totalPurchasingCosts +
-    ledger.totalLaborCosts +
-    ledger.totalEnergyCosts +
-    ledger.totalMarketingCosts +
-    ledger.totalOtherCosts
-  )
-}
-
 function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat(locale.value, {
     dateStyle: 'medium',
@@ -618,7 +606,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
             <StarterGuidance
               :company="company"
               :revenue="companyLedgers[company.id]?.totalRevenue ?? 0"
-              :costs="getLedgerTotalCosts(companyLedgers[company.id])"
+              :net-income="companyLedgers[company.id]?.netIncome ?? 0"
             />
           </div>
 

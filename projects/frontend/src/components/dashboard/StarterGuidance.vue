@@ -6,7 +6,8 @@ import type { Company } from '@/types'
 interface Props {
   company: Company
   revenue: number
-  costs: number
+  /** Backend-authoritative net income (after tax). Used for profitability decisions. */
+  netIncome: number
 }
 
 const props = defineProps<Props>()
@@ -17,7 +18,8 @@ const hasFactory = computed(() => props.company.buildings.some((b) => b.type ===
 const hasShop = computed(() => props.company.buildings.some((b) => b.type === 'SALES_SHOP'))
 const isStarter = computed(() => hasFactory.value && hasShop.value && props.company.buildings.length <= 2)
 const hasRevenue = computed(() => props.revenue > 0)
-const isProfitable = computed(() => props.revenue > props.costs)
+/** Profitability is determined by the backend's netIncome (includes taxes, not a frontend estimate). */
+const isProfitable = computed(() => props.netIncome > 0)
 
 interface GuidanceItem {
   icon: string
