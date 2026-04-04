@@ -5856,8 +5856,10 @@ test.describe('R&D Research Progress Panel', () => {
 
     // Brand scope selector is shown for BRAND_QUALITY unit
     await expect(page.getByText('Brand Scope')).toBeVisible()
-    // Help text explaining scopes is visible
-    await expect(page.getByText(/branding efficiency/i)).toBeVisible()
+    // Help text explaining the three scope options is visible (from i18n key researchBrandHelp)
+    await expect(
+      page.getByText(/company-wide branding efficiency.*product category.*single product line/i),
+    ).toBeVisible()
   })
 })
 

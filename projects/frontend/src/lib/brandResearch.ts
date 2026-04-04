@@ -1,6 +1,8 @@
 /**
  * Pure helper functions for Marketing Brand Quality research display.
  * These functions have no Vue or i18n dependencies and can be tested in isolation.
+ * Note: all string return values are hardcoded English. Callers that need
+ * localised output should map the result through the app's t() translation helper.
  */
 
 // ---------------------------------------------------------------------------
