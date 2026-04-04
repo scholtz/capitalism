@@ -5,7 +5,6 @@ import type { BuildingUnit } from '@/types'
 
 interface Props {
   units: BuildingUnit[]
-  buildingType: string
 }
 
 const props = defineProps<Props>()

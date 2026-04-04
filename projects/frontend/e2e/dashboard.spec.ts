@@ -1163,8 +1163,10 @@ test.describe('Dashboard — starter operations (supply chain, financials, guida
     await authenticateViaLocalStorage(page, `token-${player.id}`)
     await page.goto('/dashboard')
 
-    // City name should be visible in the company meta section
+    // City name and label should be visible in the company meta section
     await expect(page.locator('.company-card').first()).toContainText('Bratislava')
+    await expect(page.locator('.city-name')).toContainText('📍')
+    await expect(page.locator('.meta-label', { hasText: 'City' })).toBeVisible()
   })
 
   test('shows all three starter industries supply chains correctly', async ({ page }) => {

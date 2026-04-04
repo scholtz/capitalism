@@ -163,7 +163,7 @@ useTickRefresh(async () => {
   startTickCountdown()
   // Refresh ledger data on tick but keep loading state quiet (non-critical).
   const companyIds = companies.value.map((c) => c.id)
-  await loadLedgers(companyIds)
+  await loadLedgers(companyIds, true)
 })
 
 onUnmounted(stopTickCountdown)
@@ -225,9 +225,9 @@ async function loadCityNames() {
   }
 }
 
-async function loadLedgers(companyIds: string[]) {
+async function loadLedgers(companyIds: string[], isRefresh = false) {
   if (companyIds.length === 0) return
-  ledgerLoading.value = true
+  if (!isRefresh) ledgerLoading.value = true
   try {
     const results = await Promise.allSettled(
       companyIds.map((companyId) =>
@@ -252,7 +252,7 @@ async function loadLedgers(companyIds: string[]) {
   } catch {
     // best-effort — ledger data is non-critical
   } finally {
-    ledgerLoading.value = false
+    if (!isRefresh) ledgerLoading.value = false
   }
 }
 
@@ -381,6 +381,18 @@ async function claimStartupPackOffer() {
 
 function formatCurrency(value: number): string {
   return value.toLocaleString(locale.value)
+}
+
+/** Sum all operating cost categories from a ledger summary. */
+function getLedgerTotalCosts(ledger: CompanyLedgerSummary | null | undefined): number {
+  if (!ledger) return 0
+  return (
+    ledger.totalPurchasingCosts +
+    ledger.totalLaborCosts +
+    ledger.totalEnergyCosts +
+    ledger.totalMarketingCosts +
+    ledger.totalOtherCosts
+  )
 }
 
 function formatDateTime(value: string): string {
@@ -552,9 +564,9 @@ function formatTimeRemaining(expiresAtUtc: string): string {
                   <span class="meta-label">{{ t('dashboard.buildings') }}</span>
                   <span>{{ company.buildings.length }}</span>
                 </span>
-                <span v-if="company.buildings.length > 0 && company.buildings[0] && cityNames[company.buildings[0].cityId]" class="meta-item">
+                <span v-if="company.buildings.length > 0 && cityNames[company.buildings[0]?.cityId ?? '']" class="meta-item">
                   <span class="meta-label">{{ t('dashboard.city') }}</span>
-                  <span class="city-name">📍 {{ cityNames[company.buildings[0].cityId] }}</span>
+                  <span class="city-name">📍 {{ cityNames[company.buildings[0]!.cityId] }}</span>
                 </span>
               </div>
             </div>
@@ -575,7 +587,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
             <StarterGuidance
               :company="company"
               :revenue="companyLedgers[company.id]?.totalRevenue ?? 0"
-              :costs="(companyLedgers[company.id]?.totalPurchasingCosts ?? 0) + (companyLedgers[company.id]?.totalLaborCosts ?? 0) + (companyLedgers[company.id]?.totalEnergyCosts ?? 0) + (companyLedgers[company.id]?.totalMarketingCosts ?? 0) + (companyLedgers[company.id]?.totalOtherCosts ?? 0)"
+              :costs="getLedgerTotalCosts(companyLedgers[company.id])"
             />
           </div>
 
@@ -600,7 +612,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
                   </span>
                 </div>
               </RouterLink>
-              <SupplyChainPanel v-if="building.units.length > 0" :units="building.units" :building-type="building.type" />
+              <SupplyChainPanel v-if="building.units.length > 0" :units="building.units" />
             </div>
           </div>
 

@@ -97,6 +97,7 @@ const items = computed<GuidanceItem[]>(() => {
     })
   }
 
+  // Limit to 3 items to avoid overwhelming the player with too many action items at once.
   return result.slice(0, 3)
 })
 </script>
