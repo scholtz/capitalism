@@ -1443,6 +1443,35 @@ test.describe('Onboarding resume and progress persistence', () => {
     await expect(page.getByText('Startup pack activated')).toBeVisible()
   })
 
+  test('AC5: pro subscription end date is displayed on dashboard after claiming startup pack (AC5)', async ({
+    page,
+  }) => {
+    // AC5: "The user can verify their new subscription/pack status in the relevant account
+    // or product surface after purchase." — the dashboard must show 'Your Pro access is active
+    // until {date}' once the offer is claimed.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/onboarding')
+
+    await completeGuidedOnboarding(page, 'Pro Sub Display Corp')
+
+    await expect(page.getByRole('button', { name: 'Claim startup pack' })).toBeVisible()
+    await page.getByRole('button', { name: 'Claim startup pack' }).click()
+
+    await expect(page.getByText('Startup pack activated')).toBeVisible()
+
+    // Navigate to dashboard and confirm proSubscriptionEndsAtUtc is surfaced
+    await page.getByRole('link', { name: 'Go to Dashboard' }).click()
+    await page.waitForURL('/dashboard')
+
+    // The dashboard must show 'Your Pro access is active until …' (AC5: verify entitlement state)
+    await expect(page.getByText(/Your Pro access is active until/i)).toBeVisible()
+  })
+
   test('player can dismiss the startup pack and revisit it from the dashboard', async ({ page }) => {
     const player = makePlayer()
     const state = setupMockApi(page, { players: [player] })

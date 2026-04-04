@@ -5224,6 +5224,104 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task StartupPackOffer_Query_Unauthenticated_ReturnsError()
+    {
+        // The startupPackOffer query has [Authorize] and must reject unauthenticated requests.
+        var result = await ExecuteGraphQlAsync(
+            "{ startupPackOffer { status } }");
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task ClaimStartupPack_BeforeOnboarding_ReturnsError()
+    {
+        // A player who has not completed onboarding has no startup-pack offer.
+        // Attempting to claim must fail with STARTUP_PACK_NOT_AVAILABLE.
+        var token = await RegisterAndGetTokenAsync($"startup-pack-pre-onboard-{Guid.NewGuid()}@test.com", "PreOnboardClaimer");
+        // Do NOT complete onboarding — player has no offer record.
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation ClaimStartupPack($input: ClaimStartupPackInput!) {
+              claimStartupPack(input: $input) {
+                offer { status }
+              }
+            }
+            """,
+            new { input = new { companyId = Guid.NewGuid() } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Contains(errors.EnumerateArray(), error =>
+            error.GetProperty("extensions").GetProperty("code").GetString() == "STARTUP_PACK_NOT_AVAILABLE");
+    }
+
+    [Fact]
+    public async Task ClaimStartupPack_VerifiesProSubscriptionEndsAtUtcIsInFuture()
+    {
+        // AC5: the user must be able to verify their new subscription status after purchase.
+        // The proSubscriptionEndsAtUtc returned by claimStartupPack must be strictly in the future
+        // and at least 89 days from now (90-day Pro entitlement).
+        var token = await RegisterAndGetTokenAsync($"startup-pro-sub-verify-{Guid.NewGuid()}@test.com", "ProSubVerifyPlayer");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Pro Sub Verify Corp");
+
+        var claimResult = await ExecuteGraphQlAsync(
+            """
+            mutation ClaimStartupPack($input: ClaimStartupPackInput!) {
+              claimStartupPack(input: $input) {
+                offer { status claimedAtUtc }
+                company { cash }
+                proSubscriptionEndsAtUtc
+              }
+            }
+            """,
+            new { input = new { companyId } },
+            token);
+
+        Assert.False(claimResult.TryGetProperty("errors", out _), "ClaimStartupPack should succeed");
+        var payload = claimResult.GetProperty("data").GetProperty("claimStartupPack");
+
+        var proEndsStr = payload.GetProperty("proSubscriptionEndsAtUtc").GetString();
+        Assert.NotNull(proEndsStr);
+        Assert.True(DateTime.TryParse(proEndsStr, out var proEndsAt));
+        // Must be in the future
+        Assert.True(proEndsAt > DateTime.UtcNow, $"proSubscriptionEndsAtUtc ({proEndsAt:O}) must be in the future");
+        // Must be at least 89 days from now (allowing 1-day clock tolerance)
+        Assert.True((proEndsAt - DateTime.UtcNow).TotalDays >= 89,
+            $"proSubscriptionEndsAtUtc should be ~{StartupPackService.ProDurationDays} days ahead; got {(proEndsAt - DateTime.UtcNow).TotalDays:F1} days");
+    }
+
+    [Fact]
+    public async Task MarkStartupPackOfferShown_AlreadyClaimed_DoesNotChangeStatus()
+    {
+        // Calling markStartupPackOfferShown on an already-claimed offer must return the offer
+        // with the CLAIMED status unchanged (the backend must be idempotent for CLAIMED offers).
+        var token = await RegisterAndGetTokenAsync($"startup-show-claimed-{Guid.NewGuid()}@test.com", "ShowClaimedPlayer");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Show Claimed Corp");
+
+        // Claim the offer first
+        var claimResult = await ExecuteGraphQlAsync(
+            """
+            mutation ClaimStartupPack($input: ClaimStartupPackInput!) {
+              claimStartupPack(input: $input) { offer { status } }
+            }
+            """,
+            new { input = new { companyId } },
+            token);
+        Assert.Equal("CLAIMED",
+            claimResult.GetProperty("data").GetProperty("claimStartupPack").GetProperty("offer").GetProperty("status").GetString());
+
+        // markStartupPackOfferShown after claiming must not change status back to SHOWN
+        var shownResult = await ExecuteGraphQlAsync(
+            "mutation { markStartupPackOfferShown { status shownAtUtc } }",
+            token: token);
+
+        var shownOffer = shownResult.GetProperty("data").GetProperty("markStartupPackOfferShown");
+        Assert.Equal("CLAIMED", shownOffer.GetProperty("status").GetString());
+    }
+
+    [Fact]
     public async Task CompleteOnboarding_InvalidIndustry_ReturnsError()
     {
         var token = await RegisterAndGetTokenAsync("badindustry@test.com", "BadInd");
