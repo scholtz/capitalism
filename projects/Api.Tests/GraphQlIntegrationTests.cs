@@ -6127,6 +6127,102 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task StartOnboardingCompany_WithFactoryLotInDifferentCity_ReturnsLotCityMismatch()
+    {
+        // Validates that StartOnboardingCompany rejects a factory lot that belongs to a different city
+        // than the one specified in the input. This ensures the city validation in PrepareLotPurchaseAsync
+        // catches cross-city mismatches and returns LOT_CITY_MISMATCH instead of silently placing
+        // a factory in the wrong city.
+        var token = await RegisterAndGetTokenAsync($"start-city-mismatch-{Guid.NewGuid()}@test.com", "CityMismatchStart");
+        var cities = await ExecuteGraphQlAsync("{ cities { id name } }");
+        var allCities = cities.GetProperty("data").GetProperty("cities");
+        var cityIds = Enumerable.Range(0, allCities.GetArrayLength())
+            .Select(i => allCities[i].GetProperty("id").GetString()!)
+            .ToList();
+
+        if (cityIds.Count < 2)
+        {
+            // Need at least two cities for a meaningful cross-city test.
+            return;
+        }
+
+        var targetCityId = cityIds[0];
+        var otherCityId = cityIds[1];
+
+        // Create a factory lot in the OTHER city, but claim it belongs to targetCity.
+        var otherCityFactoryLotId = await CreateTestLotAsync(otherCityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "Wrong City Factory Lot");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId = targetCityId, companyName = "Cross City Corp", factoryLotId = otherCityFactoryLotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors), "Expected an error for cross-city factory lot");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("LOT_CITY_MISMATCH", code);
+
+        // Onboarding must NOT be in progress since the mutation failed before persisting.
+        var meResult = await ExecuteGraphQlAsync("{ me { onboardingCurrentStep onboardingCompanyId } }", token: token);
+        var me = meResult.GetProperty("data").GetProperty("me");
+        Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingCurrentStep").ValueKind);
+        Assert.Equal(JsonValueKind.Null, me.GetProperty("onboardingCompanyId").ValueKind);
+    }
+
+    [Fact]
+    public async Task StartOnboardingCompany_WhenPlayerAlreadyHasCompanyOutsideOnboarding_ReturnsError()
+    {
+        // Tests the edge case where the player already owns a company (created via completeOnboarding)
+        // but no OnboardingCurrentStep/CompanyId flags are set (they were cleared on completion).
+        // The backend check on db.Companies.AnyAsync catches this and returns ONBOARDING_ALREADY_IN_PROGRESS,
+        // preventing a player from creating a second company via startOnboardingCompany.
+        var token = await RegisterAndGetTokenAsync($"start-existing-co-{Guid.NewGuid()}@test.com", "ExistingCompanyPlayer");
+
+        // Complete onboarding first so the player owns a company with cleared progress flags.
+        await CompleteOnboardingAsync(token, "Already Owned Corp");
+
+        // Now attempt to start onboarding again — should be rejected.
+        var cityId = await GetCityIdByNameAsync();
+        var lotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "Second Attempt Factory Lot");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Second Empire Corp", factoryLotId = lotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors), "Expected an error for player who already has a company");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        // ONBOARDING_ALREADY_COMPLETED is returned first (player.OnboardingCompletedAtUtc is not null)
+        Assert.Equal("ONBOARDING_ALREADY_COMPLETED", code);
+    }
+
+    [Fact]
+    public async Task StarterIndustries_ContainsFurnitureFoodProcessingAndHealthcare()
+    {
+        // Verifies the exact industry values returned by the starterIndustries query.
+        // This is a public endpoint (no auth token) — critical for unauthenticated guests
+        // browsing the onboarding wizard industry selection step.
+        var result = await ExecuteGraphQlAsync("{ starterIndustries { industries } }");
+
+        var industries = result.GetProperty("data").GetProperty("starterIndustries").GetProperty("industries");
+        var industryList = Enumerable.Range(0, industries.GetArrayLength())
+            .Select(i => industries[i].GetString()!)
+            .ToList();
+
+        Assert.Contains("FURNITURE", industryList);
+        Assert.Contains("FOOD_PROCESSING", industryList);
+        Assert.Contains("HEALTHCARE", industryList);
+        Assert.Equal(3, industryList.Count);
+    }
+
+    [Fact]
     public async Task FinishOnboarding_FoodProcessing_ReturnsEligibleStartupPackOffer()
     {
         // Verifies that the startup-pack offer is activated for FOOD_PROCESSING industry

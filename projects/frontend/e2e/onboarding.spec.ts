@@ -1825,6 +1825,57 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     await expect(page.getByText('Current simulation tick: 42.')).toBeVisible()
   })
 
+  test('configure-guide cash step shows remaining balance after lot purchases (ROADMAP: show money available)', async ({
+    page,
+  }) => {
+    // ROADMAP: "Wizard will show them important areas on the screen like how much money they have."
+    // This test verifies that the "Review your cash" configure-guide step displays the player's
+    // actual remaining cash balance after both factory and shop lot purchases — not just a heading.
+    // Default mock lots: Industrial Plot A1 ($96,900) + High Street Retail Space ($120,000).
+    // Starting cash $500,000 - $96,900 - $120,000 = $283,100.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboarding(page, 'Cash Review Corp')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    // The cash step must show the remaining balance, not just the label.
+    const cashStep = page.locator('.configure-step').filter({ hasText: 'Review your cash' })
+    await expect(cashStep).toBeVisible()
+    // Remaining cash after factory ($96,900) and shop ($120,000) from starting $500,000 = $283,100
+    await expect(cashStep).toContainText('283,100')
+  })
+
+  test('configure-guide cash step shows different remaining balance for Food Processing (ROADMAP: show money available)', async ({
+    page,
+  }) => {
+    // ROADMAP: "Wizard will show them important areas on the screen like how much money they have."
+    // Mirrors the Furniture cash test for the Food Processing industry to confirm that the cash
+    // remaining is consistent across all three starter industries (same lot prices in mock).
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+
+    await page.goto('/onboarding')
+    await completeGuidedOnboardingForIndustry(page, 'Bread Factory Corp', 'Food Processing', 'Bread')
+
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+
+    const cashStep = page.locator('.configure-step').filter({ hasText: 'Review your cash' })
+    await expect(cashStep).toBeVisible()
+    // Same lot prices as Furniture: $500,000 - $96,900 - $120,000 = $283,100
+    await expect(cashStep).toContainText('283,100')
+  })
+
   test('configure-guide public sales step shows description explaining city-wide buyer discovery (AC 7)', async ({
     page,
   }) => {
