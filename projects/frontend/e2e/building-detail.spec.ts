@@ -5654,6 +5654,211 @@ test.describe('R&D Research Progress Panel', () => {
     await expect(page.getByText(/Product Quality unit at \(0, 0\) has no researched product selected/)).toBeVisible()
     await expect(page.getByText(/Brand Quality unit at \(1, 0\) has no research scope selected/)).toBeVisible()
   })
+
+  test('shows category-scope badge and efficiency for industry brand quality research', async ({ page }) => {
+    const player = makePlayer()
+    const companyId = 'company-rd-cat'
+    player.companies.push({
+      id: companyId,
+      playerId: player.id,
+      name: 'Category Research Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        makeRdBuilding(companyId, [
+          {
+            id: 'rd-unit-cat',
+            buildingId: 'building-rd-progress',
+            unitType: 'BRAND_QUALITY',
+            gridX: 0,
+            gridY: 0,
+            level: 1,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            brandScope: 'CATEGORY',
+          },
+        ]),
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Simulate accumulated CATEGORY-scope R&D (e.g., FURNITURE industry)
+    state.researchBrands[companyId] = [
+      {
+        id: 'brand-cat',
+        companyId,
+        name: 'FURNITURE',
+        scope: 'CATEGORY',
+        productTypeId: null,
+        productName: null,
+        industryCategory: 'FURNITURE',
+        awareness: 0,
+        quality: 0,
+        marketingEfficiencyMultiplier: 1.3,
+      },
+    ]
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-rd-progress')
+
+    const panel = page.getByRole('region', { name: 'research progress' })
+    await expect(panel).toBeVisible()
+    // Category scope badge shown (not product-specific, not company-wide)
+    await expect(panel.locator('.research-brand-scope-badge', { hasText: 'Category' })).toBeVisible()
+    // Marketing efficiency multiplier shown (R&D effect)
+    await expect(panel.locator('.research-metric-label', { hasText: 'Marketing Efficiency' })).toBeVisible()
+    await expect(panel.locator('.research-metric-value', { hasText: '1.30×' })).toBeVisible()
+    // Awareness should NOT be shown (no marketing spend in this scenario)
+    await expect(panel.locator('.research-metric-label', { hasText: 'Brand Awareness' })).toBeHidden()
+  })
+
+  test('shows product-scope badge for product-specific brand quality research', async ({ page }) => {
+    const player = makePlayer()
+    const companyId = 'company-rd-prod'
+    player.companies.push({
+      id: companyId,
+      playerId: player.id,
+      name: 'Product Research Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        makeRdBuilding(companyId, [
+          {
+            id: 'rd-unit-prod',
+            buildingId: 'building-rd-progress',
+            unitType: 'BRAND_QUALITY',
+            gridX: 0,
+            gridY: 0,
+            level: 1,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            brandScope: 'PRODUCT',
+            productTypeId: 'prod-chair',
+          },
+        ]),
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Simulate accumulated PRODUCT-scope R&D (e.g., Wooden Chair)
+    state.researchBrands[companyId] = [
+      {
+        id: 'brand-prod',
+        companyId,
+        name: 'Wooden Chair',
+        scope: 'PRODUCT',
+        productTypeId: 'prod-chair',
+        productName: 'Wooden Chair',
+        industryCategory: null,
+        awareness: 0.12,
+        quality: 0.35,
+        marketingEfficiencyMultiplier: 1.25,
+      },
+    ]
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-rd-progress')
+
+    const panel = page.getByRole('region', { name: 'research progress' })
+    await expect(panel).toBeVisible()
+    // Product scope badge shown
+    await expect(panel.locator('.research-brand-scope-badge', { hasText: 'Product' })).toBeVisible()
+    // Product name shown
+    await expect(panel.getByText('Wooden Chair')).toBeVisible()
+    // Marketing efficiency multiplier shown
+    await expect(panel.locator('.research-metric-label', { hasText: 'Marketing Efficiency' })).toBeVisible()
+    await expect(panel.locator('.research-metric-value', { hasText: '1.25×' })).toBeVisible()
+    // Awareness IS shown because marketing has been spent for this product
+    await expect(panel.locator('.research-metric-label', { hasText: 'Brand Awareness' })).toBeVisible()
+    await expect(panel.locator('.research-metric-value', { hasText: '12.0%' })).toBeVisible()
+  })
+
+  test('scope explanation text is visible in brand quality research config panel', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-rd-scope-help',
+      playerId: player.id,
+      name: 'Scope Help Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-rd-scope-help',
+          companyId: 'company-rd-scope-help',
+          cityId: 'city-ba',
+          type: 'RESEARCH_DEVELOPMENT',
+          name: 'Scope Help Lab',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 3,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'rd-scope-bq',
+              buildingId: 'building-rd-scope-help',
+              unitType: 'BRAND_QUALITY',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              brandScope: null,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-rd-scope-help')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const plannedSection = page.locator('.grid-section').filter({ hasText: 'Planned Upgrade' })
+    await plannedSection.locator('.grid-cell').first().click()
+
+    // Brand scope selector is shown for BRAND_QUALITY unit
+    await expect(page.getByText('Brand Scope')).toBeVisible()
+    // Help text explaining scopes is visible
+    await expect(page.getByText(/branding efficiency/i)).toBeVisible()
+  })
 })
 
 // ── Exchange sourcing — per-industry coverage ─────────────────────────────────

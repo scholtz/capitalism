@@ -2691,5 +2691,102 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         // the multiplier will only translate to extra awareness when a marketing unit spends budget.
     }
 
+    [Fact]
+    public async Task ResearchPhase_BrandQuality_CategoryScope_IncreasesEfficiencyForWholeIndustry()
+    {
+        // CATEGORY scope research raises MarketingEfficiencyMultiplier for an industry-scoped brand,
+        // which means ALL products in that industry benefit from improved marketing efficiency.
+        Guid companyId;
+        string productIndustry;
+        await using (var seedScope = _factory.Services.CreateAsyncScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (companyId, _, _) = await SeedRdBuildingAsync(
+                seedDb, UnitType.BrandQuality, brandScope: BrandScope.Category, productSlug: "wooden-chair");
+
+            // Record the anchor product's industry for assertions
+            var anchor = await seedDb.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+            productIndustry = anchor.Industry;
+        }
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var processor = await CreateProcessorAsync(scope);
+
+        // Before: no CATEGORY-scope brand should exist
+        var brandBefore = await db.Brands
+            .Where(b => b.CompanyId == companyId && b.Scope == BrandScope.Category)
+            .FirstOrDefaultAsync();
+        Assert.Null(brandBefore);
+
+        await processor.ProcessTickAsync();
+
+        // After one tick a CATEGORY-scope brand should be created
+        var brandAfter = await db.Brands
+            .Where(b => b.CompanyId == companyId && b.Scope == BrandScope.Category)
+            .FirstOrDefaultAsync();
+        Assert.NotNull(brandAfter);
+        Assert.Equal(productIndustry, brandAfter.IndustryCategory);
+        Assert.True(brandAfter.MarketingEfficiencyMultiplier > 1m,
+            "BRAND_QUALITY CATEGORY scope must increase MarketingEfficiencyMultiplier above 1.0.");
+        // R&D must NOT grant free awareness — only marketing spend does
+        Assert.Equal(0m, brandAfter.Awareness);
+    }
+
+    [Fact]
+    public async Task ResearchPhase_BrandQuality_CategoryScope_DoesNotAffectOtherIndustryBrands()
+    {
+        // CATEGORY scope research must only raise efficiency for its own industry, not others.
+        Guid companyId;
+        string targetIndustry;
+        string otherIndustry;
+
+        await using (var seedScope = _factory.Services.CreateAsyncScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            // Seed R&D unit anchored to Furniture industry (wooden-chair)
+            (companyId, _, _) = await SeedRdBuildingAsync(
+                seedDb, UnitType.BrandQuality, brandScope: BrandScope.Category, productSlug: "wooden-chair");
+
+            var anchorProduct = await seedDb.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+            targetIndustry = anchorProduct.Industry; // FURNITURE
+
+            var otherProduct = await seedDb.ProductTypes.FirstAsync(p => p.Slug == "bread");
+            otherIndustry = otherProduct.Industry; // FOOD_PROCESSING
+
+            // Pre-seed a CATEGORY brand for the other industry at baseline efficiency
+            seedDb.Brands.Add(new Brand
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = companyId,
+                Name = otherIndustry,
+                Scope = BrandScope.Category,
+                IndustryCategory = otherIndustry,
+                MarketingEfficiencyMultiplier = 1m,
+            });
+            await seedDb.SaveChangesAsync();
+        }
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var processor = await CreateProcessorAsync(scope);
+
+        await processor.ProcessTickAsync();
+
+        var brands = await db.Brands
+            .Where(b => b.CompanyId == companyId && b.Scope == BrandScope.Category)
+            .ToListAsync();
+
+        var targetBrand = brands.FirstOrDefault(b => b.IndustryCategory == targetIndustry);
+        var otherBrand  = brands.FirstOrDefault(b => b.IndustryCategory == otherIndustry);
+
+        Assert.NotNull(targetBrand);
+        Assert.NotNull(otherBrand);
+        Assert.True(targetBrand.MarketingEfficiencyMultiplier > 1m,
+            "CATEGORY scope R&D must raise efficiency for the anchored industry.");
+        Assert.Equal(1m, otherBrand.MarketingEfficiencyMultiplier);
+    }
+
     #endregion
 }
