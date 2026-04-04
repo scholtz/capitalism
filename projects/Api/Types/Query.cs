@@ -707,7 +707,371 @@ public sealed class Query
             .ToList();
     }
 
-    private static decimal GetUnitInventoryCapacity(BuildingUnit unit)
+    /// <summary>
+    /// Returns per-unit operational status for a building owned by the authenticated player.
+    /// Each record describes whether a unit is actively processing, idle, or blocked and why.
+    /// </summary>
+    [Authorize]
+    public async Task<List<BuildingUnitOperationalStatus>> GetBuildingUnitOperationalStatuses(
+        Guid buildingId,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var building = await db.Buildings
+            .Include(b => b.Company)
+            .FirstOrDefaultAsync(b => b.Id == buildingId);
+
+        if (building is null || building.Company.PlayerId != userId)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Building not found or you don't own it.")
+                    .SetCode("BUILDING_NOT_FOUND")
+                    .Build());
+        }
+
+        var units = await db.BuildingUnits
+            .Where(u => u.BuildingId == buildingId)
+            .ToListAsync();
+
+        var unitIds = units.Select(u => u.Id).ToList();
+
+        // Load current inventory totals per unit.
+        var inventoryByUnit = await db.Inventories
+            .Where(i => i.BuildingUnitId.HasValue && unitIds.Contains(i.BuildingUnitId!.Value))
+            .GroupBy(i => i.BuildingUnitId!.Value)
+            .Select(g => new { UnitId = g.Key, Total = g.Sum(i => i.Quantity) })
+            .ToDictionaryAsync(x => x.UnitId, x => x.Total);
+
+        // Load recent history (last 5 ticks) to detect idle vs active units.
+        var gameState = await db.GameStates.FirstOrDefaultAsync();
+        var currentTick = gameState?.CurrentTick ?? 0L;
+        var windowStart = Math.Max(0L, currentTick - 4L);
+
+        var recentHistoryByUnit = await db.BuildingUnitResourceHistories
+            .Where(h => h.BuildingId == buildingId && h.Tick >= windowStart)
+            .GroupBy(h => h.BuildingUnitId)
+            .Select(g => new
+            {
+                UnitId = g.Key,
+                LastActiveTick = g.Max(h => h.Tick),
+                TotalInflow = g.Sum(h => h.InflowQuantity),
+                TotalConsumed = g.Sum(h => h.ConsumedQuantity),
+                TotalProduced = g.Sum(h => h.ProducedQuantity),
+                TotalOutflow = g.Sum(h => h.OutflowQuantity),
+            })
+            .ToDictionaryAsync(x => x.UnitId, x => x);
+
+        // Load recent public sales for PUBLIC_SALES units.
+        var recentSales = await db.PublicSalesRecords
+            .Where(r => r.BuildingId == buildingId && r.Tick >= windowStart)
+            .GroupBy(r => r.BuildingUnitId)
+            .Select(g => new { UnitId = g.Key, TotalSold = g.Sum(r => r.QuantitySold) })
+            .ToDictionaryAsync(x => x.UnitId, x => x.TotalSold);
+
+        var result = new List<BuildingUnitOperationalStatus>();
+
+        foreach (var unit in units)
+        {
+            inventoryByUnit.TryGetValue(unit.Id, out var inventoryTotal);
+            recentHistoryByUnit.TryGetValue(unit.Id, out var history);
+            var capacity = GetUnitInventoryCapacity(unit);
+            var fillRatio = capacity > 0m ? inventoryTotal / capacity : 0m;
+
+            var idleTicks = 0;
+            if (history is not null && currentTick > 0)
+            {
+                idleTicks = (int)(currentTick - history.LastActiveTick);
+            }
+            else if (currentTick > 0)
+            {
+                idleTicks = (int)Math.Min(currentTick, 5L);
+            }
+
+            var status = DeriveUnitOperationalStatus(
+                unit, inventoryTotal, capacity, fillRatio, history?.TotalInflow ?? 0m,
+                history?.TotalConsumed ?? 0m, history?.TotalProduced ?? 0m,
+                recentSales.GetValueOrDefault(unit.Id), idleTicks);
+
+            result.Add(status);
+        }
+
+        return result;
+    }
+
+    private static BuildingUnitOperationalStatus DeriveUnitOperationalStatus(
+        Data.Entities.BuildingUnit unit,
+        decimal inventoryTotal,
+        decimal capacity,
+        decimal fillRatio,
+        decimal recentInflow,
+        decimal recentConsumed,
+        decimal recentProduced,
+        decimal recentSold,
+        int idleTicks)
+    {
+        var s = new BuildingUnitOperationalStatus { BuildingUnitId = unit.Id, IdleTicks = idleTicks };
+
+        switch (unit.UnitType)
+        {
+            case UnitType.Purchase:
+                if (unit.ResourceTypeId is null && unit.ProductTypeId is null)
+                {
+                    s.Status = "UNCONFIGURED";
+                    s.BlockedCode = "UNCONFIGURED";
+                    s.BlockedReason = "This purchase unit is not configured. Set a resource or product type to enable buying.";
+                }
+                else if (fillRatio >= 0.98m)
+                {
+                    s.Status = "FULL";
+                    s.BlockedCode = "OUTPUT_FULL";
+                    s.BlockedReason = "Storage is full. The purchased stock cannot go anywhere until downstream units free up space.";
+                }
+                else if (recentInflow > 0m)
+                {
+                    s.Status = "ACTIVE";
+                }
+                else
+                {
+                    s.Status = "BLOCKED";
+                    s.BlockedCode = "AWAITING_STOCK";
+                    s.BlockedReason = "No stock was purchased recently. Check that the exchange has supply at or below your max price, and that the company has cash.";
+                }
+                break;
+
+            case UnitType.Manufacturing:
+                if (unit.ProductTypeId is null)
+                {
+                    s.Status = "UNCONFIGURED";
+                    s.BlockedCode = "UNCONFIGURED";
+                    s.BlockedReason = "This manufacturing unit is not configured. Set a product type to start production.";
+                }
+                else if (fillRatio >= 0.98m)
+                {
+                    s.Status = "FULL";
+                    s.BlockedCode = "OUTPUT_FULL";
+                    s.BlockedReason = "Manufacturing output is full. Make sure downstream storage or B2B sales units have capacity to receive finished goods.";
+                }
+                else if (recentProduced > 0m)
+                {
+                    s.Status = "ACTIVE";
+                }
+                else if (inventoryTotal <= 0m && recentConsumed <= 0m)
+                {
+                    s.Status = "BLOCKED";
+                    s.BlockedCode = "NO_INPUTS";
+                    s.BlockedReason = "No raw materials available. Ensure purchase units are linked to this manufacturing unit and are acquiring inputs from the exchange.";
+                }
+                else
+                {
+                    s.Status = "IDLE";
+                }
+                break;
+
+            case UnitType.Storage:
+                if (fillRatio >= 0.98m)
+                {
+                    s.Status = "FULL";
+                    s.BlockedCode = "OUTPUT_FULL";
+                    s.BlockedReason = "Storage is full. Downstream units must consume stock before more can be received.";
+                }
+                else if (recentInflow > 0m || recentProduced > 0m)
+                {
+                    s.Status = "ACTIVE";
+                }
+                else
+                {
+                    s.Status = "IDLE";
+                }
+                break;
+
+            case UnitType.B2BSales:
+                if (unit.ProductTypeId is null && unit.ResourceTypeId is null)
+                {
+                    s.Status = "UNCONFIGURED";
+                    s.BlockedCode = "UNCONFIGURED";
+                    s.BlockedReason = "This B2B sales unit is not configured with a product or resource type.";
+                }
+                else if (inventoryTotal <= 0m)
+                {
+                    s.Status = "BLOCKED";
+                    s.BlockedCode = "NO_INVENTORY";
+                    s.BlockedReason = "No inventory available for B2B sales. Upstream units need to fill this unit with stock.";
+                }
+                else if (recentInflow + recentProduced > 0m)
+                {
+                    s.Status = "ACTIVE";
+                }
+                else
+                {
+                    s.Status = "IDLE";
+                }
+                break;
+
+            case UnitType.PublicSales:
+                if (unit.ProductTypeId is null && unit.ResourceTypeId is null)
+                {
+                    s.Status = "UNCONFIGURED";
+                    s.BlockedCode = "UNCONFIGURED";
+                    s.BlockedReason = "This public sales unit is not configured with a product or resource type.";
+                }
+                else if (inventoryTotal <= 0m)
+                {
+                    s.Status = "BLOCKED";
+                    s.BlockedCode = "NO_INVENTORY";
+                    s.BlockedReason = "No stock available to sell. Ensure the purchase unit in the same shop is receiving products from your factory's B2B unit.";
+                }
+                else if (recentSold > 0m)
+                {
+                    s.Status = "ACTIVE";
+                }
+                else if (inventoryTotal > 0m)
+                {
+                    s.Status = "BLOCKED";
+                    s.BlockedCode = "NO_DEMAND";
+                    s.BlockedReason = "Products are available but nothing sold recently. Try lowering your price or check that the city has sufficient population demand.";
+                }
+                else
+                {
+                    s.Status = "IDLE";
+                }
+                break;
+
+            default:
+                s.Status = inventoryTotal > 0m || recentInflow > 0m ? "ACTIVE" : "IDLE";
+                break;
+        }
+
+        return s;
+    }
+
+    /// <summary>
+    /// Returns recent tick activity events for a building in human-readable form.
+    /// Events are derived from BuildingUnitResourceHistory and PublicSalesRecords.
+    /// </summary>
+    [Authorize]
+    public async Task<List<BuildingRecentActivityEvent>> GetBuildingRecentActivity(
+        Guid buildingId,
+        int? limit,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var building = await db.Buildings
+            .Include(b => b.Company)
+            .FirstOrDefaultAsync(b => b.Id == buildingId);
+
+        if (building is null || building.Company.PlayerId != userId)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Building not found or you don't own it.")
+                    .SetCode("BUILDING_NOT_FOUND")
+                    .Build());
+        }
+
+        var safeLimit = Math.Clamp(limit ?? 30, 1, 100);
+
+        var gameState = await db.GameStates.FirstOrDefaultAsync();
+        var currentTick = gameState?.CurrentTick ?? 0L;
+        var windowStart = Math.Max(0L, currentTick - (safeLimit - 1));
+
+        // Load resource/product names for lookups.
+        var historyEntries = await db.BuildingUnitResourceHistories
+            .Include(h => h.ResourceType)
+            .Include(h => h.ProductType)
+            .Where(h => h.BuildingId == buildingId && h.Tick >= windowStart)
+            .OrderByDescending(h => h.Tick)
+            .ToListAsync();
+
+        var units = await db.BuildingUnits
+            .Where(u => u.BuildingId == buildingId)
+            .ToDictionaryAsync(u => u.Id, u => u);
+
+        var salesRecords = await db.PublicSalesRecords
+            .Include(r => r.ProductType)
+            .Include(r => r.ResourceType)
+            .Where(r => r.BuildingId == buildingId && r.Tick >= windowStart)
+            .OrderByDescending(r => r.Tick)
+            .ToListAsync();
+
+        var events = new List<BuildingRecentActivityEvent>();
+
+        foreach (var entry in historyEntries)
+        {
+            units.TryGetValue(entry.BuildingUnitId, out var unit);
+            var itemName = entry.ResourceType?.Name ?? entry.ProductType?.Name ?? "item";
+
+            if (entry.InflowQuantity > 0m && unit?.UnitType == UnitType.Purchase)
+            {
+                events.Add(new BuildingRecentActivityEvent
+                {
+                    Tick = entry.Tick,
+                    BuildingUnitId = entry.BuildingUnitId,
+                    EventType = "PURCHASED",
+                    Description = $"Purchased {FormatQuantity(entry.InflowQuantity)} {itemName}",
+                    Quantity = entry.InflowQuantity,
+                    ResourceTypeId = entry.ResourceTypeId,
+                    ProductTypeId = entry.ProductTypeId,
+                });
+            }
+            else if (entry.ProducedQuantity > 0m && unit?.UnitType == UnitType.Manufacturing)
+            {
+                events.Add(new BuildingRecentActivityEvent
+                {
+                    Tick = entry.Tick,
+                    BuildingUnitId = entry.BuildingUnitId,
+                    EventType = "MANUFACTURED",
+                    Description = $"Manufactured {FormatQuantity(entry.ProducedQuantity)} {itemName}",
+                    Quantity = entry.ProducedQuantity,
+                    ResourceTypeId = entry.ResourceTypeId,
+                    ProductTypeId = entry.ProductTypeId,
+                });
+            }
+            else if (entry.OutflowQuantity > 0m && unit?.UnitType == UnitType.Storage)
+            {
+                events.Add(new BuildingRecentActivityEvent
+                {
+                    Tick = entry.Tick,
+                    BuildingUnitId = entry.BuildingUnitId,
+                    EventType = "MOVED",
+                    Description = $"Moved {FormatQuantity(entry.OutflowQuantity)} {itemName} to next unit",
+                    Quantity = entry.OutflowQuantity,
+                    ResourceTypeId = entry.ResourceTypeId,
+                    ProductTypeId = entry.ProductTypeId,
+                });
+            }
+        }
+
+        foreach (var sale in salesRecords)
+        {
+            var itemName = sale.ProductType?.Name ?? sale.ResourceType?.Name ?? "item";
+            events.Add(new BuildingRecentActivityEvent
+            {
+                Tick = sale.Tick,
+                BuildingUnitId = sale.BuildingUnitId,
+                EventType = "SOLD",
+                Description = $"Sold {FormatQuantity(sale.QuantitySold)} {itemName} for ${sale.Revenue:0.00}",
+                Quantity = sale.QuantitySold,
+                Amount = sale.Revenue,
+                ProductTypeId = sale.ProductTypeId,
+                ResourceTypeId = sale.ResourceTypeId,
+            });
+        }
+
+        return events
+            .OrderByDescending(e => e.Tick)
+            .Take(safeLimit)
+            .ToList();
+    }
+
+    private static string FormatQuantity(decimal qty) =>
+        qty == Math.Floor(qty) ? ((int)qty).ToString() : qty.ToString("0.####");
+
+    private static decimal GetUnitInventoryCapacity(Data.Entities.BuildingUnit unit)
     {
         return unit.UnitType switch
         {

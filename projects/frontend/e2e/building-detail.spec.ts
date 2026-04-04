@@ -6635,3 +6635,217 @@ test.describe('Building grid editor — mobile viewport (375px)', () => {
     await expect(page.locator('.upgrade-banner')).toBeVisible()
   })
 })
+
+test.describe('Operational status panel and recent activity', () => {
+  test('shows IDLE operational status badge when unit has no inventory', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-opstat',
+      playerId: player.id,
+      name: 'OpStat Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-opstat',
+          companyId: 'company-opstat',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'OpStat Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 5,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'opstat-unit-1',
+              buildingId: 'building-opstat',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              inventoryQuantity: 0,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-opstat')
+
+    // Click the PURCHASE unit to open its inspector
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const purchaseCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await purchaseCell.click()
+
+    // The operational status panel should be visible
+    await expect(page.locator('[aria-label="Unit operational status"]')).toBeVisible()
+    // IDLE badge (inventoryQuantity === 0)
+    const badge = page.locator('.status-badge')
+    await expect(badge).toBeVisible()
+  })
+
+  test('shows ACTIVE operational status badge when unit has inventory', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-opstat-active',
+      playerId: player.id,
+      name: 'OpStat Active Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-opstat-active',
+          companyId: 'company-opstat-active',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'OpStat Active Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 5,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'opstat-active-unit-1',
+              buildingId: 'building-opstat-active',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              inventoryQuantity: 10,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-opstat-active')
+
+    // Click the PURCHASE unit to open its inspector
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const purchaseCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await purchaseCell.click()
+
+    // The operational status panel must be visible
+    await expect(page.locator('[aria-label="Unit operational status"]')).toBeVisible()
+
+    // ACTIVE badge (inventoryQuantity > 0)
+    const badge = page.locator('.status-badge.status-active')
+    await expect(badge).toBeVisible()
+  })
+
+  test('shows recent activity panel in unit inspector', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-activity',
+      playerId: player.id,
+      name: 'Activity Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-activity',
+          companyId: 'company-activity',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Activity Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 5,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'activity-unit-1',
+              buildingId: 'building-activity',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-activity')
+
+    // Click the PURCHASE unit to open its inspector
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const purchaseCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await purchaseCell.click()
+
+    // Recent Activity panel should be visible
+    await expect(page.locator('[aria-label="Recent Activity"]')).toBeVisible()
+
+    // With empty mock, should show the empty state message
+    await expect(page.locator('[aria-label="Recent Activity"]')).toContainText('No activity recorded yet')
+  })
+})

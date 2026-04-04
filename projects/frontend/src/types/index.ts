@@ -683,3 +683,45 @@ export interface FirstSaleMission {
   /** Price per unit in the first sale. */
   firstSalePricePerUnit: number | null
 }
+
+/**
+ * Operational status for a single building unit.
+ * Tells the player whether the unit is actively processing, idle, blocked, or unconfigured.
+ */
+export interface BuildingUnitOperationalStatus {
+  buildingUnitId: string
+  /**
+   * Machine-readable status.
+   * Values: ACTIVE | IDLE | BLOCKED | FULL | UNCONFIGURED
+   */
+  status: 'ACTIVE' | 'IDLE' | 'BLOCKED' | 'FULL' | 'UNCONFIGURED'
+  /**
+   * Machine-readable blocked reason code (null when status is not BLOCKED or FULL).
+   * Values: NO_INPUTS | OUTPUT_FULL | NO_INVENTORY | PRICE_TOO_HIGH | UNCONFIGURED | AWAITING_STOCK | NO_DEMAND
+   */
+  blockedCode: string | null
+  /** Human-readable explanation shown to the player. */
+  blockedReason: string | null
+  /** Number of consecutive ticks the unit has had no activity. */
+  idleTicks: number
+}
+
+/**
+ * A single human-readable event from a building's recent tick history.
+ * Covers purchasing, manufacturing, resource movement, and public sales.
+ */
+export interface BuildingRecentActivityEvent {
+  tick: number
+  buildingUnitId: string
+  /**
+   * Machine-readable event type.
+   * Values: PURCHASED | MANUFACTURED | MOVED | SOLD | IDLE | BLOCKED
+   */
+  eventType: 'PURCHASED' | 'MANUFACTURED' | 'MOVED' | 'SOLD' | 'IDLE' | 'BLOCKED'
+  /** Human-readable one-line description. */
+  description: string
+  quantity: number | null
+  amount: number | null
+  resourceTypeId: string | null
+  productTypeId: string | null
+}

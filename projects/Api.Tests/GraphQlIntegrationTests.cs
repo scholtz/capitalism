@@ -11883,4 +11883,320 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
 
     #endregion
 
+    #region BuildingUnitOperationalStatuses and BuildingRecentActivity
+
+    // Helper: seed a player, company, and building for operational status tests.
+    private async Task<(string Token, Guid BuildingId)> SeedOperationalStatusTestAsync(
+        string emailPrefix,
+        Action<AppDbContext, Guid, Guid, Guid> seedUnitsAndHistory)
+    {
+        var email = $"{emailPrefix}-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, emailPrefix);
+
+        Guid buildingId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.FirstAsync(p => p.Email == email);
+            var city = await db.Cities.FirstAsync();
+
+            // Seed a company for this player (registration does not create one automatically).
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = $"{emailPrefix} Corp",
+                Cash = 500_000m,
+            };
+            db.Companies.Add(company);
+
+            var building = new Building
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = company.Id,
+                CityId = city.Id,
+                Type = BuildingType.Factory,
+                Name = $"{emailPrefix} Factory",
+                Level = 1,
+            };
+            db.Buildings.Add(building);
+            buildingId = building.Id;
+
+            seedUnitsAndHistory(db, building.Id, company.Id, player.Id);
+            await db.SaveChangesAsync();
+        }
+
+        return (token, buildingId);
+    }
+
+    [Fact]
+    public async Task BuildingUnitOperationalStatuses_UnconfiguredPurchaseUnit_ReturnsUnconfigured()
+    {
+        // Arrange: register a player, seed a factory with an unconfigured purchase unit.
+        var (token, buildingId) = await SeedOperationalStatusTestAsync("opstat-unconfigured",
+            (db, bid, _, _) =>
+            {
+                db.BuildingUnits.Add(new BuildingUnit
+                {
+                    Id = Guid.NewGuid(),
+                    BuildingId = bid,
+                    UnitType = UnitType.Purchase,
+                    GridX = 0,
+                    GridY = 0,
+                    Level = 1,
+                    // No ResourceTypeId or ProductTypeId – unit is unconfigured
+                });
+            });
+
+        // Act
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingUnitOperationalStatuses($buildingId: UUID!) {
+              buildingUnitOperationalStatuses(buildingId: $buildingId) {
+                buildingUnitId
+                status
+                blockedCode
+                blockedReason
+                idleTicks
+              }
+            }
+            """,
+            new { buildingId },
+            token);
+
+        // Assert
+        var statuses = result.GetProperty("data").GetProperty("buildingUnitOperationalStatuses");
+        Assert.Equal(1, statuses.GetArrayLength());
+        var status = statuses[0];
+        Assert.Equal("UNCONFIGURED", status.GetProperty("status").GetString());
+        Assert.Equal("UNCONFIGURED", status.GetProperty("blockedCode").GetString());
+        Assert.False(string.IsNullOrEmpty(status.GetProperty("blockedReason").GetString()),
+            "blockedReason must provide a human-readable explanation.");
+    }
+
+    [Fact]
+    public async Task BuildingUnitOperationalStatuses_ActivePurchaseUnit_ReturnsActive()
+    {
+        // Arrange: seed a factory with a configured purchase unit that has recent inflow history.
+        var (token, buildingId) = await SeedOperationalStatusTestAsync("opstat-active",
+            (db, bid, _, _) =>
+            {
+                var resource = db.ResourceTypes.First();
+                var gameState = db.GameStates.FirstOrDefault();
+                var currentTick = gameState?.CurrentTick ?? 0L;
+
+                var unitId = Guid.NewGuid();
+                db.BuildingUnits.Add(new BuildingUnit
+                {
+                    Id = unitId,
+                    BuildingId = bid,
+                    UnitType = UnitType.Purchase,
+                    GridX = 0,
+                    GridY = 0,
+                    Level = 1,
+                    ResourceTypeId = resource.Id,
+                });
+
+                // Seed recent inflow history so the unit appears ACTIVE.
+                db.BuildingUnitResourceHistories.Add(new BuildingUnitResourceHistory
+                {
+                    Id = Guid.NewGuid(),
+                    BuildingId = bid,
+                    BuildingUnitId = unitId,
+                    ResourceTypeId = resource.Id,
+                    Tick = currentTick,
+                    InflowQuantity = 10m,
+                });
+            });
+
+        // Act
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingUnitOperationalStatuses($buildingId: UUID!) {
+              buildingUnitOperationalStatuses(buildingId: $buildingId) {
+                buildingUnitId
+                status
+                blockedCode
+                idleTicks
+              }
+            }
+            """,
+            new { buildingId },
+            token);
+
+        // Assert
+        var statuses = result.GetProperty("data").GetProperty("buildingUnitOperationalStatuses");
+        Assert.Equal(1, statuses.GetArrayLength());
+        var status = statuses[0];
+        Assert.Equal("ACTIVE", status.GetProperty("status").GetString());
+        Assert.True(status.GetProperty("blockedCode").ValueKind == JsonValueKind.Null,
+            "An ACTIVE unit must not have a blockedCode.");
+    }
+
+    [Fact]
+    public async Task BuildingUnitOperationalStatuses_ManufacturingUnit_NoInputs_ReturnsBlocked()
+    {
+        // Arrange: seed a factory with a manufacturing unit that has no inventory or history.
+        var (token, buildingId) = await SeedOperationalStatusTestAsync("opstat-mfg-blocked",
+            (db, bid, _, _) =>
+            {
+                var product = db.ProductTypes.First();
+                db.BuildingUnits.Add(new BuildingUnit
+                {
+                    Id = Guid.NewGuid(),
+                    BuildingId = bid,
+                    UnitType = UnitType.Manufacturing,
+                    GridX = 0,
+                    GridY = 0,
+                    Level = 1,
+                    ProductTypeId = product.Id,
+                    // No inventory, no history → blocked: NO_INPUTS
+                });
+            });
+
+        // Act
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingUnitOperationalStatuses($buildingId: UUID!) {
+              buildingUnitOperationalStatuses(buildingId: $buildingId) {
+                buildingUnitId
+                status
+                blockedCode
+                blockedReason
+              }
+            }
+            """,
+            new { buildingId },
+            token);
+
+        // Assert
+        var statuses = result.GetProperty("data").GetProperty("buildingUnitOperationalStatuses");
+        var mfgStatus = Enumerable.Range(0, statuses.GetArrayLength())
+            .Select(i => statuses[i])
+            .First();
+
+        Assert.Equal("BLOCKED", mfgStatus.GetProperty("status").GetString());
+        Assert.Equal("NO_INPUTS", mfgStatus.GetProperty("blockedCode").GetString());
+        Assert.False(string.IsNullOrEmpty(mfgStatus.GetProperty("blockedReason").GetString()),
+            "A blocked manufacturing unit must explain the reason.");
+    }
+
+    [Fact]
+    public async Task BuildingUnitOperationalStatuses_Unauthenticated_ReturnsError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingUnitOperationalStatuses($buildingId: UUID!) {
+              buildingUnitOperationalStatuses(buildingId: $buildingId) {
+                buildingUnitId
+                status
+              }
+            }
+            """,
+            new { buildingId = Guid.NewGuid() });
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0, "Unauthenticated call must return errors.");
+    }
+
+    [Fact]
+    public async Task BuildingRecentActivity_AfterTicks_ReturnsPurchasedEvents()
+    {
+        // Arrange: seed a factory with a purchase unit and two ticks of inflow history.
+        var (token, buildingId) = await SeedOperationalStatusTestAsync("recent-activity",
+            (db, bid, _, _) =>
+            {
+                var resource = db.ResourceTypes.First();
+                var unitId = Guid.NewGuid();
+                db.BuildingUnits.Add(new BuildingUnit
+                {
+                    Id = unitId,
+                    BuildingId = bid,
+                    UnitType = UnitType.Purchase,
+                    GridX = 0,
+                    GridY = 0,
+                    Level = 1,
+                    ResourceTypeId = resource.Id,
+                });
+
+                // Simulate two ticks of purchasing.
+                db.BuildingUnitResourceHistories.AddRange(
+                    new BuildingUnitResourceHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        BuildingId = bid,
+                        BuildingUnitId = unitId,
+                        ResourceTypeId = resource.Id,
+                        Tick = 1,
+                        InflowQuantity = 10m,
+                    },
+                    new BuildingUnitResourceHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        BuildingId = bid,
+                        BuildingUnitId = unitId,
+                        ResourceTypeId = resource.Id,
+                        Tick = 2,
+                        InflowQuantity = 8m,
+                    });
+            });
+
+        // Act
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingRecentActivity($buildingId: UUID!, $limit: Int) {
+              buildingRecentActivity(buildingId: $buildingId, limit: $limit) {
+                tick
+                buildingUnitId
+                eventType
+                description
+                quantity
+              }
+            }
+            """,
+            new { buildingId, limit = 10 },
+            token);
+
+        // Assert
+        var events = result.GetProperty("data").GetProperty("buildingRecentActivity");
+        Assert.True(events.GetArrayLength() >= 2,
+            "Should have at least 2 PURCHASED events (one per tick).");
+
+        var purchasedEvents = Enumerable.Range(0, events.GetArrayLength())
+            .Select(i => events[i])
+            .Where(e => e.GetProperty("eventType").GetString() == "PURCHASED")
+            .ToList();
+
+        Assert.True(purchasedEvents.Count >= 2,
+            "Both tick 1 and tick 2 inflow records should appear as PURCHASED events.");
+
+        foreach (var ev in purchasedEvents)
+        {
+            var desc = ev.GetProperty("description").GetString() ?? "";
+            Assert.False(string.IsNullOrWhiteSpace(desc), "Each activity event must have a description.");
+            Assert.Contains("Purchased", desc, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task BuildingRecentActivity_Unauthenticated_ReturnsError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingRecentActivity($buildingId: UUID!, $limit: Int) {
+              buildingRecentActivity(buildingId: $buildingId, limit: $limit) {
+                tick
+                eventType
+                description
+              }
+            }
+            """,
+            new { buildingId = Guid.NewGuid(), limit = 10 });
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0, "Unauthenticated call must return errors.");
+    }
+
+    #endregion
+
 }

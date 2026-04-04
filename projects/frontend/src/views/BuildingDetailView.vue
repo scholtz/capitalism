@@ -37,6 +37,8 @@ import type {
   BuildingUnitInventory,
   BuildingUnitInventorySummary,
   BuildingUnitResourceHistoryPoint,
+  BuildingUnitOperationalStatus,
+  BuildingRecentActivityEvent,
   Company,
   GlobalExchangeOffer,
   ProductType,
@@ -119,6 +121,14 @@ const unitInventories = ref<BuildingUnitInventory[]>([])
 const unitResourceHistories = ref<BuildingUnitResourceHistoryPoint[]>([])
 const exchangeOffers = ref<GlobalExchangeOffer[]>([])
 const exchangeOffersLoading = ref(false)
+
+// Operational status per unit (ACTIVE/IDLE/BLOCKED/FULL/UNCONFIGURED)
+const unitOperationalStatuses = ref<BuildingUnitOperationalStatus[]>([])
+const unitOperationalStatusesLoading = ref(false)
+
+// Recent tick-by-tick activity feed for the building
+const recentActivity = ref<BuildingRecentActivityEvent[]>([])
+const recentActivityLoading = ref(false)
 
 // R&D research progress state
 const researchBrands = ref<ResearchBrandState[]>([])
@@ -1669,6 +1679,11 @@ function getUnitInventoryItemCount(unit: GridUnit | undefined): number {
   return getUnitInventories(unit).length
 }
 
+function getUnitOperationalStatus(unit: GridUnit | undefined): BuildingUnitOperationalStatus | null {
+  if (!unit) return null
+  return unitOperationalStatuses.value.find((s) => s.buildingUnitId === unit.id) ?? null
+}
+
 function formatCurrency(value: number | null | undefined): string {
   const amount = value ?? 0
   const formatter = new Intl.NumberFormat(locale.value, {
@@ -2097,6 +2112,57 @@ async function loadPublicSalesAnalytics(unitId: string | null) {
   }
 }
 
+async function loadUnitOperationalStatuses(buildingId: string) {
+  if (!auth.token) return
+  unitOperationalStatusesLoading.value = true
+  try {
+    const data = await gqlRequest<{ buildingUnitOperationalStatuses: BuildingUnitOperationalStatus[] }>(
+      `query BuildingUnitOperationalStatuses($buildingId: UUID!) {
+        buildingUnitOperationalStatuses(buildingId: $buildingId) {
+          buildingUnitId
+          status
+          blockedCode
+          blockedReason
+          idleTicks
+        }
+      }`,
+      { buildingId },
+    )
+    unitOperationalStatuses.value = data.buildingUnitOperationalStatuses ?? []
+  } catch {
+    unitOperationalStatuses.value = []
+  } finally {
+    unitOperationalStatusesLoading.value = false
+  }
+}
+
+async function loadRecentActivity(buildingId: string) {
+  if (!auth.token) return
+  recentActivityLoading.value = true
+  try {
+    const data = await gqlRequest<{ buildingRecentActivity: BuildingRecentActivityEvent[] }>(
+      `query BuildingRecentActivity($buildingId: UUID!, $limit: Int) {
+        buildingRecentActivity(buildingId: $buildingId, limit: $limit) {
+          tick
+          buildingUnitId
+          eventType
+          description
+          quantity
+          amount
+          resourceTypeId
+          productTypeId
+        }
+      }`,
+      { buildingId, limit: 30 },
+    )
+    recentActivity.value = data.buildingRecentActivity ?? []
+  } catch {
+    recentActivity.value = []
+  } finally {
+    recentActivityLoading.value = false
+  }
+}
+
 async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
   const requestId = ++activeBuildingLoadRequest
   const shouldShowLoading = !building.value
@@ -2298,6 +2364,8 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
     }
 
     await Promise.all([loadGlobalExchangeOffers(), loadResearchBrands()])
+    void loadUnitOperationalStatuses(buildingId.value)
+    void loadRecentActivity(buildingId.value)
   } catch (reason: unknown) {
     if (requestId !== activeBuildingLoadRequest) {
       return
@@ -2331,6 +2399,8 @@ useTickRefresh(async () => {
   if (unitId) {
     void loadPublicSalesAnalytics(unitId)
   }
+  void loadUnitOperationalStatuses(buildingId.value)
+  void loadRecentActivity(buildingId.value)
 })
 
 watch(
@@ -3663,6 +3733,34 @@ watch(
                   {{ t('buildingDetail.config.brandScope') }}: {{ getBrandScopeLabel((getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).brandScope) }}
                 </span>
               </div>
+
+              <!-- Operational status badge for active units -->
+              <div
+                v-if="getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))"
+                class="unit-insight-card operational-status-card"
+                :data-status="getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.status"
+                aria-label="Unit operational status"
+              >
+                <h5>{{ t('buildingDetail.operationalStatus.title') }}</h5>
+                <div class="operational-status-row">
+                  <span
+                    class="status-badge"
+                    :class="`status-${getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.status.toLowerCase()}`"
+                  >
+                    {{ t(`buildingDetail.operationalStatus.${getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.status}`) }}
+                  </span>
+                  <span v-if="getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.idleTicks > 0" class="idle-ticks-label">
+                    {{ getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.idleTicks }}t idle
+                  </span>
+                </div>
+                <p
+                  v-if="getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.blockedReason"
+                  class="blocked-reason-text"
+                >
+                  {{ getUnitOperationalStatus(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.blockedReason }}
+                </p>
+              </div>
+
               <div v-if="getUnitInventorySummary(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))" class="unit-insight-card">
                 <h5>{{ t('buildingDetail.inventory.title') }}</h5>
                 <div class="inventory-summary-grid">
@@ -3886,6 +3984,27 @@ watch(
                 </template>
 
                 <p v-else class="config-help">{{ t('buildingDetail.marketIntelligence.loadFailed') }}</p>
+              </div>
+
+              <!-- Recent Activity feed for all unit types -->
+              <div class="unit-insight-card recent-activity-panel" aria-label="Recent Activity">
+                <h5>{{ t('buildingDetail.recentActivity.title') }}</h5>
+                <p class="config-help">{{ t('buildingDetail.recentActivity.subtitle') }}</p>
+                <p v-if="recentActivityLoading" class="config-help">…</p>
+                <template v-else-if="recentActivity.length > 0">
+                  <ul class="activity-list">
+                    <li
+                      v-for="(event, idx) in recentActivity"
+                      :key="`${event.tick}-${event.buildingUnitId}-${event.eventType}-${idx}`"
+                      class="activity-item"
+                      :class="`activity-${event.eventType.toLowerCase()}`"
+                    >
+                      <span class="activity-tick">{{ t('buildingDetail.recentActivity.tickLabel', { tick: event.tick }) }}</span>
+                      <span class="activity-desc">{{ event.description }}</span>
+                    </li>
+                  </ul>
+                </template>
+                <p v-else class="config-help">{{ t('buildingDetail.recentActivity.empty') }}</p>
               </div>
             </div>
           </div>
@@ -5931,4 +6050,103 @@ watch(
   .mi-share-label {
     width: 5rem;
   }
-}</style>
+}
+
+/* ─── Operational Status Card ─── */
+.operational-status-card {
+  margin-top: 0.75rem;
+}
+
+.operational-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.status-active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-idle {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.status-blocked {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-full {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.status-unconfigured {
+  background: #f1f5f9;
+  color: #475569;
+  font-style: italic;
+}
+
+.idle-ticks-label {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+}
+
+.blocked-reason-text {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* ─── Recent Activity Panel ─── */
+.recent-activity-panel {
+  margin-top: 0.75rem;
+}
+
+.activity-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.activity-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.activity-tick {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  min-width: 3.5rem;
+}
+
+.activity-desc {
+  color: var(--color-text);
+}
+
+.activity-purchased .activity-tick { color: #1d4ed8; }
+.activity-manufactured .activity-tick { color: #059669; }
+.activity-sold .activity-tick { color: #7c3aed; }
+.activity-moved .activity-tick { color: #92400e; }</style>

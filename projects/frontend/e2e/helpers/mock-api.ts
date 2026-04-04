@@ -2324,6 +2324,36 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('buildingUnitOperationalStatuses')) {
+      const buildingId = body.variables?.buildingId
+      const building = state.players
+        .flatMap((player) => player.companies)
+        .flatMap((company) => company.buildings)
+        .find((candidate) => candidate.id === buildingId)
+
+      const buildingUnitOperationalStatuses = (building?.units ?? []).map((unit) => ({
+        buildingUnitId: unit.id,
+        status: unit.inventoryQuantity && unit.inventoryQuantity > 0 ? 'ACTIVE' : 'IDLE',
+        blockedCode: null,
+        blockedReason: null,
+        idleTicks: 0,
+      }))
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { buildingUnitOperationalStatuses } }),
+      })
+    }
+
+    if (query.includes('buildingRecentActivity')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { buildingRecentActivity: [] } }),
+      })
+    }
+
     if (query.includes('globalExchangeOffers')) {
       const destinationCityId = body.variables?.destinationCityId
       const resourceTypeId = body.variables?.resourceTypeId
