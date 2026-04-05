@@ -706,6 +706,18 @@ export interface BuildingUnitOperationalStatus {
   blockedReason: string | null
   /** Number of consecutive ticks the unit has had no activity. */
   idleTicks: number
+  /**
+   * Estimated base labor cost per tick for this unit, in game currency.
+   * Derived from unit type, level, and the company's effective hourly wage for the building's city.
+   * Null if the unit carries no labor cost.
+   */
+  nextTickLaborCost: number | null
+  /**
+   * Estimated energy cost per tick for this unit, in game currency.
+   * Derived from unit type, level, and the fixed energy price per MWh.
+   * Null if the unit carries no energy cost.
+   */
+  nextTickEnergyCost: number | null
 }
 
 /**

@@ -14385,6 +14385,114 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         Assert.True(errors.GetArrayLength() > 0, "Unauthenticated call must return errors.");
     }
 
+    [Fact]
+    public async Task BuildingUnitOperationalStatuses_PurchaseUnit_ReturnsNextTickCosts()
+    {
+        // Arrange: seed a factory in Bratislava with a configured purchase unit.
+        var (token, buildingId) = await SeedOperationalStatusTestAsync("opstat-costest",
+            (db, bid, _, _) =>
+            {
+                var resource = db.ResourceTypes.First();
+                db.BuildingUnits.Add(new BuildingUnit
+                {
+                    Id = Guid.NewGuid(),
+                    BuildingId = bid,
+                    UnitType = UnitType.Purchase,
+                    GridX = 0,
+                    GridY = 0,
+                    Level = 1,
+                    ResourceTypeId = resource.Id,
+                });
+            });
+
+        // Act
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingUnitOperationalStatuses($buildingId: UUID!) {
+              buildingUnitOperationalStatuses(buildingId: $buildingId) {
+                buildingUnitId
+                status
+                nextTickLaborCost
+                nextTickEnergyCost
+              }
+            }
+            """,
+            new { buildingId },
+            token);
+
+        // Assert
+        var statuses = result.GetProperty("data").GetProperty("buildingUnitOperationalStatuses");
+        Assert.Equal(1, statuses.GetArrayLength());
+        var status = statuses[0];
+
+        // A PURCHASE unit at level 1:
+        // laborHours = 0.35; energyMwh = 0.06
+        // energyCost = 0.06 * 55 = $3.30 (fixed regardless of city)
+        // laborCost = 0.35 * effectiveHourlyWage (varies by city: $18–$28)
+        var laborCost = status.GetProperty("nextTickLaborCost").GetDecimal();
+        var energyCost = status.GetProperty("nextTickEnergyCost").GetDecimal();
+        Assert.True(laborCost > 0m, "PURCHASE unit must have a positive labor cost.");
+        Assert.True(energyCost > 0m, "PURCHASE unit must have a positive energy cost.");
+        // Energy cost is fixed (0.06 MWh * $55/MWh = $3.30).
+        Assert.Equal(3.30m, energyCost);
+        // Labor cost is between min wage × 0.35 and max wage × 0.35.
+        Assert.True(laborCost >= 6.30m && laborCost <= 9.80m,
+            $"PURCHASE unit labor cost {laborCost} must be in [6.30, 9.80] range across all seeded cities.");
+    }
+
+    [Fact]
+    public async Task BuildingUnitOperationalStatuses_ManufacturingUnit_ReturnsNextTickCosts()
+    {
+        // Arrange: seed a factory with a manufacturing unit configured with a product.
+        var (token, buildingId) = await SeedOperationalStatusTestAsync("opstat-mfg-cost",
+            (db, bid, _, _) =>
+            {
+                var product = db.ProductTypes.First();
+                db.BuildingUnits.Add(new BuildingUnit
+                {
+                    Id = Guid.NewGuid(),
+                    BuildingId = bid,
+                    UnitType = UnitType.Manufacturing,
+                    GridX = 0,
+                    GridY = 0,
+                    Level = 1,
+                    ProductTypeId = product.Id,
+                });
+            });
+
+        // Act
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingUnitOperationalStatuses($buildingId: UUID!) {
+              buildingUnitOperationalStatuses(buildingId: $buildingId) {
+                buildingUnitId
+                nextTickLaborCost
+                nextTickEnergyCost
+              }
+            }
+            """,
+            new { buildingId },
+            token);
+
+        // Assert
+        var statuses = result.GetProperty("data").GetProperty("buildingUnitOperationalStatuses");
+        Assert.Equal(1, statuses.GetArrayLength());
+        var status = statuses[0];
+
+        // MANUFACTURING level 1: laborHours = 0.85; energyMwh = 0.18
+        // energyCost = 0.18 * 55 = $9.90 (fixed)
+        // laborCost = 0.85 * effectiveHourlyWage (varies by city: $18–$28)
+        var laborCost = status.GetProperty("nextTickLaborCost").GetDecimal();
+        var energyCost = status.GetProperty("nextTickEnergyCost").GetDecimal();
+        Assert.True(laborCost > 0m, "MANUFACTURING unit must have a positive labor cost.");
+        Assert.True(energyCost > 0m, "MANUFACTURING unit must have a positive energy cost.");
+        // Energy cost is fixed (0.18 MWh * $55/MWh = $9.90).
+        Assert.Equal(9.90m, energyCost);
+        // Labor cost is between min wage × 0.85 and max wage × 0.85.
+        Assert.True(laborCost >= 15.30m && laborCost <= 23.80m,
+            $"MANUFACTURING unit labor cost {laborCost} must be in [15.30, 23.80] range across all seeded cities.");
+    }
+
     #endregion
 
     #region Media Houses and Marketing Campaigns

@@ -50,6 +50,22 @@ public sealed class BuildingUnitOperationalStatus
 
     /// <summary>Number of consecutive ticks the unit has had no activity.</summary>
     public int IdleTicks { get; set; }
+
+    /// <summary>
+    /// Estimated base labor cost charged against the company each tick for this unit,
+    /// in game currency. Computed from the unit's base manhours and the company's
+    /// effective hourly wage for the building's city. Null if the unit type carries
+    /// no labor cost (e.g. unconfigured or zero-labor unit).
+    /// Note: does not include the administration overhead applied to manufacturing units.
+    /// </summary>
+    public decimal? NextTickLaborCost { get; set; }
+
+    /// <summary>
+    /// Estimated energy cost charged against the company each tick for this unit,
+    /// in game currency. Computed from the unit's base energy consumption and the
+    /// fixed energy price per MWh. Null if the unit type carries no energy cost.
+    /// </summary>
+    public decimal? NextTickEnergyCost { get; set; }
 }
 
 /// <summary>

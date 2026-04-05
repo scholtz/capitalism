@@ -2389,13 +2389,34 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         .flatMap((company) => company.buildings)
         .find((candidate) => candidate.id === buildingId)
 
-      const buildingUnitOperationalStatuses = (building?.units ?? []).map((unit) => ({
-        buildingUnitId: unit.id,
-        status: unit.inventoryQuantity && unit.inventoryQuantity > 0 ? 'ACTIVE' : 'IDLE',
-        blockedCode: null,
-        blockedReason: null,
-        idleTicks: 0,
-      }))
+      const buildingUnitOperationalStatuses = (building?.units ?? []).map((unit) => {
+        // Base labor hours per unit type (matches backend CompanyEconomyCalculator)
+        const laborHoursMap: Record<string, number> = {
+          MINING: 1.4, STORAGE: 0.15, B2B_SALES: 0.45, PURCHASE: 0.35,
+          MANUFACTURING: 0.85, BRANDING: 0.3, MARKETING: 0.6, PUBLIC_SALES: 0.7,
+          PRODUCT_QUALITY: 0.55, BRAND_QUALITY: 0.55,
+        }
+        const energyMwhMap: Record<string, number> = {
+          MINING: 0.45, STORAGE: 0.04, B2B_SALES: 0.08, PURCHASE: 0.06,
+          MANUFACTURING: 0.18, BRANDING: 0.05, MARKETING: 0.07, PUBLIC_SALES: 0.12,
+          PRODUCT_QUALITY: 0.09, BRAND_QUALITY: 0.09,
+        }
+        const level = unit.level || 1
+        const laborHours = (laborHoursMap[unit.unitType] ?? 0) * level
+        const energyMwh = (energyMwhMap[unit.unitType] ?? 0) * level
+        // Default hourly wage: Bratislava base 18 * default multiplier 1.0
+        const hourlyWage = 18
+        const energyPricePerMwh = 55
+        return {
+          buildingUnitId: unit.id,
+          status: unit.inventoryQuantity && unit.inventoryQuantity > 0 ? 'ACTIVE' : 'IDLE',
+          blockedCode: null,
+          blockedReason: null,
+          idleTicks: 0,
+          nextTickLaborCost: laborHours > 0 ? Math.round(laborHours * hourlyWage * 100) / 100 : null,
+          nextTickEnergyCost: energyMwh > 0 ? Math.round(energyMwh * energyPricePerMwh * 100) / 100 : null,
+        }
+      })
 
       return route.fulfill({
         status: 200,

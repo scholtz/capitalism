@@ -806,6 +806,12 @@ export default {
       loadFailed: 'Could not load unit status.',
       idleTicks: '{count}t idle',
     },
+    operatingCost: {
+      title: 'Operating costs (est./tick)',
+      labor: 'Labor: {cost}',
+      energy: 'Energy: {cost}',
+      tileLabel: 'op: {cost}',
+    },
     recentActivity: {
       title: 'Recent Activity',
       subtitle: 'What happened in the last ticks — purchases, manufacturing runs, and sales.',

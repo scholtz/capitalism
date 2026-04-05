@@ -1933,6 +1933,20 @@ function getUnitInventoryCostLabel(unit: GridUnit | undefined): string | null {
   return value == null ? null : formatCurrency(value)
 }
 
+function getUnitNextTickOperatingCost(unit: GridUnit | undefined): number | null {
+  const status = getUnitOperationalStatus(unit)
+  if (!status) return null
+  const labor = status.nextTickLaborCost ?? 0
+  const energy = status.nextTickEnergyCost ?? 0
+  const total = labor + energy
+  return total > 0 ? total : null
+}
+
+function getUnitNextTickOperatingCostLabel(unit: GridUnit | undefined): string | null {
+  const cost = getUnitNextTickOperatingCost(unit)
+  return cost == null ? null : formatCurrency(cost)
+}
+
 function getDraftUnitConstructionCost(unit: GridUnit | undefined): number {
   if (!unit) return 0
   const activeUnit = getUnitAtFrom(activeUnits.value, unit.gridX, unit.gridY)
@@ -2327,6 +2341,8 @@ async function loadUnitOperationalStatuses(buildingId: string) {
           blockedCode
           blockedReason
           idleTicks
+          nextTickLaborCost
+          nextTickEnergyCost
         }
       }`,
       { buildingId },
@@ -3189,6 +3205,9 @@ watch(
                         </span>
                         <span v-if="getUnitInventoryCostLabel(getUnitAtFrom(activeUnits, x, y))" class="cell-value" aria-hidden="true">
                           {{ t('buildingDetail.inventory.sourcingCostsShort', { value: getUnitInventoryCostLabel(getUnitAtFrom(activeUnits, x, y)) }) }}
+                        </span>
+                        <span v-if="getUnitNextTickOperatingCostLabel(getUnitAtFrom(activeUnits, x, y))" class="cell-operating-cost" aria-hidden="true">
+                          {{ t('buildingDetail.operatingCost.tileLabel', { cost: getUnitNextTickOperatingCostLabel(getUnitAtFrom(activeUnits, x, y)) }) }}
                         </span>
                         <div v-if="getUnitInventorySummary(getUnitAtFrom(activeUnits, x, y))?.capacity" class="cell-capacity" aria-hidden="true">
                           <span
@@ -4112,6 +4131,19 @@ watch(
                 >
                   {{ selectedActiveUnitOperationalStatus.blockedReason }}
                 </p>
+                <!-- Next-tick operating costs breakdown -->
+                <div
+                  v-if="selectedActiveUnitOperationalStatus.nextTickLaborCost != null || selectedActiveUnitOperationalStatus.nextTickEnergyCost != null"
+                  class="operating-costs-row"
+                >
+                  <span class="operating-cost-label">{{ t('buildingDetail.operatingCost.title') }}</span>
+                  <span v-if="selectedActiveUnitOperationalStatus.nextTickLaborCost != null" class="operating-cost-item">
+                    {{ t('buildingDetail.operatingCost.labor', { cost: formatCurrency(selectedActiveUnitOperationalStatus.nextTickLaborCost) }) }}
+                  </span>
+                  <span v-if="selectedActiveUnitOperationalStatus.nextTickEnergyCost != null" class="operating-cost-item">
+                    {{ t('buildingDetail.operatingCost.energy', { cost: formatCurrency(selectedActiveUnitOperationalStatus.nextTickEnergyCost) }) }}
+                  </span>
+                </div>
               </div>
 
               <div v-if="getUnitInventorySummary(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))" class="unit-insight-card">
@@ -5236,6 +5268,7 @@ watch(
 .cell-item,
 .cell-metric,
 .cell-value,
+.cell-operating-cost,
 .cell-stock {
   font-size: 0.5625rem;
   text-align: left;
@@ -5255,6 +5288,10 @@ watch(
 .cell-stock,
 .cell-value {
   font-weight: 600;
+}
+
+.cell-operating-cost {
+  opacity: 0.75;
 }
 
 .cell-level,
@@ -6698,6 +6735,31 @@ watch(
   color: var(--color-text-secondary);
   line-height: 1.45;
   margin: 0;
+}
+
+.operating-costs-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.operating-cost-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.operating-cost-item {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-border) 40%, transparent);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.35rem;
 }
 
 /* ─── Recent Activity Panel ─── */

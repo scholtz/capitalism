@@ -809,6 +809,12 @@ export default {
       loadFailed: 'Einheitenstatus konnte nicht geladen werden.',
       idleTicks: '{count}t inaktiv',
     },
+    operatingCost: {
+      title: 'Betriebskosten (Schätz./Tick)',
+      labor: 'Arbeit: {cost}',
+      energy: 'Energie: {cost}',
+      tileLabel: 'Betr: {cost}',
+    },
     recentActivity: {
       title: 'Letzte Aktivität',
       subtitle: 'Was in den letzten Ticks passiert ist — Einkäufe, Produktionsläufe und Verkäufe.',

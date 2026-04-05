@@ -7886,6 +7886,152 @@ test.describe('Procurement mode configuration', () => {
     await expect(page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) })).toHaveClass(/selected/)
 
     // City lock dropdown must be hidden – OPTIMAL mode must not expose city restriction
-    await expect(cityLockDropdown).not.toBeVisible()
+    await expect(cityLockDropdown).toBeHidden()
+  })
+
+  test('shows operating cost label on active grid tile', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-opcost-tile',
+      playerId: player.id,
+      name: 'OpCost Tile Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-opcost-tile',
+          companyId: 'company-opcost-tile',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'OpCost Tile Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 5,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'opcost-unit-tile-1',
+              buildingId: 'building-opcost-tile',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              inventoryQuantity: 50,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-opcost-tile')
+    await expect(page.getByRole('heading', { name: 'OpCost Tile Factory' })).toBeVisible()
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const purchaseCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+
+    // The tile should show an operating cost label with "op:" prefix
+    const operatingCostLabel = purchaseCell.locator('.cell-operating-cost')
+    await expect(operatingCostLabel).toBeVisible()
+    const labelText = await operatingCostLabel.textContent()
+    expect(labelText?.toLowerCase()).toContain('op:')
+  })
+
+  test('shows operating cost breakdown in unit detail sidebar', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-opcost-sidebar',
+      playerId: player.id,
+      name: 'OpCost Sidebar Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-opcost-sidebar',
+          companyId: 'company-opcost-sidebar',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'OpCost Sidebar Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 5,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'opcost-unit-sb-1',
+              buildingId: 'building-opcost-sidebar',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              inventoryQuantity: 50,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-opcost-sidebar')
+    await expect(page.getByRole('heading', { name: 'OpCost Sidebar Factory' })).toBeVisible()
+
+    // Click the PURCHASE unit to open the inspector
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const purchaseCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
+    await purchaseCell.click()
+
+    // The operating costs row should be visible in the sidebar
+    await expect(page.locator('.operating-costs-row')).toBeVisible()
+
+    // Should show labor and energy cost items
+    const operatingCostsRow = page.locator('.operating-costs-row')
+    await expect(operatingCostsRow.locator('.operating-cost-item').first()).toBeVisible()
+    // At least one cost item should contain a dollar amount
+    const costText = await operatingCostsRow.textContent()
+    expect(costText).toContain('$')
   })
 })

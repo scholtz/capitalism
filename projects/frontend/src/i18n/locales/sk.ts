@@ -805,6 +805,12 @@ export default {
       loadFailed: 'Stav jednotky sa nepodarilo načítať.',
       idleTicks: '{count}t nečinná',
     },
+    operatingCost: {
+      title: 'Prevádzkové náklady (odhad/tick)',
+      labor: 'Práca: {cost}',
+      energy: 'Energia: {cost}',
+      tileLabel: 'oper: {cost}',
+    },
     recentActivity: {
       title: 'Nedávna aktivita',
       subtitle: 'Čo sa dialo v posledných tickoch — nákupy, výrobné behy a predaje.',
