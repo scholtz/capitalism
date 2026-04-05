@@ -11807,6 +11807,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         // Seed ticks with moderate utilization: level=1 capacity=20, need 30-70% range
         // 10 units sold / 20 capacity = 50% utilization → MODERATE
+        // Backend thresholds: STRONG >= 0.7, MODERATE >= 0.3, WEAK < 0.3
+        // The MODERATE interval is [0.3, 0.7) — exactly 0.7 is classified as STRONG.
         for (var tick = 1; tick <= 5; tick++)
         {
             db.PublicSalesRecords.Add(new PublicSalesRecord
@@ -11871,7 +11873,10 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             .FirstAsync(u => u.BuildingId == Guid.Parse(shopIdB) && u.UnitType == "PUBLIC_SALES");
 
         var productType = await db.ProductTypes.FirstAsync(p => p.Id == Guid.Parse(productId));
-        // Use a high tick value unlikely to conflict with any other test's seeded data
+        // All tests share the same SQLite database within a test class (IClassFixture).
+        // The market share query filters by the most recent tick for each unit's records,
+        // then fetches all records from the same city/product at that tick. Using a high
+        // tick value that no other test in this class seeds avoids cross-test contamination.
         var tick = 99999L;
 
         // A sells 75 units, B sells 25 units → A has 75% share, B has 25% share

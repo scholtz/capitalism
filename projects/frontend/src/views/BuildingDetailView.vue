@@ -483,6 +483,19 @@ const selectedPublicSalesUnit = computed(() =>
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
 
+/** Max revenue across all history ticks – used to normalise the revenue bar chart heights. */
+const miMaxRevenue = computed(() =>
+  publicSalesAnalytics.value?.revenueHistory.reduce((m, s) => Math.max(m, s.revenue), 0) ?? 0,
+)
+/** Max quantity across all history ticks – used to normalise the quantity bar chart heights. */
+const miMaxQuantitySold = computed(() =>
+  publicSalesAnalytics.value?.revenueHistory.reduce((m, s) => Math.max(m, s.quantitySold), 0) ?? 0,
+)
+/** Max price per unit across all price history ticks – used to normalise the price bar chart heights. */
+const miMaxPricePerUnit = computed(() =>
+  publicSalesAnalytics.value?.priceHistory.reduce((m, s) => Math.max(m, s.pricePerUnit), 0) ?? 0,
+)
+
 type ExchangeOfferItem = AnnotatedExchangeOffer
 
 const annotatedExchangeOffers = computed<ExchangeOfferItem[]>(() => {
@@ -4398,7 +4411,7 @@ watch(
                           :key="snap.tick"
                           class="mi-bar mi-bar-revenue"
                           :style="{
-                            height: `${Math.max(2, publicSalesAnalytics.revenueHistory.reduce((m, s) => Math.max(m, s.revenue), 0) > 0 ? (snap.revenue / publicSalesAnalytics.revenueHistory.reduce((m, s) => Math.max(m, s.revenue), 0)) * 100 : 0).toFixed(1)}%`,
+                            height: `${Math.max(2, miMaxRevenue > 0 ? (snap.revenue / miMaxRevenue) * 100 : 0).toFixed(1)}%`,
                           }"
                           :title="`T${snap.tick}: ${formatCurrency(snap.revenue)}`"
                         ></div>
@@ -4414,7 +4427,7 @@ watch(
                           :key="snap.tick"
                           class="mi-bar mi-bar-quantity"
                           :style="{
-                            height: `${Math.max(2, publicSalesAnalytics.revenueHistory.reduce((m, s) => Math.max(m, s.quantitySold), 0) > 0 ? (snap.quantitySold / publicSalesAnalytics.revenueHistory.reduce((m, s) => Math.max(m, s.quantitySold), 0)) * 100 : 0).toFixed(1)}%`,
+                            height: `${Math.max(2, miMaxQuantitySold > 0 ? (snap.quantitySold / miMaxQuantitySold) * 100 : 0).toFixed(1)}%`,
                           }"
                           :title="`T${snap.tick}: ${formatUnitQuantity(snap.quantitySold)}`"
                         ></div>
@@ -4430,7 +4443,7 @@ watch(
                           :key="snap.tick"
                           class="mi-bar mi-bar-price"
                           :style="{
-                            height: `${Math.max(2, publicSalesAnalytics.priceHistory.reduce((m, s) => Math.max(m, s.pricePerUnit), 0) > 0 ? (snap.pricePerUnit / publicSalesAnalytics.priceHistory.reduce((m, s) => Math.max(m, s.pricePerUnit), 0)) * 100 : 0).toFixed(1)}%`,
+                            height: `${Math.max(2, miMaxPricePerUnit > 0 ? (snap.pricePerUnit / miMaxPricePerUnit) * 100 : 0).toFixed(1)}%`,
                           }"
                           :title="`T${snap.tick}: ${formatCurrency(snap.pricePerUnit)}`"
                         ></div>
