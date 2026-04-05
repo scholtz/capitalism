@@ -314,6 +314,17 @@ public sealed class Mutation
                     .Build());
         var hasActiveProSubscription = ProductAccessService.HasActiveProSubscription(player, nowUtc);
 
+        // Validate company name
+        var trimmedCompanyName = input.CompanyName?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(trimmedCompanyName))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Company name cannot be empty.")
+                    .SetCode("INVALID_COMPANY_NAME")
+                    .Build());
+        }
+
         // Validate industry
         if (!Industry.StarterIndustries.Contains(input.Industry))
         {
@@ -380,7 +391,7 @@ public sealed class Mutation
         {
             Id = Guid.NewGuid(),
             PlayerId = userId,
-            Name = input.CompanyName,
+            Name = trimmedCompanyName,
             Cash = 500_000m,
             FoundedAtUtc = nowUtc,
             FoundedAtTick = currentTick
@@ -393,7 +404,7 @@ public sealed class Mutation
             company,
             factoryLotId,
             BuildingType.Factory,
-            $"{input.CompanyName} Factory",
+            $"{trimmedCompanyName} Factory",
             Engine.GameConstants.PowerDemandMw(BuildingType.Factory, 1),
             nowUtc,
             city.Id);
@@ -405,7 +416,7 @@ public sealed class Mutation
             company,
             shopLotId,
             BuildingType.SalesShop,
-            $"{input.CompanyName} Shop",
+            $"{trimmedCompanyName} Shop",
             Engine.GameConstants.PowerDemandMw(BuildingType.SalesShop, 1),
             nowUtc,
             city.Id);
@@ -476,6 +487,16 @@ public sealed class Mutation
                     .Build());
         }
 
+        var trimmedCompanyName = input.CompanyName?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(trimmedCompanyName))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Company name cannot be empty.")
+                    .SetCode("INVALID_COMPANY_NAME")
+                    .Build());
+        }
+
         if (!Industry.StarterIndustries.Contains(input.Industry))
         {
             throw new GraphQLException(
@@ -499,7 +520,7 @@ public sealed class Mutation
         {
             Id = Guid.NewGuid(),
             PlayerId = userId,
-            Name = input.CompanyName,
+            Name = trimmedCompanyName,
             Cash = 500_000m,
             FoundedAtUtc = nowUtc,
             FoundedAtTick = await db.GameStates.AsNoTracking().Select(state => state.CurrentTick).FirstOrDefaultAsync()
@@ -511,7 +532,7 @@ public sealed class Mutation
             company,
             input.FactoryLotId,
             BuildingType.Factory,
-            $"{input.CompanyName} Factory",
+            $"{trimmedCompanyName} Factory",
             Engine.GameConstants.PowerDemandMw(BuildingType.Factory, 1),
             nowUtc,
             input.CityId);

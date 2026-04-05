@@ -5921,6 +5921,90 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task StartOnboardingCompany_WithEmptyCompanyName_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"onboard-empty-name-{Guid.NewGuid()}@test.com", "EmptyNameStart");
+        var cityId = await GetCityIdByNameAsync();
+        var lotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "", factoryLotId = lotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_COMPANY_NAME", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StartOnboardingCompany_WithWhitespaceCompanyName_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"onboard-ws-name-{Guid.NewGuid()}@test.com", "WsNameStart");
+        var cityId = await GetCityIdByNameAsync();
+        var lotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "   ", factoryLotId = lotId } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_COMPANY_NAME", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task CompleteOnboarding_WithEmptyCompanyName_ReturnsError()
+    {
+        var token = await RegisterAndGetTokenAsync($"onboard-empty-name-complete-{Guid.NewGuid()}@test.com", "EmptyNameComplete");
+        var cityId = await GetCityIdByNameAsync();
+        var chairProduct = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation CompleteOnboarding($input: OnboardingInput!) {
+              completeOnboarding(input: $input) { company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, productTypeId = chairProduct, companyName = "" } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("INVALID_COMPANY_NAME", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StartOnboardingCompany_WithTrimmedCompanyName_TrimsWhitespace()
+    {
+        // Company name with surrounding whitespace should be trimmed and stored without the whitespace.
+        var token = await RegisterAndGetTokenAsync($"onboard-trim-name-{Guid.NewGuid()}@test.com", "TrimNameStart");
+        var cityId = await GetCityIdByNameAsync();
+        var lotId = await GetAvailableLotIdAsync(cityId, "FACTORY");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                company { name }
+              }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "  Acme Corp  ", factoryLotId = lotId } },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "Expected no errors");
+        var name = result.GetProperty("data").GetProperty("startOnboardingCompany").GetProperty("company").GetProperty("name").GetString();
+        Assert.Equal("Acme Corp", name);
+    }
+
+    [Fact]
     public async Task FinishOnboarding_Unauthenticated_ReturnsError()
     {
         var result = await ExecuteGraphQlAsync(
