@@ -143,6 +143,7 @@ builder.Services.AddScoped<ITickPhase, PurchasingPhase>();
 builder.Services.AddScoped<ITickPhase, MarketingPhase>();
 builder.Services.AddScoped<ITickPhase, ResearchPhase>();
 builder.Services.AddScoped<ITickPhase, RentPhase>();
+builder.Services.AddScoped<ITickPhase, LoanRepaymentPhase>();
 builder.Services.AddScoped<ITickPhase, TaxPhase>();
 builder.Services.AddHostedService<GameTickHostedService>();
 builder.Services.AddHostedService<MasterServerRegistrationHostedService>();

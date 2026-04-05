@@ -1704,6 +1704,193 @@ public sealed class Query
             };
         }).ToList();
     }
+
+    // ── Bank Lending Marketplace ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns all active loan offers visible to borrowers.
+    /// Excludes offers from the current player's own companies (self-lending guard).
+    /// </summary>
+    public async Task<List<LoanOfferSummary>> GetLoanOffers(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext?.User.GetUserId();
+
+        // Get IDs of companies owned by current player (to exclude own offers).
+        ISet<Guid> ownCompanyIds = new HashSet<Guid>();
+        if (userId.HasValue)
+        {
+            ownCompanyIds = (await db.Companies
+                .Where(c => c.PlayerId == userId.Value)
+                .Select(c => c.Id)
+                .ToListAsync()).ToHashSet();
+        }
+
+        var offers = await db.LoanOffers
+            .Include(o => o.LenderCompany)
+            .Include(o => o.BankBuilding)
+            .ThenInclude(b => b.City)
+            .Where(o => o.IsActive && o.TotalCapacity > o.UsedCapacity)
+            .AsNoTracking()
+            .ToListAsync();
+
+        return offers
+            .Where(o => !ownCompanyIds.Contains(o.LenderCompanyId))
+            .Select(o => new LoanOfferSummary
+            {
+                Id = o.Id,
+                BankBuildingId = o.BankBuildingId,
+                BankBuildingName = o.BankBuilding.Name,
+                CityId = o.BankBuilding.CityId,
+                CityName = o.BankBuilding.City.Name,
+                LenderCompanyId = o.LenderCompanyId,
+                LenderCompanyName = o.LenderCompany.Name,
+                AnnualInterestRatePercent = o.AnnualInterestRatePercent,
+                MaxPrincipalPerLoan = o.MaxPrincipalPerLoan,
+                TotalCapacity = o.TotalCapacity,
+                UsedCapacity = o.UsedCapacity,
+                RemainingCapacity = o.TotalCapacity - o.UsedCapacity,
+                DurationTicks = o.DurationTicks,
+                IsActive = o.IsActive,
+                CreatedAtTick = o.CreatedAtTick,
+                CreatedAtUtc = o.CreatedAtUtc,
+            }).ToList();
+    }
+
+    /// <summary>
+    /// Returns all loan offers published by the authenticated player's companies.
+    /// Includes inactive offers and utilisation metrics.
+    /// </summary>
+    [Authorize]
+    public async Task<List<LoanOfferSummary>> GetMyLoanOffers(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var companyIds = await db.Companies
+            .Where(c => c.PlayerId == userId)
+            .Select(c => c.Id)
+            .ToListAsync();
+
+        var offers = await db.LoanOffers
+            .Include(o => o.LenderCompany)
+            .Include(o => o.BankBuilding)
+            .ThenInclude(b => b.City)
+            .Where(o => companyIds.Contains(o.LenderCompanyId))
+            .AsNoTracking()
+            .ToListAsync();
+
+        return offers.Select(o => new LoanOfferSummary
+        {
+            Id = o.Id,
+            BankBuildingId = o.BankBuildingId,
+            BankBuildingName = o.BankBuilding.Name,
+            CityId = o.BankBuilding.CityId,
+            CityName = o.BankBuilding.City.Name,
+            LenderCompanyId = o.LenderCompanyId,
+            LenderCompanyName = o.LenderCompany.Name,
+            AnnualInterestRatePercent = o.AnnualInterestRatePercent,
+            MaxPrincipalPerLoan = o.MaxPrincipalPerLoan,
+            TotalCapacity = o.TotalCapacity,
+            UsedCapacity = o.UsedCapacity,
+            RemainingCapacity = o.TotalCapacity - o.UsedCapacity,
+            DurationTicks = o.DurationTicks,
+            IsActive = o.IsActive,
+            CreatedAtTick = o.CreatedAtTick,
+            CreatedAtUtc = o.CreatedAtUtc,
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Returns all active and historical loans for the authenticated player's companies (borrower view).
+    /// </summary>
+    [Authorize]
+    public async Task<List<LoanSummary>> GetMyLoans(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var companyIds = await db.Companies
+            .Where(c => c.PlayerId == userId)
+            .Select(c => c.Id)
+            .ToListAsync();
+
+        var loans = await db.Loans
+            .Include(l => l.LenderCompany)
+            .Include(l => l.BankBuilding)
+            .Include(l => l.BorrowerCompany)
+            .Where(l => companyIds.Contains(l.BorrowerCompanyId))
+            .AsNoTracking()
+            .ToListAsync();
+
+        return loans.Select(MapToLoanSummary).ToList();
+    }
+
+    /// <summary>
+    /// Returns all loans issued by a specific bank building (lender view).
+    /// Only the bank's owning player can access this.
+    /// </summary>
+    [Authorize]
+    public async Task<List<LoanSummary>> GetBankLoans(
+        Guid bankBuildingId,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var building = await db.Buildings
+            .Include(b => b.Company)
+            .FirstOrDefaultAsync(b => b.Id == bankBuildingId && b.Type == Data.Entities.BuildingType.Bank);
+
+        if (building is null || building.Company.PlayerId != userId)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Bank building not found or you do not own it.")
+                    .SetCode("BANK_NOT_FOUND")
+                    .Build());
+        }
+
+        var loans = await db.Loans
+            .Include(l => l.BorrowerCompany)
+            .Include(l => l.LenderCompany)
+            .Include(l => l.BankBuilding)
+            .Where(l => l.BankBuildingId == bankBuildingId)
+            .AsNoTracking()
+            .ToListAsync();
+
+        return loans.Select(MapToLoanSummary).ToList();
+    }
+
+    private static LoanSummary MapToLoanSummary(Loan l) => new()
+    {
+        Id = l.Id,
+        LoanOfferId = l.LoanOfferId,
+        BorrowerCompanyId = l.BorrowerCompanyId,
+        BorrowerCompanyName = l.BorrowerCompany.Name,
+        LenderCompanyId = l.LenderCompanyId,
+        LenderCompanyName = l.LenderCompany.Name,
+        BankBuildingId = l.BankBuildingId,
+        BankBuildingName = l.BankBuilding.Name,
+        OriginalPrincipal = l.OriginalPrincipal,
+        RemainingPrincipal = l.RemainingPrincipal,
+        AnnualInterestRatePercent = l.AnnualInterestRatePercent,
+        DurationTicks = l.DurationTicks,
+        StartTick = l.StartTick,
+        DueTick = l.DueTick,
+        NextPaymentTick = l.NextPaymentTick,
+        PaymentAmount = l.PaymentAmount,
+        PaymentsMade = l.PaymentsMade,
+        TotalPayments = l.TotalPayments,
+        Status = l.Status,
+        MissedPayments = l.MissedPayments,
+        AccumulatedPenalty = l.AccumulatedPenalty,
+        AcceptedAtUtc = l.AcceptedAtUtc,
+        ClosedAtUtc = l.ClosedAtUtc,
+    };
 }
 
 /// <summary>Payload for player ranking.</summary>
@@ -2024,4 +2211,53 @@ public sealed class CityMediaHouseInfo
     public string PowerStatus { get; set; } = Data.Entities.PowerStatus.Powered;
 
     public bool IsUnderConstruction { get; set; }
+}
+
+/// <summary>Read model for a loan offer visible to borrowers or bank owners.</summary>
+public sealed class LoanOfferSummary
+{
+    public Guid Id { get; set; }
+    public Guid BankBuildingId { get; set; }
+    public string BankBuildingName { get; set; } = string.Empty;
+    public Guid CityId { get; set; }
+    public string CityName { get; set; } = string.Empty;
+    public Guid LenderCompanyId { get; set; }
+    public string LenderCompanyName { get; set; } = string.Empty;
+    public decimal AnnualInterestRatePercent { get; set; }
+    public decimal MaxPrincipalPerLoan { get; set; }
+    public decimal TotalCapacity { get; set; }
+    public decimal UsedCapacity { get; set; }
+    public decimal RemainingCapacity { get; set; }
+    public long DurationTicks { get; set; }
+    public bool IsActive { get; set; }
+    public long CreatedAtTick { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+/// <summary>Read model for an active or historical loan (borrower or lender view).</summary>
+public sealed class LoanSummary
+{
+    public Guid Id { get; set; }
+    public Guid LoanOfferId { get; set; }
+    public Guid BorrowerCompanyId { get; set; }
+    public string BorrowerCompanyName { get; set; } = string.Empty;
+    public Guid LenderCompanyId { get; set; }
+    public string LenderCompanyName { get; set; } = string.Empty;
+    public Guid BankBuildingId { get; set; }
+    public string BankBuildingName { get; set; } = string.Empty;
+    public decimal OriginalPrincipal { get; set; }
+    public decimal RemainingPrincipal { get; set; }
+    public decimal AnnualInterestRatePercent { get; set; }
+    public long DurationTicks { get; set; }
+    public long StartTick { get; set; }
+    public long DueTick { get; set; }
+    public long NextPaymentTick { get; set; }
+    public decimal PaymentAmount { get; set; }
+    public int PaymentsMade { get; set; }
+    public int TotalPayments { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int MissedPayments { get; set; }
+    public decimal AccumulatedPenalty { get; set; }
+    public DateTime AcceptedAtUtc { get; set; }
+    public DateTime? ClosedAtUtc { get; set; }
 }

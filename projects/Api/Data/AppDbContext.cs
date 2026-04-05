@@ -75,6 +75,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     /// <summary>Per-tick public sales snapshots for analytics.</summary>
     public DbSet<PublicSalesRecord> PublicSalesRecords => Set<PublicSalesRecord>();
 
+    /// <summary>Loan offers published by bank buildings.</summary>
+    public DbSet<LoanOffer> LoanOffers => Set<LoanOffer>();
+
+    /// <summary>Active and historical loans between companies.</summary>
+    public DbSet<Loan> Loans => Set<Loan>();
+
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -399,6 +405,38 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasOne(r => r.ResourceType).WithMany().HasForeignKey(r => r.ResourceTypeId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(r => new { r.BuildingUnitId, r.Tick });
             e.HasIndex(r => new { r.CompanyId, r.Tick });
+        });
+
+        // LoanOffer
+        modelBuilder.Entity<LoanOffer>(e =>
+        {
+            e.HasKey(o => o.Id);
+            e.Property(o => o.AnnualInterestRatePercent).HasPrecision(8, 4);
+            e.Property(o => o.MaxPrincipalPerLoan).HasPrecision(18, 2);
+            e.Property(o => o.TotalCapacity).HasPrecision(18, 2);
+            e.Property(o => o.UsedCapacity).HasPrecision(18, 2);
+            e.HasOne(o => o.BankBuilding).WithMany().HasForeignKey(o => o.BankBuildingId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(o => o.LenderCompany).WithMany().HasForeignKey(o => o.LenderCompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(o => new { o.LenderCompanyId, o.IsActive });
+        });
+
+        // Loan
+        modelBuilder.Entity<Loan>(e =>
+        {
+            e.HasKey(l => l.Id);
+            e.Property(l => l.OriginalPrincipal).HasPrecision(18, 2);
+            e.Property(l => l.RemainingPrincipal).HasPrecision(18, 4);
+            e.Property(l => l.AnnualInterestRatePercent).HasPrecision(8, 4);
+            e.Property(l => l.PaymentAmount).HasPrecision(18, 4);
+            e.Property(l => l.AccumulatedPenalty).HasPrecision(18, 4);
+            e.Property(l => l.Status).HasMaxLength(20);
+            e.HasOne(l => l.LoanOffer).WithMany(o => o.Loans).HasForeignKey(l => l.LoanOfferId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(l => l.BorrowerCompany).WithMany().HasForeignKey(l => l.BorrowerCompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(l => l.BankBuilding).WithMany().HasForeignKey(l => l.BankBuildingId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(l => l.LenderCompany).WithMany().HasForeignKey(l => l.LenderCompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(l => new { l.BorrowerCompanyId, l.Status });
+            e.HasIndex(l => new { l.LenderCompanyId, l.Status });
+            e.HasIndex(l => l.NextPaymentTick);
         });
     }
 }

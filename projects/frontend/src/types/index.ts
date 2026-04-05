@@ -741,3 +741,53 @@ export interface CityMediaHouseInfo {
   powerStatus: string
   isUnderConstruction: boolean
 }
+
+/** A loan offer published by a bank building. */
+export interface LoanOfferSummary {
+  id: string
+  bankBuildingId: string
+  bankBuildingName: string
+  cityId: string
+  cityName: string
+  lenderCompanyId: string
+  lenderCompanyName: string
+  annualInterestRatePercent: number
+  maxPrincipalPerLoan: number
+  totalCapacity: number
+  usedCapacity: number
+  remainingCapacity: number
+  durationTicks: number
+  isActive: boolean
+  createdAtTick: number
+  createdAtUtc: string
+}
+
+/** Status values for a loan. */
+export type LoanStatus = 'ACTIVE' | 'OVERDUE' | 'DEFAULTED' | 'REPAID'
+
+/** An active or historical loan (borrower or lender view). */
+export interface LoanSummary {
+  id: string
+  loanOfferId: string
+  borrowerCompanyId: string
+  borrowerCompanyName: string
+  lenderCompanyId: string
+  lenderCompanyName: string
+  bankBuildingId: string
+  bankBuildingName: string
+  originalPrincipal: number
+  remainingPrincipal: number
+  annualInterestRatePercent: number
+  durationTicks: number
+  startTick: number
+  dueTick: number
+  nextPaymentTick: number
+  paymentAmount: number
+  paymentsMade: number
+  totalPayments: number
+  status: LoanStatus
+  missedPayments: number
+  accumulatedPenalty: number
+  acceptedAtUtc: string
+  closedAtUtc: string | null
+}

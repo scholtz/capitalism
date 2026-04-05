@@ -361,6 +361,51 @@ export type MockPublicSalesAnalytics = {
   marketShare: Array<{ label: string; companyId: string | null; share: number }>
 }
 
+export type MockLoanOffer = {
+  id: string
+  bankBuildingId: string
+  bankBuildingName: string
+  cityId: string
+  cityName: string
+  lenderCompanyId: string
+  lenderCompanyName: string
+  annualInterestRatePercent: number
+  maxPrincipalPerLoan: number
+  totalCapacity: number
+  usedCapacity: number
+  remainingCapacity: number
+  durationTicks: number
+  isActive: boolean
+  createdAtTick: number
+  createdAtUtc: string
+}
+
+export type MockLoan = {
+  id: string
+  loanOfferId: string
+  borrowerCompanyId: string
+  borrowerCompanyName: string
+  lenderCompanyId: string
+  lenderCompanyName: string
+  bankBuildingId: string
+  bankBuildingName: string
+  originalPrincipal: number
+  remainingPrincipal: number
+  annualInterestRatePercent: number
+  durationTicks: number
+  startTick: number
+  dueTick: number
+  nextPaymentTick: number
+  paymentAmount: number
+  paymentsMade: number
+  totalPayments: number
+  status: 'ACTIVE' | 'OVERDUE' | 'DEFAULTED' | 'REPAID'
+  missedPayments: number
+  accumulatedPenalty: number
+  acceptedAtUtc: string
+  closedAtUtc: string | null
+}
+
 export type MockState = {
   players: MockPlayer[]
   cities: MockCity[]
@@ -380,6 +425,10 @@ export type MockState = {
   publicSalesRecords: MockPublicSalesRecord[]
   /** Public sales analytics by unit ID */
   publicSalesAnalytics: Record<string, MockPublicSalesAnalytics>
+  /** Loan offers available in the marketplace */
+  loanOffers: MockLoanOffer[]
+  /** Active loans for the current player's companies */
+  myLoans: MockLoan[]
 }
 
 const STARTING_CASH_FOR_ONBOARDING = 500000
@@ -1004,6 +1053,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     researchBrands: {},
     publicSalesRecords: [],
     publicSalesAnalytics: {},
+    loanOffers: [],
+    myLoans: [],
     ...initial,
   }
 
@@ -2809,6 +2860,124 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { publicSalesAnalytics: analytics } }),
+      })
+    }
+
+    // Guard: loanOffers query must not be confused with the 'me' handler (contains 'me' via no overlap here)
+    if (query.includes('loanOffers') && !query.includes('myLoanOffers')) {
+      const activeOffers = state.loanOffers.filter((o) => o.isActive && o.remainingCapacity > 0)
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { loanOffers: activeOffers } }),
+      })
+    }
+
+    if (query.includes('myLoanOffers')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { myLoanOffers: state.loanOffers } }),
+      })
+    }
+
+    if (query.includes('myLoans')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { myLoans: state.myLoans } }),
+      })
+    }
+
+    if (query.includes('bankLoans')) {
+      const bankBuildingId = body.variables?.bankBuildingId
+      const loans = bankBuildingId
+        ? state.myLoans.filter((l) => l.bankBuildingId === bankBuildingId)
+        : state.myLoans
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { bankLoans: loans } }),
+      })
+    }
+
+    if (query.includes('publishLoanOffer')) {
+      const input = body.variables?.input ?? {}
+      const newOffer: MockLoanOffer = {
+        id: `offer-${Date.now()}`,
+        bankBuildingId: input.bankBuildingId ?? '',
+        bankBuildingName: 'Test Bank',
+        cityId: 'city-ba',
+        cityName: 'Bratislava',
+        lenderCompanyId: 'test-company',
+        lenderCompanyName: 'Test Co',
+        annualInterestRatePercent: input.annualInterestRatePercent ?? 10,
+        maxPrincipalPerLoan: input.maxPrincipalPerLoan ?? 50000,
+        totalCapacity: input.totalCapacity ?? 200000,
+        usedCapacity: 0,
+        remainingCapacity: input.totalCapacity ?? 200000,
+        durationTicks: input.durationTicks ?? 1440,
+        isActive: true,
+        createdAtTick: state.gameState.currentTick,
+        createdAtUtc: new Date().toISOString(),
+      }
+      state.loanOffers.push(newOffer)
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { publishLoanOffer: newOffer } }),
+      })
+    }
+
+    if (query.includes('deactivateLoanOffer')) {
+      const loanOfferId = body.variables?.id
+      const offer = state.loanOffers.find((o) => o.id === loanOfferId)
+      if (offer) offer.isActive = false
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { deactivateLoanOffer: offer ?? null } }),
+      })
+    }
+
+    if (query.includes('acceptLoan')) {
+      const input = body.variables?.input ?? {}
+      const offer = state.loanOffers.find((o) => o.id === input.loanOfferId)
+      const principal = input.principalAmount ?? 0
+      if (offer) {
+        offer.usedCapacity += principal
+        offer.remainingCapacity -= principal
+      }
+      const newLoan: MockLoan = {
+        id: `loan-${Date.now()}`,
+        loanOfferId: input.loanOfferId ?? '',
+        borrowerCompanyId: input.borrowerCompanyId ?? '',
+        borrowerCompanyName: 'Borrower Co',
+        lenderCompanyId: offer?.lenderCompanyId ?? '',
+        lenderCompanyName: offer?.lenderCompanyName ?? '',
+        bankBuildingId: offer?.bankBuildingId ?? '',
+        bankBuildingName: offer?.bankBuildingName ?? '',
+        originalPrincipal: principal,
+        remainingPrincipal: principal,
+        annualInterestRatePercent: offer?.annualInterestRatePercent ?? 10,
+        durationTicks: offer?.durationTicks ?? 1440,
+        startTick: state.gameState.currentTick,
+        dueTick: state.gameState.currentTick + (offer?.durationTicks ?? 1440),
+        nextPaymentTick: state.gameState.currentTick + 720,
+        paymentAmount: principal / 2,
+        paymentsMade: 0,
+        totalPayments: 2,
+        status: 'ACTIVE',
+        missedPayments: 0,
+        accumulatedPenalty: 0,
+        acceptedAtUtc: new Date().toISOString(),
+        closedAtUtc: null,
+      }
+      state.myLoans.push(newLoan)
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { acceptLoan: newLoan } }),
       })
     }
 
