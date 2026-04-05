@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { gqlRequest } from '@/lib/graphql'
@@ -316,7 +315,11 @@ function goBack() {
             </div>
           </div>
           <div v-if="selectedResource" class="hero-cta">
-            <RouterLink to="/exchange" class="btn-exchange-link">
+            <RouterLink
+              to="/exchange"
+              class="btn-exchange-link"
+              :aria-label="t('resourceDetail.checkExchangePrices')"
+            >
               {{ t('resourceDetail.checkExchangePrices') }}
             </RouterLink>
           </div>

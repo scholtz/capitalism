@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
@@ -279,6 +278,7 @@ function localizedCategory(cat: string): string {
             <RouterLink
               :to="`/encyclopedia/resources/${row.resourceSlug}`"
               class="production-chain-link"
+              :aria-label="`${t('globalExchange.viewProductionChain')}: ${row.resourceName}`"
             >{{ t('globalExchange.viewProductionChain') }}</RouterLink>
           </div>
 
