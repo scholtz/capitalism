@@ -669,6 +669,15 @@ export default {
       bestOffer: 'Najlepšia dodacia cena',
       selectionHint:
         'Systém vyberie ponuku s najnižšou dodacou cenou, ktorá spĺňa vaše kvalitatívne a cenové obmedzenia. Blízky dodávateľ s vyššou katalógovou cenou môže poraziť vzdialeného s nižšou katalógovou cenou, ak sa zohľadnia náklady na dopravu.',
+      logisticsTrap:
+        '⚠ Logistická pasca: {cheapCity} má nižšiu katalógovú cenu ({cheapExchange}), ale dodanie je drahšie ({cheapDelivered}) kvôli doprave. {bestCity} je lepšia voľba za {bestDelivered} s dopravou.',
+      sortBy: 'Zoradiť podľa:',
+      sortOption: {
+        deliveredPrice: 'Dodané',
+        exchangePrice: 'Burza',
+        quality: 'Kvalita',
+      },
+      viewOnExchange: '→ Zobraziť na globálnej burze',
     },
     marketIntelligence: {
       title: 'Trhová analýza',

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
 import { useTickRefresh } from '@/composables/useTickRefresh'
@@ -30,6 +31,7 @@ interface ExchangeRow {
 const { t } = useI18n()
 const auth = useAuthStore()
 const gameStateStore = useGameStateStore()
+const route = useRoute()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -99,9 +101,21 @@ async function loadCitiesAndResources() {
     resources.value = resourcesData.resourceTypes
   }
   if (citiesData.cities.length > 0 && !selectedCityId.value) {
+    // If a city was pre-selected via query param (?city=<id>), use it; otherwise default to first city
+    const queryCityId = typeof route.query.city === 'string' ? route.query.city : null
+    const queryCityExists = queryCityId && citiesData.cities.some((c) => c.id === queryCityId)
     const firstCity = citiesData.cities[0]
-    if (firstCity) {
+    if (queryCityExists && queryCityId) {
+      selectedCityId.value = queryCityId
+    } else if (firstCity) {
       selectedCityId.value = firstCity.id
+    }
+  }
+  // Pre-fill search from ?resource=<slug> query param
+  if (!search.value) {
+    const queryResource = typeof route.query.resource === 'string' ? route.query.resource : null
+    if (queryResource) {
+      search.value = queryResource
     }
   }
 }

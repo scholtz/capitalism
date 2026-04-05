@@ -670,6 +670,15 @@ export default {
       bestOffer: 'Best delivered price',
       selectionHint:
         'The system selects the offer with the lowest delivered price that meets your quality and price constraints. A nearby supplier with a higher sticker price can win over a distant one with lower sticker price when transit costs are considered.',
+      logisticsTrap:
+        '⚠ Logistics trap: {cheapCity} has a lower sticker price ({cheapExchange}) but costs more delivered ({cheapDelivered}) due to transit. {bestCity} is the better choice at {bestDelivered} delivered.',
+      sortBy: 'Sort by:',
+      sortOption: {
+        deliveredPrice: 'Delivered',
+        exchangePrice: 'Exchange',
+        quality: 'Quality',
+      },
+      viewOnExchange: '→ View on Global Exchange',
     },
     marketIntelligence: {
       title: 'Market Intelligence',

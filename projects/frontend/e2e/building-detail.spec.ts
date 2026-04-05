@@ -7250,3 +7250,328 @@ test.describe('Operational status panel and recent activity', () => {
     await expect(page.locator('[aria-label="Recent Activity"]')).toContainText('No activity recorded yet')
   })
 })
+
+// ── Destination-aware sourcing: logistics trap warning and sort controls ───
+
+test.describe('Destination-aware purchase sourcing', () => {
+  /**
+   * Helper: builds a minimal factory in Bratislava with a PURCHASE unit
+   * targeting the given resource at EXCHANGE source.
+   */
+  function makeExchangeFactory(
+    resourceId: string,
+    buildingId: string,
+    buildingName: string,
+  ) {
+    return {
+      id: buildingId,
+      companyId: `company-${buildingId}`,
+      cityId: 'city-ba',
+      type: 'FACTORY' as const,
+      name: buildingName,
+      latitude: 48.1486,
+      longitude: 17.1077,
+      level: 1,
+      powerConsumption: 2,
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      pendingConfiguration: null,
+      units: [
+        {
+          id: `unit-${buildingId}`,
+          buildingId,
+          unitType: 'PURCHASE' as const,
+          gridX: 0,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: false,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+          resourceTypeId: resourceId,
+          purchaseSource: 'EXCHANGE',
+          maxPrice: null,
+        },
+      ],
+    }
+  }
+
+  test('shows logistics-trap warning when distant city has cheaper sticker but worse delivered price', async ({
+    page,
+  }) => {
+    // Set up a scenario where Prague has a cheaper exchange (sticker) price for Wood
+    // than Bratislava, but higher transit cost makes it more expensive delivered.
+    // Bratislava abundance 0.4 → sticker ~$13.63, delivered $13.63 (same city, 0 transit).
+    // Prague    abundance 0.5 → sticker ~$13.28 (cheaper!) but transit ~$3.61 → delivered ~$16.89.
+    // This creates a logistics trap: Prague sticker < BA sticker, but Prague delivered > BA delivered.
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-trap',
+      playerId: player.id,
+      name: 'Trap Test Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makeExchangeFactory('res-wood', 'building-trap', 'Trap Factory')],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    // Override Wood abundances to create the logistics trap:
+    // Bratislava: low abundance → higher sticker, but 0 transit → good delivered
+    // Prague: medium abundance → lower sticker, but 300km transit → bad delivered
+    state.cities[0]!.resources = [
+      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.4 },
+    ]
+    state.cities[1]!.resources = [
+      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.5 },
+    ]
+    state.cities[2]!.resources = [
+      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 },
+    ]
+
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-trap')
+    await expect(page.getByRole('heading', { name: 'Trap Factory' })).toBeVisible()
+
+    // Click on the PURCHASE unit to open its inspector
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Exchange offers panel must be visible
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // The logistics trap warning must appear because Prague has a lower sticker
+    // price but transit makes it more expensive delivered than Bratislava.
+    await expect(page.locator('.logistics-trap-warning')).toBeVisible()
+    await expect(page.locator('.logistics-trap-warning')).toContainText('Prague')
+    await expect(page.locator('.logistics-trap-warning')).toContainText('Bratislava')
+
+    // Bratislava must be the recommended (best delivered price) offer
+    const braOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Bratislava' })
+    await expect(braOffer).toHaveClass(/offer-best/)
+
+    // Prague must NOT be the recommended offer despite having a lower sticker price
+    const prOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Prague' })
+    await expect(prOffer).not.toHaveClass(/offer-best/)
+  })
+
+  test('no logistics-trap warning when cheapest sticker is also cheapest delivered', async ({
+    page,
+  }) => {
+    // When Bratislava has the highest abundance it gets the lowest exchange price
+    // AND 0 transit (same city), so sticker and delivered both win at Bratislava.
+    // No logistics trap should be shown.
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-notrap',
+      playerId: player.id,
+      name: 'No-Trap Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makeExchangeFactory('res-wood', 'building-notrap', 'No-Trap Factory')],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    // Bratislava has the highest abundance → cheapest sticker AND cheapest delivered (0 transit).
+    state.cities[0]!.resources = [
+      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.9 },
+    ]
+    state.cities[1]!.resources = [
+      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 },
+    ]
+    state.cities[2]!.resources = [
+      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 },
+    ]
+
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-notrap')
+    await expect(page.getByRole('heading', { name: 'No-Trap Factory' })).toBeVisible()
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+    await expect(page.locator('.exchange-offers-list')).toBeVisible()
+
+    // No logistics trap warning should appear
+    await expect(page.locator('.logistics-trap-warning')).toHaveCount(0)
+
+    // Bratislava must be the recommended offer
+    await expect(page.locator('.offer-best-badge')).toBeVisible()
+    const braOffer = page.locator('.exchange-offer-item').filter({ hasText: 'Bratislava' })
+    await expect(braOffer).toHaveClass(/offer-best/)
+  })
+
+  test('sort controls change ordering of exchange offers', async ({ page }) => {
+    // Set up cities where Prague has lower exchange price but high transit (logistics trap scenario).
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-sort',
+      playerId: player.id,
+      name: 'Sort Test Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makeExchangeFactory('res-wood', 'building-sort', 'Sort Factory')],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.cities[0]!.resources = [
+      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.4 },
+    ]
+    state.cities[1]!.resources = [
+      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.5 },
+    ]
+    state.cities[2]!.resources = [
+      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 },
+    ]
+
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-sort')
+    await expect(page.getByRole('heading', { name: 'Sort Factory' })).toBeVisible()
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // Sort controls must be visible (more than 1 offer)
+    await expect(page.locator('.exchange-sort-controls')).toBeVisible()
+    await expect(page.locator('.exchange-sort-btn', { hasText: 'Delivered' })).toBeVisible()
+    await expect(page.locator('.exchange-sort-btn', { hasText: 'Exchange' })).toBeVisible()
+    await expect(page.locator('.exchange-sort-btn', { hasText: 'Quality' })).toBeVisible()
+
+    // Default sort is by Delivered price — Bratislava should appear first (cheapest delivered)
+    const offerItems = page.locator('.exchange-offer-item')
+    await expect(offerItems.first()).toContainText('Bratislava')
+
+    // Switch to Exchange price sort — Prague should appear first (cheapest sticker)
+    await page.locator('.exchange-sort-btn', { hasText: 'Exchange' }).click()
+    await expect(page.locator('.exchange-sort-btn', { hasText: 'Exchange' })).toHaveClass(/active/)
+    // After switching to exchange-price sort, Prague (abundance=0.5, cheaper sticker) should be first
+    await expect(offerItems.first()).toContainText('Prague')
+
+    // Switch to Quality sort — highest quality offer first
+    await page.locator('.exchange-sort-btn', { hasText: 'Quality' }).click()
+    await expect(page.locator('.exchange-sort-btn', { hasText: 'Quality' })).toHaveClass(/active/)
+    // Prague (abundance 0.5) and Bratislava (abundance 0.4) — Prague has higher quality (0.35 + 0.5*0.6 = 0.65 vs 0.35+0.4*0.6=0.59)
+    await expect(offerItems.first()).toContainText('Prague')
+
+    // Switch back to Delivered sort
+    await page.locator('.exchange-sort-btn', { hasText: 'Delivered' }).click()
+    await expect(page.locator('.exchange-sort-btn', { hasText: 'Delivered' })).toHaveClass(/active/)
+    await expect(offerItems.first()).toContainText('Bratislava')
+  })
+
+  test('View on Global Exchange link navigates to exchange with resource and city pre-selected', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-link',
+      playerId: player.id,
+      name: 'Link Test Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makeExchangeFactory('res-wood', 'building-link', 'Link Factory')],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-link')
+    await expect(page.getByRole('heading', { name: 'Link Factory' })).toBeVisible()
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+
+    // The "View on Global Exchange" link must be visible
+    const exchangeLink = page.locator('.exchange-view-link')
+    await expect(exchangeLink).toBeVisible()
+    await expect(exchangeLink).toContainText('View on Global Exchange')
+
+    // Clicking the link navigates to /exchange with resource and city query params
+    await exchangeLink.click()
+    await page.waitForURL(/\/exchange/)
+    await expect(page).toHaveURL(/resource=wood/)
+    await expect(page).toHaveURL(/city=city-ba/)
+  })
+
+  test('exchange link in read-only mode also navigates to exchange', async ({ page }) => {
+    // This test verifies the exchange link appears in the read-only unit inspector
+    // (not just in the edit-mode config panel).
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-linkro',
+      playerId: player.id,
+      name: 'Read-Only Link Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makeExchangeFactory('res-grain', 'building-linkro', 'Read-Only Factory')],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-linkro')
+    await expect(page.getByRole('heading', { name: 'Read-Only Factory' })).toBeVisible()
+
+    // Click the unit in the Current Configuration section (read-only mode)
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    await expect(page.getByText('Global exchange offers')).toBeVisible()
+    // Exchange link must be present in read-only sidebar too
+    await expect(page.locator('.exchange-view-link')).toBeVisible()
+    // Link points to exchange with the grain resource slug
+    const href = await page.locator('.exchange-view-link').getAttribute('href')
+    expect(href).toContain('resource=grain')
+  })
+})

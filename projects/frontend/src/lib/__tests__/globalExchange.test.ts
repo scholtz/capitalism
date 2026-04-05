@@ -8,6 +8,8 @@ import {
   DEFAULT_MISSING_ABUNDANCE,
   annotateExchangeOffers,
   selectOptimalOffer,
+  sortExchangeOffers,
+  detectLogisticsTrap,
 } from '../globalExchange'
 import type { AnnotatedExchangeOffer } from '../globalExchange'
 
@@ -541,5 +543,192 @@ describe('annotateExchangeOffers + selectOptimalOffer (AC#5 end-to-end)', () => 
     const annotated = annotateExchangeOffers(rawOffers, 5.0, null)
     const allBlocked = annotated.length > 0 && annotated.every((o) => o.blocked)
     expect(allBlocked).toBe(true)
+  })
+})
+
+// ── Helper used by sortExchangeOffers and detectLogisticsTrap suites ──────
+
+function makeAnnotated(
+  overrides: Partial<AnnotatedExchangeOffer> & { cityId: string },
+): AnnotatedExchangeOffer {
+  return {
+    cityId: overrides.cityId,
+    cityName: overrides.cityName ?? overrides.cityId,
+    resourceTypeId: 'res-wood',
+    resourceName: 'Wood',
+    resourceSlug: 'wood',
+    unitSymbol: 't',
+    localAbundance: overrides.localAbundance ?? 0.5,
+    exchangePricePerUnit: overrides.exchangePricePerUnit ?? 10,
+    estimatedQuality: overrides.estimatedQuality ?? 0.65,
+    transitCostPerUnit: overrides.transitCostPerUnit ?? 0,
+    deliveredPricePerUnit: overrides.deliveredPricePerUnit ?? overrides.exchangePricePerUnit ?? 10,
+    distanceKm: overrides.distanceKm ?? 0,
+    blocked: overrides.blocked ?? false,
+    blockedReason: overrides.blockedReason ?? null,
+  }
+}
+
+describe('sortExchangeOffers', () => {
+  it('sorts by delivered price ascending by default', () => {
+    const offers: AnnotatedExchangeOffer[] = [
+      makeAnnotated({ cityId: 'city-pr', deliveredPricePerUnit: 15 }),
+      makeAnnotated({ cityId: 'city-ba', deliveredPricePerUnit: 10 }),
+      makeAnnotated({ cityId: 'city-vi', deliveredPricePerUnit: 12 }),
+    ]
+    const sorted = sortExchangeOffers(offers, 'deliveredPrice')
+    expect(sorted.map((o) => o.cityId)).toEqual(['city-ba', 'city-vi', 'city-pr'])
+  })
+
+  it('sorts by exchange price ascending', () => {
+    const offers: AnnotatedExchangeOffer[] = [
+      makeAnnotated({ cityId: 'city-pr', exchangePricePerUnit: 8, deliveredPricePerUnit: 14 }),
+      makeAnnotated({ cityId: 'city-ba', exchangePricePerUnit: 12, deliveredPricePerUnit: 12 }),
+      makeAnnotated({ cityId: 'city-vi', exchangePricePerUnit: 10, deliveredPricePerUnit: 13 }),
+    ]
+    const sorted = sortExchangeOffers(offers, 'exchangePrice')
+    expect(sorted.map((o) => o.cityId)).toEqual(['city-pr', 'city-vi', 'city-ba'])
+  })
+
+  it('sorts by quality descending (highest quality first)', () => {
+    const offers: AnnotatedExchangeOffer[] = [
+      makeAnnotated({ cityId: 'city-pr', estimatedQuality: 0.55 }),
+      makeAnnotated({ cityId: 'city-ba', estimatedQuality: 0.85 }),
+      makeAnnotated({ cityId: 'city-vi', estimatedQuality: 0.70 }),
+    ]
+    const sorted = sortExchangeOffers(offers, 'quality')
+    expect(sorted.map((o) => o.cityId)).toEqual(['city-ba', 'city-vi', 'city-pr'])
+  })
+
+  it('pushes blocked offers to the end regardless of sort dimension', () => {
+    const offers: AnnotatedExchangeOffer[] = [
+      makeAnnotated({ cityId: 'city-ba', deliveredPricePerUnit: 5, blocked: true, blockedReason: 'maxPrice' }),
+      makeAnnotated({ cityId: 'city-pr', deliveredPricePerUnit: 15 }),
+      makeAnnotated({ cityId: 'city-vi', deliveredPricePerUnit: 10 }),
+    ]
+    const sorted = sortExchangeOffers(offers, 'deliveredPrice')
+    expect(sorted[sorted.length - 1].cityId).toBe('city-ba')
+    expect(sorted[0].cityId).toBe('city-vi')
+  })
+
+  it('does not mutate the input array', () => {
+    const offers: AnnotatedExchangeOffer[] = [
+      makeAnnotated({ cityId: 'city-pr', deliveredPricePerUnit: 20 }),
+      makeAnnotated({ cityId: 'city-ba', deliveredPricePerUnit: 10 }),
+    ]
+    const original = [...offers]
+    sortExchangeOffers(offers, 'deliveredPrice')
+    expect(offers[0].cityId).toBe(original[0].cityId)
+  })
+
+  it('returns empty array when input is empty', () => {
+    expect(sortExchangeOffers([], 'deliveredPrice')).toEqual([])
+  })
+
+  it('returns single-element array unchanged', () => {
+    const offers = [makeAnnotated({ cityId: 'city-ba', deliveredPricePerUnit: 10 })]
+    const sorted = sortExchangeOffers(offers, 'deliveredPrice')
+    expect(sorted).toHaveLength(1)
+    expect(sorted[0].cityId).toBe('city-ba')
+  })
+
+  it('uses quality as tiebreaker for deliveredPrice sort', () => {
+    const offers: AnnotatedExchangeOffer[] = [
+      makeAnnotated({ cityId: 'city-pr', deliveredPricePerUnit: 10, estimatedQuality: 0.55 }),
+      makeAnnotated({ cityId: 'city-ba', deliveredPricePerUnit: 10, estimatedQuality: 0.80 }),
+    ]
+    const sorted = sortExchangeOffers(offers, 'deliveredPrice')
+    // Higher quality wins the tiebreak
+    expect(sorted[0].cityId).toBe('city-ba')
+  })
+})
+
+describe('detectLogisticsTrap', () => {
+  it('returns null when there is only one eligible offer', () => {
+    const offers: AnnotatedExchangeOffer[] = [
+      makeAnnotated({ cityId: 'city-ba', exchangePricePerUnit: 10, deliveredPricePerUnit: 10 }),
+    ]
+    expect(detectLogisticsTrap(offers)).toBeNull()
+  })
+
+  it('returns null when the cheapest sticker price is also the cheapest delivered', () => {
+    const offers: AnnotatedExchangeOffer[] = [
+      makeAnnotated({ cityId: 'city-ba', exchangePricePerUnit: 8, deliveredPricePerUnit: 8 }),
+      makeAnnotated({ cityId: 'city-pr', exchangePricePerUnit: 12, deliveredPricePerUnit: 14 }),
+    ]
+    expect(detectLogisticsTrap(offers)).toBeNull()
+  })
+
+  it('detects a logistics trap when transit flips the ordering', () => {
+    // Prague has the cheapest sticker price but expensive transit
+    // Bratislava has a higher sticker price but no transit (same city)
+    const offers: AnnotatedExchangeOffer[] = [
+      makeAnnotated({
+        cityId: 'city-pr',
+        cityName: 'Prague',
+        exchangePricePerUnit: 8,
+        transitCostPerUnit: 5,
+        deliveredPricePerUnit: 13,
+      }),
+      makeAnnotated({
+        cityId: 'city-ba',
+        cityName: 'Bratislava',
+        exchangePricePerUnit: 10,
+        transitCostPerUnit: 0,
+        deliveredPricePerUnit: 10,
+      }),
+    ]
+    const trap = detectLogisticsTrap(offers)
+    expect(trap).not.toBeNull()
+    expect(trap?.cheaperStickerCityName).toBe('Prague')
+    expect(trap?.cheaperStickerExchangePrice).toBe(8)
+    expect(trap?.cheaperStickerDeliveredPrice).toBe(13)
+    expect(trap?.recommendedCityName).toBe('Bratislava')
+    expect(trap?.recommendedDeliveredPrice).toBe(10)
+  })
+
+  it('ignores blocked offers when comparing sticker prices', () => {
+    // The cheapest sticker price is blocked; remaining eligible offers have same winner
+    const offers: AnnotatedExchangeOffer[] = [
+      makeAnnotated({
+        cityId: 'city-vi',
+        cityName: 'Vienna',
+        exchangePricePerUnit: 5,
+        deliveredPricePerUnit: 5,
+        blocked: true,
+        blockedReason: 'minQuality',
+      }),
+      makeAnnotated({
+        cityId: 'city-pr',
+        cityName: 'Prague',
+        exchangePricePerUnit: 8,
+        transitCostPerUnit: 5,
+        deliveredPricePerUnit: 13,
+      }),
+      makeAnnotated({
+        cityId: 'city-ba',
+        cityName: 'Bratislava',
+        exchangePricePerUnit: 10,
+        transitCostPerUnit: 0,
+        deliveredPricePerUnit: 10,
+      }),
+    ]
+    const trap = detectLogisticsTrap(offers)
+    // Among eligible offers, Prague has cheaper sticker but Bratislava wins on delivered
+    expect(trap).not.toBeNull()
+    expect(trap?.cheaperStickerCityName).toBe('Prague')
+    expect(trap?.recommendedCityName).toBe('Bratislava')
+  })
+
+  it('returns null when all offers are blocked', () => {
+    const offers: AnnotatedExchangeOffer[] = [
+      makeAnnotated({ cityId: 'city-ba', blocked: true, blockedReason: 'maxPrice' }),
+      makeAnnotated({ cityId: 'city-pr', blocked: true, blockedReason: 'maxPrice' }),
+    ]
+    expect(detectLogisticsTrap(offers)).toBeNull()
+  })
+
+  it('returns null for empty list', () => {
+    expect(detectLogisticsTrap([])).toBeNull()
   })
 })

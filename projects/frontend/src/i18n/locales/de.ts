@@ -672,6 +672,15 @@ export default {
       bestOffer: 'Bester Lieferpreis',
       selectionHint:
         'Das System wählt das Angebot mit dem niedrigsten Lieferpreis, das Ihren Qualitäts- und Preisbeschränkungen entspricht. Ein naher Lieferant mit höherem Katalogpreis kann einen entfernten mit niedrigerem Katalogpreis schlagen, wenn Transportkosten berücksichtigt werden.',
+      logisticsTrap:
+        '⚠ Logistikfalle: {cheapCity} hat einen niedrigeren Katalogpreis ({cheapExchange}), ist aber nach Lieferung teurer ({cheapDelivered}) wegen Transportkosten. {bestCity} ist die bessere Wahl bei {bestDelivered} geliefert.',
+      sortBy: 'Sortieren nach:',
+      sortOption: {
+        deliveredPrice: 'Geliefert',
+        exchangePrice: 'Börse',
+        quality: 'Qualität',
+      },
+      viewOnExchange: '→ Auf der globalen Börse ansehen',
     },
     marketIntelligence: {
       title: 'Marktanalyse',

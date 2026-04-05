@@ -812,3 +812,66 @@ test.describe('Global Exchange — production chain cross-links', () => {
     )
   })
 })
+
+test.describe('Global Exchange — deep-link query params from purchase unit', () => {
+  test('?resource=wood pre-fills the search box with "wood"', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+
+    await page.goto('/exchange?resource=wood')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // The search box must be pre-filled with the resource slug
+    const searchBox = page.getByPlaceholder('Search resources')
+    await expect(searchBox).toHaveValue('wood')
+
+    // Only the Wood resource row should be visible
+    await expect(page.locator('.resource-row[data-slug="wood"]')).toBeVisible()
+  })
+
+  test('?city=city-pr pre-selects Prague as the destination city', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+
+    await page.goto('/exchange?city=city-pr')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // The Prague city tab should be selected / active
+    const pragueCityTab = page.locator('.city-tab', { hasText: 'Prague' })
+    await expect(pragueCityTab).toHaveClass(/active/)
+  })
+
+  test('?resource=grain&city=city-vi pre-fills search and selects Vienna destination', async ({
+    page,
+  }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+
+    await page.goto('/exchange?resource=grain&city=city-vi')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Search is pre-filled with the grain slug
+    const searchBox = page.getByPlaceholder('Search resources')
+    await expect(searchBox).toHaveValue('grain')
+
+    // Vienna tab is pre-selected
+    const viennaCityTab = page.locator('.city-tab', { hasText: 'Vienna' })
+    await expect(viennaCityTab).toHaveClass(/active/)
+  })
+
+  test('unknown ?city param falls back to the first city', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+
+    await page.goto('/exchange?city=city-unknown')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Falls back to the first city (Bratislava)
+    const bratislavaCityTab = page.locator('.city-tab', { hasText: 'Bratislava' })
+    await expect(bratislavaCityTab).toHaveClass(/active/)
+  })
+})

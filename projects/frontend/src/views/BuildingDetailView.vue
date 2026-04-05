@@ -21,7 +21,10 @@ import {
 import {
   annotateExchangeOffers,
   selectOptimalOffer,
+  sortExchangeOffers,
+  detectLogisticsTrap,
   type AnnotatedExchangeOffer,
+  type ExchangeSortBy,
 } from '@/lib/globalExchange'
 import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedResourceDescription, getLocalizedResourceName } from '@/lib/catalogPresentation'
 import { useTickRefresh } from '@/composables/useTickRefresh'
@@ -122,6 +125,7 @@ const unitInventories = ref<BuildingUnitInventory[]>([])
 const unitResourceHistories = ref<BuildingUnitResourceHistoryPoint[]>([])
 const exchangeOffers = ref<GlobalExchangeOffer[]>([])
 const exchangeOffersLoading = ref(false)
+const exchangeSortBy = ref<ExchangeSortBy>('deliveredPrice')
 
 // Operational status per unit (ACTIVE/IDLE/BLOCKED/FULL/UNCONFIGURED)
 const unitOperationalStatuses = ref<BuildingUnitOperationalStatus[]>([])
@@ -472,16 +476,28 @@ const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistor
 
 type ExchangeOfferItem = AnnotatedExchangeOffer
 
-const exchangeOfferItems = computed<ExchangeOfferItem[]>(() => {
+const annotatedExchangeOffers = computed<ExchangeOfferItem[]>(() => {
   const maxPrice = selectedPurchaseUnit.value?.maxPrice ?? null
   const minQuality = selectedPurchaseUnit.value?.minQuality ?? null
   return annotateExchangeOffers(exchangeOffers.value, maxPrice, minQuality)
 })
 
+const exchangeOfferItems = computed<ExchangeOfferItem[]>(() =>
+  sortExchangeOffers(annotatedExchangeOffers.value, exchangeSortBy.value),
+)
+
 const allExchangeOffersBlocked = computed(() => exchangeOfferItems.value.length > 0 && exchangeOfferItems.value.every((o) => o.blocked))
 
 const bestExchangeOfferCityId = computed<string | null>(() => {
-  return selectOptimalOffer(exchangeOfferItems.value)?.cityId ?? null
+  return selectOptimalOffer(annotatedExchangeOffers.value)?.cityId ?? null
+})
+
+const logisticsTrapWarning = computed(() => detectLogisticsTrap(annotatedExchangeOffers.value))
+
+const selectedPurchaseResourceSlug = computed<string | null>(() => {
+  const resourceId = selectedPurchaseUnit.value?.resourceTypeId ?? null
+  if (!resourceId) return exchangeOffers.value[0]?.resourceSlug ?? null
+  return resourceTypes.value.find((r) => r.id === resourceId)?.slug ?? null
 })
 
 function formatBuildingType(type: string): string {
@@ -3802,6 +3818,28 @@ watch(
                   <p v-if="allExchangeOffersBlocked" class="config-help exchange-no-valid-offers">
                     {{ t('buildingDetail.exchange.noValidOffers') }}
                   </p>
+                  <!-- Logistics trap warning -->
+                  <div v-if="logisticsTrapWarning" class="logistics-trap-warning" role="alert">
+                    {{ t('buildingDetail.exchange.logisticsTrap', {
+                      cheapCity: logisticsTrapWarning.cheaperStickerCityName,
+                      cheapExchange: '$' + logisticsTrapWarning.cheaperStickerExchangePrice,
+                      cheapDelivered: '$' + logisticsTrapWarning.cheaperStickerDeliveredPrice,
+                      bestCity: logisticsTrapWarning.recommendedCityName,
+                      bestDelivered: '$' + logisticsTrapWarning.recommendedDeliveredPrice,
+                    }) }}
+                  </div>
+                  <!-- Sort controls -->
+                  <div class="exchange-sort-controls" v-if="exchangeOfferItems.length > 1">
+                    <span class="exchange-sort-label">{{ t('buildingDetail.exchange.sortBy') }}</span>
+                    <button
+                      v-for="dim in (['deliveredPrice', 'exchangePrice', 'quality'] as ExchangeSortBy[])"
+                      :key="dim"
+                      :class="['exchange-sort-btn', { active: exchangeSortBy === dim }]"
+                      @click="exchangeSortBy = dim"
+                    >
+                      {{ t('buildingDetail.exchange.sortOption.' + dim) }}
+                    </button>
+                  </div>
                   <ul class="exchange-offers-list">
                     <li
                       v-for="offer in exchangeOfferItems"
@@ -3826,6 +3864,14 @@ watch(
                       </p>
                     </li>
                   </ul>
+                  <!-- Link to Global Exchange -->
+                  <RouterLink
+                    v-if="selectedPurchaseResourceSlug"
+                    :to="{ name: 'exchange', query: { resource: selectedPurchaseResourceSlug, city: building?.cityId } }"
+                    class="exchange-view-link"
+                  >
+                    {{ t('buildingDetail.exchange.viewOnExchange') }}
+                  </RouterLink>
                 </template>
               </div>
 
@@ -4015,6 +4061,28 @@ watch(
                   <p v-if="allExchangeOffersBlocked" class="config-help exchange-no-valid-offers">
                     {{ t('buildingDetail.exchange.noValidOffers') }}
                   </p>
+                  <!-- Logistics trap warning -->
+                  <div v-if="logisticsTrapWarning" class="logistics-trap-warning" role="alert">
+                    {{ t('buildingDetail.exchange.logisticsTrap', {
+                      cheapCity: logisticsTrapWarning.cheaperStickerCityName,
+                      cheapExchange: '$' + logisticsTrapWarning.cheaperStickerExchangePrice,
+                      cheapDelivered: '$' + logisticsTrapWarning.cheaperStickerDeliveredPrice,
+                      bestCity: logisticsTrapWarning.recommendedCityName,
+                      bestDelivered: '$' + logisticsTrapWarning.recommendedDeliveredPrice,
+                    }) }}
+                  </div>
+                  <!-- Sort controls -->
+                  <div class="exchange-sort-controls" v-if="exchangeOfferItems.length > 1">
+                    <span class="exchange-sort-label">{{ t('buildingDetail.exchange.sortBy') }}</span>
+                    <button
+                      v-for="dim in (['deliveredPrice', 'exchangePrice', 'quality'] as ExchangeSortBy[])"
+                      :key="dim"
+                      :class="['exchange-sort-btn', { active: exchangeSortBy === dim }]"
+                      @click="exchangeSortBy = dim"
+                    >
+                      {{ t('buildingDetail.exchange.sortOption.' + dim) }}
+                    </button>
+                  </div>
                   <ul class="exchange-offers-list">
                     <li
                       v-for="offer in exchangeOfferItems"
@@ -4039,6 +4107,14 @@ watch(
                       </p>
                     </li>
                   </ul>
+                  <!-- Link to Global Exchange -->
+                  <RouterLink
+                    v-if="selectedPurchaseResourceSlug"
+                    :to="{ name: 'exchange', query: { resource: selectedPurchaseResourceSlug, city: building?.cityId } }"
+                    class="exchange-view-link"
+                  >
+                    {{ t('buildingDetail.exchange.viewOnExchange') }}
+                  </RouterLink>
                 </template>
               </div>
 
@@ -5755,6 +5831,65 @@ watch(
   border-radius: var(--radius-sm, 4px);
   padding: 0.1rem 0.4rem;
   white-space: nowrap;
+}
+
+.logistics-trap-warning {
+  font-size: 0.75rem;
+  color: var(--color-warning-text, #92400e);
+  background: var(--color-warning-bg, #fef3c7);
+  border: 1px solid var(--color-warning-border, #f59e0b);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.exchange-sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.exchange-sort-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.exchange-sort-btn {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.exchange-sort-btn.active {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 15%, transparent);
+  border-color: var(--color-primary, #3b82f6);
+  color: var(--color-primary, #3b82f6);
+  font-weight: 600;
+}
+
+.exchange-sort-btn:hover:not(.active) {
+  background: color-mix(in srgb, var(--color-border) 30%, transparent);
+  color: var(--color-text);
+}
+
+.exchange-view-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-primary, #3b82f6);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.exchange-view-link:hover {
+  text-decoration: underline;
 }
 
 /* Inventory table */

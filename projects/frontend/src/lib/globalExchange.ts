@@ -184,3 +184,103 @@ export function annotateExchangeOffers(
 export function selectOptimalOffer(offers: readonly AnnotatedExchangeOffer[]): AnnotatedExchangeOffer | null {
   return offers.find((o) => !o.blocked) ?? null
 }
+
+// ── Sorting ───────────────────────────────────────────────────────────────
+
+/**
+ * Dimension by which exchange offers can be sorted in the purchase-unit sourcing
+ * panel. The default is 'deliveredPrice' which matches the server ordering.
+ */
+export type ExchangeSortBy = 'deliveredPrice' | 'exchangePrice' | 'quality'
+
+/**
+ * Returns a new sorted copy of the annotated offer list without mutating the
+ * input. Blocked offers are always pushed to the end so eligible offers remain
+ * prominent regardless of the chosen sort dimension.
+ */
+export function sortExchangeOffers(
+  offers: readonly AnnotatedExchangeOffer[],
+  sortBy: ExchangeSortBy,
+): AnnotatedExchangeOffer[] {
+  return [...offers].sort((a, b) => {
+    // Blocked offers sink to the bottom
+    if (a.blocked !== b.blocked) return a.blocked ? 1 : -1
+
+    switch (sortBy) {
+      case 'exchangePrice':
+        return a.exchangePricePerUnit - b.exchangePricePerUnit
+      case 'quality':
+        // Quality sorts descending (highest first)
+        return b.estimatedQuality - a.estimatedQuality
+      case 'deliveredPrice':
+      default:
+        return (
+          a.deliveredPricePerUnit - b.deliveredPricePerUnit ||
+          b.estimatedQuality - a.estimatedQuality
+        )
+    }
+  })
+}
+
+// ── Logistics-trap detection ───────────────────────────────────────────────
+
+/**
+ * Describes a "logistics trap": the situation where the offer with the lowest
+ * raw exchange price is NOT the recommended offer because transit costs make it
+ * more expensive to deliver than an alternative city.
+ *
+ * This is the key player-guidance insight: a cheaper sticker price can be worse
+ * after logistics, and players should be warned before committing.
+ */
+export interface LogisticsTrapWarning {
+  /** City that has the lowest raw exchange (sticker) price. */
+  cheaperStickerCityName: string
+  /** Raw exchange price per unit in the cheapest-sticker city. */
+  cheaperStickerExchangePrice: number
+  /** Delivered price per unit in the cheapest-sticker city (exchange + transit). */
+  cheaperStickerDeliveredPrice: number
+  /** City of the recommended (lowest delivered cost) offer. */
+  recommendedCityName: string
+  /** Delivered price per unit of the recommended offer. */
+  recommendedDeliveredPrice: number
+}
+
+/**
+ * Detects whether a logistics trap exists in an annotated offer list.
+ *
+ * A logistics trap is present when the eligible offer with the lowest exchange
+ * (sticker) price is different from the eligible offer with the lowest delivered
+ * price. This means transit costs flip the ordering, and a player who chose by
+ * sticker price alone would pay more in the end.
+ *
+ * Returns `null` when:
+ * - There are fewer than two eligible (non-blocked) offers.
+ * - The lowest sticker-price offer is also the lowest delivered-price offer.
+ */
+export function detectLogisticsTrap(
+  offers: readonly AnnotatedExchangeOffer[],
+): LogisticsTrapWarning | null {
+  const eligible = offers.filter((o) => !o.blocked)
+  if (eligible.length < 2) return null
+
+  const byExchangePrice = [...eligible].sort(
+    (a, b) => a.exchangePricePerUnit - b.exchangePricePerUnit,
+  )
+  const cheapestSticker = byExchangePrice[0]
+
+  const byDeliveredPrice = [...eligible].sort(
+    (a, b) => a.deliveredPricePerUnit - b.deliveredPricePerUnit || b.estimatedQuality - a.estimatedQuality,
+  )
+  const recommended = byDeliveredPrice[0]
+
+  if (!cheapestSticker || !recommended) return null
+  if (cheapestSticker.cityId === recommended.cityId) return null
+
+  return {
+    cheaperStickerCityName: cheapestSticker.cityName,
+    cheaperStickerExchangePrice: cheapestSticker.exchangePricePerUnit,
+    cheaperStickerDeliveredPrice: cheapestSticker.deliveredPricePerUnit,
+    recommendedCityName: recommended.cityName,
+    recommendedDeliveredPrice: recommended.deliveredPricePerUnit,
+  }
+}
