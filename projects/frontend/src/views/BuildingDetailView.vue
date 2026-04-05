@@ -500,6 +500,10 @@ const miMaxQuantitySold = computed(() =>
 const miMaxPricePerUnit = computed(() =>
   publicSalesAnalytics.value?.priceHistory.reduce((m, s) => Math.max(m, s.pricePerUnit), 0) ?? 0,
 )
+// Current configured min price for the selected PUBLIC_SALES unit (0 if not set)
+const currentPublicSalesMinPrice = computed(() =>
+  typeof selectedPublicSalesUnit.value?.minPrice === 'number' ? selectedPublicSalesUnit.value.minPrice : 0,
+)
 
 type ExchangeOfferItem = AnnotatedExchangeOffer
 
@@ -2355,7 +2359,7 @@ async function loadPublicSalesAnalytics(unitId: string | null) {
 async function submitQuickPriceUpdate() {
   const unit = selectedPublicSalesUnit.value
   const price = quickPriceInput.value
-  if (!unit || !auth.token || price === null || price === undefined) return
+  if (!unit || !auth.token || price == null) return
   const unitId = getResolvedLiveUnitId(unit)
   if (!unitId) return
   quickPriceSaving.value = true
@@ -4431,7 +4435,7 @@ watch(
                     </div>
                     <div class="mi-metric" v-if="selectedPublicSalesUnit.minPrice != null">
                       <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.configuredPrice') }}</span>
-                      <strong class="mi-metric-value">{{ formatCurrency(selectedPublicSalesUnit.minPrice as number) }}</strong>
+                      <strong class="mi-metric-value">{{ formatCurrency(currentPublicSalesMinPrice) }}</strong>
                     </div>
                     <div class="mi-metric" v-if="publicSalesAnalytics.revenueHistory.length > 0">
                       <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.recentUtilization') }}</span>
@@ -4572,19 +4576,19 @@ watch(
 
                     <!-- Directional impact hint derived from elasticity -->
                     <div
-                      v-if="publicSalesAnalytics.elasticityIndex !== null && quickPriceInput !== null && selectedPublicSalesUnit?.minPrice"
+                      v-if="publicSalesAnalytics.elasticityIndex !== null && quickPriceInput !== null && currentPublicSalesMinPrice > 0"
                       class="mi-price-impact-hint"
                       :class="{
-                        'mi-price-impact-raise': quickPriceInput > (selectedPublicSalesUnit.minPrice as number),
-                        'mi-price-impact-lower': quickPriceInput < (selectedPublicSalesUnit.minPrice as number),
+                        'mi-price-impact-raise': quickPriceInput > currentPublicSalesMinPrice,
+                        'mi-price-impact-lower': quickPriceInput < currentPublicSalesMinPrice,
                       }"
                     >
-                      <template v-if="quickPriceInput > (selectedPublicSalesUnit.minPrice as number)">
+                      <template v-if="quickPriceInput > currentPublicSalesMinPrice">
                         {{ t('buildingDetail.marketIntelligence.priceUpdate.raisingHint', {
                           elasticity: Math.abs(publicSalesAnalytics.elasticityIndex).toFixed(1),
                         }) }}
                       </template>
-                      <template v-else-if="quickPriceInput < (selectedPublicSalesUnit.minPrice as number)">
+                      <template v-else-if="quickPriceInput < currentPublicSalesMinPrice">
                         {{ t('buildingDetail.marketIntelligence.priceUpdate.loweringHint', {
                           elasticity: Math.abs(publicSalesAnalytics.elasticityIndex).toFixed(1),
                         }) }}
