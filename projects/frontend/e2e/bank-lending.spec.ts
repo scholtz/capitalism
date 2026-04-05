@@ -84,7 +84,7 @@ test.describe('Loan Marketplace (/loans)', () => {
 
     // Should see login link, not accept button
     await expect(page.getByRole('link', { name: 'Log in to access' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Accept Loan' })).not.toBeVisible()
+    await expect(page.getByRole('button', { name: 'Accept Loan' })).toBeHidden()
   })
 
   test('shows Accept Loan button for authenticated user', async ({ page }) => {
@@ -166,7 +166,7 @@ test.describe('Loan Marketplace (/loans)', () => {
     await expect(page.locator('[role="dialog"]')).toBeVisible()
 
     await page.locator('[role="dialog"]').getByRole('button', { name: 'Cancel' }).click()
-    await expect(page.locator('[role="dialog"]')).not.toBeVisible()
+    await expect(page.locator('[role="dialog"]')).toBeHidden()
   })
 
   test('shows active loans for authenticated borrower', async ({ page }) => {
@@ -257,7 +257,7 @@ test.describe('Loan Marketplace (/loans)', () => {
     await confirmBtn.click()
 
     // Modal should close
-    await expect(modal).not.toBeVisible()
+    await expect(modal).toBeHidden()
 
     // Should now show My Loans section
     await expect(page.getByRole('heading', { name: 'My Loans' })).toBeVisible()
@@ -367,7 +367,7 @@ test.describe('Bank Management (/bank/:buildingId)', () => {
     await expect(page.getByLabel('Annual Interest Rate (%)')).toBeVisible()
 
     await page.getByRole('button', { name: 'Cancel' }).click()
-    await expect(page.getByLabel('Annual Interest Rate (%)')).not.toBeVisible()
+    await expect(page.getByLabel('Annual Interest Rate (%)')).toBeHidden()
   })
 
   test('publishes offer and shows it in the offer list', async ({ page }) => {
@@ -388,7 +388,7 @@ test.describe('Bank Management (/bank/:buildingId)', () => {
     await page.getByRole('button', { name: 'Publish Loan Offer' }).last().click()
 
     // After publishing, form should hide and offers table should show
-    await expect(page.getByLabel('Annual Interest Rate (%)')).not.toBeVisible()
+    await expect(page.getByLabel('Annual Interest Rate (%)')).toBeHidden()
   })
 
   test('shows issued loans in issued loans section', async ({ page }) => {
