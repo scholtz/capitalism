@@ -709,6 +709,7 @@ export default {
       nearestOffer: 'Nächstes Angebot',
       notAvailable: 'Wählen Sie eine Einkaufseinheit für die Ausführungsvorschau.',
       sourceType_GLOBAL_EXCHANGE: 'Globale Börse',
+      sourceType_PLAYER_EXCHANGE_ORDER: 'Spieler-Börsenauftrag',
       sourceType_LOCAL_B2B: 'Lokales B2B',
       sourceType_LOCKED_VENDOR: 'Gesperrter Lieferant',
       sourceType_NO_SOURCE: 'Keine Quelle',

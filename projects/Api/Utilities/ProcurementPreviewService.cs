@@ -14,6 +14,10 @@ public static class ProcurementPreviewService
 {
     /// <summary>
     /// Computes a procurement preview for the given purchase unit.
+    /// Evaluation order mirrors <see cref="Api.Engine.Phases.PurchasingPhase"/> exactly:
+    /// 1. Player-placed exchange sell orders (LOCAL or OPTIMAL)
+    /// 2. Local same-city B2B supply (LOCAL or OPTIMAL)
+    /// 3. Global city exchange / infinite counterparty (EXCHANGE or OPTIMAL)
     /// </summary>
     public static async Task<ProcurementPreview> ComputeAsync(
         AppDbContext db,
@@ -65,45 +69,39 @@ public static class ProcurementPreviewService
             };
         }
 
-        // For EXCHANGE or OPTIMAL with a resource, evaluate global exchange offers.
-        if (purchaseSource is "EXCHANGE" or "OPTIMAL" && resourceId.HasValue)
+        // ── Step 1 (mirrors tick phase 1): Player-placed exchange sell orders ──
+        // Applies for LOCAL and OPTIMAL modes. Returns immediately if a qualifying order is found.
+        if (purchaseSource is "LOCAL" or "OPTIMAL")
         {
-            var preview = await EvaluateGlobalExchangeAsync(db, unit, building, resourceId.Value, maxPrice, minQuality);
-            if (purchaseSource == "EXCHANGE" || (purchaseSource == "OPTIMAL" && preview.CanExecute))
-            {
-                // If EXCHANGE-only and locked city is set but unavailable, return blocked.
-                if (purchaseSource == "EXCHANGE" && !preview.CanExecute)
-                {
-                    return preview;
-                }
-
-                if (preview.CanExecute)
-                    return preview;
-            }
+            var orderPreview = await EvaluatePlayerExchangeOrdersAsync(db, unit, building, resourceId, productId, maxPrice, minQuality);
+            if (orderPreview.CanExecute)
+                return orderPreview;
         }
 
-        // For LOCAL or OPTIMAL (fallback), evaluate local B2B supplies.
+        // ── Step 2 (mirrors tick phase 1.5): Local same-city B2B supply ──
+        // Applies for LOCAL and OPTIMAL modes. Returns immediately if a qualifying supply is found.
         if (purchaseSource is "LOCAL" or "OPTIMAL")
         {
             var localPreview = await EvaluateLocalB2BAsync(db, unit, building, resourceId, productId, maxPrice, minQuality, company.Id);
             if (localPreview.CanExecute)
                 return localPreview;
 
-            // If both paths fail for OPTIMAL, return a combined block message.
-            if (purchaseSource == "OPTIMAL")
-            {
-                return new ProcurementPreview
-                {
-                    SourceType = ProcurementSourceType.NoSource,
-                    CanExecute = false,
-                    BlockReason = ProcurementBlockReason.NoStock,
-                    BlockMessage = resourceId.HasValue
-                        ? "No qualifying exchange offer or local B2B supply found. Check max price, min quality, or wait for stock."
-                        : "No qualifying local B2B supply found. Check max price, min quality, or wait for stock.",
-                };
-            }
+            // For LOCAL-only mode with no qualifying supply, return the blocked result.
+            if (purchaseSource == "LOCAL")
+                return localPreview;
+        }
 
-            return localPreview;
+        // ── Step 3 (mirrors tick phase 2): Global city exchange ──
+        // Applies for EXCHANGE and OPTIMAL modes (resource purchases only).
+        // LockedCityId is only respected in EXCHANGE mode; OPTIMAL picks globally.
+        if (purchaseSource is "EXCHANGE" or "OPTIMAL" && resourceId.HasValue)
+        {
+            var globalPreview = await EvaluateGlobalExchangeAsync(db, unit, building, resourceId.Value, maxPrice, minQuality, applyLockedCity: purchaseSource == "EXCHANGE");
+            if (purchaseSource == "EXCHANGE")
+                return globalPreview; // Always return for EXCHANGE – could be blocked.
+
+            if (globalPreview.CanExecute)
+                return globalPreview;
         }
 
         // EXCHANGE source but no resource (product-only) – not supported yet.
@@ -118,12 +116,78 @@ public static class ProcurementPreviewService
             };
         }
 
+        // All sources exhausted (OPTIMAL with no qualifying offer or supply).
         return new ProcurementPreview
         {
             SourceType = ProcurementSourceType.NoSource,
             CanExecute = false,
             BlockReason = ProcurementBlockReason.NoStock,
-            BlockMessage = "No qualifying source found for the current configuration.",
+            BlockMessage = resourceId.HasValue
+                ? "No qualifying exchange order, local B2B supply, or global exchange offer found. Check max price, min quality, or wait for stock."
+                : "No qualifying exchange order or local B2B supply found. Check max price, min quality, or wait for stock.",
+        };
+    }
+
+    /// <summary>
+    /// Evaluates player-placed exchange sell orders (mirrors tick phase 1 – LOCAL/OPTIMAL path).
+    /// Returns the best qualifying sell order at or below maxPrice.
+    /// NOTE: The tick engine does NOT filter player exchange orders by MinQuality (exchange orders
+    /// do not carry quality metadata). This method mirrors that behavior exactly – MinQuality is
+    /// intentionally not applied here. The reported quality (0.7) is the same estimate used by
+    /// the tick engine's weighted-quality accumulation for exchange purchases.
+    /// VendorLockCompanyId IS applied, matching tick engine behavior (see PurchasingPhase Phase 1).
+    /// </summary>
+    private static async Task<ProcurementPreview> EvaluatePlayerExchangeOrdersAsync(
+        AppDbContext db,
+        BuildingUnit unit,
+        Building building,
+        Guid? resourceId,
+        Guid? productId,
+        decimal maxPrice,
+        decimal minQuality)
+    {
+        // minQuality parameter is intentionally unused here – tick engine does not filter
+        // exchange sell orders by quality because ExchangeOrder has no quality field.
+        _ = minQuality;
+
+        var query = db.ExchangeOrders
+            .Where(o => o.Side == "SELL" && o.IsActive && o.RemainingQuantity > 0m && o.PricePerUnit <= maxPrice)
+            .AsQueryable();
+
+        if (resourceId.HasValue)
+            query = query.Where(o => o.ResourceTypeId == resourceId);
+        if (productId.HasValue)
+            query = query.Where(o => o.ProductTypeId == productId);
+        // Apply vendor lock if set – mirrors tick engine PurchasingPhase phase 1 behavior.
+        if (unit.VendorLockCompanyId.HasValue)
+            query = query.Where(o => o.CompanyId == unit.VendorLockCompanyId.Value);
+
+        var bestOrder = await query
+            .OrderBy(o => o.PricePerUnit)
+            .Include(o => o.Company)
+            .FirstOrDefaultAsync();
+
+        if (bestOrder is null)
+        {
+            return new ProcurementPreview
+            {
+                SourceType = ProcurementSourceType.PlayerExchangeOrder,
+                CanExecute = false,
+                BlockReason = ProcurementBlockReason.NoStock,
+                BlockMessage = "No qualifying player exchange sell orders found.",
+            };
+        }
+
+        return new ProcurementPreview
+        {
+            SourceType = ProcurementSourceType.PlayerExchangeOrder,
+            SourceVendorCompanyId = bestOrder.CompanyId,
+            SourceVendorName = bestOrder.Company?.Name ?? "Exchange seller",
+            DeliveredPricePerUnit = bestOrder.PricePerUnit,
+            // Exchange orders have no quality field; 0.7m matches the tick engine's
+            // weightedQualityTotal accumulation constant for exchange purchases.
+            EstimatedQuality = 0.7m,
+            CanExecute = true,
         };
     }
 
@@ -133,7 +197,8 @@ public static class ProcurementPreviewService
         Building building,
         Guid resourceId,
         decimal maxPrice,
-        decimal minQuality)
+        decimal minQuality,
+        bool applyLockedCity = false)
     {
         var resource = await db.ResourceTypes.FindAsync(resourceId);
         if (resource is null)
@@ -166,8 +231,9 @@ public static class ProcurementPreviewService
 
         var allCities = await db.Cities.ToListAsync();
 
-        // Apply LockedCityId filter if set.
-        var candidateCities = unit.LockedCityId.HasValue
+        // Apply LockedCityId filter only when applyLockedCity=true (EXCHANGE mode only).
+        // OPTIMAL mode must not be constrained by LockedCityId so it can pick the globally cheapest source.
+        var candidateCities = applyLockedCity && unit.LockedCityId.HasValue
             ? allCities.Where(c => c.Id == unit.LockedCityId.Value).ToList()
             : allCities;
 
@@ -196,7 +262,7 @@ public static class ProcurementPreviewService
             })
             .ToList();
 
-        var lockedCityMissing = unit.LockedCityId.HasValue && !allCities.Any(c => c.Id == unit.LockedCityId.Value);
+        var lockedCityMissing = applyLockedCity && unit.LockedCityId.HasValue && !allCities.Any(c => c.Id == unit.LockedCityId.Value);
         if (lockedCityMissing)
         {
             return new ProcurementPreview
@@ -237,8 +303,8 @@ public static class ProcurementPreviewService
             {
                 SourceType = ProcurementSourceType.GlobalExchange,
                 CanExecute = false,
-                BlockReason = unit.LockedCityId.HasValue ? ProcurementBlockReason.LockedSourceUnavailable : ProcurementBlockReason.NoStock,
-                BlockMessage = unit.LockedCityId.HasValue
+                BlockReason = (applyLockedCity && unit.LockedCityId.HasValue) ? ProcurementBlockReason.LockedSourceUnavailable : ProcurementBlockReason.NoStock,
+                BlockMessage = (applyLockedCity && unit.LockedCityId.HasValue)
                     ? "The locked source city has no exchange offer for this resource."
                     : "No exchange offers available for this resource.",
             };
@@ -399,6 +465,7 @@ public sealed class ProcurementPreview
 public static class ProcurementSourceType
 {
     public const string GlobalExchange = "GLOBAL_EXCHANGE";
+    public const string PlayerExchangeOrder = "PLAYER_EXCHANGE_ORDER";
     public const string LocalB2B = "LOCAL_B2B";
     public const string LockedVendor = "LOCKED_VENDOR";
     public const string NoSource = "NO_SOURCE";

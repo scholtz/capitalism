@@ -7842,4 +7842,50 @@ test.describe('Procurement mode configuration', () => {
     await expect(page.getByText('Max price exceeded')).toBeVisible()
     await expect(page.getByText('All available offers exceed your max price')).toBeVisible()
   })
+
+  test('switching from EXCHANGE to OPTIMAL clears city lock dropdown state', async ({ page }) => {
+    // Verifies that when a player switches from EXCHANGE back to OPTIMAL,
+    // the lockedCityId is cleared in the draft state so it won't be persisted.
+    const companyId = 'company-proc-clr'
+    const player = makePlayer()
+    player.companies.push({
+      id: companyId,
+      playerId: player.id,
+      name: 'Clear Lock Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{ ...makeProcurementFactory('building-proc-clr', 'Clear Lock Factory', 'EXCHANGE'), companyId }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-proc-clr')
+    await expect(page.getByRole('heading', { name: 'Clear Lock Factory' })).toBeVisible()
+
+    // Enter edit mode
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 0, 0).click()
+
+    // Switch to EXCHANGE to show the city lock dropdown
+    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) }).click()
+    await expect(page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) })).toHaveClass(/selected/)
+
+    // City lock dropdown should be visible in EXCHANGE mode
+    const cityLockDropdown = page.locator('select').filter({ has: page.locator('option', { hasText: 'Any city' }) })
+    await expect(cityLockDropdown).toBeVisible()
+
+    // Now switch back to OPTIMAL – city lock dropdown should disappear
+    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) }).click()
+    await expect(page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) })).toHaveClass(/selected/)
+
+    // City lock dropdown must be hidden – OPTIMAL mode must not expose city restriction
+    await expect(cityLockDropdown).not.toBeVisible()
+  })
 })

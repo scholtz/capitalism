@@ -15754,6 +15754,267 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         }
     }
 
+    [Fact]
+    public async Task ProcurementPreview_OptimalMode_IgnoresLockedCityId()
+    {
+        // When PurchaseSource is OPTIMAL, LockedCityId must be ignored so the engine
+        // can select the globally cheapest source. A player who sets a city lock and later
+        // switches back to OPTIMAL must not be silently restricted to the old city.
+        var email = $"pp-optimal-locked-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "PPOptLocked");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var cities = await db.Cities.ToListAsync();
+        Assert.True(cities.Count >= 2, "Need at least two cities");
+        var city = cities[0];
+        var anotherCity = cities[1];
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "PPOptLockedCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Factory, Name = "PPOptLockedFactory", Level = 1 };
+        db.Buildings.Add(building);
+        // Unit is OPTIMAL but has LockedCityId set (simulates state left over from a previous EXCHANGE config).
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            MaxPrice = 9999m,
+            PurchaseSource = "OPTIMAL",
+            LockedCityId = anotherCity.Id, // stale locked city – must be ignored for OPTIMAL
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query PP($unitId: UUID!) { procurementPreview(buildingUnitId: $unitId) { sourceType canExecute sourceCityId blockReason } }",
+            new { unitId = unit.Id.ToString() },
+            token);
+
+        var preview = result.GetProperty("data").GetProperty("procurementPreview");
+        // Must return canExecute=true – OPTIMAL should find a global exchange offer without city restriction.
+        Assert.True(preview.GetProperty("canExecute").GetBoolean(), "OPTIMAL mode must execute despite stale LockedCityId");
+        Assert.Null(preview.GetProperty("blockReason").GetString());
+    }
+
+    [Fact]
+    public async Task ProcurementPreview_OptimalMode_PrefersPlayerExchangeOrderBeforeGlobalExchange()
+    {
+        // Tick execution priority for OPTIMAL: player exchange sell orders → local B2B → global exchange.
+        // The preview must reflect the same priority and report a PLAYER_EXCHANGE_ORDER source
+        // when a qualifying player sell order exists – even if global exchange is also available.
+        var email = $"pp-peo-{Guid.NewGuid():N}@test.com";
+        var sellerEmail = $"pp-peo-seller-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "PPPeoPlayer");
+        await RegisterAndGetTokenAsync(sellerEmail, "PPPeoSeller");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var seller = await db.Players.FirstAsync(p => p.Email == sellerEmail);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var buyerCompany = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "BuyerCoOpt", Cash = 100_000m };
+        db.Companies.Add(buyerCompany);
+        var sellerCompany = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = seller.Id, Name = "SellerCoOpt", Cash = 10_000m };
+        db.Companies.Add(sellerCompany);
+
+        // Seller has an exchange building with an active sell order at a very cheap price.
+        var exchangeBuilding = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = sellerCompany.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Exchange, Name = "ExchangeOpt", Level = 1 };
+        db.Buildings.Add(exchangeBuilding);
+        var sellOrder = new Api.Data.Entities.ExchangeOrder
+        {
+            Id = Guid.NewGuid(),
+            ExchangeBuildingId = exchangeBuilding.Id,
+            CompanyId = sellerCompany.Id,
+            Side = "SELL",
+            ResourceTypeId = resource.Id,
+            PricePerUnit = 1.00m, // far cheaper than any global exchange price
+            Quantity = 1000m,
+            RemainingQuantity = 1000m,
+            IsActive = true,
+        };
+        db.ExchangeOrders.Add(sellOrder);
+
+        var buyerBuilding = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = buyerCompany.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Factory, Name = "BuyerOpt", Level = 1 };
+        db.Buildings.Add(buyerBuilding);
+        var purchaseUnit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = buyerBuilding.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            MaxPrice = 9999m,
+            PurchaseSource = "OPTIMAL",
+        };
+        db.BuildingUnits.Add(purchaseUnit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query PP($unitId: UUID!) { procurementPreview(buildingUnitId: $unitId) { sourceType canExecute deliveredPricePerUnit blockReason } }",
+            new { unitId = purchaseUnit.Id.ToString() },
+            token);
+
+        var preview = result.GetProperty("data").GetProperty("procurementPreview");
+        Assert.True(preview.GetProperty("canExecute").GetBoolean());
+        // Must prefer a player exchange order, not the global exchange.
+        // Price may be <= $1.00 if other tests have cheaper orders in the shared DB.
+        Assert.Equal("PLAYER_EXCHANGE_ORDER", preview.GetProperty("sourceType").GetString());
+        Assert.True(preview.GetProperty("deliveredPricePerUnit").GetDecimal() <= 1.00m,
+            "Preview should pick the cheapest player order (≤ $1.00), not global exchange");
+    }
+
+    [Fact]
+    public async Task BuildingConfiguration_SwitchFromExchangeToOptimal_ClearsLockedCityId()
+    {
+        // When a player stores a configuration with PurchaseSource=OPTIMAL, any LockedCityId
+        // sent in the input must be ignored so it cannot silently restrict optimal sourcing.
+        var email = $"cfg-clear-locked-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "CfgClearLocked");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "CfgClearLockedCo", Cash = 500_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Factory, Name = "CfgClearLockedFactory", Level = 1 };
+        db.Buildings.Add(building);
+        var existingUnit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            PurchaseSource = "EXCHANGE",
+            LockedCityId = city.Id, // initially locked
+        };
+        db.BuildingUnits.Add(existingUnit);
+        await db.SaveChangesAsync();
+
+        // Store a new configuration with OPTIMAL mode but still sending LockedCityId (simulates stale data).
+        var storeMutation = @"
+            mutation StoreCfg($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }";
+        var storeInput = new
+        {
+            buildingId = building.Id.ToString(),
+            units = new[]
+            {
+                new
+                {
+                    unitType = "PURCHASE",
+                    gridX = 0,
+                    gridY = 0,
+                    linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                    linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false,
+                    resourceTypeId = resource.Id.ToString(),
+                    purchaseSource = "OPTIMAL",
+                    lockedCityId = city.Id.ToString(), // stale locked city sent by client
+                    maxPrice = (decimal?)null,
+                },
+            },
+        };
+        var storeResult = await ExecuteGraphQlAsync(storeMutation, new { input = storeInput }, token);
+        Assert.False(storeResult.TryGetProperty("errors", out var errs) && errs.GetArrayLength() > 0,
+            $"storeBuildingConfiguration returned errors: {(storeResult.TryGetProperty("errors", out var e) ? e.ToString() : "none")}");
+        var planId = Guid.Parse(storeResult.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("id").GetString()!);
+
+        // Inspect the pending plan unit directly – LockedCityId must be null for OPTIMAL.
+        await using var scope2 = _factory.Services.CreateAsyncScope();
+        var db2 = scope2.ServiceProvider.GetRequiredService<AppDbContext>();
+        var planUnit = await db2.BuildingConfigurationPlanUnits
+            .FirstAsync(u => u.BuildingConfigurationPlanId == planId && u.UnitType == Api.Data.Entities.UnitType.Purchase);
+
+        Assert.Equal("OPTIMAL", planUnit.PurchaseSource);
+        Assert.Null(planUnit.LockedCityId); // Must be cleared for non-EXCHANGE modes.
+    }
+
+    [Fact]
+    public async Task ProcurementPreview_VendorLock_FiltersPlayerExchangeOrdersByCompany()
+    {
+        // VendorLockCompanyId must filter player exchange orders in the preview, mirroring
+        // PurchasingPhase phase 1 which applies the same vendor lock.
+        var email = $"pp-vendlock-{Guid.NewGuid():N}@test.com";
+        var sellerEmail = $"pp-vendlock-seller-{Guid.NewGuid():N}@test.com";
+        var otherEmail = $"pp-vendlock-other-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "PPVendLockPlayer");
+        await RegisterAndGetTokenAsync(sellerEmail, "PPVendLockSeller");
+        await RegisterAndGetTokenAsync(otherEmail, "PPVendLockOther");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var seller = await db.Players.FirstAsync(p => p.Email == sellerEmail);
+        var other = await db.Players.FirstAsync(p => p.Email == otherEmail);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var buyerCompany = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "BuyerVL", Cash = 100_000m };
+        var sellerCompany = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = seller.Id, Name = "SellerVL", Cash = 10_000m };
+        var otherCompany = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = other.Id, Name = "OtherVL", Cash = 10_000m };
+        db.Companies.AddRange(buyerCompany, sellerCompany, otherCompany);
+
+        var exchangeBuilding = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = sellerCompany.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Exchange, Name = "ExVL", Level = 1 };
+        var otherExchangeBuilding = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = otherCompany.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Exchange, Name = "OtherExVL", Level = 1 };
+        db.Buildings.AddRange(exchangeBuilding, otherExchangeBuilding);
+
+        // Seller has a cheap order; other has an even cheaper order.
+        db.ExchangeOrders.Add(new Api.Data.Entities.ExchangeOrder { Id = Guid.NewGuid(), ExchangeBuildingId = exchangeBuilding.Id, CompanyId = sellerCompany.Id, Side = "SELL", ResourceTypeId = resource.Id, PricePerUnit = 2.00m, Quantity = 100m, RemainingQuantity = 100m, IsActive = true });
+        db.ExchangeOrders.Add(new Api.Data.Entities.ExchangeOrder { Id = Guid.NewGuid(), ExchangeBuildingId = otherExchangeBuilding.Id, CompanyId = otherCompany.Id, Side = "SELL", ResourceTypeId = resource.Id, PricePerUnit = 0.50m, Quantity = 100m, RemainingQuantity = 100m, IsActive = true });
+
+        var buyerBuilding = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = buyerCompany.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Factory, Name = "BuyerVLFactory", Level = 1 };
+        db.Buildings.Add(buyerBuilding);
+        var purchaseUnit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = buyerBuilding.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            MaxPrice = 9999m,
+            PurchaseSource = "OPTIMAL",
+            VendorLockCompanyId = sellerCompany.Id, // locked to seller only
+        };
+        db.BuildingUnits.Add(purchaseUnit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query PP($unitId: UUID!) { procurementPreview(buildingUnitId: $unitId) { sourceType canExecute deliveredPricePerUnit sourceVendorCompanyId } }",
+            new { unitId = purchaseUnit.Id.ToString() },
+            token);
+
+        var preview = result.GetProperty("data").GetProperty("procurementPreview");
+        Assert.True(preview.GetProperty("canExecute").GetBoolean());
+        Assert.Equal("PLAYER_EXCHANGE_ORDER", preview.GetProperty("sourceType").GetString());
+        // Must use seller's $2.00 order, NOT other's cheaper $0.50 order.
+        Assert.Equal(2.00m, preview.GetProperty("deliveredPricePerUnit").GetDecimal());
+        Assert.Equal(sellerCompany.Id.ToString(), preview.GetProperty("sourceVendorCompanyId").GetString());
+    }
+
     #endregion
 
 }

@@ -706,6 +706,7 @@ export default {
       nearestOffer: 'Najbližšia ponuka',
       notAvailable: 'Vyberte nákupnú jednotku pre zobrazenie náhľadu.',
       sourceType_GLOBAL_EXCHANGE: 'Globálna burza',
+      sourceType_PLAYER_EXCHANGE_ORDER: 'Príkaz hráčskej burzy',
       sourceType_LOCAL_B2B: 'Miestny B2B',
       sourceType_LOCKED_VENDOR: 'Uzamknutý dodávateľ',
       sourceType_NO_SOURCE: 'Žiadny zdroj',

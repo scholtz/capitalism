@@ -373,8 +373,10 @@ public sealed class PurchasingPhase : ITickPhase
         if (!context.ResourceTypesById.TryGetValue(resourceId, out var resource)) return (0m, 0m, 0m);
         if (!context.CitiesById.TryGetValue(building.CityId, out var destinationCity)) return (0m, 0m, 0m);
 
-        // When LockedCityId is set, restrict sourcing to only that specific city.
-        var candidateCities = unit.LockedCityId.HasValue
+        // When LockedCityId is set AND purchase source is EXCHANGE, restrict sourcing to only that city.
+        // For OPTIMAL mode, LockedCityId must be ignored so the engine can find the best price globally.
+        var purchaseSource = unit.PurchaseSource ?? "OPTIMAL";
+        var candidateCities = unit.LockedCityId.HasValue && purchaseSource == "EXCHANGE"
             ? context.CitiesById.Values.Where(c => c.Id == unit.LockedCityId.Value)
             : context.CitiesById.Values;
 

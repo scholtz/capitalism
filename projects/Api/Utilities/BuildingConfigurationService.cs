@@ -222,7 +222,8 @@ public static class BuildingConfigurationService
                 liveUnit.MinQuality = pendingUnit.MinQuality;
                 liveUnit.BrandScope = pendingUnit.BrandScope;
                 liveUnit.VendorLockCompanyId = pendingUnit.VendorLockCompanyId;
-                liveUnit.LockedCityId = pendingUnit.LockedCityId;
+                // LockedCityId only applies to EXCHANGE mode; clear it for any other mode.
+                liveUnit.LockedCityId = (pendingUnit.PurchaseSource == "EXCHANGE") ? pendingUnit.LockedCityId : null;
 
                 pendingUnit.StartedAtTick = currentTick;
                 pendingUnit.AppliesAtTick = currentTick;
@@ -380,7 +381,9 @@ public static class BuildingConfigurationService
             MinQuality = input.MinQuality,
             BrandScope = input.BrandScope,
             VendorLockCompanyId = input.VendorLockCompanyId,
-            LockedCityId = input.LockedCityId,
+            // LockedCityId is only meaningful in EXCHANGE mode; clear it for any other mode
+            // so that switching to OPTIMAL does not silently retain a city restriction.
+            LockedCityId = (input.PurchaseSource == "EXCHANGE") ? input.LockedCityId : null,
         };
     }
 

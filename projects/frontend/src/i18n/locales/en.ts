@@ -707,6 +707,7 @@ export default {
       nearestOffer: 'Nearest offer',
       notAvailable: 'Select a purchase unit to see its execution preview.',
       sourceType_GLOBAL_EXCHANGE: 'Global Exchange',
+      sourceType_PLAYER_EXCHANGE_ORDER: 'Player Exchange Order',
       sourceType_LOCAL_B2B: 'Local B2B',
       sourceType_LOCKED_VENDOR: 'Locked Vendor',
       sourceType_NO_SOURCE: 'No source',

@@ -1977,6 +1977,12 @@ function updateSelectedUnitConfig(field: string, value: unknown) {
   if (!unit) return
   const sanitized = typeof value === 'number' && isNaN(value) ? null : value
   ;(unit as Record<string, unknown>)[field] = sanitized
+
+  // When procurement mode changes away from EXCHANGE, clear the city lock.
+  // LockedCityId only applies to EXCHANGE mode – keeping it silently restricts OPTIMAL sourcing.
+  if (field === 'purchaseSource' && value !== 'EXCHANGE') {
+    ;(unit as Record<string, unknown>)['lockedCityId'] = null
+  }
 }
 
 async function loadUnitInventorySummaries(requestId?: number) {
