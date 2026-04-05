@@ -61,7 +61,7 @@ test.describe('Loan Marketplace (/loans)', () => {
   test('shows loan marketplace page with empty state when no offers', async ({ page }) => {
     setupMockApi(page)
     await page.goto('/loans')
-    await expect(page.getByRole('heading', { name: 'Loan Offers' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Loan Offers', level: 1 })).toBeVisible()
     await expect(page.getByText('No loan offers available at this time.')).toBeVisible()
   })
 
@@ -437,13 +437,14 @@ test.describe('Loans nav link', () => {
   test('shows Loans link in nav bar', async ({ page }) => {
     setupMockApi(page)
     await page.goto('/')
-    await expect(page.getByRole('link', { name: 'Loans' })).toBeVisible()
+    // Use href selector to find nav link (icon-only nav items may be hidden in accessibility tree on desktop)
+    await expect(page.locator('.nav-links a[href="/loans"]')).toBeVisible()
   })
 
   test('clicking Loans nav link navigates to /loans', async ({ page }) => {
     setupMockApi(page)
     await page.goto('/')
-    await page.getByRole('link', { name: 'Loans' }).click()
+    await page.locator('.nav-links a[href="/loans"]').click()
     await expect(page).toHaveURL('/loans')
   })
 })

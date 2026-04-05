@@ -2738,12 +2738,21 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     }
 
     // Helper: true if the query is a standalone `me` query (not a more-specific query whose field names happen to include "me" as a substring).
+    // NOTE: Many field names end in "Name" (e.g. bankBuildingName, lenderCompanyName, cityName) which contain "me" as a substring.
+    // Also "payment" contains "me" (pay-me-nt). Always add exclusions here for any new query/mutation with such fields.
     const isStandaloneMeQuery = (q: string) =>
       q.includes('me') &&
       !q.includes('companyLedger') &&
       !q.includes('ledgerDrillDown') &&
       !q.includes('companyBrands') &&
-      !q.includes('publicSalesAnalytics')
+      !q.includes('publicSalesAnalytics') &&
+      // Loan queries: field names like bankBuildingName, lenderCompanyName, cityName, paymentAmount contain 'me'
+      !q.includes('loanOffers') &&
+      !q.includes('myLoans') &&
+      !q.includes('myLoanOffers') &&
+      !q.includes('bankLoans') &&
+      // acceptLoan mutation response includes paymentAmount which contains 'me'
+      !q.includes('acceptLoan')
 
     if (isStandaloneMeQuery(query)) {
       const player = state.players.find((p) => p.id === state.currentUserId)

@@ -242,20 +242,20 @@ async function toggleOfferActive(offer: LoanOfferSummary) {
           <h3>{{ t('bank.publishOffer') }}</h3>
           <div class="form-grid">
             <div class="form-group">
-              <label>{{ t('bank.interestRate') }} (%)</label>
-              <input v-model.number="offerForm.annualInterestRatePercent" type="number" min="0.1" max="200" step="0.1" class="form-input" />
+              <label for="offer-interest-rate">{{ t('bank.interestRate') }} (%)</label>
+              <input id="offer-interest-rate" v-model.number="offerForm.annualInterestRatePercent" type="number" min="0.1" max="200" step="0.1" class="form-input" />
             </div>
             <div class="form-group">
-              <label>{{ t('bank.maxPrincipal') }} ($)</label>
-              <input v-model.number="offerForm.maxPrincipalPerLoan" type="number" min="1000" step="1000" class="form-input" />
+              <label for="offer-max-principal">{{ t('bank.maxPrincipal') }} ($)</label>
+              <input id="offer-max-principal" v-model.number="offerForm.maxPrincipalPerLoan" type="number" min="1000" step="1000" class="form-input" />
             </div>
             <div class="form-group">
-              <label>{{ t('bank.totalCapacity') }} ($)</label>
-              <input v-model.number="offerForm.totalCapacity" type="number" min="1000" step="1000" class="form-input" />
+              <label for="offer-total-capacity">{{ t('bank.totalCapacity') }} ($)</label>
+              <input id="offer-total-capacity" v-model.number="offerForm.totalCapacity" type="number" min="1000" step="1000" class="form-input" />
             </div>
             <div class="form-group">
-              <label>{{ t('bank.durationTicks') }}</label>
-              <input v-model.number="offerForm.durationTicks" type="number" min="24" max="87600" step="24" class="form-input" />
+              <label for="offer-duration">{{ t('bank.durationTicks') }}</label>
+              <input id="offer-duration" v-model.number="offerForm.durationTicks" type="number" min="24" max="87600" step="24" class="form-input" />
               <span class="form-hint">{{ formatLoanDuration(offerForm.durationTicks) }}</span>
             </div>
           </div>
