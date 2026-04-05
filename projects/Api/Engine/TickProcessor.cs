@@ -133,7 +133,7 @@ public sealed class TickProcessor(
             UnitsByBuilding = buildings.ToDictionary(b => b.Id, b => b.Units.ToList()),
             UnitsByBuildingPosition = buildings.ToDictionary(
                 b => b.Id,
-                b => b.Units.ToDictionary(u => (u.GridX, u.GridY))),
+                b => b.Units.DistinctBy(u => (u.GridX, u.GridY)).ToDictionary(u => (u.GridX, u.GridY))),
             InventoryByUnit = inventories
                 .Where(i => i.BuildingUnitId.HasValue)
                 .GroupBy(i => i.BuildingUnitId!.Value)

@@ -32,7 +32,7 @@ public static class BuildingConfigurationService
             .Include(plan => plan.Removals)
             .FirstOrDefaultAsync(plan => plan.BuildingId == building.Id);
 
-        var currentUnits = building.Units.ToDictionary(unit => (unit.GridX, unit.GridY));
+        var currentUnits = building.Units.DistinctBy(unit => (unit.GridX, unit.GridY)).ToDictionary(unit => (unit.GridX, unit.GridY));
         var desiredUnits = submittedUnits
             .OrderBy(unit => unit.GridY)
             .ThenBy(unit => unit.GridX)
@@ -144,7 +144,7 @@ public static class BuildingConfigurationService
 
         foreach (var plan in plans)
         {
-            var liveUnitsByPosition = plan.Building.Units.ToDictionary(unit => (unit.GridX, unit.GridY));
+            var liveUnitsByPosition = plan.Building.Units.DistinctBy(unit => (unit.GridX, unit.GridY)).ToDictionary(unit => (unit.GridX, unit.GridY));
 
             foreach (var removal in plan.Removals.Where(removal => removal.AppliesAtTick <= currentTick).ToList())
             {

@@ -1537,6 +1537,7 @@ public sealed class Mutation
             .ThenInclude(plan => plan!.Units)
             .Include(candidate => candidate.PendingConfiguration)
             .ThenInclude(plan => plan!.Removals)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(candidate => candidate.Id == input.BuildingId);
 
         if (building is null || building.Company.PlayerId != userId)
@@ -1599,6 +1600,7 @@ public sealed class Mutation
             .ThenInclude(plan => plan!.Units)
             .Include(candidate => candidate.PendingConfiguration)
             .ThenInclude(plan => plan!.Removals)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(candidate => candidate.Id == input.BuildingId);
 
         if (building is null || building.Company.PlayerId != userId)

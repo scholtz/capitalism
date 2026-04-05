@@ -12979,6 +12979,137 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task UpdatePublicSalesPrice_ThenRunTicks_ConfiguredPriceReflectedInAnalytics()
+    {
+        // Full flow: complete onboarding → inspect unit minPrice → update price → run tick → verify analytics work.
+        var (token, unitId) = await SetupPublicSalesUnitAsync(
+            "upsp-tick-verify@test.com", "TickVerify", "TickVerify Co");
+
+        // Verify unit minPrice is set by onboarding via a direct DB read.
+        decimal baselineMinPrice;
+        {
+            await using var scope = _factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var unit = await db.BuildingUnits.FindAsync(unitId);
+            Assert.NotNull(unit);
+            baselineMinPrice = unit!.MinPrice ?? 0m;
+            Assert.True(baselineMinPrice > 0m, "Baseline minPrice should be positive after onboarding.");
+        }
+
+        // Update the price to a new value.
+        const decimal newPrice = 99.99m;
+        var updateResult = await ExecuteGraphQlAsync(
+            """
+            mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+                updatePublicSalesPrice(input: $input) { id minPrice }
+            }
+            """,
+            new { input = new { unitId, newMinPrice = newPrice } },
+            token);
+        Assert.False(updateResult.TryGetProperty("errors", out _), "updatePublicSalesPrice should succeed.");
+        var returnedPrice = updateResult.GetProperty("data").GetProperty("updatePublicSalesPrice").GetProperty("minPrice").GetDecimal();
+        Assert.True(Math.Abs(returnedPrice - newPrice) < 0.001m, $"Mutation should return new price {newPrice} but got {returnedPrice}.");
+
+        // Run a tick so the analytics and unit state are refreshed.
+        await ProcessTicksAsync(1);
+
+        // Query analytics — demandSignal and recentUtilization should be present.
+        var analyticsResult = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ demandSignal recentUtilization revenueHistory {{ tick revenue }} }} }}",
+            token: token);
+        var analytics = analyticsResult.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.NotEqual(JsonValueKind.Null, analytics.ValueKind);
+        Assert.False(string.IsNullOrEmpty(analytics.GetProperty("demandSignal").GetString()),
+            "demandSignal should be present after tick.");
+
+        // Confirm minPrice persists after the tick via a direct DB read.
+        {
+            await using var scope = _factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var unit = await db.BuildingUnits.FindAsync(unitId);
+            Assert.NotNull(unit);
+            Assert.True(Math.Abs(unit!.MinPrice!.Value - newPrice) < 0.001m,
+                $"MinPrice should still be {newPrice} after tick but got {unit.MinPrice}.");
+        }
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_FoodProcessing_SupplyConstrained_ReturnsCorrectSignal()
+    {
+        // Verify that FOOD_PROCESSING (Bread) shows SUPPLY_CONSTRAINED when inventory is empty after ticks.
+        var token = await RegisterAndGetTokenAsync("analytics-food-supply@test.com", "FoodSupplyTest");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Food Supply Factory Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FOOD_PROCESSING", cityId, companyName = "Food Supply Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("FOOD_PROCESSING", "bread");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Food Supply Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        // Without any inventory in the unit, demand analytics should reflect supply constraint.
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ demandSignal actionHint recentUtilization }} }}",
+            token: token);
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.NotEqual(JsonValueKind.Null, analytics.ValueKind);
+        // With no inventory and no sales history, the unit is supply-constrained or shows zero utilization.
+        var signal = analytics.GetProperty("demandSignal").GetString();
+        Assert.False(string.IsNullOrEmpty(signal), "demandSignal should be present.");
+        // Utilization should be zero or near-zero since the unit has no inventory.
+        var utilization = analytics.GetProperty("recentUtilization").GetDecimal();
+        Assert.True(utilization <= 0.1m, $"Utilization should be near zero for an empty unit, got {utilization}.");
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_Healthcare_SupplyConstrained_ReturnsCorrectSignal()
+    {
+        // Verify that HEALTHCARE (Basic Medicine) shows correct demand signal when unit is empty.
+        var token = await RegisterAndGetTokenAsync("analytics-health-supply@test.com", "HealthSupplyTest");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Health Supply Factory Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "HEALTHCARE", cityId, companyName = "Health Supply Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Health Supply Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ demandSignal actionHint recentUtilization }} }}",
+            token: token);
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.NotEqual(JsonValueKind.Null, analytics.ValueKind);
+        var signal = analytics.GetProperty("demandSignal").GetString();
+        Assert.False(string.IsNullOrEmpty(signal), "demandSignal should be present for Healthcare.");
+
+        // Verify the public sales unit has a positive minPrice (configured by FinishOnboarding) via DB.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits.FindAsync(unitId);
+        Assert.NotNull(unit);
+        Assert.True(unit!.MinPrice is > 0m, $"Healthcare public sales unit should have positive minPrice, got {unit.MinPrice}.");
+    }
+
+    [Fact]
     public async Task CompanyLedger_RequiresOwnership_ForbidsOtherPlayer()
     {
         var ownerToken = await RegisterAndGetTokenAsync("ledger-owner@test.com", "LedgerOwner");

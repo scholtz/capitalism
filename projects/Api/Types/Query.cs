@@ -249,6 +249,7 @@ public sealed class Query
             .ThenInclude(plan => plan!.Removals)
             .Include(c => c.Buildings)
             .ThenInclude(b => b.Units)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(c => c.Id == id);
     }
 
@@ -329,6 +330,7 @@ public sealed class Query
             .ThenInclude(r => r.ResourceType)
             .Include(p => p.Recipes)
             .ThenInclude(r => r.InputProductType)
+            .AsSplitQuery()
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(industry))
@@ -431,6 +433,7 @@ public sealed class Query
             .Include(c => c.Buildings)
             .ThenInclude(b => b.PendingConfiguration)
             .ThenInclude(plan => plan!.Removals)
+            .AsSplitQuery()
             .Where(c => c.PlayerId == userId)
             .OrderBy(c => c.Name)
             .ToListAsync();
