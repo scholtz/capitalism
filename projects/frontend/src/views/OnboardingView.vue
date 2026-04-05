@@ -1519,8 +1519,22 @@ useTickRefresh(async () => {
 
         <!-- Guest mode: show simulated achievements and save-progress form -->
         <div v-if="isGuestMode" class="completion-achievements">
-          <div class="achievement-item">
+          <div v-if="selectedCity" class="achievement-item">
+            <span class="achievement-icon">🌍</span>
+            <div class="achievement-text">
+              <strong>{{ selectedCity.name }}</strong>
+              <span>{{ t('onboarding.completionCity') }}</span>
+            </div>
+          </div>
+          <div v-if="selectedIndustry" class="achievement-item">
             <span class="achievement-icon">🏭</span>
+            <div class="achievement-text">
+              <strong>{{ formatIndustry(selectedIndustry) }}</strong>
+              <span>{{ t('onboarding.completionIndustry') }}</span>
+            </div>
+          </div>
+          <div class="achievement-item">
+            <span class="achievement-icon">🏢</span>
             <div class="achievement-text">
               <strong>{{ companyName || t('onboarding.guestCompanyPlaceholder') }}</strong>
               <span>{{ t('onboarding.completionFactory') }}</span>
@@ -1638,6 +1652,13 @@ useTickRefresh(async () => {
               <p class="guest-save-subtitle">{{ t('onboarding.guestSaveSubtitle') }}</p>
             </div>
           </div>
+
+          <ul class="guest-keeps-list" aria-label="What you keep when you save">
+            <li>✅ <strong>{{ companyName || t('onboarding.guestCompanyPlaceholder') }}</strong> — {{ t('onboarding.guestSaveKeepsCompany') }}</li>
+            <li v-if="selectedCity">✅ <strong>{{ selectedCity.name }}</strong> — {{ t('onboarding.guestSaveKeepsCity') }}</li>
+            <li v-if="selectedProduct">✅ <strong>{{ getProductName(selectedProduct) }}</strong> — {{ t('onboarding.guestSaveKeepsProduct') }}</li>
+            <li>✅ {{ t('onboarding.guestSaveKeepsSetup') }}</li>
+          </ul>
 
           <div class="guest-auth-toggle">
             <button
@@ -3257,6 +3278,21 @@ useTickRefresh(async () => {
   color: var(--color-text-secondary);
   font-size: 0.9rem;
   margin: 0;
+}
+
+.guest-keeps-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.guest-keeps-list li strong {
+  color: var(--color-text-primary);
 }
 
 .guest-auth-toggle {

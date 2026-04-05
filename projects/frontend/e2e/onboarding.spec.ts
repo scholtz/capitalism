@@ -4984,3 +4984,121 @@ test.describe('Startup pack offer — mobile viewport (AC 11)', () => {
     await expect(page.getByRole('button', { name: 'Maybe later' })).toBeVisible()
   })
 })
+
+test.describe('Guest save-progress conversion step — city, industry, and keeps list (AC summary)', () => {
+  // Issue: "The continuation step summarizes the guest onboarding run in a clear and motivating way."
+  // AC: "Present a clear summary of the guest run, including selected industry, city, company name,
+  //      chosen starter product, basic business setup, and proof of first profit."
+  // AC: "Clearly list what the player keeps: company identity, starter city, product choice, and initial setup."
+
+  test('step 5 achievement list shows the selected city name', async ({ page }) => {
+    // Verifies that the city chosen in step 2 appears in the step-5 achievement summary.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    const achievementList = page.locator('.completion-achievements')
+    await expect(achievementList).toBeVisible()
+    // Bratislava is the city chosen in completeGuestSteps1to4
+    await expect(achievementList).toContainText(/Bratislava/i)
+  })
+
+  test('step 5 achievement list shows the selected industry name', async ({ page }) => {
+    // Verifies that the industry chosen in step 1 appears in the step-5 achievement summary.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    const achievementList = page.locator('.completion-achievements')
+    await expect(achievementList).toBeVisible()
+    // Default industry in completeGuestSteps1to4 is Furniture
+    await expect(achievementList).toContainText(/Furniture/i)
+  })
+
+  test('step 5 achievement list shows Food Processing industry when selected', async ({ page }) => {
+    // Verifies the industry label is dynamic (Food Processing), not hardcoded to Furniture.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    await page.locator('.industry-card', { hasText: 'Food Processing' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Bread Guest Co')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+    await page.locator('.product-card', { hasText: 'Bread' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    const achievementList = page.locator('.completion-achievements')
+    await expect(achievementList).toBeVisible()
+    await expect(achievementList).toContainText(/Food Processing/i)
+  })
+
+  test('step 5 achievement list shows Healthcare industry when selected', async ({ page }) => {
+    // Verifies the industry label is dynamic (Healthcare).
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    await page.locator('.industry-card', { hasText: 'Healthcare' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.getByLabel('Company Name').fill('Pharma Guest Co')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+    await page.locator('.product-card', { hasText: 'Basic Medicine' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /High Street Retail Space/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    const achievementList = page.locator('.completion-achievements')
+    await expect(achievementList).toBeVisible()
+    await expect(achievementList).toContainText(/Healthcare/i)
+  })
+
+  test('Save Your Progress section shows what-you-keep list with company, city, and product', async ({
+    page,
+  }) => {
+    // AC: "Clearly list what the player keeps: company identity, starter city, product choice, and initial setup."
+    // The guest-keeps-list must appear and enumerate the 4 items so the player understands what is saved.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page, 'Test Guest Corp')
+
+    const saveSectionList = page.locator('.guest-keeps-list')
+    await expect(saveSectionList).toBeVisible()
+
+    // Company name must appear in the list
+    await expect(saveSectionList).toContainText(/Test Guest Corp/i)
+
+    // City must appear in the list
+    await expect(saveSectionList).toContainText(/Bratislava/i)
+
+    // Product must appear in the list (Wooden Chair for Furniture)
+    await expect(saveSectionList).toContainText(/Wooden Chair/i)
+
+    // Factory/shop setup item must appear
+    await expect(saveSectionList).toContainText(/factory and shop layout/i)
+  })
+
+  test('Save Your Progress section keeps list is usable on narrow (375px) viewport', async ({
+    page,
+  }) => {
+    // AC: "Ensure the conversion flow works well on desktop and responsive layouts."
+    setupMockApi(page)
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.goto('/onboarding')
+    await completeGuestSteps1to4(page)
+
+    const saveSectionList = page.locator('.guest-keeps-list')
+    await expect(saveSectionList).toBeVisible()
+    // At minimum: city and product must be visible on narrow viewport
+    await expect(saveSectionList).toContainText(/Bratislava/i)
+    await expect(saveSectionList).toContainText(/Wooden Chair/i)
+  })
+})

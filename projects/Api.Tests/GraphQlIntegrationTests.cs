@@ -7575,6 +7575,103 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GuestMigration_InvalidProductId_ReturnsExplicitError()
+    {
+        // Issue: guest-to-account handoff must return product-friendly, structured errors rather than
+        // silent failures. If a guest submits an invalid product ID during migration (e.g. the product
+        // was removed or the ID was corrupted), the backend must return INVALID_PRODUCT — not crash.
+        // AC: "Ensure the backend returns product-friendly error or continuation states rather than
+        // raw validation failures whenever the authenticated handoff needs user intervention."
+        var token = await RegisterAndGetTokenAsync($"guest-invalid-product-{Guid.NewGuid()}@test.com", "Invalid Product Player");
+        var cityId = await GetCityIdByNameAsync();
+
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "Invalid Product Factory");
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Invalid Product Corp", factoryLotId } },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed");
+        Assert.Equal("SHOP_SELECTION", startResult.GetProperty("data").GetProperty("startOnboardingCompany").GetProperty("nextStep").GetString());
+
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Invalid Product Shop");
+
+        // Attempt FinishOnboarding with a completely invalid (non-existent) product ID
+        var invalidProductId = Guid.NewGuid().ToString();
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) {
+                company { id }
+                selectedProduct { name }
+              }
+            }
+            """,
+            new { input = new { productTypeId = invalidProductId, shopLotId } },
+            token);
+
+        // Must return an explicit INVALID_PRODUCT error — not a 500 or unstructured failure
+        Assert.True(result.TryGetProperty("errors", out var errors), "Expected INVALID_PRODUCT error for non-existent product");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("INVALID_PRODUCT", code);
+
+        // The error message must be human-readable and not expose internal stack traces
+        var message = errors[0].GetProperty("message").GetString();
+        Assert.NotNull(message);
+        Assert.NotEmpty(message);
+        Assert.DoesNotContain("Exception", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Stack trace", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GuestMigration_NonStarterProduct_ReturnsExplicitError()
+    {
+        // Verifies that if a guest tries to persist a product that exists but is not a starter
+        // product (wrong industry or not in the starter catalog), the backend returns INVALID_PRODUCT
+        // with an actionable, structured error — not a generic or silent failure.
+        // AC: "Ensure the backend returns product-friendly error or continuation states rather than
+        // raw validation failures whenever the authenticated handoff needs user intervention."
+        var token = await RegisterAndGetTokenAsync($"guest-nonstarter-{Guid.NewGuid()}@test.com", "Non-Starter Player");
+        var cityId = await GetCityIdByNameAsync();
+
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 75_000m, "Non-Starter Factory");
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Non-Starter Corp", factoryLotId } },
+            token);
+
+        // Get a product from a different (non-starter) industry via a direct lookup
+        // Use a Healthcare product while the company is in Furniture — must be rejected
+        var healthcareProductId = await GetStarterProductIdAsync("HEALTHCARE", "basic-medicine");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m, "Non-Starter Shop");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FinishOnboarding($input: FinishOnboardingInput!) {
+              finishOnboarding(input: $input) {
+                company { id }
+                selectedProduct { name industry }
+              }
+            }
+            """,
+            new { input = new { productTypeId = healthcareProductId, shopLotId } },
+            token);
+
+        // Must return INVALID_PRODUCT — a Furniture company cannot use a Healthcare starter product
+        Assert.True(result.TryGetProperty("errors", out var errors), "Expected INVALID_PRODUCT for cross-industry product mismatch");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("INVALID_PRODUCT", code);
+    }
+
+    [Fact]
     public async Task FullOnboarding_ViennaCity_CompletesSuccessfully()
     {
         // ROADMAP: "The game will start in single city and later other cities will be added."
