@@ -6580,6 +6580,164 @@ test.describe('Public Sales Market Intelligence panel', () => {
     // Market intelligence panel should NOT appear for STORAGE units
     await expect(page.locator('[aria-label="Market Intelligence"]')).toBeHidden()
   })
+
+  test('shows price history chart when price history data exists', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 1200,
+      totalQuantitySold: 80,
+      averagePricePerUnit: chairProduct.basePrice * 1.2,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong. Consider testing a slightly higher price.',
+      recentUtilization: 0.75,
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({
+        tick: i + 1,
+        revenue: 120,
+        quantitySold: 8,
+      })),
+      priceHistory: Array.from({ length: 10 }, (_, i) => ({
+        tick: i + 1,
+        pricePerUnit: chairProduct.basePrice * (1.2 - i * 0.01),
+      })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Price chart should be visible
+    const priceChart = panel.locator('[aria-label="Realized Price per Tick"]')
+    await expect(priceChart).toBeVisible()
+    // Price bars should be rendered for each tick
+    await expect(priceChart.locator('.mi-bar-price').first()).toBeVisible()
+  })
+
+  test('shows MODERATE demand signal with monitor hint', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 600,
+      totalQuantitySold: 40,
+      averagePricePerUnit: chairProduct.basePrice,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'MODERATE',
+      actionHint: 'Sales are healthy. Keep monitoring stock levels and brand awareness to sustain performance.',
+      recentUtilization: 0.5,
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 60, quantitySold: 4 })),
+      priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    await expect(panel.locator('.mi-demand-badge')).toContainText('Moderate')
+    await expect(panel.locator('.mi-demand-card')).toHaveClass(/mi-demand-moderate/)
+    await expect(panel.getByText(/monitoring/i)).toBeVisible()
+  })
+
+  test('shows competitor in market share with distinct styling', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 750,
+      totalQuantitySold: 50,
+      averagePricePerUnit: chairProduct.basePrice,
+      currentSalesCapacity: 120,
+      dataFromTick: 99,
+      dataToTick: 99,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong.',
+      recentUtilization: 0.75,
+      revenueHistory: [{ tick: 99, revenue: 750, quantitySold: 50 }],
+      priceHistory: [{ tick: 99, pricePerUnit: chairProduct.basePrice }],
+      // 75% to this company, 25% to competitor
+      marketShare: [
+        { label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 0.75 },
+        { label: 'Rival Corp', companyId: 'company-rival', share: 0.25 },
+      ],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Two share rows should appear
+    await expect(panel.locator('.mi-share-row')).toHaveCount(2)
+
+    // Player row should have the star and you styling
+    const playerRow = panel.locator('.mi-share-row-you')
+    await expect(playerRow).toBeVisible()
+    await expect(playerRow.locator('.mi-share-label')).toContainText('★')
+    await expect(playerRow.locator('.mi-share-pct')).toContainText('75.0%')
+
+    // Competitor row should not have you styling
+    const competitorRows = panel.locator('.mi-share-row:not(.mi-share-row-you)')
+    await expect(competitorRows.locator('.mi-share-label')).toContainText('Rival Corp')
+    await expect(competitorRows.locator('.mi-share-pct')).toContainText('25.0%')
+  })
 })
 
 test.describe('Mine building edit mode', () => {

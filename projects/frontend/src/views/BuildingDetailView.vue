@@ -4420,6 +4420,22 @@ watch(
                         ></div>
                       </div>
                     </div>
+
+                    <!-- Price history chart -->
+                    <div v-if="publicSalesAnalytics.priceHistory.length > 0" class="mi-chart-section">
+                      <span class="mi-chart-label">{{ t('buildingDetail.marketIntelligence.priceChart') }}</span>
+                      <div class="mi-bar-chart mi-bar-chart-price" role="img" :aria-label="t('buildingDetail.marketIntelligence.priceChart')">
+                        <div
+                          v-for="snap in publicSalesAnalytics.priceHistory.slice(-30)"
+                          :key="snap.tick"
+                          class="mi-bar mi-bar-price"
+                          :style="{
+                            height: `${Math.max(2, publicSalesAnalytics.priceHistory.reduce((m, s) => Math.max(m, s.pricePerUnit), 0) > 0 ? (snap.pricePerUnit / publicSalesAnalytics.priceHistory.reduce((m, s) => Math.max(m, s.pricePerUnit), 0)) * 100 : 0).toFixed(1)}%`,
+                          }"
+                          :title="`T${snap.tick}: ${formatCurrency(snap.pricePerUnit)}`"
+                        ></div>
+                      </div>
+                    </div>
                   </template>
 
                   <!-- Market share -->
@@ -6542,6 +6558,11 @@ watch(
 
 .mi-bar-quantity {
   background: #16a34a;
+  opacity: 0.8;
+}
+
+.mi-bar-price {
+  background: #d97706;
   opacity: 0.8;
 }
 
