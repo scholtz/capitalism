@@ -772,6 +772,17 @@ export default {
       productQualityHint: 'Aktuelle Lagerqualität. Höhere Qualität steigert die Nachfrage.',
       brandAwareness: 'Markenbekanntheit',
       brandAwarenessHint: 'Markenbekanntheit für dieses Produkt. Höhere Bekanntheit fördert den Absatz.',
+      priceUpdateFailed: 'Preisaktualisierung fehlgeschlagen. Bitte versuchen Sie es erneut.',
+      priceUpdate: {
+        title: 'Schnelle Preisanpassung',
+        desc: 'Legen Sie einen neuen Mindestverkaufspreis fest, der ab dem nächsten Tick gilt — kein Gebäude-Upgrade erforderlich.',
+        newPrice: 'Neuer Mindestpreis ($)',
+        apply: 'Preis anwenden',
+        saving: 'Speichern…',
+        success: 'Preis aktualisiert! Der neue Preis gilt ab dem nächsten Tick.',
+        raisingHint: 'Eine Preiserhöhung kann die Nachfrage senken. Bei Elastizität {elasticity} ist ein moderater Volumenrückgang zu erwarten.',
+        loweringHint: 'Eine Preissenkung kann die Nachfrage steigern. Bei Elastizität {elasticity} ist ein moderater Volumenzuwachs zu erwarten.',
+      },
     },
     selector: {
       rawMaterials: 'Rohstoffe',

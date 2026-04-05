@@ -163,6 +163,11 @@ const selectedDraftMediaHouse = computed(() => {
 // Public Sales market intelligence analytics
 const publicSalesAnalytics = ref<PublicSalesAnalytics | null>(null)
 const publicSalesAnalyticsLoading = ref(false)
+// Quick price update (instant, no tick delay)
+const quickPriceInput = ref<number | null>(null)
+const quickPriceSaving = ref(false)
+const quickPriceSuccess = ref(false)
+const quickPriceError = ref<string | null>(null)
 const showSaleDialog = ref(false)
 const salePrice = ref<number | null>(null)
 const savingSale = ref(false)
@@ -2347,6 +2352,39 @@ async function loadPublicSalesAnalytics(unitId: string | null) {
   }
 }
 
+async function submitQuickPriceUpdate() {
+  const unit = selectedPublicSalesUnit.value
+  const price = quickPriceInput.value
+  if (!unit || !auth.token || price === null || price === undefined) return
+  const unitId = getResolvedLiveUnitId(unit)
+  if (!unitId) return
+  quickPriceSaving.value = true
+  quickPriceSuccess.value = false
+  quickPriceError.value = null
+  try {
+    const data = await gqlRequest<{ updatePublicSalesPrice: { id: string; minPrice: number } }>(
+      `mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+        updatePublicSalesPrice(input: $input) { id minPrice }
+      }`,
+      { input: { unitId, newMinPrice: price } },
+    )
+    // Update local unit state immediately so UI reflects new price
+    if (building.value) {
+      const liveUnit = building.value.units?.find((u) => u.id === data.updatePublicSalesPrice.id)
+      if (liveUnit) liveUnit.minPrice = data.updatePublicSalesPrice.minPrice
+    }
+    quickPriceInput.value = null
+    quickPriceSuccess.value = true
+    // Refresh analytics to reflect the new price
+    await loadPublicSalesAnalytics(unitId)
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    quickPriceError.value = msg || t('buildingDetail.marketIntelligence.priceUpdateFailed')
+  } finally {
+    quickPriceSaving.value = false
+  }
+}
+
 async function loadUnitOperationalStatuses(buildingId: string) {
   if (!auth.token) return
   unitOperationalStatusesLoading.value = true
@@ -4525,6 +4563,59 @@ watch(
                       <strong>{{ t('buildingDetail.marketIntelligence.actionHint') }}:</strong>
                       {{ publicSalesAnalytics.actionHint }}
                     </p>
+                  </div>
+
+                  <!-- Quick price update -->
+                  <div class="mi-price-update-panel" aria-label="Quick Price Update">
+                    <h6 class="mi-price-update-title">{{ t('buildingDetail.marketIntelligence.priceUpdate.title') }}</h6>
+                    <p class="mi-price-update-desc">{{ t('buildingDetail.marketIntelligence.priceUpdate.desc') }}</p>
+
+                    <!-- Directional impact hint derived from elasticity -->
+                    <div
+                      v-if="publicSalesAnalytics.elasticityIndex !== null && quickPriceInput !== null && selectedPublicSalesUnit?.minPrice"
+                      class="mi-price-impact-hint"
+                      :class="{
+                        'mi-price-impact-raise': quickPriceInput > (selectedPublicSalesUnit.minPrice as number),
+                        'mi-price-impact-lower': quickPriceInput < (selectedPublicSalesUnit.minPrice as number),
+                      }"
+                    >
+                      <template v-if="quickPriceInput > (selectedPublicSalesUnit.minPrice as number)">
+                        {{ t('buildingDetail.marketIntelligence.priceUpdate.raisingHint', {
+                          elasticity: Math.abs(publicSalesAnalytics.elasticityIndex).toFixed(1),
+                        }) }}
+                      </template>
+                      <template v-else-if="quickPriceInput < (selectedPublicSalesUnit.minPrice as number)">
+                        {{ t('buildingDetail.marketIntelligence.priceUpdate.loweringHint', {
+                          elasticity: Math.abs(publicSalesAnalytics.elasticityIndex).toFixed(1),
+                        }) }}
+                      </template>
+                    </div>
+
+                    <div class="mi-price-update-row">
+                      <label class="mi-price-update-label" for="quick-price-input">
+                        {{ t('buildingDetail.marketIntelligence.priceUpdate.newPrice') }}
+                      </label>
+                      <input
+                        id="quick-price-input"
+                        type="number"
+                        class="mi-price-input"
+                        :placeholder="selectedPublicSalesUnit?.minPrice?.toString() ?? ''"
+                        :min="0.01"
+                        :step="0.01"
+                        v-model.number="quickPriceInput"
+                      />
+                      <button
+                        class="btn btn-primary mi-price-update-btn"
+                        :disabled="quickPriceSaving || quickPriceInput === null || quickPriceInput <= 0"
+                        @click="submitQuickPriceUpdate"
+                      >
+                        {{ quickPriceSaving ? t('buildingDetail.marketIntelligence.priceUpdate.saving') : t('buildingDetail.marketIntelligence.priceUpdate.apply') }}
+                      </button>
+                    </div>
+                    <p v-if="quickPriceSuccess" class="mi-price-success">
+                      {{ t('buildingDetail.marketIntelligence.priceUpdate.success') }}
+                    </p>
+                    <p v-if="quickPriceError" class="mi-price-error">{{ quickPriceError }}</p>
                   </div>
                 </template>
 
@@ -7079,4 +7170,90 @@ watch(
   color: var(--color-text-secondary);
   margin: 0.15rem 0 0.35rem;
   line-height: 1.45;
+}
+
+/* ── Quick Price Update Panel ── */
+.mi-price-update-panel {
+  margin-top: 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  padding: 0.75rem;
+  background: var(--color-surface-raised, #f9fafb);
+}
+
+.mi-price-update-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.2rem;
+}
+
+.mi-price-update-desc {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.6rem;
+  line-height: 1.4;
+}
+
+.mi-price-update-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.mi-price-update-label {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.mi-price-input {
+  width: 6rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.mi-price-update-btn {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.75rem;
+  white-space: nowrap;
+}
+
+.mi-price-impact-hint {
+  font-size: 0.78rem;
+  margin: 0 0 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+
+.mi-price-impact-raise {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.mi-price-impact-lower {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #6ee7b7;
+}
+
+.mi-price-success {
+  font-size: 0.8rem;
+  color: #065f46;
+  margin: 0.4rem 0 0;
+}
+
+.mi-price-error {
+  font-size: 0.8rem;
+  color: var(--color-danger, #dc2626);
+  margin: 0.4rem 0 0;
 }</style>

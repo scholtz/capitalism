@@ -6843,6 +6843,184 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(unmetRow.locator('.mi-share-label')).toContainText('Unmet Demand')
     await expect(unmetRow.locator('.mi-share-pct')).toContainText('60.0%')
   })
+
+  test('quick price update panel is visible and applies new price with success message', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 1500,
+      totalQuantitySold: 100,
+      averagePricePerUnit: 15,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong.',
+      recentUtilization: 0.83,
+      revenueHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, revenue: 150, quantitySold: 10 })),
+      priceHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice * 1.5 })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.2,
+      unmetDemandShare: 0,
+      populationIndex: 1.1,
+      inventoryQuality: 0.75,
+      brandAwareness: null,
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Quick price update panel should be visible
+    const pricePanel = panel.locator('[aria-label="Quick Price Update"]')
+    await expect(pricePanel).toBeVisible()
+    await expect(pricePanel.getByText('Quick Price Update')).toBeVisible()
+    await expect(pricePanel.getByText(/no building upgrade required/i)).toBeVisible()
+
+    // Enter new price and submit
+    const priceInput = pricePanel.locator('#quick-price-input')
+    await priceInput.fill('25.00')
+    const applyBtn = pricePanel.getByRole('button', { name: 'Apply Price' })
+    await expect(applyBtn).toBeEnabled()
+    await applyBtn.click()
+
+    // Success message should appear
+    await expect(pricePanel.locator('.mi-price-success')).toBeVisible()
+    await expect(pricePanel.locator('.mi-price-success')).toContainText('Price updated')
+  })
+
+  test('quick price update shows directional impact hint when raising price with elasticity data', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const currentMinPrice = chairProduct.basePrice * 1.5 // e.g. 45
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 900,
+      totalQuantitySold: 60,
+      averagePricePerUnit: currentMinPrice,
+      currentSalesCapacity: 100,
+      dataFromTick: 1,
+      dataToTick: 5,
+      demandSignal: 'MODERATE',
+      actionHint: 'Demand is moderate.',
+      recentUtilization: 0.6,
+      revenueHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, revenue: 180, quantitySold: 12 })),
+      priceHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, pricePerUnit: currentMinPrice })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.5,
+      unmetDemandShare: 0,
+      populationIndex: 1.0,
+      inventoryQuality: 0.7,
+      brandAwareness: null,
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    const pricePanel = panel.locator('[aria-label="Quick Price Update"]')
+    await expect(pricePanel).toBeVisible()
+
+    // Enter a HIGHER price — should show a "raising" hint
+    const higherPrice = currentMinPrice + 10
+    const priceInput = pricePanel.locator('#quick-price-input')
+    await priceInput.fill(String(higherPrice))
+
+    // The directional impact hint for raising should appear
+    await expect(pricePanel.locator('.mi-price-impact-raise')).toBeVisible()
+    await expect(pricePanel.locator('.mi-price-impact-raise')).toContainText('1.5')
+  })
+
+  test('quick price update shows directional impact hint when lowering price', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const currentMinPrice = chairProduct.basePrice * 1.5
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 900,
+      totalQuantitySold: 60,
+      averagePricePerUnit: currentMinPrice,
+      currentSalesCapacity: 100,
+      dataFromTick: 1,
+      dataToTick: 5,
+      demandSignal: 'WEAK',
+      actionHint: 'Try lowering price.',
+      recentUtilization: 0.3,
+      revenueHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, revenue: 90, quantitySold: 6 })),
+      priceHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, pricePerUnit: currentMinPrice })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -0.9,
+      unmetDemandShare: 0,
+      populationIndex: 0.95,
+      inventoryQuality: 0.65,
+      brandAwareness: null,
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    const pricePanel = panel.locator('[aria-label="Quick Price Update"]')
+    await expect(pricePanel).toBeVisible()
+
+    // Enter a LOWER price — should show a "lowering" hint
+    const lowerPrice = Math.max(1, currentMinPrice - 10)
+    const priceInput = pricePanel.locator('#quick-price-input')
+    await priceInput.fill(String(lowerPrice))
+
+    // The directional impact hint for lowering should appear
+    await expect(pricePanel.locator('.mi-price-impact-lower')).toBeVisible()
+    await expect(pricePanel.locator('.mi-price-impact-lower')).toContainText('0.9')
+  })
 })
 
 test.describe('Mine building edit mode', () => {

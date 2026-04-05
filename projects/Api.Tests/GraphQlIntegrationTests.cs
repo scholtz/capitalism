@@ -12648,6 +12648,158 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.True(Math.Abs(unmetEntry.GetProperty("share").GetDecimal() - 0.6m) < 0.01m);
     }
 
+    // ── UpdatePublicSalesPrice mutation tests ────────────────────────────────
+
+    private async Task<Guid> GetPublicSalesUnitIdAsync(string shopId)
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == UnitType.PublicSales);
+        return unit.Id;
+    }
+
+    private async Task<(string token, Guid unitId)> SetupPublicSalesUnitAsync(string email, string displayName, string companyName)
+    {
+        var token = await RegisterAndGetTokenAsync(email, displayName);
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, companyName);
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+        return (token, unitId);
+    }
+
+    [Fact]
+    public async Task UpdatePublicSalesPrice_HappyPath_UpdatesUnitMinPrice()
+    {
+        var (token, unitId) = await SetupPublicSalesUnitAsync("upsp-happy@test.com", "UpdatePriceHappy", "UpdatePrice Happy Co");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+                updatePublicSalesPrice(input: $input) {
+                    id
+                    unitType
+                    minPrice
+                }
+            }
+            """,
+            new { input = new { unitId, newMinPrice = 99.99m } },
+            token);
+
+        var unit = result.GetProperty("data").GetProperty("updatePublicSalesPrice");
+        Assert.Equal("PUBLIC_SALES", unit.GetProperty("unitType").GetString());
+        Assert.True(Math.Abs(unit.GetProperty("minPrice").GetDecimal() - 99.99m) < 0.001m,
+            $"Expected minPrice 99.99 but got {unit.GetProperty("minPrice").GetDecimal()}");
+    }
+
+    [Fact]
+    public async Task UpdatePublicSalesPrice_Unauthenticated_ReturnsError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+                updatePublicSalesPrice(input: $input) { id minPrice }
+            }
+            """,
+            new { input = new { unitId = Guid.NewGuid(), newMinPrice = 50m } },
+            token: null);
+
+        Assert.True(result.TryGetProperty("errors", out _), "Expected errors for unauthenticated request");
+    }
+
+    [Fact]
+    public async Task UpdatePublicSalesPrice_NonOwner_ReturnsUnitNotFound()
+    {
+        // Player A owns the unit
+        var (tokenA, unitId) = await SetupPublicSalesUnitAsync("upsp-owner@test.com", "UpdatePriceOwner", "Owner Price Co");
+
+        // Player B tries to update
+        var tokenB = await RegisterAndGetTokenAsync("upsp-other@test.com", "UpdatePriceOther");
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+                updatePublicSalesPrice(input: $input) { id minPrice }
+            }
+            """,
+            new { input = new { unitId, newMinPrice = 50m } },
+            tokenB);
+
+        Assert.True(result.TryGetProperty("errors", out var errors), "Expected errors when non-owner tries to update");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("UNIT_NOT_FOUND", code);
+    }
+
+    [Fact]
+    public async Task UpdatePublicSalesPrice_WrongUnitType_ReturnsInvalidUnitType()
+    {
+        var token = await RegisterAndGetTokenAsync("upsp-wrong-type@test.com", "WrongUnitType");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "WrongType Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        // Get a non-PUBLIC_SALES unit (PURCHASE unit from same shop)
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var purchaseUnit = await db.BuildingUnits
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == UnitType.Purchase);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+                updatePublicSalesPrice(input: $input) { id minPrice }
+            }
+            """,
+            new { input = new { unitId = purchaseUnit.Id, newMinPrice = 50m } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors), "Expected errors for wrong unit type");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("INVALID_UNIT_TYPE", code);
+    }
+
+    [Fact]
+    public async Task UpdatePublicSalesPrice_NegativePrice_ReturnsInvalidPrice()
+    {
+        var (token, unitId) = await SetupPublicSalesUnitAsync("upsp-negative@test.com", "NegativePrice", "NegativePrice Co");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+                updatePublicSalesPrice(input: $input) { id minPrice }
+            }
+            """,
+            new { input = new { unitId, newMinPrice = -5m } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors), "Expected error for negative price");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("INVALID_PRICE", code);
+    }
+
+    [Fact]
+    public async Task UpdatePublicSalesPrice_ZeroPrice_ReturnsInvalidPrice()
+    {
+        var (token, unitId) = await SetupPublicSalesUnitAsync("upsp-zero@test.com", "ZeroPrice", "ZeroPrice Co");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+                updatePublicSalesPrice(input: $input) { id minPrice }
+            }
+            """,
+            new { input = new { unitId, newMinPrice = 0m } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors), "Expected error for zero price");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("INVALID_PRICE", code);
+    }
+
     [Fact]
     public async Task CompanyLedger_RequiresOwnership_ForbidsOtherPlayer()
     {

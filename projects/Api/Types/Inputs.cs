@@ -373,3 +373,13 @@ public sealed class AcceptLoanInput
     /// <summary>Principal amount to borrow (must be <= offer MaxPrincipalPerLoan and <= remaining capacity).</summary>
     public decimal PrincipalAmount { get; set; }
 }
+
+/// <summary>Input for instantly updating the minimum sale price on a PUBLIC_SALES unit.</summary>
+public sealed class UpdatePublicSalesPriceInput
+{
+    /// <summary>The PUBLIC_SALES building unit to update.</summary>
+    public Guid UnitId { get; set; }
+
+    /// <summary>New minimum sale price per unit. Must be greater than zero.</summary>
+    public decimal NewMinPrice { get; set; }
+}

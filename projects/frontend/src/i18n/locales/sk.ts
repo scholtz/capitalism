@@ -769,6 +769,17 @@ export default {
       productQualityHint: 'Aktuálna kvalita zásob. Vyššia kvalita zvyšuje dopyt.',
       brandAwareness: 'Povedomie o značke',
       brandAwarenessHint: 'Rozpoznateľnosť značky pre tento produkt. Vyššie povedomie podporuje predaj.',
+      priceUpdateFailed: 'Nepodarilo sa aktualizovať cenu. Skúste to znova.',
+      priceUpdate: {
+        title: 'Rýchla zmena ceny',
+        desc: 'Nastavte novú minimálnu predajnú cenu, ktorá sa uplatní od nasledujúceho tiku — bez nutnosti rekonštrukcie budovy.',
+        newPrice: 'Nová min. cena ($)',
+        apply: 'Uplatniť cenu',
+        saving: 'Ukladanie…',
+        success: 'Cena aktualizovaná! Nová cena sa uplatní od nasledujúceho tiku.',
+        raisingHint: 'Zvýšenie ceny môže znížiť dopyt. Pri elasticite {elasticity} očakávajte mierny pokles objemu.',
+        loweringHint: 'Zníženie ceny môže zvýšiť dopyt. Pri elasticite {elasticity} očakávajte mierny nárast objemu.',
+      },
     },
     selector: {
       rawMaterials: 'Suroviny',

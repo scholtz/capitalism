@@ -770,6 +770,17 @@ export default {
       productQualityHint: 'Current inventory quality. Higher quality increases demand.',
       brandAwareness: 'Brand Awareness',
       brandAwarenessHint: 'Brand recognition for this product. Higher awareness drives more sales.',
+      priceUpdateFailed: 'Failed to update price. Please try again.',
+      priceUpdate: {
+        title: 'Quick Price Update',
+        desc: 'Set a new minimum sale price that takes effect next tick — no building upgrade required.',
+        newPrice: 'New Min Price ($)',
+        apply: 'Apply Price',
+        saving: 'Saving…',
+        success: 'Price updated! The new price will be used from the next tick onwards.',
+        raisingHint: 'Raising price may reduce demand. With elasticity {elasticity}, expect moderate volume impact.',
+        loweringHint: 'Lowering price may increase demand. With elasticity {elasticity}, expect moderate volume gain.',
+      },
     },
     selector: {
       rawMaterials: 'Raw Materials',

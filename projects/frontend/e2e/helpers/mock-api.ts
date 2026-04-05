@@ -3398,6 +3398,67 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('UpdatePublicSalesPrice') || query.includes('updatePublicSalesPrice')) {
+      const input = body.variables?.input
+      const unitId: string = input?.unitId ?? ''
+      const newMinPrice: number = input?.newMinPrice ?? 0
+
+      if (!state.currentUserId) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Not authenticated', extensions: { code: 'AUTH_NOT_AUTHORIZED' } }] }),
+        })
+      }
+
+      if (newMinPrice <= 0) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Minimum sale price must be greater than zero.', extensions: { code: 'INVALID_PRICE' } }] }),
+        })
+      }
+
+      // Find the unit across all buildings owned by the current player
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      let foundUnit: MockBuildingUnit | undefined
+      for (const company of player?.companies ?? []) {
+        for (const building of company.buildings ?? []) {
+          const u = building.units?.find((unit) => unit.id === unitId)
+          if (u) {
+            foundUnit = u
+            break
+          }
+        }
+        if (foundUnit) break
+      }
+
+      if (!foundUnit) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Unit not found or you don\'t own it.', extensions: { code: 'UNIT_NOT_FOUND' } }] }),
+        })
+      }
+
+      if (foundUnit.unitType !== 'PUBLIC_SALES') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Only PUBLIC_SALES units support instant price updates.', extensions: { code: 'INVALID_UNIT_TYPE' } }] }),
+        })
+      }
+
+      // Update the unit's minPrice in state
+      foundUnit.minPrice = newMinPrice
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { updatePublicSalesPrice: { id: unitId, minPrice: newMinPrice } } }),
+      })
+    }
+
     // Guard: loanOffers query must not be confused with the 'me' handler (contains 'me' via no overlap here)
     if (query.includes('loanOffers') && !query.includes('myLoanOffers')) {
       const activeOffers = state.loanOffers.filter((o) => o.isActive && o.remainingCapacity > 0)
