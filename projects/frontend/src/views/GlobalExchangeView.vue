@@ -103,13 +103,9 @@ async function loadCitiesAndResources() {
   if (citiesData.cities.length > 0 && !selectedCityId.value) {
     // If a city was pre-selected via query param (?city=<id>), use it; otherwise default to first city
     const queryCityId = typeof route.query.city === 'string' ? route.query.city : null
-    const queryCityExists = queryCityId && citiesData.cities.some((c) => c.id === queryCityId)
+    const matchedCity = queryCityId ? citiesData.cities.find((c) => c.id === queryCityId) : null
     const firstCity = citiesData.cities[0]
-    if (queryCityExists && queryCityId) {
-      selectedCityId.value = queryCityId
-    } else if (firstCity) {
-      selectedCityId.value = firstCity.id
-    }
+    selectedCityId.value = (matchedCity ?? firstCity)?.id ?? null
   }
   // Pre-fill search from ?resource=<slug> query param
   if (!search.value) {

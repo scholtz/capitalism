@@ -197,6 +197,12 @@ export type ExchangeSortBy = 'deliveredPrice' | 'exchangePrice' | 'quality'
  * Returns a new sorted copy of the annotated offer list without mutating the
  * input. Blocked offers are always pushed to the end so eligible offers remain
  * prominent regardless of the chosen sort dimension.
+ *
+ * Sorting rules per dimension:
+ * - `deliveredPrice` : ascending delivered price; quality descending as a tiebreaker
+ *   so that equal delivered prices favour higher-quality sources.
+ * - `exchangePrice`  : ascending raw exchange (sticker) price.
+ * - `quality`        : descending estimated quality (highest quality first).
  */
 export function sortExchangeOffers(
   offers: readonly AnnotatedExchangeOffer[],

@@ -496,7 +496,7 @@ const logisticsTrapWarning = computed(() => detectLogisticsTrap(annotatedExchang
 
 const selectedPurchaseResourceSlug = computed<string | null>(() => {
   const resourceId = selectedPurchaseUnit.value?.resourceTypeId ?? null
-  if (!resourceId) return exchangeOffers.value[0]?.resourceSlug ?? null
+  if (!resourceId) return null
   return resourceTypes.value.find((r) => r.id === resourceId)?.slug ?? null
 })
 
