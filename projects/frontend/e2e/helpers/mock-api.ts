@@ -359,7 +359,12 @@ export type MockPublicSalesAnalytics = {
   recentUtilization: number
   revenueHistory: Array<{ tick: number; revenue: number; quantitySold: number }>
   priceHistory: Array<{ tick: number; pricePerUnit: number }>
-  marketShare: Array<{ label: string; companyId: string | null; share: number }>
+  marketShare: Array<{ label: string; companyId: string | null; share: number; isUnmet: boolean }>
+  elasticityIndex: number | null
+  unmetDemandShare: number | null
+  populationIndex: number | null
+  inventoryQuality: number | null
+  brandAwareness: number | null
 }
 
 export type MockLoanOffer = {

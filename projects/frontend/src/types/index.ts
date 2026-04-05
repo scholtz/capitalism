@@ -587,6 +587,16 @@ export interface PublicSalesAnalytics {
   demandSignal: string
   actionHint: string
   recentUtilization: number
+  /** Price elasticity index ≤ 0; more negative = more elastic (price-sensitive). Null if insufficient data. */
+  elasticityIndex: number | null
+  /** Fraction of city demand that went unserved (0–1). Null when no data. */
+  unmetDemandShare: number | null
+  /** Population index of the building lot (1.0 = city average). */
+  populationIndex: number | null
+  /** Current inventory quality (0–1). */
+  inventoryQuality: number | null
+  /** Brand awareness for this product (0–1). */
+  brandAwareness: number | null
 }
 
 export interface SalesTickSnapshot {
@@ -604,6 +614,8 @@ export interface MarketShareEntry {
   label: string
   companyId: string | null
   share: number
+  /** True when this entry represents unserved market demand, not an actual seller. */
+  isUnmet: boolean
 }
 
 /** Summary of a single power plant in the city power balance view. */

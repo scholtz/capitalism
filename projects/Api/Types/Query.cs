@@ -1381,8 +1381,10 @@ public sealed class Query
             .Select(r => new PriceTickSnapshot { Tick = r.Tick, PricePerUnit = r.PricePerUnit })
             .ToList();
 
-        // Market share: look at the most recent tick's data for same product + city
+        // Market share: look at the most recent tick's data for same product + city.
+        // Also compute unmet demand (city demand not fulfilled by any seller).
         List<MarketShareEntry> marketShare = [];
+        decimal? unmetDemandShare = null;
         var mostRecentTick = records.Count > 0 ? records.Max(r => r.Tick) : -1L;
         if (mostRecentTick >= 0)
         {
@@ -1397,18 +1399,53 @@ public sealed class Query
                     .ToListAsync();
 
                 var totalCitySales = cityRecords.Sum(r => r.QuantitySold);
+
+                // Use the requesting unit's own Demand field as the reference for city demand.
+                // Each unit's Demand is computed independently from the city population model,
+                // so we cannot sum them across units (that would double-count). Instead we use
+                // the requesting unit's most-recent recorded demand as the best-available proxy.
+                var thisUnitRecord = cityRecords.FirstOrDefault(r => r.BuildingUnitId == unitId);
+                var referenceUnitDemand = thisUnitRecord?.Demand ?? 0m;
+
                 if (totalCitySales > 0)
                 {
-                    marketShare = cityRecords
+                    var perCompanyEntries = cityRecords
                         .GroupBy(r => r.CompanyId)
                         .Select(g => new MarketShareEntry
                         {
                             Label = g.First().Company.Name,
                             CompanyId = g.Key,
                             Share = g.Sum(r => r.QuantitySold) / totalCitySales,
+                            IsUnmet = false,
                         })
                         .OrderByDescending(e => e.Share)
                         .ToList();
+
+                    // Non-player / unmet market share: demand that went unfilled by all sellers.
+                    // Use the requesting unit's reference demand (city population model output)
+                    // as the denominator so shares are expressed as fractions of estimated city demand.
+                    if (referenceUnitDemand > totalCitySales)
+                    {
+                        var unmetQty = referenceUnitDemand - totalCitySales;
+                        var totalMarket = referenceUnitDemand;
+                        // Renormalise seller shares relative to total market (not just sold volume)
+                        foreach (var e in perCompanyEntries)
+                            e.Share = e.Share * totalCitySales / totalMarket;
+                        unmetDemandShare = unmetQty / totalMarket;
+                        perCompanyEntries.Add(new MarketShareEntry
+                        {
+                            Label = "Unmet Demand",
+                            CompanyId = null,
+                            Share = unmetDemandShare.Value,
+                            IsUnmet = true,
+                        });
+                    }
+                    else
+                    {
+                        unmetDemandShare = 0m;
+                    }
+
+                    marketShare = perCompanyEntries;
                 }
             }
         }
@@ -1465,6 +1502,61 @@ public sealed class Query
             }
         }
 
+        // Elasticity index: derived analytically from the demand formula
+        // demand = baseDemand * (2 - price/basePrice) * quality * brand
+        // Point elasticity: E = (dQ/Q) / (dP/P) = -price / (basePrice * (2 - price/basePrice))
+        // Uses the average recent price and the product's base price.
+        decimal? elasticityIndex = null;
+        var productTypeIdForElasticity = unit.ProductTypeId ?? records.FirstOrDefault()?.ProductTypeId;
+        if (productTypeIdForElasticity.HasValue && recentRecords.Count > 0)
+        {
+            var productType = await db.ProductTypes.FindAsync(productTypeIdForElasticity.Value);
+            if (productType is not null && productType.BasePrice > 0m)
+            {
+                var avgRecentPrice = recentRecords.Average(r => (double)r.PricePerUnit);
+                var basePrice = (double)productType.BasePrice;
+                var priceRatio = avgRecentPrice / basePrice;
+                var demandAtPrice = 2.0 - priceRatio; // linear demand factor from formula
+                if (demandAtPrice > 0.01)
+                {
+                    // Point elasticity E = -priceRatio / demandAtPrice
+                    elasticityIndex = (decimal)Math.Round(-priceRatio / demandAtPrice, 2);
+                }
+            }
+        }
+
+        // Supporting context: population index and current inventory quality / brand
+        decimal? populationIndex = null;
+        decimal? inventoryQuality = null;
+        decimal? brandAwareness = null;
+
+        var lot = await db.BuildingLots.FirstOrDefaultAsync(l => l.BuildingId == building.Id);
+        if (lot is not null)
+            populationIndex = lot.PopulationIndex;
+
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == unit.Id)
+            .FirstOrDefaultAsync();
+        if (inventory is not null)
+            inventoryQuality = inventory.Quality;
+
+        if (productTypeIdForElasticity.HasValue)
+        {
+            var productTypeForBrand = await db.ProductTypes.FindAsync(productTypeIdForElasticity.Value);
+            if (productTypeForBrand is not null)
+            {
+                var brand = await db.Brands
+                    .Where(b => b.CompanyId == building.CompanyId
+                                && (b.Scope == "PRODUCT" && b.ProductTypeId == productTypeIdForElasticity.Value
+                                    || b.Scope == "CATEGORY" && b.IndustryCategory == productTypeForBrand.Industry
+                                    || b.Scope == "COMPANY"))
+                    .OrderByDescending(b => b.Awareness)
+                    .FirstOrDefaultAsync();
+                if (brand is not null)
+                    brandAwareness = brand.Awareness;
+            }
+        }
+
         return new PublicSalesAnalytics
         {
             BuildingUnitId = unit.Id,
@@ -1483,6 +1575,11 @@ public sealed class Query
             DemandSignal = demandSignal,
             ActionHint = actionHint,
             RecentUtilization = recentUtilization,
+            ElasticityIndex = elasticityIndex,
+            UnmetDemandShare = unmetDemandShare,
+            PopulationIndex = populationIndex,
+            InventoryQuality = inventoryQuality,
+            BrandAwareness = brandAwareness,
         };
     }
 

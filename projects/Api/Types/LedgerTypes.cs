@@ -104,6 +104,25 @@ public sealed class PublicSalesAnalytics
     public string ActionHint { get; set; } = string.Empty;
     /// <summary>Average demand signal across recent ticks (0-1 ratio vs sales capacity).</summary>
     public decimal RecentUtilization { get; set; }
+    /// <summary>
+    /// Price elasticity index approximated from the demand model.
+    /// Defined as (dQ/Q) / (dP/P) at the current price point.
+    /// Negative values indicate normal goods (higher price → lower demand).
+    /// Typical range: -3.0 (very elastic) to 0.0 (perfectly inelastic).
+    /// Null when insufficient data or no base price available.
+    /// </summary>
+    public decimal? ElasticityIndex { get; set; }
+    /// <summary>
+    /// Fraction of estimated total city demand that was unserved (demand > total sold by all players).
+    /// 0 = all demand satisfied. 1 = all demand unmet. Null when no demand data available.
+    /// </summary>
+    public decimal? UnmetDemandShare { get; set; }
+    /// <summary>Population index of the building lot (1.0 = city average). Higher is better for sales.</summary>
+    public decimal? PopulationIndex { get; set; }
+    /// <summary>Current inventory quality of the product in this unit (0.0–1.0). Affects demand directly.</summary>
+    public decimal? InventoryQuality { get; set; }
+    /// <summary>Brand awareness of the selling company for this product (0.0–1.0). Null if no brand set.</summary>
+    public decimal? BrandAwareness { get; set; }
 }
 
 public sealed class SalesTickSnapshot
@@ -121,8 +140,10 @@ public sealed class PriceTickSnapshot
 
 public sealed class MarketShareEntry
 {
-    /// <summary>Company name or "Market" for unmet demand.</summary>
+    /// <summary>Company name, or "Unmet Demand" for unsatisfied city demand.</summary>
     public string Label { get; set; } = string.Empty;
     public Guid? CompanyId { get; set; }
     public decimal Share { get; set; }
+    /// <summary>True when this entry represents unserved/unmet market demand, not an actual seller.</summary>
+    public bool IsUnmet { get; set; }
 }

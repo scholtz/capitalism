@@ -6281,7 +6281,12 @@ test.describe('Public Sales Market Intelligence panel', () => {
       recentUtilization: 0.83,
       revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 150, quantitySold: 10 })),
       priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice * 1.5 })),
-      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.2,
+      inventoryQuality: 0.8,
+      brandAwareness: null,
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6319,6 +6324,14 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(panel.getByText('Market Share (latest tick)')).toBeVisible()
     await expect(panel.locator('.mi-share-row')).toHaveCount(1)
     await expect(panel.locator('.mi-share-pct')).toContainText('100.0%')
+
+    // Elasticity index should be visible in context card (analytics.elasticityIndex = -1.0)
+    await expect(panel.locator('.mi-context-card')).toBeVisible()
+    await expect(panel.locator('.mi-context-label').filter({ hasText: 'Price Elasticity' })).toBeVisible()
+    await expect(panel.locator('.mi-context-value').first()).toContainText('-1.00')
+
+    // Population index should appear (analytics.populationIndex = 1.2)
+    await expect(panel.locator('.mi-context-label').filter({ hasText: 'Location Index' })).toBeVisible()
   })
 
   test('shows empty state guidance when no sales history', async ({ page }) => {
@@ -6350,6 +6363,11 @@ test.describe('Public Sales Market Intelligence panel', () => {
       revenueHistory: [],
       priceHistory: [],
       marketShare: [],
+      elasticityIndex: null,
+      unmetDemandShare: null,
+      populationIndex: null,
+      inventoryQuality: null,
+      brandAwareness: null,
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6401,7 +6419,12 @@ test.describe('Public Sales Market Intelligence panel', () => {
       recentUtilization: 0.04,
       revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 5, quantitySold: 0.5 })),
       priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice * 3 })),
-      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.2,
+      inventoryQuality: 0.8,
+      brandAwareness: null,
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6446,7 +6469,12 @@ test.describe('Public Sales Market Intelligence panel', () => {
       recentUtilization: 0.92,
       revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 120, quantitySold: 12 })),
       priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice })),
-      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.2,
+      inventoryQuality: 0.8,
+      brandAwareness: null,
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6492,7 +6520,12 @@ test.describe('Public Sales Market Intelligence panel', () => {
       recentUtilization: 0.5,
       revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 90, quantitySold: 6 })),
       priceHistory: [],
-      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.2,
+      inventoryQuality: 0.8,
+      brandAwareness: null,
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6615,7 +6648,12 @@ test.describe('Public Sales Market Intelligence panel', () => {
         tick: i + 1,
         pricePerUnit: chairProduct.basePrice * (1.2 - i * 0.01),
       })),
-      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.2,
+      inventoryQuality: 0.8,
+      brandAwareness: null,
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6662,7 +6700,12 @@ test.describe('Public Sales Market Intelligence panel', () => {
       recentUtilization: 0.5,
       revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 60, quantitySold: 4 })),
       priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice })),
-      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0 }],
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.2,
+      inventoryQuality: 0.8,
+      brandAwareness: null,
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6709,9 +6752,14 @@ test.describe('Public Sales Market Intelligence panel', () => {
       priceHistory: [{ tick: 99, pricePerUnit: chairProduct.basePrice }],
       // 75% to this company, 25% to competitor
       marketShare: [
-        { label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 0.75 },
-        { label: 'Rival Corp', companyId: 'company-rival', share: 0.25 },
+        { label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 0.75, isUnmet: false },
+        { label: 'Rival Corp', companyId: 'company-rival', share: 0.25, isUnmet: false },
       ],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.2,
+      inventoryQuality: 0.8,
+      brandAwareness: null,
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6737,6 +6785,63 @@ test.describe('Public Sales Market Intelligence panel', () => {
     const competitorRows = panel.locator('.mi-share-row:not(.mi-share-row-you)')
     await expect(competitorRows.locator('.mi-share-label')).toContainText('Rival Corp')
     await expect(competitorRows.locator('.mi-share-pct')).toContainText('25.0%')
+  })
+
+  test('shows unmet demand entry in market share when demand exceeds total sold', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    // Demand exceeds total sold: 40% sold, 60% unmet
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 600,
+      totalQuantitySold: 40,
+      averagePricePerUnit: chairProduct.basePrice,
+      currentSalesCapacity: 50,
+      dataFromTick: 1,
+      dataToTick: 1,
+      demandSignal: 'WEAK',
+      actionHint: 'Sales are slow.',
+      recentUtilization: 0.4,
+      revenueHistory: [{ tick: 1, revenue: 600, quantitySold: 40 }],
+      priceHistory: [{ tick: 1, pricePerUnit: chairProduct.basePrice }],
+      // 40% sold by this company; 60% unmet demand
+      marketShare: [
+        { label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 0.4, isUnmet: false },
+        { label: 'Unmet Demand', companyId: null, share: 0.6, isUnmet: true },
+      ],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0.6,
+      populationIndex: 1.0,
+      inventoryQuality: 0.5,
+      brandAwareness: null,
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Two rows: company and unmet demand
+    await expect(panel.locator('.mi-share-row')).toHaveCount(2)
+    const unmetRow = panel.locator('.mi-share-row-unmet')
+    await expect(unmetRow).toBeVisible()
+    await expect(unmetRow.locator('.mi-share-label')).toContainText('Unmet Demand')
+    await expect(unmetRow.locator('.mi-share-pct')).toContainText('60.0%')
   })
 })
 
