@@ -793,3 +793,66 @@ test.describe('Encyclopedia contextual entry points', () => {
     await expect(page.getByRole('heading', { name: 'Manufacturing Encyclopedia' })).toBeVisible()
   })
 })
+
+// ── Cross-linking: encyclopedia resource detail ↔ global exchange ─────────────
+
+test.describe('Encyclopedia resource detail — exchange cross-links', () => {
+  test('resource detail page shows "Check exchange prices" link for raw materials', async ({
+    page,
+  }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia/resources/wood')
+
+    await expect(page.getByRole('heading', { name: 'Wood', level: 1 })).toBeVisible()
+    // The "Check exchange prices" link must be visible on raw-material detail pages
+    const exchangeLink = page.locator('.btn-exchange-link')
+    await expect(exchangeLink).toBeVisible()
+    await expect(exchangeLink).toHaveAttribute('href', '/exchange')
+    await expect(exchangeLink).toContainText('Check exchange prices')
+  })
+
+  test('clicking "Check exchange prices" navigates to the global exchange', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia/resources/wood')
+
+    await page.locator('.btn-exchange-link').click()
+
+    await expect(page).toHaveURL('/exchange')
+    await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
+  })
+
+  test('Grain detail page has "Check exchange prices" link (Food Processing raw material)', async ({
+    page,
+  }) => {
+    const grainResource = {
+      id: 'res-grain',
+      name: 'Grain',
+      slug: 'grain',
+      category: 'ORGANIC' as const,
+      basePrice: 3,
+      weightPerUnit: 1.5,
+      unitName: 'Ton',
+      unitSymbol: 't',
+      resources: [] as never[],
+    }
+    setupMockApi(page, {
+      resourceTypes: [grainResource],
+      productTypes: [],
+    })
+
+    await page.goto('/encyclopedia/resources/grain')
+
+    await expect(page.getByRole('heading', { name: 'Grain', level: 1 })).toBeVisible()
+    const exchangeLink = page.locator('.btn-exchange-link')
+    await expect(exchangeLink).toBeVisible()
+    await expect(exchangeLink).toHaveAttribute('href', '/exchange')
+  })
+})

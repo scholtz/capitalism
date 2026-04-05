@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
@@ -275,6 +276,10 @@ function localizedCategory(cat: string): string {
           <div class="resource-row-header">
             <span class="resource-name">{{ row.resourceName }}</span>
             <span class="resource-category-badge">{{ localizedCategory(row.category) }}</span>
+            <RouterLink
+              :to="`/encyclopedia/resources/${row.resourceSlug}`"
+              class="production-chain-link"
+            >{{ t('globalExchange.viewProductionChain') }}</RouterLink>
           </div>
 
           <div class="city-offers-grid">
@@ -574,6 +579,24 @@ function localizedCategory(cat: string): string {
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
   color: var(--color-primary);
+}
+
+.production-chain-link {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 40%, transparent);
+  transition: background 0.15s;
+}
+
+.production-chain-link:hover {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  text-decoration: none;
 }
 
 /* City offer cards grid */

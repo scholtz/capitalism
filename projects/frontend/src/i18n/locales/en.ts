@@ -328,6 +328,7 @@ export default {
     tick: 'Tick',
     tickHint: 'Exchange prices update each game tick. The current tick is the latest data snapshot.',
     endlessSupply: '∞ Endless supply — all resources always available',
+    viewProductionChain: 'View production chain',
   },
   encyclopedia: {
     eyebrow: 'Manufacturing Knowledge Base',
@@ -380,6 +381,7 @@ export default {
     viewProduct: 'View product',
     manufacturingDetails: 'Manufacturing Details',
     recipeLabel: 'Recipe',
+    checkExchangePrices: 'Check exchange prices',
   },
   catalog: {
     free: 'Free catalog',

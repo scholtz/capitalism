@@ -743,3 +743,72 @@ test.describe('Global Exchange — sourcing decision legibility', () => {
     await expect(chemRow.locator('.best-badge')).toHaveCount(1)
   })
 })
+
+// ── Cross-linking: exchange ↔ encyclopedia ────────────────────────────────────
+
+test.describe('Global Exchange — production chain cross-links', () => {
+  test('each resource row has a "View production chain" link to the encyclopedia', async ({
+    page,
+  }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // The Wood resource row must have the cross-link
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    await expect(woodRow).toBeVisible()
+    const woodLink = woodRow.locator('.production-chain-link')
+    await expect(woodLink).toBeVisible()
+    await expect(woodLink).toHaveAttribute('href', '/encyclopedia/resources/wood')
+    await expect(woodLink).toContainText('View production chain')
+  })
+
+  test('clicking "View production chain" link navigates to encyclopedia resource detail', async ({
+    page,
+  }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    await woodRow.locator('.production-chain-link').click()
+
+    await expect(page).toHaveURL('/encyclopedia/resources/wood')
+  })
+
+  test('Grain resource row has production chain link pointing to grain encyclopedia page', async ({
+    page,
+  }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const grainRow = page.locator('.resource-row[data-slug="grain"]')
+    await expect(grainRow.locator('.production-chain-link')).toHaveAttribute(
+      'href',
+      '/encyclopedia/resources/grain',
+    )
+  })
+
+  test('Chemical Minerals row has production chain link to chemical-minerals encyclopedia page', async ({
+    page,
+  }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const chemRow = page.locator('.resource-row[data-slug="chemical-minerals"]')
+    await expect(chemRow.locator('.production-chain-link')).toHaveAttribute(
+      'href',
+      '/encyclopedia/resources/chemical-minerals',
+    )
+  })
+})

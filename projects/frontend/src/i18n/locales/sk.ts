@@ -328,6 +328,7 @@ export default {
     tick: 'Tick',
     tickHint: 'Ceny burzy sa aktualizujú každý herný tick. Aktuálny tick je posledný snapshot dát.',
     endlessSupply: '∞ Nekonečná ponuka — všetky suroviny vždy dostupné',
+    viewProductionChain: 'Zobraziť výrobný reťazec',
   },
   encyclopedia: {
     eyebrow: 'Znalostná báza výroby',
@@ -380,6 +381,7 @@ export default {
     viewProduct: 'Zobraziť produkt',
     manufacturingDetails: 'Výrobné detaily',
     recipeLabel: 'Recept',
+    checkExchangePrices: 'Skontrolovať ceny na burze',
   },
   catalog: {
     free: 'Bezplatný katalóg',

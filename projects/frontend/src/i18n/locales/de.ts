@@ -329,6 +329,7 @@ export default {
     tick: 'Tick',
     tickHint: 'Börsenpreise aktualisieren sich jeden Spieltick. Der aktuelle Tick ist der neueste Datensnapshot.',
     endlessSupply: '∞ Endloses Angebot — alle Rohstoffe jederzeit verfügbar',
+    viewProductionChain: 'Produktionskette anzeigen',
   },
   encyclopedia: {
     eyebrow: 'Wissensbasis für Produktion',
@@ -381,6 +382,7 @@ export default {
     viewProduct: 'Produkt anzeigen',
     manufacturingDetails: 'Fertigungsdetails',
     recipeLabel: 'Rezept',
+    checkExchangePrices: 'Börsenpreise prüfen',
   },
   catalog: {
     free: 'Kostenloser Katalog',
