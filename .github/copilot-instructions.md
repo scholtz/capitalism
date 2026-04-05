@@ -645,3 +645,28 @@ Root-cause of a quality failure (April 2026, PR #180 master portal):
 2. **After writing a new mock-api helper, verify it with a debug test that prints the `.state-message` content** to confirm the correct handler is firing, not a false-positive substring match.
 3. **GraphQL field/query names containing "me" as a substring** (e.g., `gameServers`, `mySubscription`, `performance`, `schema`, `comment`, `rename`) must be explicitly excluded from the `me` query handler.
 4. **Apply the same pattern as the game-frontend `isStandaloneMeQuery()` helper** to master-frontend and any future portal mock-api helpers.
+
+## EF Core Cartesian explosion — always use AsSplitQuery for multiple collection Includes
+
+Root-cause of a CI failure (April 2026, PR #233 public-sales analytics):
+- `TickProcessor.BuildContextAsync` loaded buildings with three collection Includes:
+  `.Include(b => b.Units).Include(b => b.PendingConfiguration).ThenInclude(p => p.Units).Include(b => b.PendingConfiguration).ThenInclude(p => p.Removals)`
+- Without `AsSplitQuery()`, EF Core generates a single SQL with Cartesian product: `BuildingUnits × PlanUnits × PlanRemovals`. Each `BuildingUnit` appears multiple times in the result.
+- EF Core's identity map *should* deduplicate, but fails in certain SQLite + multiple-collection-Include combinations. The navigation property `b.Units` received duplicate entries (same `(GridX, GridY)` position) at runtime.
+- The same issue in `BuildingConfigurationService.ApplyDuePlansAsync`: `plan.Building.Units` could appear empty or duplicated, causing `ApplyDuePlansAsync` to insert **new** `BuildingUnit` rows at positions already occupied, corrupting the database state for all subsequent tick engine calls.
+- CI failures were ordering-dependent: tests that called `StoreBuildingConfiguration` (leaving a pending plan) caused the Cartesian explosion in any later test that called `ProcessTicksAsync`. Locally, test ordering happened to avoid this; CI ordering exposed it consistently.
+
+**Rules to prevent recurrence:**
+1. **Any EF Core query with two or more `Include`/`ThenInclude` paths that each traverse a collection navigation property MUST use `.AsSplitQuery()`.** EF Core warns about Cartesian explosion for a reason — the warning should be treated as a required fix, not an advisory.
+2. **The canonical pattern for multi-collection loading:**
+   ```csharp
+   var buildings = await db.Buildings
+       .Include(b => b.Units)
+       .Include(b => b.PendingConfiguration)!.ThenInclude(p => p!.Units)
+       .Include(b => b.PendingConfiguration)!.ThenInclude(p => p!.Removals)
+       .AsSplitQuery()
+       .ToListAsync(ct);
+   ```
+3. **After applying `AsSplitQuery()`, the query is split into separate round-trips per Include path.** This avoids the Cartesian product and guarantees navigation collections are populated correctly.
+4. **CI ordering vs local ordering is not deterministic.** If tests share a database (via `IClassFixture`), any test that creates an entity with pending child collections (e.g., `BuildingConfigurationPlan`) but does NOT apply/delete it leaves state that can corrupt subsequent tests. Both the query fix (`AsSplitQuery`) AND the test isolation matter.
+5. **When CI fails with "An item with the same key has already been added" in a `ToDictionary` on a navigation collection, immediately suspect a Cartesian explosion in an EF Core Include chain.** Add `AsSplitQuery()` and re-run; do not try to work around with `DistinctBy` as that would hide the underlying data corruption.
