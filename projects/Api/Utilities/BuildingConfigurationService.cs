@@ -222,6 +222,7 @@ public static class BuildingConfigurationService
                 liveUnit.MinQuality = pendingUnit.MinQuality;
                 liveUnit.BrandScope = pendingUnit.BrandScope;
                 liveUnit.VendorLockCompanyId = pendingUnit.VendorLockCompanyId;
+                liveUnit.LockedCityId = pendingUnit.LockedCityId;
 
                 pendingUnit.StartedAtTick = currentTick;
                 pendingUnit.AppliesAtTick = currentTick;
@@ -379,6 +380,7 @@ public static class BuildingConfigurationService
             MinQuality = input.MinQuality,
             BrandScope = input.BrandScope,
             VendorLockCompanyId = input.VendorLockCompanyId,
+            LockedCityId = input.LockedCityId,
         };
     }
 
@@ -416,6 +418,7 @@ public static class BuildingConfigurationService
             MinQuality = unit.MinQuality,
             BrandScope = unit.BrandScope,
             VendorLockCompanyId = unit.VendorLockCompanyId,
+            LockedCityId = unit.LockedCityId,
         };
     }
 
@@ -489,7 +492,8 @@ public static class BuildingConfigurationService
             || currentUnit.MediaHouseBuildingId != input.MediaHouseBuildingId
             || currentUnit.MinQuality != input.MinQuality
             || !string.Equals(NormalizeString(currentUnit.BrandScope), NormalizeString(input.BrandScope), StringComparison.Ordinal)
-            || currentUnit.VendorLockCompanyId != input.VendorLockCompanyId)
+            || currentUnit.VendorLockCompanyId != input.VendorLockCompanyId
+            || currentUnit.LockedCityId != input.LockedCityId)
         {
             return LinkChangeTicks;
         }
@@ -530,7 +534,8 @@ public static class BuildingConfigurationService
             && currentUnit.MediaHouseBuildingId == desiredUnit.MediaHouseBuildingId
             && currentUnit.MinQuality == desiredUnit.MinQuality
             && string.Equals(NormalizeString(currentUnit.BrandScope), NormalizeString(desiredUnit.BrandScope), StringComparison.Ordinal)
-            && currentUnit.VendorLockCompanyId == desiredUnit.VendorLockCompanyId;
+            && currentUnit.VendorLockCompanyId == desiredUnit.VendorLockCompanyId
+            && currentUnit.LockedCityId == desiredUnit.LockedCityId;
     }
 
     private static bool AreEquivalent(BuildingConfigurationPlanUnit pendingUnit, BuildingConfigurationUnitInput desiredUnit)
@@ -556,7 +561,8 @@ public static class BuildingConfigurationService
             && pendingUnit.MediaHouseBuildingId == desiredUnit.MediaHouseBuildingId
             && pendingUnit.MinQuality == desiredUnit.MinQuality
             && string.Equals(NormalizeString(pendingUnit.BrandScope), NormalizeString(desiredUnit.BrandScope), StringComparison.Ordinal)
-            && pendingUnit.VendorLockCompanyId == desiredUnit.VendorLockCompanyId;
+            && pendingUnit.VendorLockCompanyId == desiredUnit.VendorLockCompanyId
+            && pendingUnit.LockedCityId == desiredUnit.LockedCityId;
     }
 
     private static bool IsPending(BuildingConfigurationPlanUnit unit, long currentTick)

@@ -205,6 +205,7 @@ export type MockBuildingUnit = {
   minQuality?: number | null
   brandScope?: string | null
   vendorLockCompanyId?: string | null
+  lockedCityId?: string | null
   inventoryQuantity?: number | null
   inventoryQuality?: number | null
   inventorySourcingCostTotal?: number | null
@@ -429,6 +430,8 @@ export type MockState = {
   loanOffers: MockLoanOffer[]
   /** Active loans for the current player's companies */
   myLoans: MockLoan[]
+  /** Mock procurement preview response keyed by unit ID. If null/missing, returns a default GLOBAL_EXCHANGE preview. */
+  procurementPreviews: Record<string, object | null>
 }
 
 const STARTING_CASH_FOR_ONBOARDING = 500000
@@ -636,7 +639,8 @@ function areUnitsEquivalent(currentUnit: MockBuildingUnit | undefined, nextUnit:
     (currentUnit.mediaHouseBuildingId ?? null) === (nextUnit.mediaHouseBuildingId ?? null) &&
     (currentUnit.minQuality ?? null) === (nextUnit.minQuality ?? null) &&
     (currentUnit.brandScope ?? null) === (nextUnit.brandScope ?? null) &&
-    (currentUnit.vendorLockCompanyId ?? null) === (nextUnit.vendorLockCompanyId ?? null)
+    (currentUnit.vendorLockCompanyId ?? null) === (nextUnit.vendorLockCompanyId ?? null) &&
+    (currentUnit.lockedCityId ?? null) === (nextUnit.lockedCityId ?? null)
   )
 }
 
@@ -699,7 +703,8 @@ function calculateUnitTicks(currentUnit: MockBuildingUnit | undefined, nextUnit:
     (currentUnit.mediaHouseBuildingId ?? null) !== (nextUnit.mediaHouseBuildingId ?? null) ||
     (currentUnit.minQuality ?? null) !== (nextUnit.minQuality ?? null) ||
     (currentUnit.brandScope ?? null) !== (nextUnit.brandScope ?? null) ||
-    (currentUnit.vendorLockCompanyId ?? null) !== (nextUnit.vendorLockCompanyId ?? null)
+    (currentUnit.vendorLockCompanyId ?? null) !== (nextUnit.vendorLockCompanyId ?? null) ||
+    (currentUnit.lockedCityId ?? null) !== (nextUnit.lockedCityId ?? null)
   ) {
     return 1
   }
@@ -1055,6 +1060,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     publicSalesAnalytics: {},
     loanOffers: [],
     myLoans: [],
+    procurementPreviews: {},
     ...initial,
   }
 
@@ -1722,6 +1728,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
               minQuality: unit.minQuality ?? null,
               brandScope: unit.brandScope ?? null,
               vendorLockCompanyId: unit.vendorLockCompanyId ?? null,
+              lockedCityId: unit.lockedCityId ?? null,
             } satisfies MockBuildingUnit,
           ]
         }),
@@ -2607,6 +2614,31 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('procurementPreview')) {
+      const unitId: string = body.variables?.unitId ?? body.variables?.buildingUnitId ?? ''
+      const customPreview = state.procurementPreviews[unitId]
+      const defaultPreview = {
+        sourceType: 'GLOBAL_EXCHANGE',
+        sourceCityId: 'city-ba',
+        sourceCityName: 'Bratislava',
+        sourceVendorCompanyId: null,
+        sourceVendorName: null,
+        exchangePricePerUnit: 8.5,
+        transitCostPerUnit: 1.2,
+        deliveredPricePerUnit: 9.7,
+        estimatedQuality: 0.7,
+        canExecute: true,
+        blockReason: null,
+        blockMessage: null,
+      }
+      const procurementPreview = customPreview !== undefined ? customPreview : defaultPreview
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { procurementPreview } }),
+      })
+    }
+
     if (query.includes('cityLots')) {
       const cityId = body.variables?.cityId
       const cityLots = state.buildingLots.filter((lot) => lot.cityId === cityId)
@@ -2752,7 +2784,9 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       !q.includes('myLoanOffers') &&
       !q.includes('bankLoans') &&
       // acceptLoan mutation response includes paymentAmount which contains 'me'
-      !q.includes('acceptLoan')
+      !q.includes('acceptLoan') &&
+      // procurementPreview contains 'me' as substring
+      !q.includes('procurementPreview')
 
     if (isStandaloneMeQuery(query)) {
       const player = state.players.find((p) => p.id === state.currentUserId)

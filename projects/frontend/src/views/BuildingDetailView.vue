@@ -42,8 +42,10 @@ import type {
   BuildingUnitResourceHistoryPoint,
   BuildingUnitOperationalStatus,
   BuildingRecentActivityEvent,
+  City,
   Company,
   GlobalExchangeOffer,
+  ProcurementPreview,
   ProductType,
   PublicSalesAnalytics,
   ResearchBrandState,
@@ -91,6 +93,7 @@ type EditableGridUnit = {
   minQuality: number | null
   brandScope: string | null
   vendorLockCompanyId: string | null
+  lockedCityId: string | null
   isReverting?: boolean
 }
 
@@ -120,12 +123,18 @@ const draftUnits = ref<EditableGridUnit[]>([])
 const editBaselineUnits = ref<EditableGridUnit[]>([])
 const resourceTypes = ref<ResourceType[]>([])
 const productTypes = ref<ProductType[]>([])
+const cities = ref<City[]>([])
 const unitInventorySummaries = ref<BuildingUnitInventorySummary[]>([])
 const unitInventories = ref<BuildingUnitInventory[]>([])
 const unitResourceHistories = ref<BuildingUnitResourceHistoryPoint[]>([])
 const exchangeOffers = ref<GlobalExchangeOffer[]>([])
 const exchangeOffersLoading = ref(false)
 const exchangeSortBy = ref<ExchangeSortBy>('deliveredPrice')
+
+// Procurement preview (next-tick execution preview for PURCHASE units)
+const procurementPreview = ref<ProcurementPreview | null>(null)
+const procurementPreviewLoading = ref(false)
+let activeProcurementPreviewRequest = 0
 
 // Operational status per unit (ACTIVE/IDLE/BLOCKED/FULL/UNCONFIGURED)
 const unitOperationalStatuses = ref<BuildingUnitOperationalStatus[]>([])
@@ -550,6 +559,7 @@ function cloneUnit(unit: GridUnit): EditableGridUnit {
     minQuality: ('minQuality' in unit ? unit.minQuality : null) ?? null,
     brandScope: ('brandScope' in unit ? unit.brandScope : null) ?? null,
     vendorLockCompanyId: ('vendorLockCompanyId' in unit ? unit.vendorLockCompanyId : null) ?? null,
+    lockedCityId: ('lockedCityId' in unit ? unit.lockedCityId : null) ?? null,
     isReverting: ('isReverting' in unit ? unit.isReverting : undefined) ?? undefined,
   }
 }
@@ -613,6 +623,7 @@ function applyStarterLayout() {
       minQuality: null,
       brandScope: null,
       vendorLockCompanyId: null,
+      lockedCityId: null,
     },
     {
       id: 'draft-starter-1-0',
@@ -639,6 +650,7 @@ function applyStarterLayout() {
       minQuality: null,
       brandScope: null,
       vendorLockCompanyId: null,
+      lockedCityId: null,
     },
     {
       id: 'draft-starter-2-0',
@@ -665,6 +677,7 @@ function applyStarterLayout() {
       minQuality: null,
       brandScope: null,
       vendorLockCompanyId: null,
+      lockedCityId: null,
     },
   ]
   setDraftUnitsFrom(starterUnits)
@@ -701,6 +714,7 @@ function applyShopStarterLayout() {
       minQuality: null,
       brandScope: null,
       vendorLockCompanyId: null,
+      lockedCityId: null,
     },
     {
       id: 'draft-shop-starter-1-0',
@@ -727,6 +741,7 @@ function applyShopStarterLayout() {
       minQuality: null,
       brandScope: null,
       vendorLockCompanyId: null,
+      lockedCityId: null,
     },
   ]
   setDraftUnitsFrom(shopStarterUnits)
@@ -774,6 +789,7 @@ function placeUnit(unitType: string) {
     minQuality: null,
     brandScope: null,
     vendorLockCompanyId: null,
+    lockedCityId: null,
   }
 
   draftUnits.value = [...draftUnits.value.filter((unit) => !(unit.gridX === newUnit.gridX && unit.gridY === newUnit.gridY)), newUnit]
@@ -930,7 +946,8 @@ function getDraftTicksForUnit(unit: EditableGridUnit): number {
     (activeUnit.mediaHouseBuildingId ?? null) !== (unit.mediaHouseBuildingId ?? null) ||
     (activeUnit.minQuality ?? null) !== (unit.minQuality ?? null) ||
     (activeUnit.brandScope ?? null) !== (unit.brandScope ?? null) ||
-    (activeUnit.vendorLockCompanyId ?? null) !== (unit.vendorLockCompanyId ?? null)
+    (activeUnit.vendorLockCompanyId ?? null) !== (unit.vendorLockCompanyId ?? null) ||
+    (activeUnit.lockedCityId ?? null) !== (unit.lockedCityId ?? null)
   ) {
     return LINK_CHANGE_TICKS
   }
@@ -1001,6 +1018,7 @@ type UnitComparisonKeys =
   | 'minQuality'
   | 'brandScope'
   | 'vendorLockCompanyId'
+  | 'lockedCityId'
 
 function areUnitsEquivalent(left: Pick<EditableGridUnit, UnitComparisonKeys>, right: Pick<EditableGridUnit, UnitComparisonKeys>): boolean {
   return (
@@ -1025,7 +1043,8 @@ function areUnitsEquivalent(left: Pick<EditableGridUnit, UnitComparisonKeys>, ri
     (left.mediaHouseBuildingId ?? null) === (right.mediaHouseBuildingId ?? null) &&
     (left.minQuality ?? null) === (right.minQuality ?? null) &&
     (left.brandScope ?? null) === (right.brandScope ?? null) &&
-    (left.vendorLockCompanyId ?? null) === (right.vendorLockCompanyId ?? null)
+    (left.vendorLockCompanyId ?? null) === (right.vendorLockCompanyId ?? null) &&
+    (left.lockedCityId ?? null) === (right.lockedCityId ?? null)
   )
 }
 
@@ -1092,6 +1111,7 @@ function storeConfiguration() {
           minQuality: unit.minQuality,
           brandScope: unit.brandScope,
           vendorLockCompanyId: unit.vendorLockCompanyId,
+          lockedCityId: unit.lockedCityId,
         })),
       },
     },
@@ -1433,6 +1453,7 @@ type SavedLayout = {
     minQuality: number | null
     brandScope: string | null
     vendorLockCompanyId: string | null
+    lockedCityId?: string | null
   }>
 }
 
@@ -1477,6 +1498,7 @@ function saveLayout() {
       minQuality: u.minQuality,
       brandScope: u.brandScope,
       vendorLockCompanyId: u.vendorLockCompanyId,
+      lockedCityId: u.lockedCityId,
     })),
   }
   const layouts = getSavedLayouts()
@@ -1490,6 +1512,7 @@ function loadLayout(layout: SavedLayout) {
   draftUnits.value = layout.units.map((u, i) => ({
     id: `layout-${i}-${Date.now()}`,
     ...u,
+    lockedCityId: u.lockedCityId ?? null,
     level: 1,
   }))
 }
@@ -2143,6 +2166,49 @@ async function loadGlobalExchangeOffers() {
   }
 }
 
+async function loadProcurementPreview() {
+  const unit = selectedPurchaseUnit.value
+  if (!unit || !('id' in unit)) {
+    procurementPreview.value = null
+    procurementPreviewLoading.value = false
+    return
+  }
+  const unitId = unit.id
+  const requestId = ++activeProcurementPreviewRequest
+
+  procurementPreviewLoading.value = true
+  try {
+    const data = await gqlRequest<{ procurementPreview: ProcurementPreview | null }>(
+      `query ProcurementPreview($unitId: UUID!) {
+        procurementPreview(buildingUnitId: $unitId) {
+          sourceType
+          sourceCityId
+          sourceCityName
+          sourceVendorCompanyId
+          sourceVendorName
+          exchangePricePerUnit
+          transitCostPerUnit
+          deliveredPricePerUnit
+          estimatedQuality
+          canExecute
+          blockReason
+          blockMessage
+        }
+      }`,
+      { unitId },
+    )
+    if (requestId !== activeProcurementPreviewRequest) return
+    procurementPreview.value = data.procurementPreview
+  } catch {
+    if (requestId !== activeProcurementPreviewRequest) return
+    procurementPreview.value = null
+  } finally {
+    if (requestId === activeProcurementPreviewRequest) {
+      procurementPreviewLoading.value = false
+    }
+  }
+}
+
 async function loadResearchBrands() {
   const companyId = building.value?.companyId
   if (!companyId || building.value?.type !== 'RESEARCH_DEVELOPMENT') return
@@ -2305,7 +2371,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
     error.value = null
     const preserveDraft = options.preserveDraft === true
 
-    const [companiesData, gameStateData, resourceData, productData] = await Promise.all([
+    const [companiesData, gameStateData, resourceData, productData, citiesData] = await Promise.all([
       gqlRequest<{ myCompanies: Company[] }>(
         `{ myCompanies {
           id
@@ -2359,6 +2425,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
               minQuality
               brandScope
               vendorLockCompanyId
+              lockedCityId
             }
             pendingConfiguration {
               id
@@ -2406,6 +2473,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
                 minQuality
                 brandScope
                 vendorLockCompanyId
+                lockedCityId
               }
             }
           }
@@ -2448,6 +2516,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
           }
         }
       }`),
+      gqlRequest<{ cities: City[] }>(`{ cities { id name } }`),
     ])
 
     if (requestId !== activeBuildingLoadRequest) {
@@ -2460,6 +2529,9 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
     }
     if (!deepEqual(productTypes.value, productData.productTypes ?? [])) {
       productTypes.value = productData.productTypes ?? []
+    }
+    if (!deepEqual(cities.value, citiesData.cities ?? [])) {
+      cities.value = citiesData.cities ?? []
     }
 
     const allBuildings = companiesData.myCompanies.flatMap((company) => company.buildings)
@@ -2545,6 +2617,24 @@ watch(
   ],
   () => {
     void loadGlobalExchangeOffers()
+  },
+)
+
+// Load procurement preview when a purchase unit from the active (non-draft) layout is selected.
+watch(
+  () => {
+    const unit = selectedPurchaseUnit.value
+    if (!unit || !('id' in unit)) return null
+    // Only load preview for live units (not draft-only units that aren't saved yet).
+    if (isEditing.value) return null
+    return unit.id
+  },
+  (unitId) => {
+    if (unitId) {
+      void loadProcurementPreview()
+    } else {
+      procurementPreview.value = null
+    }
   },
 )
 
@@ -3447,17 +3537,60 @@ watch(
                     />
                   </div>
                   <div class="config-field">
-                    <label class="config-label">{{ t('buildingDetail.config.purchaseSource') }}</label>
+                    <label class="config-label">{{ t('buildingDetail.config.procurementMode') }}</label>
+                    <p class="config-help">{{ t('buildingDetail.config.procurementModeHelp') }}</p>
+                    <div class="procurement-mode-options">
+                      <label
+                        v-for="mode in ['OPTIMAL', 'EXCHANGE', 'LOCAL']"
+                        :key="mode"
+                        class="procurement-mode-option"
+                        :class="{ selected: (getDraftUnitAt(selectedCell.x, selectedCell.y)!.purchaseSource ?? 'OPTIMAL') === mode }"
+                      >
+                        <input
+                          type="radio"
+                          :name="`procurement-mode-${selectedCell.x}-${selectedCell.y}`"
+                          :value="mode"
+                          :checked="(getDraftUnitAt(selectedCell.x, selectedCell.y)!.purchaseSource ?? 'OPTIMAL') === mode"
+                          @change="updateSelectedUnitConfig('purchaseSource', mode)"
+                          class="procurement-mode-radio"
+                        />
+                        <span class="procurement-mode-label">{{ t(`buildingDetail.config.procurementMode_${mode}`) }}</span>
+                        <span class="procurement-mode-desc">{{ t(`buildingDetail.config.procurementModeDesc_${mode}`) }}</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- City lock (shown when EXCHANGE mode is selected) -->
+                  <div
+                    class="config-field"
+                    v-if="(getDraftUnitAt(selectedCell.x, selectedCell.y)!.purchaseSource ?? 'OPTIMAL') === 'EXCHANGE'"
+                  >
+                    <label class="config-label">{{ t('buildingDetail.config.lockedCity') }}</label>
+                    <p class="config-help">{{ t('buildingDetail.config.lockedCityHelp') }}</p>
                     <select
                       class="form-input"
-                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.purchaseSource ?? ''"
-                      @change="updateSelectedUnitConfig('purchaseSource', ($event.target as HTMLSelectElement).value || null)"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.lockedCityId ?? ''"
+                      @change="updateSelectedUnitConfig('lockedCityId', ($event.target as HTMLSelectElement).value || null)"
                     >
-                      <option value="">{{ t('buildingDetail.config.none') }}</option>
-                      <option value="EXCHANGE">{{ t('buildingDetail.config.sourceExchange') }}</option>
-                      <option value="LOCAL">{{ t('buildingDetail.config.sourceLocal') }}</option>
-                      <option value="OPTIMAL">{{ t('buildingDetail.config.sourceOptimal') }}</option>
+                      <option value="">{{ t('buildingDetail.config.lockedCityAny') }}</option>
+                      <option v-for="city in cities" :key="city.id" :value="city.id">{{ city.name }}</option>
                     </select>
+                  </div>
+
+                  <!-- Vendor lock (shown when LOCAL or OPTIMAL mode is selected) -->
+                  <div
+                    class="config-field"
+                    v-if="['LOCAL', 'OPTIMAL'].includes(getDraftUnitAt(selectedCell.x, selectedCell.y)!.purchaseSource ?? 'OPTIMAL')"
+                  >
+                    <label class="config-label">{{ t('buildingDetail.config.vendorLock') }}</label>
+                    <p class="config-help">{{ t('buildingDetail.config.vendorLockHelp') }}</p>
+                    <input
+                      type="text"
+                      class="form-input"
+                      :placeholder="t('buildingDetail.config.vendorLockPlaceholder')"
+                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.vendorLockCompanyId ?? ''"
+                      @input="updateSelectedUnitConfig('vendorLockCompanyId', ($event.target as HTMLInputElement).value || null)"
+                    />
                   </div>
                 </template>
 
@@ -3875,6 +4008,68 @@ watch(
                 </template>
               </div>
 
+              <!-- Procurement Preview Card (shown in view mode for PURCHASE units) -->
+              <div
+                v-if="!isEditing && selectedPurchaseUnit && 'id' in selectedPurchaseUnit"
+                class="procurement-preview"
+              >
+                <h5 class="procurement-preview-title">{{ t('buildingDetail.procurementPreview.title') }}</h5>
+                <div v-if="procurementPreviewLoading" class="procurement-preview-loading">
+                  {{ t('common.loading') }}…
+                </div>
+                <div v-else-if="procurementPreview" class="procurement-preview-content">
+                  <div v-if="procurementPreview.canExecute" class="procurement-preview-ok">
+                    <span class="preview-status ok">✓ {{ t('buildingDetail.procurementPreview.willExecute') }}</span>
+                    <div class="preview-details">
+                      <div class="preview-row" v-if="procurementPreview.sourceCityName">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.source') }}</span>
+                        <span class="preview-value">{{ procurementPreview.sourceCityName }} ({{ t(`buildingDetail.procurementPreview.sourceType_${procurementPreview.sourceType}`) }})</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.sourceVendorName">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.vendor') }}</span>
+                        <span class="preview-value">{{ procurementPreview.sourceVendorName }}</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.exchangePricePerUnit !== null">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.exchangePrice') }}</span>
+                        <span class="preview-value">${{ procurementPreview.exchangePricePerUnit?.toFixed(2) }}</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.transitCostPerUnit !== null">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.transitCost') }}</span>
+                        <span class="preview-value">${{ procurementPreview.transitCostPerUnit?.toFixed(2) }}</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.deliveredPricePerUnit !== null">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.deliveredPrice') }}</span>
+                        <span class="preview-value preview-delivered">${{ procurementPreview.deliveredPricePerUnit?.toFixed(2) }}</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.estimatedQuality !== null">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.quality') }}</span>
+                        <span class="preview-value">{{ formatPercent(procurementPreview.estimatedQuality ?? 0) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else class="procurement-preview-blocked">
+                    <span class="preview-status blocked">✗ {{ t('buildingDetail.procurementPreview.blocked') }}</span>
+                    <div class="preview-block-details">
+                      <span class="preview-block-reason">{{ t(`buildingDetail.procurementPreview.blockReason_${procurementPreview.blockReason ?? 'UNKNOWN'}`) }}</span>
+                      <p class="preview-block-message" v-if="procurementPreview.blockMessage">{{ procurementPreview.blockMessage }}</p>
+                    </div>
+                    <div class="preview-details" v-if="procurementPreview.deliveredPricePerUnit !== null">
+                      <div class="preview-row">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.nearestOffer') }}</span>
+                        <span class="preview-value preview-blocked-price">${{ procurementPreview.deliveredPricePerUnit?.toFixed(2) }}</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.sourceCityName">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.source') }}</span>
+                        <span class="preview-value">{{ procurementPreview.sourceCityName }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="procurement-preview-empty">
+                  {{ t('buildingDetail.procurementPreview.notAvailable') }}
+                </div>
+              </div>
+
               <div class="unit-actions" v-if="isEditing">
                 <button class="btn btn-danger btn-sm" @click="removeDraftUnit(selectedCell.x, selectedCell.y)">
                   {{ t('buildingDetail.removeUnit') }}
@@ -3935,7 +4130,7 @@ watch(
                   {{ t('buildingDetail.config.maxPrice') }}: ${{ (getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).maxPrice }}
                 </span>
                 <span class="stat" v-if="(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).purchaseSource">
-                  {{ t('buildingDetail.config.purchaseSource') }}: {{ (getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).purchaseSource }}
+                  {{ t('buildingDetail.config.procurementMode') }}: {{ t(`buildingDetail.config.procurementMode_${(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).purchaseSource}`) }}
                 </span>
                 <span class="stat" v-if="(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).saleVisibility">
                   {{ t('buildingDetail.config.saleVisibility') }}: {{ (getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).saleVisibility }}
@@ -6536,4 +6731,148 @@ watch(
 .activity-purchased .activity-tick { color: #1d4ed8; }
 .activity-manufactured .activity-tick { color: #059669; }
 .activity-sold .activity-tick { color: #7c3aed; }
-.activity-moved .activity-tick { color: #92400e; }</style>
+.activity-moved .activity-tick { color: #92400e; }
+
+/* ── Procurement Mode Selector ── */
+.procurement-mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.procurement-mode-option {
+  display: flex;
+  flex-direction: column;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  gap: 0.15rem;
+}
+
+.procurement-mode-option:hover {
+  border-color: var(--color-primary, #2563eb);
+  background: var(--color-bg-hover, #f0f7ff);
+}
+
+.procurement-mode-option.selected {
+  border-color: var(--color-primary, #2563eb);
+  background: var(--color-bg-selected, #eff6ff);
+}
+
+.procurement-mode-radio {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.procurement-mode-label {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.procurement-mode-desc {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
+}
+
+/* ── Procurement Preview Card ── */
+.procurement-preview {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface, #f8fafc);
+}
+
+.procurement-preview-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.6rem;
+}
+
+.procurement-preview-loading {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.procurement-preview-empty {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.preview-status {
+  display: inline-block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.preview-status.ok {
+  color: #059669;
+}
+
+.preview-status.blocked {
+  color: #dc2626;
+}
+
+.preview-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.preview-row {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.preview-label {
+  color: var(--color-text-secondary);
+  min-width: 7rem;
+  flex-shrink: 0;
+}
+
+.preview-value {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.preview-delivered {
+  color: #059669;
+  font-weight: 700;
+}
+
+.preview-blocked-price {
+  color: #dc2626;
+}
+
+.preview-block-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.preview-block-reason {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.preview-block-message {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  margin: 0.15rem 0 0.35rem;
+  line-height: 1.45;
+}</style>

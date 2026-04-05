@@ -105,4 +105,7 @@ public sealed class BuildingConfigurationPlanUnit
 
     /// <summary>Lock purchases to a specific vendor company ID.</summary>
     public Guid? VendorLockCompanyId { get; set; }
+
+    /// <summary>Lock exchange purchases to a specific source city ID. Applies when PurchaseSource is EXCHANGE.</summary>
+    public Guid? LockedCityId { get; set; }
 }

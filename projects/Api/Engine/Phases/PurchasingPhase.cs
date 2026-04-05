@@ -352,7 +352,12 @@ public sealed class PurchasingPhase : ITickPhase
     /// <summary>
     /// Attempts to fill the purchase unit from the city-level global exchange
     /// (infinite counterparty). Picks the source city with the lowest delivered
+    /// <summary>
+    /// Attempts to fill the purchase unit from the city-level global exchange
+    /// (infinite counterparty). Picks the source city with the lowest delivered
     /// price (exchange price + transit cost) that satisfies MaxPrice and MinQuality.
+    /// When <paramref name="unit"/> has a <see cref="BuildingUnit.LockedCityId"/> set,
+    /// only that specific city is considered as a source.
     /// Returns the amount bought, quality, and total cost.
     /// </summary>
     private static (decimal amountBought, decimal quality, decimal cost) BuyFromGlobalExchange(
@@ -368,8 +373,13 @@ public sealed class PurchasingPhase : ITickPhase
         if (!context.ResourceTypesById.TryGetValue(resourceId, out var resource)) return (0m, 0m, 0m);
         if (!context.CitiesById.TryGetValue(building.CityId, out var destinationCity)) return (0m, 0m, 0m);
 
-        // Evaluate global exchange offers from every source city, sorted by delivered price.
-        var bestOffer = context.CitiesById.Values
+        // When LockedCityId is set, restrict sourcing to only that specific city.
+        var candidateCities = unit.LockedCityId.HasValue
+            ? context.CitiesById.Values.Where(c => c.Id == unit.LockedCityId.Value)
+            : context.CitiesById.Values;
+
+        // Evaluate global exchange offers from candidate source cities, sorted by delivered price.
+        var bestOffer = candidateCities
             .Select(sourceCity =>
             {
                 var abundance = context.ResourcesByCity

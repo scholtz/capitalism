@@ -141,6 +141,7 @@ export interface BuildingConfigurationPlanUnit {
   minQuality: number | null
   brandScope: string | null
   vendorLockCompanyId: string | null
+  lockedCityId: string | null
 }
 
 export interface BuildingConfigurationPlanRemoval {
@@ -180,6 +181,7 @@ export interface BuildingUnit {
   minQuality: number | null
   brandScope: string | null
   vendorLockCompanyId: string | null
+  lockedCityId: string | null
 }
 
 export interface BuildingUnitInventorySummary {
@@ -790,4 +792,20 @@ export interface LoanSummary {
   accumulatedPenalty: number
   acceptedAtUtc: string
   closedAtUtc: string | null
+}
+
+/** Procurement preview result from the backend. */
+export interface ProcurementPreview {
+  sourceType: 'GLOBAL_EXCHANGE' | 'LOCAL_B2B' | 'LOCKED_VENDOR' | 'NO_SOURCE'
+  sourceCityId: string | null
+  sourceCityName: string | null
+  sourceVendorCompanyId: string | null
+  sourceVendorName: string | null
+  exchangePricePerUnit: number | null
+  transitCostPerUnit: number | null
+  deliveredPricePerUnit: number | null
+  estimatedQuality: number | null
+  canExecute: boolean
+  blockReason: string | null
+  blockMessage: string | null
 }

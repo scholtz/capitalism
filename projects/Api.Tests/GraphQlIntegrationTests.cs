@@ -15514,4 +15514,246 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
 
     #endregion
 
+    #region Procurement Preview
+
+    [Fact]
+    public async Task ProcurementPreview_OptimalSource_ReturnsExchangeOffer()
+    {
+        var email = $"pp-optimal-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "PPOptimal");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "PPOptCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Factory, Name = "PPOptFactory", Level = 1 };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            MaxPrice = 9999m,
+            PurchaseSource = "OPTIMAL",
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query PP($unitId: UUID!) { procurementPreview(buildingUnitId: $unitId) { sourceType canExecute deliveredPricePerUnit estimatedQuality blockReason } }",
+            new { unitId = unit.Id.ToString() },
+            token);
+
+        var preview = result.GetProperty("data").GetProperty("procurementPreview");
+        Assert.Equal("GLOBAL_EXCHANGE", preview.GetProperty("sourceType").GetString());
+        Assert.True(preview.GetProperty("canExecute").GetBoolean());
+        Assert.True(preview.GetProperty("deliveredPricePerUnit").GetDecimal() > 0m);
+        Assert.True(preview.GetProperty("estimatedQuality").GetDecimal() > 0m);
+        Assert.True(preview.GetProperty("blockReason").ValueKind == System.Text.Json.JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task ProcurementPreview_MaxPriceExceeded_ReturnsBlockedWithReason()
+    {
+        var email = $"pp-maxprice-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "PPMaxPrice");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "PPMaxCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Factory, Name = "PPMaxFactory", Level = 1 };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            MaxPrice = 0.001m, // far below any possible exchange price
+            PurchaseSource = "EXCHANGE",
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query PP($unitId: UUID!) { procurementPreview(buildingUnitId: $unitId) { sourceType canExecute blockReason blockMessage } }",
+            new { unitId = unit.Id.ToString() },
+            token);
+
+        var preview = result.GetProperty("data").GetProperty("procurementPreview");
+        Assert.Equal("GLOBAL_EXCHANGE", preview.GetProperty("sourceType").GetString());
+        Assert.False(preview.GetProperty("canExecute").GetBoolean());
+        Assert.Equal("MAX_PRICE_EXCEEDED", preview.GetProperty("blockReason").GetString());
+        Assert.NotEmpty(preview.GetProperty("blockMessage").GetString()!);
+    }
+
+    [Fact]
+    public async Task ProcurementPreview_MinQualityFailed_ReturnsBlockedWithReason()
+    {
+        var email = $"pp-minqual-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "PPMinQual");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "PPMinQCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Factory, Name = "PPMinQFactory", Level = 1 };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            MaxPrice = 9999m,
+            MinQuality = 1.0m, // no exchange offer meets perfect quality
+            PurchaseSource = "EXCHANGE",
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query PP($unitId: UUID!) { procurementPreview(buildingUnitId: $unitId) { sourceType canExecute blockReason } }",
+            new { unitId = unit.Id.ToString() },
+            token);
+
+        var preview = result.GetProperty("data").GetProperty("procurementPreview");
+        Assert.False(preview.GetProperty("canExecute").GetBoolean());
+        Assert.Equal("MIN_QUALITY_FAILED", preview.GetProperty("blockReason").GetString());
+    }
+
+    [Fact]
+    public async Task ProcurementPreview_LockedCityId_FiltersToThatCity()
+    {
+        var email = $"pp-locked-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "PPLocked");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var cities = await db.Cities.ToListAsync();
+        Assert.True(cities.Count >= 1, "Need at least one city");
+        var city = cities[0];
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "PPLockedCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Factory, Name = "PPLockedFactory", Level = 1 };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            MaxPrice = 9999m,
+            PurchaseSource = "EXCHANGE",
+            LockedCityId = city.Id, // lock to the building's own city
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query PP($unitId: UUID!) { procurementPreview(buildingUnitId: $unitId) { sourceType canExecute sourceCityId sourceCityName blockReason } }",
+            new { unitId = unit.Id.ToString() },
+            token);
+
+        var preview = result.GetProperty("data").GetProperty("procurementPreview");
+        Assert.Equal("GLOBAL_EXCHANGE", preview.GetProperty("sourceType").GetString());
+        Assert.True(preview.GetProperty("canExecute").GetBoolean());
+        // Source must be the locked city.
+        Assert.Equal(city.Id.ToString(), preview.GetProperty("sourceCityId").GetString());
+    }
+
+    [Fact]
+    public async Task ProcurementPreview_NotConfigured_ReturnsNotConfiguredReason()
+    {
+        var email = $"pp-noconf-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "PPNoConf");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "PPNoConfCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id, Type = Api.Data.Entities.BuildingType.Factory, Name = "PPNoConfFactory", Level = 1 };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            // No resource or product configured
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query PP($unitId: UUID!) { procurementPreview(buildingUnitId: $unitId) { sourceType canExecute blockReason } }",
+            new { unitId = unit.Id.ToString() },
+            token);
+
+        var preview = result.GetProperty("data").GetProperty("procurementPreview");
+        Assert.False(preview.GetProperty("canExecute").GetBoolean());
+        Assert.Equal("NOT_CONFIGURED", preview.GetProperty("blockReason").GetString());
+    }
+
+    [Fact]
+    public async Task ProcurementPreview_Unauthenticated_ReturnsNull()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // The query requires auth — unauthenticated request returns null or errors.
+        var result = await ExecuteGraphQlAsync(
+            "query PP($unitId: UUID!) { procurementPreview(buildingUnitId: $unitId) { canExecute } }",
+            new { unitId = Guid.NewGuid().ToString() },
+            token: null!);
+
+        // Either returns null data or errors — the unit must not be accessible.
+        var data = result.GetProperty("data");
+        if (data.ValueKind != System.Text.Json.JsonValueKind.Null && data.TryGetProperty("procurementPreview", out var preview))
+        {
+            Assert.True(preview.ValueKind == System.Text.Json.JsonValueKind.Null);
+        }
+    }
+
+    #endregion
+
 }

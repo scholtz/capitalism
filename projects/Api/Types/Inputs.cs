@@ -281,6 +281,9 @@ public sealed class BuildingConfigurationUnitInput
 
     /// <summary>Lock purchases to a specific vendor company ID (for Purchase units).</summary>
     public Guid? VendorLockCompanyId { get; set; }
+
+    /// <summary>Lock exchange purchases to a specific source city ID (for Purchase units with EXCHANGE source).</summary>
+    public Guid? LockedCityId { get; set; }
 }
 
 /// <summary>Input for publishing a new loan offer from a bank building.</summary>

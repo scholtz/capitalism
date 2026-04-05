@@ -2906,4 +2906,62 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
     }
 
     #endregion
+
+    #region LockedCityId Procurement
+
+    [Fact]
+    public async Task PurchasingPhase_LockedCityId_OnlyBuysFromLockedCity()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Find a city with Wood abundance to lock purchasing to.
+        var lockedCity = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var (companyId, _, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "EXCHANGE");
+
+        // Set LockedCityId on the unit.
+        var unit = await db.BuildingUnits.FindAsync(purchaseUnitId);
+        unit!.LockedCityId = lockedCity.Id;
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        // Inventory should still be filled (locked city has Wood abundance).
+        var inventory = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId && i.Quantity > 0m)
+            .ToListAsync();
+
+        Assert.NotEmpty(inventory);
+    }
+
+    [Fact]
+    public async Task PurchasingPhase_LockedCityId_NonExistentCity_SkipsPurchase()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var (_, _, _, purchaseUnitId, _) =
+            await SeedExchangePurchaseUnitAsync(db, maxPrice: 9999m, purchaseSource: "EXCHANGE");
+
+        // Lock to a city that doesn't exist.
+        var unit = await db.BuildingUnits.FindAsync(purchaseUnitId);
+        unit!.LockedCityId = Guid.NewGuid(); // non-existent
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        // No inventory should have been created — locked city doesn't exist.
+        var inventoryQty = await db.Inventories
+            .Where(i => i.BuildingUnitId == purchaseUnitId)
+            .SumAsync(i => i.Quantity);
+
+        Assert.Equal(0m, inventoryQty);
+    }
+
+    #endregion
 }

@@ -1891,6 +1891,35 @@ public sealed class Query
         AcceptedAtUtc = l.AcceptedAtUtc,
         ClosedAtUtc = l.ClosedAtUtc,
     };
+
+    /// <summary>
+    /// Evaluates what a PURCHASE unit would do on the next tick given its current
+    /// configuration and live market state, without mutating any data.
+    /// Returns expected source, delivered price, quality, and any block reasons.
+    /// Requires authentication (the player must own the building).
+    /// </summary>
+    [Authorize]
+    public async Task<ProcurementPreview?> GetProcurementPreview(
+        Guid buildingUnitId,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building)
+            .ThenInclude(b => b.Company)
+            .FirstOrDefaultAsync(u => u.Id == buildingUnitId);
+
+        if (unit is null || unit.Building.Company.PlayerId != userId)
+            return null;
+
+        if (unit.UnitType != Data.Entities.UnitType.Purchase)
+            return null;
+
+        var company = unit.Building.Company;
+        return await ProcurementPreviewService.ComputeAsync(db, unit, company);
+    }
 }
 
 /// <summary>Payload for player ranking.</summary>

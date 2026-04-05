@@ -2399,9 +2399,9 @@ test.describe('Building detail upgrades', () => {
     await searchInput.fill('wood')
     await expect(searchInput).toHaveValue('wood')
 
-    const purchaseSourceSelect = page.locator('.unit-config-fields select').first()
-    await purchaseSourceSelect.selectOption('EXCHANGE')
-    await purchaseSourceSelect.selectOption('OPTIMAL')
+    // Switch procurement mode using label clicks (EXCHANGE, then OPTIMAL)
+    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) }).click()
+    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) }).click()
 
     await expect(page.locator('.loading')).toHaveCount(0)
     await expect(page.locator('.sidebar')).toBeVisible()
@@ -2692,14 +2692,10 @@ test.describe('Global exchange market', () => {
     // Config panel should open for the placed PURCHASE unit
     await expect(page.getByText('Unit Configuration')).toBeVisible()
     await expect(page.getByText('Input Item')).toBeVisible()
-    await expect(page.getByText('Purchase Source')).toBeVisible()
+    await expect(page.getByText('Procurement Mode')).toBeVisible()
 
-    // Set purchase source to EXCHANGE via the select next to the "Purchase Source" label
-    const purchaseSourceSelect = page
-      .locator('.config-field')
-      .filter({ has: page.getByText('Purchase Source') })
-      .locator('select')
-    await purchaseSourceSelect.selectOption({ value: 'EXCHANGE' })
+    // Set procurement mode to EXCHANGE via label click
+    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) }).click()
 
     // Exchange offers should become visible once source = EXCHANGE and there is a resource set
     // (exchange loads when source changes; since no resource is set yet the panel may be hidden)
@@ -7573,5 +7569,275 @@ test.describe('Destination-aware purchase sourcing', () => {
     // Link points to exchange with the grain resource slug
     const href = await page.locator('.exchange-view-link').getAttribute('href')
     expect(href).toContain('resource=grain')
+  })
+})
+
+// ── Procurement mode selection UI ─────────────────────────────────────────
+
+test.describe('Procurement mode configuration', () => {
+  /**
+   * Helper: builds a minimal factory in Bratislava with a PURCHASE unit (OPTIMAL mode by default).
+   */
+  function makeProcurementFactory(
+    buildingId: string,
+    buildingName: string,
+    purchaseSource: string = 'OPTIMAL',
+    lockedCityId: string | null = null,
+  ) {
+    return {
+      id: buildingId,
+      companyId: `company-proc-${buildingId}`,
+      cityId: 'city-ba',
+      type: 'FACTORY' as const,
+      name: buildingName,
+      latitude: 48.1486,
+      longitude: 17.1077,
+      level: 1,
+      powerConsumption: 2,
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      pendingConfiguration: null,
+      units: [
+        {
+          id: `unit-proc-${buildingId}`,
+          buildingId,
+          unitType: 'PURCHASE' as const,
+          gridX: 0,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: false,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+          resourceTypeId: 'res-wood',
+          purchaseSource,
+          maxPrice: null,
+          lockedCityId,
+        },
+      ],
+    }
+  }
+
+  test('shows procurement mode radio buttons in edit mode for PURCHASE unit', async ({ page }) => {
+    const player = makePlayer()
+    const companyId = 'company-proc-edit'
+    player.companies.push({
+      id: companyId,
+      playerId: player.id,
+      name: 'Procurement Edit Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{ ...makeProcurementFactory('building-proc-edit', 'Procurement Factory', 'OPTIMAL'), companyId }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-proc-edit')
+    await expect(page.getByRole('heading', { name: 'Procurement Factory' })).toBeVisible()
+
+    // Enter edit mode
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    // Click on the PURCHASE unit cell in Planned Upgrade section
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 0, 0).click()
+
+    // Procurement Mode section should appear
+    await expect(page.getByText('Procurement Mode')).toBeVisible()
+
+    // Should show OPTIMAL as selected (default) — check via label class
+    await expect(page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) })).toHaveClass(/selected/)
+
+    // Changing to EXCHANGE should work
+    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) }).click()
+    await expect(page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) })).toHaveClass(/selected/)
+
+    // LOCAL option should also be present
+    await expect(page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Local Supplier' }) })).toBeVisible()
+  })
+
+  test('switching to EXCHANGE mode shows city lock dropdown', async ({ page }) => {
+    const player = makePlayer()
+    const companyId = 'company-proc-exchange'
+    player.companies.push({
+      id: companyId,
+      playerId: player.id,
+      name: 'Exchange Lock Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{ ...makeProcurementFactory('building-proc-exchange', 'Exchange Factory', 'OPTIMAL'), companyId: 'company-proc-exchange' }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-proc-exchange')
+    await expect(page.getByRole('heading', { name: 'Exchange Factory' })).toBeVisible()
+
+    // Enter edit mode
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    // Click on the PURCHASE unit cell in Planned Upgrade section
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 0, 0).click()
+
+    // Initially on OPTIMAL mode — city lock dropdown should NOT appear
+    await expect(page.getByText('Lock to Source City')).not.toBeVisible()
+
+    // Switch to EXCHANGE mode using label click
+    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) }).click()
+
+    // City lock dropdown should now appear
+    await expect(page.getByText('Lock to Source City')).toBeVisible()
+    const citySelect = page.locator('select').filter({ hasText: /Any city/ })
+    await expect(citySelect).toBeVisible()
+  })
+
+  test('switching to LOCAL mode shows vendor lock field', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-proc-local',
+      playerId: player.id,
+      name: 'Local Lock Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{ ...makeProcurementFactory('building-proc-local', 'Local Factory', 'OPTIMAL'), companyId: 'company-proc-local' }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-proc-local')
+    await expect(page.getByRole('heading', { name: 'Local Factory' })).toBeVisible()
+
+    // Enter edit mode
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    // Click on the PURCHASE unit cell in Planned Upgrade section
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 0, 0).click()
+
+    // Switch to LOCAL mode using label click
+    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Local Supplier' }) }).click()
+
+    // Vendor lock input should appear
+    await expect(page.getByText('Lock to Vendor')).toBeVisible()
+  })
+
+  test('procurement preview card shows for active PURCHASE unit in view mode', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-proc-preview',
+      playerId: player.id,
+      name: 'Preview Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{ ...makeProcurementFactory('building-proc-preview', 'Preview Factory', 'OPTIMAL'), companyId: 'company-proc-preview' }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Set up a mock procurement preview that will execute successfully
+    state.procurementPreviews['unit-proc-building-proc-preview'] = {
+      sourceType: 'GLOBAL_EXCHANGE',
+      sourceCityId: 'city-ba',
+      sourceCityName: 'Bratislava',
+      sourceVendorCompanyId: null,
+      sourceVendorName: null,
+      exchangePricePerUnit: 8.5,
+      transitCostPerUnit: 0,
+      deliveredPricePerUnit: 8.5,
+      estimatedQuality: 0.7,
+      canExecute: true,
+      blockReason: null,
+      blockMessage: null,
+    }
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-proc-preview')
+    await expect(page.getByRole('heading', { name: 'Preview Factory' })).toBeVisible()
+
+    // Click on the unit in Current Configuration
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    // Procurement preview card should be visible
+    await expect(page.locator('.procurement-preview')).toBeVisible()
+    await expect(page.getByText('Next-Tick Preview')).toBeVisible()
+    await expect(page.getByText('Purchase will execute')).toBeVisible()
+    await expect(page.getByText('Bratislava')).toBeVisible()
+    await expect(page.getByText('Global Exchange')).toBeVisible()
+  })
+
+  test('procurement preview card shows blocked state with reason', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-proc-blocked',
+      playerId: player.id,
+      name: 'Blocked Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{ ...makeProcurementFactory('building-proc-blocked', 'Blocked Factory', 'EXCHANGE'), companyId: 'company-proc-blocked' }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Set up a blocked procurement preview
+    state.procurementPreviews['unit-proc-building-proc-blocked'] = {
+      sourceType: 'GLOBAL_EXCHANGE',
+      sourceCityId: 'city-ba',
+      sourceCityName: 'Bratislava',
+      sourceVendorCompanyId: null,
+      sourceVendorName: null,
+      exchangePricePerUnit: 8.5,
+      transitCostPerUnit: 0,
+      deliveredPricePerUnit: 8.5,
+      estimatedQuality: 0.7,
+      canExecute: false,
+      blockReason: 'MAX_PRICE_EXCEEDED',
+      blockMessage: 'All available offers exceed your max price of $0.001.',
+    }
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-proc-blocked')
+    await expect(page.getByRole('heading', { name: 'Blocked Factory' })).toBeVisible()
+
+    // Click on the unit in Current Configuration
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    // Procurement preview shows blocked state
+    await expect(page.locator('.procurement-preview')).toBeVisible()
+    await expect(page.getByText('Purchase is blocked')).toBeVisible()
+    await expect(page.getByText('Max price exceeded')).toBeVisible()
+    await expect(page.getByText('All available offers exceed your max price')).toBeVisible()
   })
 })
