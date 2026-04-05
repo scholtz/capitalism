@@ -2390,7 +2390,9 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         .find((candidate) => candidate.id === buildingId)
 
       const buildingUnitOperationalStatuses = (building?.units ?? []).map((unit) => {
-        // Base labor hours per unit type (matches backend CompanyEconomyCalculator)
+        // Base labor hours and energy MWh per unit type, mirroring backend:
+        // projects/Api/Utilities/CompanyEconomyCalculator.cs :: GetBaseUnitLaborHours / GetBaseUnitEnergyMwh
+        // Update here if the backend constants change.
         const laborHoursMap: Record<string, number> = {
           MINING: 1.4, STORAGE: 0.15, B2B_SALES: 0.45, PURCHASE: 0.35,
           MANUFACTURING: 0.85, BRANDING: 0.3, MARKETING: 0.6, PUBLIC_SALES: 0.7,
@@ -2404,8 +2406,10 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         const level = unit.level || 1
         const laborHours = (laborHoursMap[unit.unitType] ?? 0) * level
         const energyMwh = (energyMwhMap[unit.unitType] ?? 0) * level
-        // Default hourly wage: Bratislava base 18 * default multiplier 1.0
+        // Bratislava base wage $18/hr × default salary multiplier 1.0
+        // (projects/Api/Data/AppDbInitializer.cs BaseSalaryPerManhour)
         const hourlyWage = 18
+        // projects/Api/Engine/GameConstants.cs EnergyPricePerMwh
         const energyPricePerMwh = 55
         return {
           buildingUnitId: unit.id,
