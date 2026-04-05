@@ -8089,6 +8089,135 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GuestMigration_ExpansionIPO_CompanyCashIsCorrect()
+    {
+        // ROADMAP: "User puts his $50k to the business and has decision how much money he wants to raise
+        // - $800 000, $600000, or $400 000 varying his own shares to be 25% or 33% or 50% in the company."
+        //
+        // Verifies that when the guest selects the Expansion IPO ($800k raise) and then migrates,
+        // the resulting company cash is $850,000 minus the factory and shop lot prices, and that
+        // the founder's ownership ratio is 25% (as specified in the ROADMAP).
+        var token = await RegisterAndGetTokenAsync($"guest-expansion-ipo-{Guid.NewGuid()}@test.com", "Expansion Founder");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryPrice = 80_000m;
+        var shopPrice = 90_000m;
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Expansion Industrial Zone", factoryPrice);
+
+        // Start onboarding with the Expansion IPO raise target ($800k → 25% founder ownership)
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id cash totalSharesIssued }
+                factory { id }
+              }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    industry = "FURNITURE",
+                    cityId,
+                    companyName = "Expansion IPO Corp",
+                    factoryLotId,
+                    ipoRaiseTarget = 800_000m,
+                }
+            },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany with Expansion IPO must succeed");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+        Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
+
+        // Company cash = $50k founder + $800k raise - factory price
+        var expansionStarterCash = 850_000m; // $50k + $800k
+        var cashAfterFactory = startData.GetProperty("company").GetProperty("cash").GetDecimal();
+        Assert.Equal(expansionStarterCash - factoryPrice, cashAfterFactory);
+
+        // 10,000 total shares issued (Expansion IPO: 25% founder = 2500 founder + 7500 public)
+        Assert.Equal(10_000m, startData.GetProperty("company").GetProperty("totalSharesIssued").GetDecimal());
+
+        // Verify founder ownership is 25%
+        var personAccountResult = await ExecuteGraphQlAsync(
+            """
+            {
+                personAccount {
+                    personalCash
+                    shareholdings {
+                        ownershipRatio
+                        shareCount
+                    }
+                }
+            }
+            """,
+            token: token);
+
+        var personAccount = personAccountResult.GetProperty("data").GetProperty("personAccount");
+        // Personal cash = $200k starting - $50k founder contribution = $150k
+        Assert.Equal(150_000m, personAccount.GetProperty("personalCash").GetDecimal());
+        var founderHolding = personAccount.GetProperty("shareholdings").EnumerateArray().Single();
+        Assert.Equal(0.25m, founderHolding.GetProperty("ownershipRatio").GetDecimal());
+        Assert.Equal(2_500m, founderHolding.GetProperty("shareCount").GetDecimal());
+
+        // Finish onboarding — verify final cash is correct
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", shopPrice);
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding with Expansion IPO must succeed");
+
+        var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
+        var finalCash = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
+        // $850k - $80k factory - $90k shop = $680k
+        Assert.Equal(expansionStarterCash - factoryPrice - shopPrice, finalCash);
+    }
+
+    [Fact]
+    public async Task GuestMigration_GrowthIPO_CompanyCashIsCorrect()
+    {
+        // Verifies the Growth IPO ($600k raise → 33% founder) leaves the correct cash balance
+        // and issues the correct share count after StartOnboardingCompany.
+        var token = await RegisterAndGetTokenAsync($"guest-growth-ipo-{Guid.NewGuid()}@test.com", "Growth Founder");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryPrice = 75_000m;
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Growth Industrial Zone", factoryPrice);
+
+        var startResult = await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) {
+                nextStep
+                company { id cash totalSharesIssued }
+              }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    industry = "FOOD_PROCESSING",
+                    cityId,
+                    companyName = "Growth IPO Bakery",
+                    factoryLotId,
+                    ipoRaiseTarget = 600_000m,
+                }
+            },
+            token);
+
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany with Growth IPO must succeed");
+        var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
+
+        // Growth IPO: $50k founder + $600k raise = $650k company starting cash - factory price
+        var growthStarterCash = 650_000m;
+        var cashAfterFactory = startData.GetProperty("company").GetProperty("cash").GetDecimal();
+        Assert.Equal(growthStarterCash - factoryPrice, cashAfterFactory);
+
+        // 10,000 total shares always — Growth IPO issues all 10k but founder holds only ~33%
+        Assert.Equal(10_000m, startData.GetProperty("company").GetProperty("totalSharesIssued").GetDecimal());
+    }
+
+    [Fact]
     public async Task FullOnboarding_ViennaCity_CompletesSuccessfully()
     {
         // ROADMAP: "The game will start in single city and later other cities will be added."

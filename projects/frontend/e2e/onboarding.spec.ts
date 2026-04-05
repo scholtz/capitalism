@@ -5136,3 +5136,168 @@ test.describe('Guest save-progress conversion step — city, industry, and keeps
     await expect(saveSectionList).toContainText(/Wooden Chair/i)
   })
 })
+
+test.describe('IPO plan — Expansion option ($800k raise, 25% founder)', () => {
+  test('Expansion IPO card shows $800k raise and 25% founder ownership', async ({ page }) => {
+    // ROADMAP: "User puts his $50k to the business and has decision how much money he wants to raise
+    // - $800 000, $600000, or $400 000 varying his own shares to be 25% or 33% or 50% in the company."
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.goto('/onboarding')
+
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+
+    const expansionIpoCard = page.locator('.ipo-card', { hasText: 'Expansion IPO' })
+    await expect(expansionIpoCard).toBeVisible()
+    await expansionIpoCard.click()
+
+    // Verify the Expansion IPO card shows the correct raise amount and 25% founder ownership
+    await expect(expansionIpoCard).toContainText('$800,000')
+    await expect(expansionIpoCard).toContainText('25.0%')
+
+    // Starting cash must update to $850,000 = $50k founder + $800k raise
+    await expect(page.locator('.budget-card', { hasText: 'Starting cash' })).toContainText('$850,000')
+  })
+
+  test('Expansion IPO updates Cash after purchase when factory lot is selected', async ({ page }) => {
+    // After selecting Expansion IPO and choosing a factory lot, the cash-after-purchase budget
+    // card must reflect $850,000 - lot price = correct remaining balance.
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.goto('/onboarding')
+
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+
+    const expansionIpoCard = page.locator('.ipo-card', { hasText: 'Expansion IPO' })
+    await expansionIpoCard.click()
+
+    // Fill company name and select factory lot
+    await page.getByLabel('Company Name').fill('Expansion Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+
+    // $850,000 - $96,900 = $753,100
+    await expect(page.locator('.budget-card', { hasText: 'Cash after purchase' })).toContainText('$753,100')
+  })
+})
+
+test.describe('Guest onboarding — Expansion IPO selection', () => {
+  test('guest can select Expansion IPO and wizard shows $850k starting company cash', async ({
+    page,
+  }) => {
+    // ROADMAP step 2: the user can select how much capital to raise. In guest mode, the selection
+    // must still update the budget coaching panels.
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Step 1: industry
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: city
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory — select Expansion IPO
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+
+    const expansionIpoCard = page.locator('.ipo-card', { hasText: 'Expansion IPO' })
+    await expansionIpoCard.click()
+
+    // $50k founder + $800k raise = $850k company starting cash
+    await expect(page.locator('.budget-card', { hasText: 'Starting cash' })).toContainText('$850,000')
+    await expect(page.locator('.budget-card', { hasText: 'Personal cash after contribution' })).toContainText(
+      '$150,000',
+    )
+  })
+
+  test('guest Expansion IPO selection is preserved in localStorage progress', async ({ page }) => {
+    // If the user refreshes mid-wizard after selecting Expansion IPO, the selection must be restored
+    // (the ipoRaiseTarget is part of the guest progress saved to localStorage).
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.locator('.ipo-card', { hasText: 'Expansion IPO' }).click()
+    await expect(page.locator('.budget-card', { hasText: 'Starting cash' })).toContainText('$850,000')
+
+    // Reload the page — progress is restored from localStorage
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+
+    // The Expansion IPO card must still be selected and starting cash still $850k
+    await expect(page.locator('.budget-card', { hasText: 'Starting cash' })).toContainText('$850,000')
+  })
+})
+
+test.describe('Onboarding wizard — localization (AC10)', () => {
+  test('step 1 heading and Next button appear in Slovak when app locale is sk', async ({ page }) => {
+    // AC10: "The flow is localized consistently with the project's current localization structure."
+    // We verify that the onboarding wizard respects the app locale setting and renders Slovak UI.
+    await page.addInitScript(() => localStorage.setItem('app_locale', 'sk'))
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    // Step 1 heading should be in Slovak
+    await expect(page.getByRole('heading', { name: 'Vyberte odvetvie' })).toBeVisible()
+
+    // Next button should show 'Ďalej' (Slovak for "Next")
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await expect(page.getByRole('button', { name: 'Ďalej' })).toBeVisible()
+  })
+
+  test('step 2 heading appears in Slovak when app locale is sk', async ({ page }) => {
+    // Verifies the city selection step heading is in Slovak.
+    await page.addInitScript(() => localStorage.setItem('app_locale', 'sk'))
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Ďalej' }).click()
+
+    // Step 2 heading: "Vyberte mesto" (Slovak for "Choose Your City")
+    await expect(page.getByRole('heading', { name: 'Vyberte mesto' })).toBeVisible()
+  })
+
+  test('IPO option titles appear in Slovak when app locale is sk', async ({ page }) => {
+    // Verifies that the IPO cards use localized titles in Slovak.
+    await page.addInitScript(() => localStorage.setItem('app_locale', 'sk'))
+    setupMockApi(page)
+    await page.goto('/onboarding')
+
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Ďalej' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Ďalej' }).click()
+
+    // IPO options should use Slovak titles
+    await expect(page.locator('.ipo-card', { hasText: 'Štartovacie IPO' })).toBeVisible()
+    await expect(page.locator('.ipo-card', { hasText: 'Rastové IPO' })).toBeVisible()
+    await expect(page.locator('.ipo-card', { hasText: 'Expanzné IPO' })).toBeVisible()
+  })
+})
