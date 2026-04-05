@@ -299,7 +299,7 @@ test.describe('Building detail upgrades', () => {
     await expect(page.getByText('Unit Settings')).toBeVisible()
     await expect(page.getByText('Input Item')).toBeVisible()
     await expect(page.getByText('Max Price')).toBeVisible()
-    await expect(page.getByText('Purchase Source')).toBeVisible()
+    await expect(page.getByText('Procurement Mode')).toBeVisible()
 
     // Click on Manufacturing unit
     await getGridCell(plannedSection, 1, 0).click()
@@ -503,7 +503,7 @@ test.describe('Building detail upgrades', () => {
     await expect(page.getByText('Unit Details')).toBeVisible()
     await expect(page.getByText('Lv.2')).toBeVisible()
     await expect(page.getByText('Max Price: $500')).toBeVisible()
-    await expect(page.getByText('Purchase Source: EXCHANGE')).toBeVisible()
+    await expect(page.getByText('Procurement Mode: Global Exchange')).toBeVisible()
   })
 
   test('shows global exchange offers and inventory fill for configured purchase units', async ({ page }) => {
@@ -572,10 +572,11 @@ test.describe('Building detail upgrades', () => {
     await getGridCell(activeSection, 0, 0).click()
     await expect(page.getByText('Stored inventory')).toBeVisible()
     await expect(page.getByText('60 / 100')).toBeVisible()
-    await expect(page.getByText('Global exchange offers')).toBeVisible()
-    await expect(page.getByText('Bratislava')).toBeVisible()
-    await expect(page.getByText('Prague')).toBeVisible()
-    await expect(page.getByText('Vienna')).toBeVisible()
+    const exchangeSection = page.locator('.unit-insight-card', { hasText: 'Global exchange offers' })
+    await expect(exchangeSection).toBeVisible()
+    await expect(exchangeSection.getByText('Bratislava')).toBeVisible()
+    await expect(exchangeSection.getByText('Prague')).toBeVisible()
+    await expect(exchangeSection.getByText('Vienna')).toBeVisible()
   })
 
   test('shows configured resource image, sourcing costs, and new-unit cost while planning', async ({ page }) => {
@@ -2629,8 +2630,9 @@ test.describe('Global exchange market', () => {
     await activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
 
     // OPTIMAL source also triggers exchange offer visibility
-    await expect(page.getByText('Global exchange offers')).toBeVisible()
-    await expect(page.getByText('Bratislava')).toBeVisible()
+    const exchangeCard = page.locator('.unit-insight-card', { hasText: 'Global exchange offers' })
+    await expect(exchangeCard).toBeVisible()
+    await expect(exchangeCard.getByText('Bratislava')).toBeVisible()
   })
 
   test('configuring a purchase unit with EXCHANGE source persists and shows exchange offers', async ({ page }) => {
@@ -7697,7 +7699,7 @@ test.describe('Procurement mode configuration', () => {
     await getGridCell(plannedSection, 0, 0).click()
 
     // Initially on OPTIMAL mode — city lock dropdown should NOT appear
-    await expect(page.getByText('Lock to Source City')).not.toBeVisible()
+    await expect(page.getByText('Lock to Source City')).toBeHidden()
 
     // Switch to EXCHANGE mode using label click
     await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) }).click()
@@ -7789,8 +7791,8 @@ test.describe('Procurement mode configuration', () => {
     await expect(page.locator('.procurement-preview')).toBeVisible()
     await expect(page.getByText('Next-Tick Preview')).toBeVisible()
     await expect(page.getByText('Purchase will execute')).toBeVisible()
-    await expect(page.getByText('Bratislava')).toBeVisible()
-    await expect(page.getByText('Global Exchange')).toBeVisible()
+    await expect(page.locator('.procurement-preview').getByText('Bratislava', { exact: false })).toBeVisible()
+    await expect(page.locator('.procurement-preview .preview-value', { hasText: 'Global Exchange' })).toBeVisible()
   })
 
   test('procurement preview card shows blocked state with reason', async ({ page }) => {

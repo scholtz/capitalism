@@ -4008,68 +4008,6 @@ watch(
                 </template>
               </div>
 
-              <!-- Procurement Preview Card (shown in view mode for PURCHASE units) -->
-              <div
-                v-if="!isEditing && selectedPurchaseUnit && 'id' in selectedPurchaseUnit"
-                class="procurement-preview"
-              >
-                <h5 class="procurement-preview-title">{{ t('buildingDetail.procurementPreview.title') }}</h5>
-                <div v-if="procurementPreviewLoading" class="procurement-preview-loading">
-                  {{ t('common.loading') }}…
-                </div>
-                <div v-else-if="procurementPreview" class="procurement-preview-content">
-                  <div v-if="procurementPreview.canExecute" class="procurement-preview-ok">
-                    <span class="preview-status ok">✓ {{ t('buildingDetail.procurementPreview.willExecute') }}</span>
-                    <div class="preview-details">
-                      <div class="preview-row" v-if="procurementPreview.sourceCityName">
-                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.source') }}</span>
-                        <span class="preview-value">{{ procurementPreview.sourceCityName }} ({{ t(`buildingDetail.procurementPreview.sourceType_${procurementPreview.sourceType}`) }})</span>
-                      </div>
-                      <div class="preview-row" v-if="procurementPreview.sourceVendorName">
-                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.vendor') }}</span>
-                        <span class="preview-value">{{ procurementPreview.sourceVendorName }}</span>
-                      </div>
-                      <div class="preview-row" v-if="procurementPreview.exchangePricePerUnit !== null">
-                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.exchangePrice') }}</span>
-                        <span class="preview-value">${{ procurementPreview.exchangePricePerUnit?.toFixed(2) }}</span>
-                      </div>
-                      <div class="preview-row" v-if="procurementPreview.transitCostPerUnit !== null">
-                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.transitCost') }}</span>
-                        <span class="preview-value">${{ procurementPreview.transitCostPerUnit?.toFixed(2) }}</span>
-                      </div>
-                      <div class="preview-row" v-if="procurementPreview.deliveredPricePerUnit !== null">
-                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.deliveredPrice') }}</span>
-                        <span class="preview-value preview-delivered">${{ procurementPreview.deliveredPricePerUnit?.toFixed(2) }}</span>
-                      </div>
-                      <div class="preview-row" v-if="procurementPreview.estimatedQuality !== null">
-                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.quality') }}</span>
-                        <span class="preview-value">{{ formatPercent(procurementPreview.estimatedQuality ?? 0) }}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-else class="procurement-preview-blocked">
-                    <span class="preview-status blocked">✗ {{ t('buildingDetail.procurementPreview.blocked') }}</span>
-                    <div class="preview-block-details">
-                      <span class="preview-block-reason">{{ t(`buildingDetail.procurementPreview.blockReason_${procurementPreview.blockReason ?? 'UNKNOWN'}`) }}</span>
-                      <p class="preview-block-message" v-if="procurementPreview.blockMessage">{{ procurementPreview.blockMessage }}</p>
-                    </div>
-                    <div class="preview-details" v-if="procurementPreview.deliveredPricePerUnit !== null">
-                      <div class="preview-row">
-                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.nearestOffer') }}</span>
-                        <span class="preview-value preview-blocked-price">${{ procurementPreview.deliveredPricePerUnit?.toFixed(2) }}</span>
-                      </div>
-                      <div class="preview-row" v-if="procurementPreview.sourceCityName">
-                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.source') }}</span>
-                        <span class="preview-value">{{ procurementPreview.sourceCityName }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div v-else class="procurement-preview-empty">
-                  {{ t('buildingDetail.procurementPreview.notAvailable') }}
-                </div>
-              </div>
-
               <div class="unit-actions" v-if="isEditing">
                 <button class="btn btn-danger btn-sm" @click="removeDraftUnit(selectedCell.x, selectedCell.y)">
                   {{ t('buildingDetail.removeUnit') }}
@@ -4311,6 +4249,68 @@ watch(
                     {{ t('buildingDetail.exchange.viewOnExchange') }}
                   </RouterLink>
                 </template>
+              </div>
+
+              <!-- Procurement Preview Card (shown in view mode for PURCHASE units) -->
+              <div
+                v-if="selectedPurchaseUnit"
+                class="procurement-preview unit-insight-card"
+              >
+                <h5 class="procurement-preview-title">{{ t('buildingDetail.procurementPreview.title') }}</h5>
+                <div v-if="procurementPreviewLoading" class="procurement-preview-loading">
+                  {{ t('common.loading') }}…
+                </div>
+                <div v-else-if="procurementPreview" class="procurement-preview-content">
+                  <div v-if="procurementPreview.canExecute" class="procurement-preview-ok">
+                    <span class="preview-status ok">✓ {{ t('buildingDetail.procurementPreview.willExecute') }}</span>
+                    <div class="preview-details">
+                      <div class="preview-row" v-if="procurementPreview.sourceCityName">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.source') }}</span>
+                        <span class="preview-value">{{ procurementPreview.sourceCityName }} ({{ t(`buildingDetail.procurementPreview.sourceType_${procurementPreview.sourceType}`) }})</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.sourceVendorName">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.vendor') }}</span>
+                        <span class="preview-value">{{ procurementPreview.sourceVendorName }}</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.exchangePricePerUnit !== null">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.exchangePrice') }}</span>
+                        <span class="preview-value">${{ procurementPreview.exchangePricePerUnit?.toFixed(2) }}</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.transitCostPerUnit !== null">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.transitCost') }}</span>
+                        <span class="preview-value">${{ procurementPreview.transitCostPerUnit?.toFixed(2) }}</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.deliveredPricePerUnit !== null">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.deliveredPrice') }}</span>
+                        <span class="preview-value preview-delivered">${{ procurementPreview.deliveredPricePerUnit?.toFixed(2) }}</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.estimatedQuality !== null">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.quality') }}</span>
+                        <span class="preview-value">{{ formatPercent(procurementPreview.estimatedQuality ?? 0) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else class="procurement-preview-blocked">
+                    <span class="preview-status blocked">✗ {{ t('buildingDetail.procurementPreview.blocked') }}</span>
+                    <div class="preview-block-details">
+                      <span class="preview-block-reason">{{ t(`buildingDetail.procurementPreview.blockReason_${procurementPreview.blockReason ?? 'UNKNOWN'}`) }}</span>
+                      <p class="preview-block-message" v-if="procurementPreview.blockMessage">{{ procurementPreview.blockMessage }}</p>
+                    </div>
+                    <div class="preview-details" v-if="procurementPreview.deliveredPricePerUnit !== null">
+                      <div class="preview-row">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.nearestOffer') }}</span>
+                        <span class="preview-value preview-blocked-price">${{ procurementPreview.deliveredPricePerUnit?.toFixed(2) }}</span>
+                      </div>
+                      <div class="preview-row" v-if="procurementPreview.sourceCityName">
+                        <span class="preview-label">{{ t('buildingDetail.procurementPreview.source') }}</span>
+                        <span class="preview-value">{{ procurementPreview.sourceCityName }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="procurement-preview-empty">
+                  {{ t('buildingDetail.procurementPreview.notAvailable') }}
+                </div>
               </div>
 
               <!-- Market Intelligence panel for PUBLIC_SALES units -->
