@@ -8476,3 +8476,337 @@ test.describe('Procurement mode configuration', () => {
     expect(costText).toContain('$')
   })
 })
+
+// ── Sourcing Comparison Panel ─────────────────────────────────────────────────
+
+test.describe('Sourcing Comparison Panel', () => {
+  // Helper that builds a procurement factory with a resource-configured PURCHASE unit.
+  function makeSourcingFactory(buildingId: string, buildingName: string) {
+    return {
+      id: buildingId,
+      companyId: `company-sc-${buildingId}`,
+      cityId: 'city-ba',
+      type: 'FACTORY' as const,
+      name: buildingName,
+      latitude: 48.1486,
+      longitude: 17.1077,
+      level: 1,
+      powerConsumption: 2,
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      pendingConfiguration: null,
+      units: [
+        {
+          id: `unit-sc-${buildingId}`,
+          buildingId,
+          unitType: 'PURCHASE' as const,
+          gridX: 0,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: false,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+          resourceTypeId: 'res-wood',
+          purchaseSource: 'OPTIMAL',
+          maxPrice: null,
+          lockedCityId: null,
+        },
+      ],
+    }
+  }
+
+  test('sourcing comparison panel shows for active PURCHASE unit with resource', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-sc-panel',
+      playerId: player.id,
+      name: 'SC Panel Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{ ...makeSourcingFactory('building-sc-panel', 'SC Panel Factory'), companyId: 'company-sc-panel' }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-sc-panel')
+    await expect(page.getByRole('heading', { name: 'SC Panel Factory' })).toBeVisible()
+
+    // Click on the PURCHASE unit in Current Configuration
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    // Sourcing comparison panel should be visible
+    await expect(page.locator('.sourcing-comparison')).toBeVisible()
+    await expect(page.getByText('Sourcing Comparison')).toBeVisible()
+    // The subtitle should explain the landed cost formula
+    await expect(page.locator('.sourcing-comparison-subtitle')).toBeVisible()
+  })
+
+  test('sourcing comparison shows ranked candidates from default mock (3 cities)', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-sc-ranked',
+      playerId: player.id,
+      name: 'SC Ranked Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{ ...makeSourcingFactory('building-sc-ranked', 'SC Ranked Factory'), companyId: 'company-sc-ranked' }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-sc-ranked')
+    await expect(page.getByRole('heading', { name: 'SC Ranked Factory' })).toBeVisible()
+
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    // Panel should be visible and show table
+    const panel = page.locator('.sourcing-comparison')
+    await expect(panel).toBeVisible()
+
+    // Default mock returns 3 candidates (Bratislava, Prague, Vienna)
+    const rows = panel.locator('.sourcing-row')
+    await expect(rows).toHaveCount(3)
+
+    // First row (rank 1) should be Bratislava (recommended = best landed)
+    const firstRow = rows.first()
+    await expect(firstRow).toHaveClass(/recommended/)
+    await expect(firstRow).toContainText('Bratislava')
+    // Should show the recommended badge
+    await expect(firstRow.locator('.sc-badge--recommended')).toBeVisible()
+
+    // Prague has lower sticker price ($7.20) but higher transit ($2.80), landed $10.00
+    const pragueRow = rows.nth(1)
+    await expect(pragueRow).toContainText('Prague')
+
+    // Vienna in third position
+    const viennaRow = rows.nth(2)
+    await expect(viennaRow).toContainText('Vienna')
+  })
+
+  test('sourcing comparison shows landed cost = offer price + transit (distinguishes raw from delivered)', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-sc-landedcost',
+      playerId: player.id,
+      name: 'SC LandedCost Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{ ...makeSourcingFactory('building-sc-lc', 'SC LandedCost Factory'), companyId: 'company-sc-landedcost' }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    // Set Prague as the cheapest sticker but most expensive landed (proves landed ≠ sticker)
+    state.sourcingCandidates[`unit-sc-building-sc-lc`] = [
+      {
+        sourceType: 'GLOBAL_EXCHANGE',
+        sourceCityId: 'city-ba',
+        sourceCityName: 'Bratislava',
+        sourceVendorCompanyId: null,
+        sourceVendorName: null,
+        exchangePricePerUnit: 9.0,
+        transitCostPerUnit: 0,
+        deliveredPricePerUnit: 9.0,
+        estimatedQuality: 0.65,
+        distanceKm: 0,
+        isEligible: true,
+        blockReason: null,
+        blockMessage: null,
+        isRecommended: true,
+        rank: 1,
+      },
+      {
+        sourceType: 'GLOBAL_EXCHANGE',
+        sourceCityId: 'city-pr',
+        sourceCityName: 'Prague',
+        sourceVendorCompanyId: null,
+        sourceVendorName: null,
+        exchangePricePerUnit: 5.0, // cheaper sticker!
+        transitCostPerUnit: 6.0, // but expensive transit
+        deliveredPricePerUnit: 11.0, // worse landed cost
+        estimatedQuality: 0.85,
+        distanceKm: 310,
+        isEligible: true,
+        blockReason: null,
+        blockMessage: null,
+        isRecommended: false,
+        rank: 2,
+      },
+    ]
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-sc-lc')
+    await expect(page.getByRole('heading', { name: 'SC LandedCost Factory' })).toBeVisible()
+
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    const panel = page.locator('.sourcing-comparison')
+    await expect(panel).toBeVisible()
+
+    // The "cheapest sticker ≠ best landed" note should be visible (Prague is cheaper on sticker)
+    await expect(panel.locator('.sourcing-trap-note')).toBeVisible()
+
+    // Bratislava row is recommended (best landed cost)
+    const braRow = panel.locator('.sourcing-row').first()
+    await expect(braRow).toHaveClass(/recommended/)
+    await expect(braRow).toContainText('Bratislava')
+    await expect(braRow.locator('.sc-badge--recommended')).toBeVisible()
+
+    // Prague row shows transit cost
+    const prRow = panel.locator('.sourcing-row').nth(1)
+    await expect(prRow).toContainText('Prague')
+    await expect(prRow.locator('.transit-cost')).toBeVisible()
+
+    // Bratislava has zero transit → transit-free label
+    await expect(braRow.locator('.transit-free')).toBeVisible()
+  })
+
+  test('sourcing comparison shows blocked candidates with reason explanation', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-sc-blocked',
+      playerId: player.id,
+      name: 'SC Blocked Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{ ...makeSourcingFactory('building-sc-blk', 'SC Blocked Factory'), companyId: 'company-sc-blocked' }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    state.sourcingCandidates[`unit-sc-building-sc-blk`] = [
+      {
+        sourceType: 'GLOBAL_EXCHANGE',
+        sourceCityId: 'city-ba',
+        sourceCityName: 'Bratislava',
+        sourceVendorCompanyId: null,
+        sourceVendorName: null,
+        exchangePricePerUnit: 8.5,
+        transitCostPerUnit: 0,
+        deliveredPricePerUnit: 8.5,
+        estimatedQuality: 0.7,
+        distanceKm: 0,
+        isEligible: true,
+        blockReason: null,
+        blockMessage: null,
+        isRecommended: true,
+        rank: 1,
+      },
+      {
+        sourceType: 'GLOBAL_EXCHANGE',
+        sourceCityId: 'city-pr',
+        sourceCityName: 'Prague',
+        sourceVendorCompanyId: null,
+        sourceVendorName: null,
+        exchangePricePerUnit: 7.2,
+        transitCostPerUnit: 2.8,
+        deliveredPricePerUnit: 10.0,
+        estimatedQuality: 0.82,
+        distanceKm: 310,
+        isEligible: false,
+        blockReason: 'MAX_PRICE_EXCEEDED',
+        blockMessage: 'Landed cost ($10.00) exceeds your max price ($9.00).',
+        isRecommended: false,
+        rank: 2,
+      },
+    ]
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-sc-blk')
+    await expect(page.getByRole('heading', { name: 'SC Blocked Factory' })).toBeVisible()
+
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    const panel = page.locator('.sourcing-comparison')
+    await expect(panel).toBeVisible()
+
+    // Prague row should show the blocked badge
+    const prRow = panel.locator('.sourcing-row').nth(1)
+    await expect(prRow).toHaveClass(/ineligible/)
+    await expect(prRow.locator('.sc-badge--blocked')).toBeVisible()
+    await expect(prRow.locator('.sc-badge--blocked')).toContainText('Price too high')
+
+    // The filter hint should appear (some candidates blocked)
+    await expect(panel.locator('.sourcing-filter-hint')).toBeVisible()
+  })
+
+  test('sourcing comparison shows quality for each candidate', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-sc-quality',
+      playerId: player.id,
+      name: 'SC Quality Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{ ...makeSourcingFactory('building-sc-qlt', 'SC Quality Factory'), companyId: 'company-sc-quality' }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-sc-qlt')
+    await expect(page.getByRole('heading', { name: 'SC Quality Factory' })).toBeVisible()
+
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    const panel = page.locator('.sourcing-comparison')
+    await expect(panel).toBeVisible()
+
+    // All candidate rows should show quality percentage
+    const rows = panel.locator('.sourcing-row')
+    // Wait for at least one row to be visible (async data load)
+    await expect(rows.first()).toBeVisible()
+    const count = await rows.count()
+    expect(count).toBeGreaterThan(0)
+
+    for (let i = 0; i < count; i++) {
+      const qualityCell = rows.nth(i).locator('.sourcing-col-quality')
+      await expect(qualityCell).toBeVisible()
+      const text = await qualityCell.textContent()
+      // Quality should be formatted as a percentage (e.g. "70%")
+      expect(text).toMatch(/%/)
+    }
+  })
+})

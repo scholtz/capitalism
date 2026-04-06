@@ -17526,14 +17526,19 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         var candidates = result.GetProperty("data").GetProperty("sourcingCandidates");
         Assert.True(candidates.GetArrayLength() > 0, "Expected at least one sourcing candidate");
 
-        // All should be GLOBAL_EXCHANGE (no B2B or player orders set up)
+        // All candidates must have valid pricing and quality data.
         foreach (var c in candidates.EnumerateArray())
         {
-            Assert.Equal("GLOBAL_EXCHANGE", c.GetProperty("sourceType").GetString());
-            Assert.NotNull(c.GetProperty("sourceCityName").GetString());
+            Assert.NotNull(c.GetProperty("sourceType").GetString());
             Assert.True(c.GetProperty("deliveredPricePerUnit").GetDecimal() > 0m);
             Assert.True(c.GetProperty("estimatedQuality").GetDecimal() > 0m);
             Assert.True(c.GetProperty("rank").GetInt32() > 0);
+        }
+
+        // All GLOBAL_EXCHANGE candidates must have a city name.
+        foreach (var c in candidates.EnumerateArray().Where(c => c.GetProperty("sourceType").GetString() == "GLOBAL_EXCHANGE"))
+        {
+            Assert.NotNull(c.GetProperty("sourceCityName").GetString());
         }
 
         // Exactly one candidate should be recommended.

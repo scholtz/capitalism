@@ -4555,15 +4555,15 @@ watch(
                             <span v-else>—</span>
                           </td>
                           <td class="sourcing-col-status">
-                            <span v-if="candidate.isRecommended" class="status-badge recommended-badge">
+                            <span v-if="candidate.isRecommended" class="sc-badge sc-badge--recommended">
                               ★ {{ t('buildingDetail.sourcingComparison.recommended') }}
                             </span>
-                            <span v-else-if="candidate.isEligible" class="status-badge eligible-badge">
+                            <span v-else-if="candidate.isEligible" class="sc-badge sc-badge--eligible">
                               {{ t('buildingDetail.sourcingComparison.eligible') }}
                             </span>
                             <span
                               v-else
-                              class="status-badge blocked-badge"
+                              class="sc-badge sc-badge--blocked"
                               :title="candidate.blockMessage ?? ''"
                             >
                               {{ t(`buildingDetail.sourcingComparison.blockReason_${candidate.blockReason ?? 'UNKNOWN'}`) }}
@@ -7477,7 +7477,7 @@ watch(
   color: #dc2626;
 }
 
-.status-badge {
+.sc-badge {
   display: inline-block;
   padding: 0.15rem 0.45rem;
   border-radius: 3px;
@@ -7486,17 +7486,17 @@ watch(
   white-space: nowrap;
 }
 
-.recommended-badge {
+.sc-badge--recommended {
   background: #d1fae5;
   color: #065f46;
 }
 
-.eligible-badge {
+.sc-badge--eligible {
   background: #e0f2fe;
   color: #0c4a6e;
 }
 
-.blocked-badge {
+.sc-badge--blocked {
   background: #fee2e2;
   color: #991b1b;
   cursor: help;
