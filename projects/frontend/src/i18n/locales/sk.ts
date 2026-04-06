@@ -538,7 +538,7 @@ export default {
       title: 'Nová továreň — pripravená na nastavenie',
       body: 'Táto továreň zatiaľ nemá nakonfigurované jednotky. Použite základné rozloženie a začnite produkovať, potom prispôsobte jednotky svojej stratégii.',
       applyStarter: 'Použiť základné rozloženie',
-      starterLayoutDesc: 'Základné rozloženie: Nákup (0,0) → Výroba (1,0) → Sklad (2,0) — minimálny reťazec na nákup surovín, výrobu tovaru a uchovanie zásob.',
+      starterLayoutDesc: 'Základné rozloženie: Nákup (0,0) → Výroba (1,0) → Sklad (2,0) → B2B Predaj (3,0) — minimálny reťazec na nákup surovín, výrobu tovaru, uchovanie zásob a veľkoobchodný predaj.',
       whatNext:
         'Po uložení tohto rozloženia sa jednotky postavia v priebehu niekoľkých tickov. Potom nakonfigurujte každú jednotku so surovinou, produktom a cenou na dokončenie prvého výrobného reťazca.',
     },
@@ -676,6 +676,8 @@ export default {
       visibilityPublic: 'Verejné',
       visibilityCompany: 'Len firma',
       visibilityGroup: 'Skupina',
+      b2bSuggestedPrice: 'Konkurenčná základná cena: ${price}',
+      b2bUseSuggested: 'Použiť túto cenu',
       scopeProduct: 'Produkt',
       scopeCategory: 'Kategória',
       scopeCompany: 'Firma',
@@ -919,6 +921,16 @@ export default {
       MANUFACTURED: 'Vyrobené',
       MOVED: 'Presunuté',
       SOLD: 'Predané',
+    },
+    flushStorage: {
+      title: 'Zahodiť celé zásoby',
+      flushing: 'Zahadzujem…',
+      success: 'Zásoby zahodené. Strata bola zaznamenaná v účtovníctve spoločnosti.',
+      error: 'Nepodarilo sa zahodiť zásoby. Skúste to znova.',
+      confirmTitle: 'Potvrdiť zahodenie',
+      confirmBody:
+        'Tým sa trvalo vymaže všetok tovar v tejto jednotke a strata sa zanesie do vášho účtovníctva. Táto akcia sa nedá vrátiť. Pokračovať?',
+      confirmYes: 'Áno, zahodiť všetko',
     },
   },
   cityMap: {

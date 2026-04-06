@@ -4004,6 +4004,64 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('FlushStorage') || query.includes('flushStorage')) {
+      const input = body.variables?.input
+      const buildingUnitId: string = input?.buildingUnitId ?? ''
+
+      if (!state.currentUserId) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Not authenticated', extensions: { code: 'AUTH_NOT_AUTHORIZED' } }] }),
+        })
+      }
+
+      // Find unit and validate ownership
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      let foundUnit: MockBuildingUnit | undefined
+      for (const company of player?.companies ?? []) {
+        for (const building of company.buildings ?? []) {
+          const u = building.units?.find((unit) => unit.id === buildingUnitId)
+          if (u) {
+            foundUnit = u
+            break
+          }
+        }
+        if (foundUnit) break
+      }
+
+      if (!foundUnit) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Unit not found or you don\'t own it.', extensions: { code: 'UNIT_NOT_FOUND' } }] }),
+        })
+      }
+
+      const flushableTypes = ['STORAGE', 'MINING', 'MANUFACTURING']
+      if (!flushableTypes.includes(foundUnit.unitType)) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Only STORAGE, MINING and MANUFACTURING units can be flushed.', extensions: { code: 'INVALID_UNIT_TYPE' } }] }),
+        })
+      }
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            flushStorage: {
+              discardedItemCount: 1,
+              totalDiscardedValue: 100,
+              discardedEntries: [{ itemName: 'Wood', quantity: 10, sourcingCostLost: 100 }],
+            },
+          },
+        }),
+      })
+    }
+
     // Fallback
     return route.fulfill({
       status: 200,

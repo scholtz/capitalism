@@ -13062,6 +13062,180 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task FlushStorage_ClearsInventoryAndCreatesLedgerEntry()
+    {
+        // Arrange: create a player with a factory that has inventory in a storage unit.
+        var token = await RegisterAndGetTokenAsync("flush-storage@test.com", "FlushStorageTest");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Flush Storage Zone");
+
+        // Build the factory via onboarding.
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Flush Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Flush Shop Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var factoryId = finishResult
+            .GetProperty("data").GetProperty("finishOnboarding")
+            .GetProperty("factory").GetProperty("id").GetString()!;
+        var companyId = finishResult
+            .GetProperty("data").GetProperty("finishOnboarding")
+            .GetProperty("company").GetProperty("id").GetString()!;
+
+        // Find the storage unit in the factory.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var storageUnit = await db.BuildingUnits
+            .FirstOrDefaultAsync(u => u.BuildingId == Guid.Parse(factoryId) && u.UnitType == "STORAGE");
+        Assert.NotNull(storageUnit);
+
+        // Manually seed inventory so we have something to flush.
+        var woodResource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+        db.Inventories.Add(new Api.Data.Entities.Inventory
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = storageUnit!.BuildingId,
+            BuildingUnitId = storageUnit.Id,
+            ResourceTypeId = woodResource.Id,
+            Quantity = 50m,
+            SourcingCostTotal = 500m,
+            Quality = 0.6m,
+        });
+        await db.SaveChangesAsync();
+
+        // Act: flush the storage unit.
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FlushStorage($input: FlushStorageInput!) {
+              flushStorage(input: $input) {
+                discardedItemCount
+                totalDiscardedValue
+                discardedEntries { itemName quantity sourcingCostLost }
+              }
+            }
+            """,
+            new { input = new { buildingUnitId = storageUnit.Id } },
+            token);
+
+        var flushData = result.GetProperty("data").GetProperty("flushStorage");
+        Assert.Equal(1, flushData.GetProperty("discardedItemCount").GetInt32());
+        Assert.True(flushData.GetProperty("totalDiscardedValue").GetDecimal() > 0m);
+        Assert.Equal(1, flushData.GetProperty("discardedEntries").GetArrayLength());
+
+        // Verify inventory is gone from DB.
+        var remaining = await db.Inventories
+            .CountAsync(i => i.BuildingUnitId == storageUnit.Id && i.Quantity > 0m);
+        Assert.Equal(0, remaining);
+
+        // Verify a DISCARDED_RESOURCES ledger entry was created.
+        var ledgerEntry = await db.LedgerEntries
+            .FirstOrDefaultAsync(e => e.CompanyId == Guid.Parse(companyId) && e.Category == "DISCARDED_RESOURCES");
+        Assert.NotNull(ledgerEntry);
+        Assert.True(ledgerEntry!.Amount <= 0m, "Discard should be a negative ledger amount (loss).");
+    }
+
+    [Fact]
+    public async Task FlushStorage_EmptyUnit_ReturnsZeroItems()
+    {
+        var token = await RegisterAndGetTokenAsync("flush-empty@test.com", "FlushEmptyTest");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Flush Empty Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Flush Empty Co", factoryLotId } },
+            token);
+
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Flush Empty Shop Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var factoryId = finishResult
+            .GetProperty("data").GetProperty("finishOnboarding")
+            .GetProperty("factory").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var storageUnit = await db.BuildingUnits
+            .FirstOrDefaultAsync(u => u.BuildingId == Guid.Parse(factoryId) && u.UnitType == "STORAGE");
+        Assert.NotNull(storageUnit);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FlushStorage($input: FlushStorageInput!) {
+              flushStorage(input: $input) {
+                discardedItemCount
+                totalDiscardedValue
+              }
+            }
+            """,
+            new { input = new { buildingUnitId = storageUnit!.Id } },
+            token);
+
+        var flushData = result.GetProperty("data").GetProperty("flushStorage");
+        Assert.Equal(0, flushData.GetProperty("discardedItemCount").GetInt32());
+        Assert.Equal(0m, flushData.GetProperty("totalDiscardedValue").GetDecimal());
+    }
+
+    [Fact]
+    public async Task FlushStorage_WrongOwner_ReturnsBuildingNotFound()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync("flush-owner@test.com", "FlushOwnerTest");
+        var otherToken = await RegisterAndGetTokenAsync("flush-other@test.com", "FlushOtherTest");
+        var cityId = await GetCityIdByNameAsync();
+        var factoryLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Flush Owner Zone");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
+              startOnboardingCompany(input: $input) { nextStep company { id } }
+            }
+            """,
+            new { input = new { industry = "FURNITURE", cityId, companyName = "Flush Owner Co", factoryLotId } },
+            ownerToken);
+
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Flush Owner Shop Zone");
+        var finishResult = await FinishOnboardingAsync(ownerToken, productId, shopLotId);
+        var factoryId = finishResult
+            .GetProperty("data").GetProperty("finishOnboarding")
+            .GetProperty("factory").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var storageUnit = await db.BuildingUnits
+            .FirstOrDefaultAsync(u => u.BuildingId == Guid.Parse(factoryId) && u.UnitType == "STORAGE");
+        Assert.NotNull(storageUnit);
+
+        // Attempt flush as a different player — should fail.
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation FlushStorage($input: FlushStorageInput!) {
+              flushStorage(input: $input) { discardedItemCount }
+            }
+            """,
+            new { input = new { buildingUnitId = storageUnit!.Id } },
+            otherToken);
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0, "Should get an error when trying to flush someone else's unit.");
+        Assert.Contains("UNIT_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString()!);
+    }
+
+    [Fact]
     public async Task PublicSalesAnalytics_FoodProcessing_SupplyConstrained_ReturnsCorrectSignal()
     {
         // Verify that FOOD_PROCESSING (Bread) shows SUPPLY_CONSTRAINED when inventory is empty after ticks.

@@ -540,7 +540,7 @@ export default {
       title: 'Neue Fabrik — Bereit zur Einrichtung',
       body: 'Diese Fabrik hat noch keine konfigurierten Einheiten. Wenden Sie das Starter-Layout an, um mit der Produktion zu beginnen, und passen Sie die Einheiten dann an Ihre Strategie an.',
       applyStarter: 'Starter-Layout anwenden',
-      starterLayoutDesc: 'Starter-Layout: Einkauf (0,0) → Fertigung (1,0) → Lager (2,0) — die Mindestkette zum Kauf von Ressourcen, Herstellung von Waren und Lagerhaltung.',
+      starterLayoutDesc: 'Starter-Layout: Einkauf (0,0) → Fertigung (1,0) → Lager (2,0) → B2B-Verkauf (3,0) — die Mindestkette zum Kauf von Ressourcen, Herstellung von Waren, Lagerhaltung und Großhandelsverkauf.',
       whatNext:
         'Nach dem Speichern dieses Layouts werden die Einheiten in den nächsten Ticks gebaut. Konfigurieren Sie dann jede Einheit mit einer Ressource, einem Produkt und einem Preis, um Ihre erste Produktionskette zu vervollständigen.',
     },
@@ -680,6 +680,8 @@ export default {
       visibilityPublic: 'Öffentlich',
       visibilityCompany: 'Nur Unternehmen',
       visibilityGroup: 'Gruppe',
+      b2bSuggestedPrice: 'Wettbewerbsfähiger Grundpreis: ${price}',
+      b2bUseSuggested: 'Diesen Preis verwenden',
       scopeProduct: 'Produkt',
       scopeCategory: 'Kategorie',
       scopeCompany: 'Unternehmen',
@@ -924,6 +926,16 @@ export default {
       MANUFACTURED: 'Hergestellt',
       MOVED: 'Verschoben',
       SOLD: 'Verkauft',
+    },
+    flushStorage: {
+      title: 'Gesamten Bestand verwerfen',
+      flushing: 'Wird verworfen…',
+      success: 'Bestand verworfen. Der Verlust wurde im Unternehmens-Ledger erfasst.',
+      error: 'Bestand konnte nicht verworfen werden. Bitte versuchen Sie es erneut.',
+      confirmTitle: 'Verwerfen bestätigen',
+      confirmBody:
+        'Dadurch wird der gesamte Bestand in dieser Einheit dauerhaft gelöscht und der Verlust in Ihr Ledger eingetragen. Dies kann nicht rückgängig gemacht werden. Fortfahren?',
+      confirmYes: 'Ja, alles verwerfen',
     },
   },
   cityMap: {

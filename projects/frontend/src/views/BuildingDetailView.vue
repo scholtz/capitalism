@@ -242,6 +242,12 @@ const newRentPerSqm = ref<number | null>(null)
 const savingRent = ref(false)
 const rentSaveError = ref<string | null>(null)
 
+// Flush storage
+const showFlushConfirmDialog = ref(false)
+const flushingStorage = ref(false)
+const flushStorageError = ref<string | null>(null)
+const flushStorageSuccess = ref(false)
+
 let activeBuildingLoadRequest = 0
 let activeExchangeOffersRequest = 0
 
@@ -690,7 +696,7 @@ function cancelEditing() {
 }
 
 function applyStarterLayout() {
-  // Pre-populate the draft with a PURCHASE → MANUFACTURING → STORAGE chain at y=0
+  // Pre-populate the draft with a PURCHASE → MANUFACTURING → STORAGE → B2B_SALES chain at y=0
   const starterUnits: EditableGridUnit[] = [
     {
       id: 'draft-starter-0-0',
@@ -755,7 +761,7 @@ function applyStarterLayout() {
       linkUp: false,
       linkDown: false,
       linkLeft: false,
-      linkRight: false,
+      linkRight: true,
       linkUpLeft: false,
       linkUpRight: false,
       linkDownLeft: false,
@@ -766,6 +772,33 @@ function applyStarterLayout() {
       maxPrice: null,
       purchaseSource: null,
       saleVisibility: null,
+      budget: null,
+      mediaHouseBuildingId: null,
+      minQuality: null,
+      brandScope: null,
+      vendorLockCompanyId: null,
+      lockedCityId: null,
+    },
+    {
+      id: 'draft-starter-3-0',
+      unitType: 'B2B_SALES',
+      gridX: 3,
+      gridY: 0,
+      level: 1,
+      linkUp: false,
+      linkDown: false,
+      linkLeft: false,
+      linkRight: false,
+      linkUpLeft: false,
+      linkUpRight: false,
+      linkDownLeft: false,
+      linkDownRight: false,
+      resourceTypeId: null,
+      productTypeId: null,
+      minPrice: null,
+      maxPrice: null,
+      purchaseSource: null,
+      saleVisibility: 'PUBLIC',
       budget: null,
       mediaHouseBuildingId: null,
       minQuality: null,
@@ -2507,6 +2540,67 @@ async function submitQuickPriceUpdate() {
   }
 }
 
+async function submitFlushStorage(unitId: string) {
+  if (!auth.token) return
+  flushingStorage.value = true
+  flushStorageError.value = null
+  flushStorageSuccess.value = false
+  showFlushConfirmDialog.value = false
+  try {
+    await gqlRequest<{ flushStorage: { discardedItemCount: number; totalDiscardedValue: number } }>(
+      `mutation FlushStorage($input: FlushStorageInput!) {
+        flushStorage(input: $input) {
+          discardedItemCount
+          totalDiscardedValue
+        }
+      }`,
+      { input: { buildingUnitId: unitId } },
+    )
+    flushStorageSuccess.value = true
+    // Reload building data to reflect cleared inventory
+    await loadBuilding({ preserveDraft: isEditing.value })
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    flushStorageError.value = msg || t('buildingDetail.flushStorage.error')
+  } finally {
+    flushingStorage.value = false
+  }
+}
+
+/**
+ * Returns a competitive price suggestion for a B2B_SALES unit based on
+ * the product that a linked MANUFACTURING unit will produce.
+ * Falls back to the product's base price if found, otherwise null.
+ */
+function getB2BSuggestedPrice(unit: EditableGridUnit): number | null {
+  // Find all units linked to this B2B_SALES unit (either direction)
+  const byPos = new Map(draftUnits.value.map((u) => [`${u.gridX},${u.gridY}`, u]))
+  const neighbors: EditableGridUnit[] = []
+  const directions = [
+    { dx: -1, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: -1 },
+    { dx: 0, dy: 1 },
+  ]
+  for (const { dx, dy } of directions) {
+    const neighbor = byPos.get(`${unit.gridX + dx},${unit.gridY + dy}`)
+    if (neighbor) neighbors.push(neighbor)
+  }
+
+  // Look for a connected MANUFACTURING unit with a product set
+  const mfgUnit = neighbors.find((n) => n.unitType === 'MANUFACTURING' && n.productTypeId)
+  if (!mfgUnit) {
+    // Also check the entire building for any MANUFACTURING unit with a product
+    const anyMfg = draftUnits.value.find((u) => u.unitType === 'MANUFACTURING' && u.productTypeId)
+    if (anyMfg?.productTypeId) {
+      return productTypes.value.find((p) => p.id === anyMfg.productTypeId)?.basePrice ?? null
+    }
+    return null
+  }
+
+  return productTypes.value.find((p) => p.id === mfgUnit.productTypeId)?.basePrice ?? null
+}
+
 async function loadUnitOperationalStatuses(buildingId: string) {
   if (!auth.token) return
   unitOperationalStatusesLoading.value = true
@@ -2812,6 +2906,16 @@ watch(
     if (!isEditing.value) {
       restoreReadOnlySelectedCell(activeUnits.value)
     }
+  },
+)
+
+// Reset flush storage state when user navigates to a different unit
+watch(
+  () => selectedCell.value,
+  () => {
+    flushStorageError.value = null
+    flushStorageSuccess.value = false
+    showFlushConfirmDialog.value = false
   },
 )
 
@@ -3842,6 +3946,17 @@ watch(
                       min="0.01"
                       step="0.01"
                     />
+                    <p
+                      v-if="getB2BSuggestedPrice(getDraftUnitAt(selectedCell.x, selectedCell.y)!) !== null"
+                      class="config-help config-price-hint"
+                    >
+                      {{ t('buildingDetail.config.b2bSuggestedPrice', { price: getB2BSuggestedPrice(getDraftUnitAt(selectedCell.x, selectedCell.y)!)!.toFixed(2) }) }}
+                      <button
+                        type="button"
+                        class="btn-link"
+                        @click="updateSelectedUnitConfig('minPrice', getB2BSuggestedPrice(getDraftUnitAt(selectedCell.x, selectedCell.y)!))"
+                      >{{ t('buildingDetail.config.b2bUseSuggested') }}</button>
+                    </p>
                   </div>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.saleVisibility') }}</label>
@@ -4397,6 +4512,32 @@ watch(
                     class="detail-capacity-fill"
                     :style="{ width: `${Math.round(getUnitInventorySummary(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.fillPercent * 100)}%` }"
                   ></span>
+                </div>
+                <!-- Flush storage action for STORAGE, MINING, and MANUFACTURING units -->
+                <div
+                  v-if="['STORAGE', 'MINING', 'MANUFACTURING'].includes(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y)!.unitType)"
+                  class="flush-storage-section"
+                >
+                  <button
+                    class="btn btn-danger btn-sm"
+                    :disabled="flushingStorage || getUnitInventorySummary(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.quantity === 0"
+                    @click="showFlushConfirmDialog = true"
+                  >
+                    {{ flushingStorage ? t('buildingDetail.flushStorage.flushing') : t('buildingDetail.flushStorage.title') }}
+                  </button>
+                  <p v-if="flushStorageError" class="form-error">{{ flushStorageError }}</p>
+                  <p v-if="flushStorageSuccess" class="form-success">{{ t('buildingDetail.flushStorage.success') }}</p>
+                  <!-- Confirmation dialog -->
+                  <div v-if="showFlushConfirmDialog" class="flush-confirm-dialog" role="dialog" :aria-label="t('buildingDetail.flushStorage.confirmTitle')">
+                    <p class="flush-confirm-msg">{{ t('buildingDetail.flushStorage.confirmBody') }}</p>
+                    <div class="flush-confirm-actions">
+                      <button
+                        class="btn btn-danger btn-sm"
+                        @click="submitFlushStorage(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y)!.id)"
+                      >{{ t('buildingDetail.flushStorage.confirmYes') }}</button>
+                      <button class="btn btn-ghost btn-sm" @click="showFlushConfirmDialog = false">{{ t('common.cancel') }}</button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -7661,4 +7802,63 @@ watch(
   font-size: 0.8rem;
   color: var(--color-danger, #dc2626);
   margin: 0.4rem 0 0;
+}
+
+/* ── B2B Competitive Price Hint ── */
+.config-price-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  margin: 0.25rem 0 0;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  color: var(--color-primary, #3b82f6);
+  cursor: pointer;
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.btn-link:hover {
+  opacity: 0.8;
+}
+
+/* ── Flush Storage Section ── */
+.flush-storage-section {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.flush-confirm-dialog {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: var(--radius-sm);
+}
+
+.flush-confirm-msg {
+  font-size: 0.82rem;
+  color: #9a3412;
+  margin: 0 0 0.6rem;
+  line-height: 1.4;
+}
+
+.flush-confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.form-success {
+  font-size: 0.8rem;
+  color: #065f46;
+  margin: 0.35rem 0 0;
 }</style>

@@ -390,3 +390,10 @@ public sealed class UpdatePublicSalesPriceInput
     /// <summary>New minimum sale price per unit. Must be greater than zero.</summary>
     public decimal NewMinPrice { get; set; }
 }
+
+/// <summary>Input for flushing inventory from a storage-capable building unit.</summary>
+public sealed class FlushStorageInput
+{
+    /// <summary>The building unit whose inventory should be discarded.</summary>
+    public Guid BuildingUnitId { get; set; }
+}

@@ -647,6 +647,257 @@ test.describe('Building detail upgrades', () => {
     await expect(page.getByText('Procurement Mode: Global Exchange')).toBeVisible()
   })
 
+  test('flush storage button appears in storage unit detail sidebar and shows confirmation', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-flush',
+      playerId: player.id,
+      name: 'Flush Test Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-flush',
+          companyId: 'company-flush',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Flush Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'flush-storage-1',
+              buildingId: 'building-flush',
+              unitType: 'STORAGE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              inventoryQuantity: 50,
+              inventoryQuality: 0.7,
+              inventorySourcingCostTotal: 500,
+              inventoryItems: [
+                {
+                  id: 'inv-flush-1',
+                  resourceTypeId: 'res-wood',
+                  productTypeId: null,
+                  quantity: 50,
+                  quality: 0.7,
+                  sourcingCostTotal: 500,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-flush')
+    await expect(page.getByRole('heading', { name: 'Flush Factory' })).toBeVisible()
+
+    const activeSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(activeSection, 0, 0).click()
+    await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
+
+    // Flush button should be visible for storage units with inventory
+    await expect(page.getByRole('button', { name: /Discard All Inventory/i })).toBeVisible()
+
+    // Click flush — confirmation dialog should appear
+    await page.getByRole('button', { name: /Discard All Inventory/i }).click()
+    await expect(page.getByText(/cannot be undone/i)).toBeVisible()
+    await expect(page.getByRole('button', { name: /Yes, Discard All/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Cancel/i })).toBeVisible()
+
+    // Cancel hides the confirmation
+    await page.getByRole('button', { name: /Cancel/i }).click()
+    await expect(page.getByText(/cannot be undone/i)).toBeHidden()
+  })
+
+  test('B2B_SALES config shows competitive price suggestion from linked manufacturing unit', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-b2b',
+      playerId: player.id,
+      name: 'B2B Price Test Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-b2b',
+          companyId: 'company-b2b',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'B2B Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'b2b-purchase-1',
+              buildingId: 'building-b2b',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'b2b-mfg-1',
+              buildingId: 'building-b2b',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              productTypeId: 'prod-chair',
+            },
+            {
+              id: 'b2b-storage-1',
+              buildingId: 'building-b2b',
+              unitType: 'STORAGE',
+              gridX: 2,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'b2b-sales-1',
+              buildingId: 'building-b2b',
+              unitType: 'B2B_SALES',
+              gridX: 3,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-b2b')
+    await expect(page.getByRole('heading', { name: 'B2B Factory' })).toBeVisible()
+
+    // Enter edit mode and click on the B2B_SALES unit
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 3, 0).click()
+
+    // B2B_SALES config panel should show Min Price field
+    await expect(page.getByText('Min Price')).toBeVisible()
+
+    // Should show competitive price suggestion since manufacturing unit has Wooden Chair (basePrice=45)
+    await expect(page.getByText(/Competitive base price/i)).toBeVisible()
+    await expect(page.getByRole('button', { name: /Use this price/i })).toBeVisible()
+
+    // Click "Use this price" should populate the min price field
+    await page.getByRole('button', { name: /Use this price/i }).click()
+  })
+
+  test('starter factory layout includes B2B_SALES unit at position (3,0)', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-b2b-layout',
+      playerId: player.id,
+      name: 'B2B Layout Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-b2b-layout',
+          companyId: 'company-b2b-layout',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'B2B Layout Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 1,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-b2b-layout')
+    await page.getByRole('button', { name: /Apply Starter Layout/i }).click()
+
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await expect(plannedSection).toBeVisible()
+
+    // B2B_SALES unit should appear at position (3,0) in the planned grid
+    await expect(plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(3)).toContainText('B2B Sales')
+  })
+
   test('shows configured resource image, sourcing costs, and new-unit cost while planning', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
