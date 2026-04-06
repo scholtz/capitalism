@@ -260,6 +260,18 @@ const availableShopLots = computed(() => getAvailableLots(cityLots.value, 'SALES
 const recommendedFactoryLotIds = computed(() => getRecommendedFactoryLotIds(availableFactoryLots.value))
 const recommendedShopLotIds = computed(() => getRecommendedShopLotIds(availableShopLots.value))
 
+const sortedProducts = computed(() => {
+  const prods = [...products.value]
+  if (selectedProductId.value) {
+    const selected = prods.find(p => p.id === selectedProductId.value)
+    if (selected) {
+      prods.splice(prods.indexOf(selected), 1)
+      prods.unshift(selected)
+    }
+  }
+  return prods
+})
+
 const canProceedStep1 = computed(() => !!selectedIndustry.value)
 const canProceedStep2 = computed(() => !!selectedCityId.value)
 const canProceedStep3 = computed(() =>
@@ -1316,7 +1328,7 @@ useTickRefresh(async () => {
 <template>
   <div class="onboarding-view">
     <div class="onboarding-container container">
-      <div v-if="step < 5" class="onboarding-header">
+      <div v-if="step < 4" class="onboarding-header">
         <h1>{{ t('onboarding.title') }}</h1>
         <p class="subtitle">{{ t('onboarding.subtitle') }}</p>
       </div>
@@ -1491,6 +1503,7 @@ useTickRefresh(async () => {
           required-building-type="FACTORY"
           :money-available="companyStartingCash"
           :recommended-lot-ids="recommendedFactoryLotIds"
+          :city="selectedCity"
         />
 
         <div class="step-actions">
@@ -1546,7 +1559,7 @@ useTickRefresh(async () => {
           </p>
           <div class="product-grid">
             <button
-              v-for="prod in products"
+              v-for="prod in sortedProducts"
               :key="prod.id"
               class="product-card"
               :class="{ selected: selectedProductId === prod.id }"
@@ -1577,6 +1590,7 @@ useTickRefresh(async () => {
           required-building-type="SALES_SHOP"
           :money-available="starterCash"
           :recommended-lot-ids="recommendedShopLotIds"
+          :city="selectedCity"
         />
 
         <div v-if="canShowStep4Summary" class="summary">

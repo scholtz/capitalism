@@ -980,6 +980,8 @@ export default {
     district: 'District',
     appraisedValue: 'Appraised Value',
     price: 'Asking Price',
+    deliveryDistance: 'Delivery Distance',
+    priceWithDelivery: 'Price with Delivery',
     resourcePremium: '+ resource',
     resourcePremiumTooltip: 'Price includes a premium for the raw material deposit. Higher quality and larger reserve mean a higher premium.',
     suitableFor: 'Suitable for',

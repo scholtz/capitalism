@@ -985,6 +985,8 @@ export default {
     district: 'Bezirk',
     appraisedValue: 'Schätzwert',
     price: 'Kaufpreis',
+    deliveryDistance: 'Lieferdistanz',
+    priceWithDelivery: 'Preis mit Lieferung',
     resourcePremium: '+ Rohstoff',
     resourcePremiumTooltip: 'Der Preis enthält einen Aufschlag für das Rohstoffvorkommen. Höhere Qualität und größere Reserven bedeuten einen höheren Aufschlag.',
     suitableFor: 'Geeignet für',

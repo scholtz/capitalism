@@ -979,6 +979,8 @@ export default {
     district: 'Oblasť',
     appraisedValue: 'Odhadovaná hodnota',
     price: 'Vyvolávacia cena',
+    deliveryDistance: 'Vzdialenosť doručenia',
+    priceWithDelivery: 'Cena s doručením',
     resourcePremium: '+ surovina',
     resourcePremiumTooltip: 'Cena zahŕňa príplatok za ložisko surovín. Vyššia kvalita a väčšia zásoba znamenajú vyšší príplatok.',
     suitableFor: 'Vhodné pre',

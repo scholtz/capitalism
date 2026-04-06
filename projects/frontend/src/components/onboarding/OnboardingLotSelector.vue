@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { BuildingLot } from '@/types'
+import type { BuildingLot, City } from '@/types'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -12,6 +12,7 @@ const props = withDefaults(
     requiredBuildingType: string
     moneyAvailable: number
     recommendedLotIds?: string[]
+    city: City | null
   }>(),
   {
     recommendedLotIds: () => [],
@@ -53,6 +54,20 @@ function formatBuildingType(type: string): string {
   }
 
   return type.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function calculateDistance(lot: BuildingLot, city: City): number {
+  const dLat = lot.latitude - city.latitude
+  const dLon = lot.longitude - city.longitude
+  return Math.sqrt(dLat * dLat + dLon * dLon) * 111 // approximate km
+}
+
+function calculateDeliveryCost(distance: number): number {
+  return Math.round(distance * 10) // $10 per km
+}
+
+function formatDistance(distance: number): string {
+  return `${distance.toFixed(1)} km`
 }
 
 function isRecommended(lot: BuildingLot): boolean {
@@ -265,9 +280,17 @@ onUnmounted(() => {
               <dt>{{ t('cityMap.district') }}</dt>
               <dd>{{ t(`cityMap.districts.${selectedLot.district}`) }}</dd>
             </div>
+            <div v-if="city">
+              <dt>{{ t('cityMap.deliveryDistance') }}</dt>
+              <dd>{{ formatDistance(calculateDistance(selectedLot, city)) }}</dd>
+            </div>
             <div>
               <dt>{{ t('cityMap.price') }}</dt>
               <dd>{{ formatCurrency(selectedLot.price) }}</dd>
+            </div>
+            <div v-if="city">
+              <dt>{{ t('cityMap.priceWithDelivery') }}</dt>
+              <dd>{{ formatCurrency(selectedLot.price + calculateDeliveryCost(calculateDistance(selectedLot, city))) }}</dd>
             </div>
             <div>
               <dt>{{ t('cityMap.suitableFor') }}</dt>
