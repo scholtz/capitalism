@@ -1069,12 +1069,12 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
 
         var revenuesByBuilding = (await db.PublicSalesRecords
             .Where(record => record.BuildingId == premiumShop.Id || record.BuildingId == outskirtsShop.Id)
-            .ToListAsync())
+            .ToListAsync()) // Materialize first: EF Core SQLite provider does not support async GroupBy with aggregate projection
             .GroupBy(record => record.BuildingId)
             .ToDictionary(group => group.Key, group => group.Sum(record => record.Revenue));
         var demandByBuilding = (await db.PublicSalesRecords
             .Where(record => record.BuildingId == premiumShop.Id || record.BuildingId == outskirtsShop.Id)
-            .ToListAsync())
+            .ToListAsync()) // Materialize first: EF Core SQLite provider does not support async GroupBy with aggregate projection
             .GroupBy(record => record.BuildingId)
             .ToDictionary(group => group.Key, group => group.Sum(record => record.Demand));
 

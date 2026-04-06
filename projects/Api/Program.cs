@@ -95,19 +95,12 @@ public class Program
                 };
             });
 
-        builder.Services.AddHttpContextAccessor();
-
-        builder.Services.AddScoped<TickProcessor>();
-        builder.Services.AddHostedService<GameTickHostedService>();
-        builder.Services.AddHostedService<MasterServerRegistrationHostedService>();
-
         builder.Services
             .AddGraphQLServer()
             .AddAuthorization()
             .AddQueryType<Query>()
             .AddMutationType<Mutation>();
 
-        builder.Services.AddScoped<AppDbInitializer>();
         // ── Game tick engine ──
         builder.Services.AddScoped<TickProcessor>();
         builder.Services.AddScoped<ITickPhase, PowerDistributionPhase>();
