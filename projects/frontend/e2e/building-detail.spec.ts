@@ -1,7 +1,7 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { makeChairProduct, makePlayer, setupMockApi, type MockBuildingUnit, type MockPublicSalesAnalytics } from './helpers/mock-api'
 
-function getGridSection(page: Parameters<typeof test>[0]['page'], heading: string) {
+function getGridSection(page: Page, heading: string) {
   return page
     .locator('.grid-section')
     .filter({ has: page.getByRole('heading', { name: heading }) })
@@ -12,14 +12,15 @@ function getGridCell(section: ReturnType<typeof getGridSection>, x: number, y: n
   return section.locator('.unit-row').nth(y).locator('.grid-cell').nth(x)
 }
 
-async function openPurchaseSelector(page: Parameters<typeof test>[0]['page']) {
+async function openPurchaseSelector(page: Page) {
   await page.getByRole('button', { name: /product and vendor/i }).click()
-  await expect(page.getByRole('dialog', { name: 'Choose product and vendor' })).toBeVisible()
+  const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+  await expect(dialog).toBeVisible()
+  return dialog
 }
 
-async function selectPurchaseItem(page: Parameters<typeof test>[0]['page'], searchTerm: string, optionName: RegExp) {
-  await openPurchaseSelector(page)
-  const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+async function selectPurchaseItem(page: Page, searchTerm: string, optionName: RegExp) {
+  const dialog = await openPurchaseSelector(page)
   await dialog.getByPlaceholder(/search/i).fill(searchTerm)
   await dialog.getByRole('button', { name: optionName }).first().click()
   await dialog.getByRole('button', { name: 'Done' }).click()
@@ -1474,8 +1475,7 @@ test.describe('Building detail upgrades', () => {
     await getGridCell(plannedSection, 0, 0).click()
 
     await expect(page.getByText('Input Item')).toBeVisible()
-    await openPurchaseSelector(page)
-    const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+    const dialog = await openPurchaseSelector(page)
     await expect(dialog.getByText('Electronic Components')).toBeVisible()
     await expect(dialog.getByText('Wooden Chair')).toHaveCount(0)
     await dialog.getByRole('button', { name: 'Done' }).click()
@@ -2821,8 +2821,7 @@ test.describe('Building detail upgrades', () => {
     const plannedSection = getGridSection(page, 'Planned Upgrade')
     await getGridCell(plannedSection, 0, 0).click()
 
-    await openPurchaseSelector(page)
-    const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+    const dialog = await openPurchaseSelector(page)
     const searchInput = dialog.getByPlaceholder(/search/i)
     await searchInput.fill('wood')
     await expect(searchInput).toHaveValue('wood')
@@ -8599,8 +8598,7 @@ test.describe('Procurement mode configuration', () => {
 
     // Purchase selector button remains the single entry point for product/vendor selection
     await expect(page.getByRole('button', { name: 'Choose product and vendor' })).toBeVisible()
-    await openPurchaseSelector(page)
-    const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+    const dialog = await openPurchaseSelector(page)
     await expect(dialog.getByText('Vendor link')).toBeVisible()
     await expect(dialog.getByText('Your own company')).toBeVisible()
   })

@@ -425,7 +425,7 @@ Root-cause of a CI failure (March 2026, PR #82 / power grid — second attempt):
 5. **To test locale/language changes, use `page.addInitScript(() => localStorage.setItem('app_locale', 'sk'))` before `page.goto()`.** Do NOT use `page.locator('#language-select').selectOption(...)` — the UI element can be unreliable across CI build variants.
 6. **After placing a unit via the picker (`placeUnit`), `selectedCell` is reset to null.** The cell must be clicked again before the config panel is visible.
 7. **Always run the targeted spec before `report_progress` with `CI=true`:** `CI=true npx playwright test --project=chromium e2e/<spec>.ts`. Only then run the full suite. Running without `CI=true` uses dev server which may behave differently from the production build used in CI.
-8. **When you replace an existing UI workflow (for example inline selector → full-page dialog, or removing a field like `Lock to Vendor`), update every existing Playwright assertion that references the old UI in the same session.** Do not leave legacy expectations in the suite.
+8. **When you replace an existing UI workflow (for example inline selector to full-page dialog, or removing a field like `Lock to Vendor`), update every existing Playwright assertion that references the old UI in the same session.** Do not leave legacy expectations in the suite.
 9. **Add a regression test for the new workflow itself, not just the old test rewritten.** Example: if purchase configuration moves to a full-page selector, add a test that opens the selector, chooses the item/vendor, saves, and verifies the persisted state.
 
 ## Minimal-change PR quality — prove the gap, don't just fix the symptom
