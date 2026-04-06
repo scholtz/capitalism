@@ -171,6 +171,10 @@ public static class SourcingComparisonService
             .ThenInclude(b => b.Company)
             .AsQueryable();
 
+        // Mirror PurchasingPhase.GetLocalB2BSupplies:
+        // Without a vendor lock, the purchasing unit can only source from the
+        // buyer's own company B2B units (internal inter-building transfer).
+        // With a vendor lock, it is restricted to the locked company only.
         if (unit.VendorLockCompanyId.HasValue)
             query = query.Where(u => u.Building.CompanyId == unit.VendorLockCompanyId.Value);
         else
