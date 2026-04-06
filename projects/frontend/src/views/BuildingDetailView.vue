@@ -5017,6 +5017,11 @@ watch(
   gap: 0.5rem;
 }
 
+.upgrade-summary {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
 /* Link changes summary panel shown before submission */
 .link-changes-summary {
   margin-top: 0.75rem;
@@ -5215,8 +5220,11 @@ watch(
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem 1.25rem;
+  margin-top: 1rem;
   margin-bottom: 1.5rem;
   background: linear-gradient(135deg, rgba(19, 127, 236, 0.09), rgba(0, 200, 83, 0.08));
+  border: 1px solid rgba(19, 127, 236, 0.18);
+  border-radius: var(--radius-lg, 12px);
 }
 
 .upgrade-banner-actions {
