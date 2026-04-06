@@ -2622,11 +2622,29 @@ public sealed class Mutation
         var nowUtc = DateTime.UtcNow;
         var discardedEntries = new List<FlushStorageEntry>();
 
+        // Pre-load resource and product names in a single query each to avoid N+1.
+        var resourceTypeIds = inventory.Where(i => i.ResourceTypeId.HasValue).Select(i => i.ResourceTypeId!.Value).ToHashSet();
+        var productTypeIds = inventory.Where(i => i.ProductTypeId.HasValue).Select(i => i.ProductTypeId!.Value).ToHashSet();
+
+        var resourceNames = resourceTypeIds.Count > 0
+            ? await db.ResourceTypes.AsNoTracking()
+                .Where(r => resourceTypeIds.Contains(r.Id))
+                .ToDictionaryAsync(r => r.Id, r => r.Name)
+            : new Dictionary<Guid, string>();
+
+        var productNames = productTypeIds.Count > 0
+            ? await db.ProductTypes.AsNoTracking()
+                .Where(p => productTypeIds.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id, p => p.Name)
+            : new Dictionary<Guid, string>();
+
         foreach (var item in inventory)
         {
             var itemName = item.ResourceTypeId.HasValue
-                ? (await db.ResourceTypes.AsNoTracking().Select(r => new { r.Id, r.Name }).FirstOrDefaultAsync(r => r.Id == item.ResourceTypeId))?.Name ?? "Resource"
-                : (await db.ProductTypes.AsNoTracking().Select(p => new { p.Id, p.Name }).FirstOrDefaultAsync(p => p.Id == item.ProductTypeId))?.Name ?? "Product";
+                ? (resourceNames.TryGetValue(item.ResourceTypeId.Value, out var rn) ? rn : "Resource")
+                : item.ProductTypeId.HasValue
+                    ? (productNames.TryGetValue(item.ProductTypeId.Value, out var pn) ? pn : "Product")
+                    : "Item";
 
             db.LedgerEntries.Add(new LedgerEntry
             {
@@ -2651,9 +2669,6 @@ public sealed class Mutation
                 ResourceTypeId = item.ResourceTypeId,
                 ProductTypeId = item.ProductTypeId,
             });
-
-            item.Quantity = 0m;
-            item.SourcingCostTotal = 0m;
         }
 
         db.Inventories.RemoveRange(inventory);

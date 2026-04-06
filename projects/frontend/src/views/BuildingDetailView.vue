@@ -553,6 +553,14 @@ const selectedPublicSalesUnit = computed(() =>
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
 
+/** Computed competitive price suggestion for the currently selected B2B_SALES draft unit. */
+const b2bSuggestedPrice = computed<number | null>(() => {
+  if (!selectedCell.value || !isEditing.value) return null
+  const unit = getDraftUnitAt(selectedCell.value.x, selectedCell.value.y)
+  if (!unit || unit.unitType !== 'B2B_SALES') return null
+  return getB2BSuggestedPrice(unit)
+})
+
 /** Max revenue across all history ticks – used to normalise the revenue bar chart heights. */
 const miMaxRevenue = computed(() =>
   publicSalesAnalytics.value?.revenueHistory.reduce((m, s) => Math.max(m, s.revenue), 0) ?? 0,
@@ -3947,14 +3955,14 @@ watch(
                       step="0.01"
                     />
                     <p
-                      v-if="getB2BSuggestedPrice(getDraftUnitAt(selectedCell.x, selectedCell.y)!) !== null"
+                      v-if="b2bSuggestedPrice !== null"
                       class="config-help config-price-hint"
                     >
-                      {{ t('buildingDetail.config.b2bSuggestedPrice', { price: getB2BSuggestedPrice(getDraftUnitAt(selectedCell.x, selectedCell.y)!)!.toFixed(2) }) }}
+                      {{ t('buildingDetail.config.b2bSuggestedPrice', { price: b2bSuggestedPrice!.toFixed(2) }) }}
                       <button
                         type="button"
                         class="btn-link"
-                        @click="updateSelectedUnitConfig('minPrice', getB2BSuggestedPrice(getDraftUnitAt(selectedCell.x, selectedCell.y)!))"
+                        @click="updateSelectedUnitConfig('minPrice', b2bSuggestedPrice)"
                       >{{ t('buildingDetail.config.b2bUseSuggested') }}</button>
                     </p>
                   </div>
