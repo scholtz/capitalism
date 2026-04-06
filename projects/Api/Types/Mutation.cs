@@ -1198,6 +1198,25 @@ public sealed class Mutation
         player.OnboardingFactoryLotId = null;
     }
 
+    /// <summary>
+    /// Returns a human-readable display name for a building type constant.
+    /// Used when auto-generating building names.
+    /// </summary>
+    private static string BuildingTypeDisplayName(string buildingType) => buildingType switch
+    {
+        BuildingType.Mine => "Mine",
+        BuildingType.Factory => "Factory",
+        BuildingType.SalesShop => "Sales Shop",
+        BuildingType.ResearchDevelopment => "R&D Lab",
+        BuildingType.Apartment => "Apartment",
+        BuildingType.Commercial => "Office",
+        BuildingType.MediaHouse => "Media House",
+        BuildingType.Bank => "Bank",
+        BuildingType.Exchange => "Exchange",
+        BuildingType.PowerPlant => "Power Plant",
+        _ => "Building"
+    };
+
     private sealed record StarterIpoSelection(decimal RaiseTarget, decimal FounderOwnershipRatio)
     {
         public decimal FounderShareCount => decimal.Round(DefaultCompanyShareCount * FounderOwnershipRatio, 4, MidpointRounding.AwayFromZero);
@@ -1244,7 +1263,7 @@ public sealed class Mutation
         Company company,
         Guid lotId,
         string buildingType,
-        string buildingName,
+        string? buildingName,
         decimal powerConsumption,
         DateTime builtAtUtc,
         Guid? expectedCityId = null,
@@ -1317,6 +1336,15 @@ public sealed class Mutation
         company.Cash -= totalCost;
 
         var constructionTicks = applyConstructionDelay ? Engine.GameConstants.ConstructionTicks(buildingType) : 0;
+
+        // Auto-generate a natural building name when not provided.
+        if (string.IsNullOrWhiteSpace(buildingName))
+        {
+            var existingCount = await db.Buildings
+                .CountAsync(b => b.CompanyId == company.Id && b.Type == buildingType);
+            var typeLabel = BuildingTypeDisplayName(buildingType);
+            buildingName = $"{typeLabel} #{existingCount + 1}";
+        }
 
         var building = new Building
         {

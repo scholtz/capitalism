@@ -409,6 +409,59 @@ public sealed class Query
             .ToList();
     }
 
+    /// <summary>Returns per-company wealth rankings for the leaderboard.</summary>
+    public async Task<List<CompanyRanking>> GetCompanyRankings([Service] AppDbContext db)
+    {
+        var companies = await db.Companies
+            .Include(c => c.Buildings)
+            .ThenInclude(b => b.Units)
+            .Include(c => c.Player)
+            .Where(c => c.Player != null && c.Player.Role != PlayerRole.Admin)
+            .AsSplitQuery()
+            .ToListAsync();
+
+        var buildingIds = companies
+            .SelectMany(c => c.Buildings)
+            .Select(b => b.Id)
+            .ToList();
+
+        var inventories = await db.Inventories
+            .Where(i => buildingIds.Contains(i.BuildingId))
+            .Include(i => i.ResourceType)
+            .Include(i => i.ProductType)
+            .ToListAsync();
+
+        var inventoryByBuilding = inventories
+            .GroupBy(i => i.BuildingId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        return companies
+            .Select(c =>
+            {
+                var buildingValue = c.Buildings
+                    .Sum(b => WealthCalculator.GetBuildingValue(b));
+                var inventoryValue = c.Buildings
+                    .Sum(b => inventoryByBuilding.TryGetValue(b.Id, out var inv)
+                        ? inv.Sum(i => i.Quantity * WealthCalculator.GetItemBasePrice(i))
+                        : 0m);
+
+                return new CompanyRanking
+                {
+                    CompanyId = c.Id,
+                    CompanyName = c.Name,
+                    PlayerId = c.PlayerId,
+                    OwnerDisplayName = c.Player?.DisplayName ?? "Unknown",
+                    Cash = c.Cash,
+                    BuildingValue = buildingValue,
+                    InventoryValue = inventoryValue,
+                    TotalWealth = c.Cash + buildingValue + inventoryValue,
+                    BuildingCount = c.Buildings.Count
+                };
+            })
+            .OrderByDescending(r => r.TotalWealth)
+            .ToList();
+    }
+
     /// <summary>Gets the current player's companies with their buildings.</summary>
     [Authorize]
     public async Task<List<Company>> GetMyCompanies(
@@ -2314,6 +2367,37 @@ public sealed class PlayerRanking
 
     /// <summary>Number of companies owned.</summary>
     public int CompanyCount { get; set; }
+}
+
+/// <summary>Individual company ranking for the leaderboard.</summary>
+public sealed class CompanyRanking
+{
+    /// <summary>Company identifier.</summary>
+    public Guid CompanyId { get; set; }
+
+    /// <summary>Company display name.</summary>
+    public string CompanyName { get; set; } = string.Empty;
+
+    /// <summary>Owner player identifier.</summary>
+    public Guid PlayerId { get; set; }
+
+    /// <summary>Owner player display name.</summary>
+    public string OwnerDisplayName { get; set; } = string.Empty;
+
+    /// <summary>Total company wealth = Cash + BuildingValue + InventoryValue.</summary>
+    public decimal TotalWealth { get; set; }
+
+    /// <summary>Cash on hand for this company.</summary>
+    public decimal Cash { get; set; }
+
+    /// <summary>Estimated value of company buildings.</summary>
+    public decimal BuildingValue { get; set; }
+
+    /// <summary>Estimated value of inventory in company buildings.</summary>
+    public decimal InventoryValue { get; set; }
+
+    /// <summary>Number of buildings owned by this company.</summary>
+    public int BuildingCount { get; set; }
 }
 
 /// <summary>Payload for starter industries.</summary>

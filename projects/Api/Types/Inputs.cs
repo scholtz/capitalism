@@ -72,9 +72,12 @@ public sealed class PlaceBuildingInput
     [Required, MaxLength(30)]
     public string Type { get; set; } = string.Empty;
 
-    /// <summary>Display name for the building.</summary>
-    [Required, MaxLength(200)]
-    public string Name { get; set; } = string.Empty;
+    /// <summary>
+    /// Display name for the building.
+    /// Optional — when empty or omitted, a natural name is auto-generated.
+    /// </summary>
+    [MaxLength(200)]
+    public string? Name { get; set; }
 
     /// <summary>First product to manufacture (for onboarding factory setup).</summary>
     public Guid? InitialProductTypeId { get; set; }
@@ -222,9 +225,13 @@ public sealed class PurchaseLotInput
     [Required, MaxLength(30)]
     public string BuildingType { get; set; } = string.Empty;
 
-    /// <summary>Display name for the new building.</summary>
-    [Required, MaxLength(200)]
-    public string BuildingName { get; set; } = string.Empty;
+    /// <summary>
+    /// Display name for the new building.
+    /// Optional — when empty or omitted, a natural name is auto-generated
+    /// from the building type and a sequential number (e.g. "Factory #2").
+    /// </summary>
+    [MaxLength(200)]
+    public string? BuildingName { get; set; }
 
     /// <summary>
     /// Power plant subtype (COAL, GAS, SOLAR, WIND, NUCLEAR).
