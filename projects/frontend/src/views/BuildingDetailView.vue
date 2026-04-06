@@ -69,6 +69,30 @@ type SelectorItem = {
   disabled?: boolean
 }
 
+type PurchaseVendorOption = {
+  companyId: string
+  companyName: string
+  buildingId: string
+  buildingName: string
+  cityId: string
+}
+
+type PurchaseVendorCompanyData = {
+  id: string
+  name: string
+  buildings: Array<{
+    id: string
+    name: string
+    cityId: string
+    units: Array<{
+      id: string
+      unitType: string
+      resourceTypeId: string | null
+      productTypeId: string | null
+    }>
+  }>
+}
+
 type EditableGridUnit = {
   id: string
   unitType: string
@@ -194,6 +218,8 @@ let activeProcurementPreviewRequest = 0
 const sourcingCandidates = ref<SourcingCandidate[]>([])
 const sourcingCandidatesLoading = ref(false)
 let activeSourcingCandidatesRequest = 0
+const purchaseVendorCompanies = ref<PurchaseVendorCompanyData[]>([])
+const showPurchaseSelector = ref(false)
 
 // Operational status per unit (ACTIVE/IDLE/BLOCKED/FULL/UNCONFIGURED)
 const unitOperationalStatuses = ref<BuildingUnitOperationalStatus[]>([])
@@ -550,6 +576,9 @@ const selectedPurchaseUnit = computed(() => (selectedDisplayUnit.value?.unitType
 const selectedPublicSalesUnit = computed(() =>
   !isEditing.value && selectedDisplayUnit.value?.unitType === 'PUBLIC_SALES' ? selectedDisplayUnit.value : undefined,
 )
+const selectedDraftPurchaseUnit = computed(() =>
+  isEditing.value && selectedDisplayUnit.value?.unitType === 'PURCHASE' ? (selectedDisplayUnit.value as EditableGridUnit) : undefined,
+)
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
 
@@ -615,6 +644,63 @@ const selectedPurchaseResourceSlug = computed<string | null>(() => {
   const resourceId = selectedPurchaseUnit.value?.resourceTypeId ?? null
   if (!resourceId) return null
   return resourceTypes.value.find((r) => r.id === resourceId)?.slug ?? null
+})
+
+const purchaseSelectorItems = computed<SelectorItem[]>(() => {
+  if (building.value?.type === 'FACTORY') {
+    return getFactoryPurchaseSelectableItems()
+  }
+
+  if (building.value?.type === 'SALES_SHOP') {
+    return [
+      ...allSelectableItems.value.filter((item) => item.kind === 'product'),
+      ...allSelectableItems.value.filter((item) => item.kind === 'resource'),
+    ]
+  }
+
+  return allSelectableItems.value
+})
+
+const selectedPurchaseSelection = computed<ItemSelection>(() => getItemSelection(selectedDraftPurchaseUnit.value))
+
+const purchaseVendorOptions = computed<PurchaseVendorOption[]>(() => {
+  const unit = selectedDraftPurchaseUnit.value
+  const selection = selectedPurchaseSelection.value
+  const cityId = building.value?.cityId
+  if (!unit || !selection || !cityId) return []
+
+  const options: PurchaseVendorOption[] = []
+  for (const company of purchaseVendorCompanies.value) {
+    for (const vendorBuilding of company.buildings) {
+      if (vendorBuilding.cityId !== cityId || vendorBuilding.id === building.value?.id) continue
+      const matches = vendorBuilding.units.some((candidate) =>
+        candidate.unitType === 'B2B_SALES'
+        && ((selection.kind === 'product' && candidate.productTypeId === selection.id)
+          || (selection.kind === 'resource' && candidate.resourceTypeId === selection.id)),
+      )
+
+      if (matches) {
+        options.push({
+          companyId: company.id,
+          companyName: company.name,
+          buildingId: vendorBuilding.id,
+          buildingName: vendorBuilding.name,
+          cityId: vendorBuilding.cityId,
+        })
+      }
+    }
+  }
+
+  return options
+})
+
+const selectedPurchaseVendorSummary = computed<string | null>(() => {
+  const companyId = selectedDraftPurchaseUnit.value?.vendorLockCompanyId
+  if (!companyId) return null
+  const match = purchaseVendorOptions.value.find((option) => option.companyId === companyId)
+  if (match) return `${match.companyName} · ${match.buildingName}`
+  if (companyId === building.value?.companyId) return t('buildingDetail.purchaseSelector.vendorOwnCompany')
+  return purchaseVendorCompanies.value.find((company) => company.id === companyId)?.name ?? null
 })
 
 function formatBuildingType(type: string): string {
@@ -1693,6 +1779,32 @@ function setItemSelection(unit: EditableGridUnit | undefined, selection: ItemSel
   if (!unit) return
   unit.resourceTypeId = selection?.kind === 'resource' ? selection.id : null
   unit.productTypeId = selection?.kind === 'product' ? selection.id : null
+  if (!selection) {
+    unit.vendorLockCompanyId = null
+  }
+}
+
+function openPurchaseSelector() {
+  showPurchaseSelector.value = true
+}
+
+function closePurchaseSelector() {
+  showPurchaseSelector.value = false
+}
+
+function applyPurchaseSelection(selection: ItemSelection) {
+  const unit = selectedDraftPurchaseUnit.value
+  if (!unit) return
+  setItemSelection(unit, selection)
+}
+
+function selectPurchaseVendor(companyId: string | null) {
+  const unit = selectedDraftPurchaseUnit.value
+  if (!unit) return
+  unit.vendorLockCompanyId = companyId
+  if (building.value?.type === 'SALES_SHOP' && companyId) {
+    unit.purchaseSource = 'LOCAL'
+  }
 }
 
 function getFactoryPurchaseSelectableItems(): SelectorItem[] {
@@ -2321,7 +2433,7 @@ async function loadGlobalExchangeOffers() {
   }
 }
 
-async function loadProcurementPreview() {
+async function loadProcurementPreview(isRefresh = false) {
   const unit = selectedPurchaseUnit.value
   if (!unit || !('id' in unit)) {
     procurementPreview.value = null
@@ -2331,7 +2443,9 @@ async function loadProcurementPreview() {
   const unitId = unit.id
   const requestId = ++activeProcurementPreviewRequest
 
-  procurementPreviewLoading.value = true
+  if (!isRefresh || procurementPreview.value == null) {
+    procurementPreviewLoading.value = true
+  }
   try {
     const data = await gqlRequest<{ procurementPreview: ProcurementPreview | null }>(
       `query ProcurementPreview($unitId: UUID!) {
@@ -2364,7 +2478,7 @@ async function loadProcurementPreview() {
   }
 }
 
-async function loadSourcingCandidates() {
+async function loadSourcingCandidates(isRefresh = false) {
   const unit = selectedPurchaseUnit.value
   if (!unit || !('id' in unit)) {
     sourcingCandidates.value = []
@@ -2374,7 +2488,9 @@ async function loadSourcingCandidates() {
   const unitId = unit.id
   const requestId = ++activeSourcingCandidatesRequest
 
-  sourcingCandidatesLoading.value = true
+  if (!isRefresh || sourcingCandidates.value.length === 0) {
+    sourcingCandidatesLoading.value = true
+  }
   try {
     const data = await gqlRequest<{ sourcingCandidates: SourcingCandidate[] }>(
       `query SourcingCandidates($unitId: UUID!) {
@@ -2677,6 +2793,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
       gqlRequest<{ myCompanies: Company[] }>(
         `{ myCompanies {
           id
+          name
           cash
           buildings {
             id
@@ -2835,6 +2952,24 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
     if (!deepEqual(cities.value, citiesData.cities ?? [])) {
       cities.value = citiesData.cities ?? []
     }
+    const nextPurchaseVendorCompanies: PurchaseVendorCompanyData[] = companiesData.myCompanies.map((company) => ({
+      id: company.id,
+      name: company.name,
+      buildings: company.buildings.map((candidate) => ({
+        id: candidate.id,
+        name: candidate.name,
+        cityId: candidate.cityId,
+        units: candidate.units.map((unit) => ({
+          id: unit.id,
+          unitType: unit.unitType,
+          resourceTypeId: unit.resourceTypeId,
+          productTypeId: unit.productTypeId,
+        })),
+      })),
+    }))
+    if (!deepEqual(purchaseVendorCompanies.value, nextPurchaseVendorCompanies)) {
+      purchaseVendorCompanies.value = nextPurchaseVendorCompanies
+    }
 
     const allBuildings = companiesData.myCompanies.flatMap((company) => company.buildings)
     const newBuilding = allBuildings.find((candidate) => candidate.id === buildingId.value) || null
@@ -2904,6 +3039,10 @@ useTickRefresh(async () => {
   if (unitId) {
     void loadPublicSalesAnalytics(unitId)
   }
+  if (getResolvedLiveUnitId(selectedPurchaseUnit.value)) {
+    void loadProcurementPreview(true)
+    void loadSourcingCandidates(true)
+  }
   void loadUnitOperationalStatuses(buildingId.value)
   void loadRecentActivity(buildingId.value)
 })
@@ -2924,6 +3063,9 @@ watch(
     flushStorageError.value = null
     flushStorageSuccess.value = false
     showFlushConfirmDialog.value = false
+    if (!selectedDraftPurchaseUnit.value) {
+      showPurchaseSelector.value = false
+    }
   },
 )
 
@@ -2984,6 +3126,14 @@ watch(
   () => getResolvedLiveUnitId(selectedPublicSalesUnit.value),
   (unitId) => {
     void loadPublicSalesAnalytics(unitId)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => selectedPublicSalesUnit.value?.id,
+  () => {
+    quickPriceInput.value = selectedPublicSalesUnit.value?.minPrice ?? null
   },
   { immediate: true },
 )
@@ -3064,6 +3214,75 @@ watch(
             <button v-if="building.isForSale" class="btn btn-danger" :disabled="savingSale" @click="setBuildingForSale(false)">
               {{ t('buildingDetail.cancelSale') }}
             </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="showPurchaseSelector" class="purchase-selector-page" role="dialog" :aria-label="t('buildingDetail.purchaseSelector.title')">
+        <div class="purchase-selector-shell">
+          <div class="purchase-selector-header">
+            <div>
+              <p class="purchase-selector-eyebrow">{{ t('buildingDetail.purchaseSelector.eyebrow') }}</p>
+              <h2>{{ t('buildingDetail.purchaseSelector.title') }}</h2>
+            </div>
+            <button class="btn btn-ghost" @click="closePurchaseSelector">{{ t('common.close') }}</button>
+          </div>
+
+          <div class="purchase-selector-grid">
+            <section class="purchase-selector-card">
+              <AdvancedItemSelector
+                :model-value="selectedPurchaseSelection"
+                :items="purchaseSelectorItems"
+                :label="t('buildingDetail.config.inputItem')"
+                :placeholder="t('buildingDetail.selector.searchPlaceholder')"
+                :empty-text="t('buildingDetail.selector.noItems')"
+                @update:model-value="applyPurchaseSelection"
+              />
+            </section>
+
+            <section class="purchase-selector-card">
+              <h3>{{ t('buildingDetail.purchaseSelector.vendorTitle') }}</h3>
+              <p class="config-help">{{ t('buildingDetail.purchaseSelector.vendorHelp') }}</p>
+
+              <button
+                type="button"
+                class="purchase-vendor-card"
+                :class="{ selected: selectedDraftPurchaseUnit?.vendorLockCompanyId == null }"
+                @click="selectPurchaseVendor(null)"
+              >
+                <strong>{{ t('buildingDetail.purchaseSelector.vendorAutoTitle') }}</strong>
+                <span>{{ t('buildingDetail.purchaseSelector.vendorAuto') }}</span>
+              </button>
+
+              <button
+                type="button"
+                class="purchase-vendor-card"
+                :class="{ selected: selectedDraftPurchaseUnit?.vendorLockCompanyId === building.companyId }"
+                @click="selectPurchaseVendor(building.companyId)"
+              >
+                <strong>{{ t('buildingDetail.purchaseSelector.vendorOwnCompany') }}</strong>
+                <span>{{ t('buildingDetail.purchaseSelector.vendorOwnCompanyHelp') }}</span>
+              </button>
+
+              <div v-if="purchaseVendorOptions.length > 0" class="purchase-vendor-list">
+                <button
+                  v-for="option in purchaseVendorOptions"
+                  :key="`${option.companyId}-${option.buildingId}`"
+                  type="button"
+                  class="purchase-vendor-card"
+                  :class="{ selected: selectedDraftPurchaseUnit?.vendorLockCompanyId === option.companyId }"
+                  @click="selectPurchaseVendor(option.companyId)"
+                >
+                  <strong>{{ option.companyName }}</strong>
+                  <span>{{ option.buildingName }}</span>
+                </button>
+              </div>
+              <p v-else class="config-help">{{ t('buildingDetail.purchaseSelector.vendorEmpty') }}</p>
+            </section>
+          </div>
+
+          <div class="purchase-selector-actions">
+            <button class="btn btn-primary" @click="closePurchaseSelector">{{ t('buildingDetail.purchaseSelector.done') }}</button>
           </div>
         </div>
       </div>
@@ -3829,14 +4048,31 @@ watch(
                     {{ t('buildingDetail.config.factoryPurchaseGuide') }}
                   </p>
                   <div class="config-field">
-                    <AdvancedItemSelector
-                      :model-value="getItemSelection(getDraftUnitAt(selectedCell.x, selectedCell.y))"
-                      :items="building?.type === 'FACTORY' ? getFactoryPurchaseSelectableItems() : allSelectableItems"
-                      :label="t('buildingDetail.config.inputItem')"
-                      :placeholder="t('buildingDetail.selector.searchPlaceholder')"
-                      :empty-text="t('buildingDetail.selector.noItems')"
-                      @update:model-value="setItemSelection(getDraftUnitAt(selectedCell.x, selectedCell.y), $event)"
-                    />
+                    <label class="config-label">{{ t('buildingDetail.config.inputItem') }}</label>
+                    <button type="button" class="btn btn-secondary purchase-selector-trigger" @click="openPurchaseSelector">
+                      {{
+                        selectedPurchaseSelection
+                          ? t('buildingDetail.purchaseSelector.changeSelection')
+                          : t('buildingDetail.purchaseSelector.chooseSelection')
+                      }}
+                    </button>
+                    <div class="purchase-selection-summary">
+                      <strong>
+                        {{
+                          selectedPurchaseSelection
+                            ? (selectedPurchaseSelection.kind === 'resource'
+                              ? getResourceName(selectedDraftPurchaseUnit?.resourceTypeId ?? null)
+                              : getProductName(selectedDraftPurchaseUnit?.productTypeId ?? null))
+                            : t('buildingDetail.purchaseSelector.notSelected')
+                        }}
+                      </strong>
+                      <span v-if="selectedPurchaseVendorSummary" class="purchase-selection-meta">
+                        {{ selectedPurchaseVendorSummary }}
+                      </span>
+                      <span v-else class="purchase-selection-meta">
+                        {{ t('buildingDetail.purchaseSelector.vendorAuto') }}
+                      </span>
+                    </div>
                   </div>
                   <p class="config-help">{{ t('buildingDetail.proAccessHint') }}</p>
                   <div class="config-field">
@@ -3903,21 +4139,6 @@ watch(
                     </select>
                   </div>
 
-                  <!-- Vendor lock (shown when LOCAL or OPTIMAL mode is selected) -->
-                  <div
-                    class="config-field"
-                    v-if="['LOCAL', 'OPTIMAL'].includes(getDraftUnitAt(selectedCell.x, selectedCell.y)!.purchaseSource ?? 'OPTIMAL')"
-                  >
-                    <label class="config-label">{{ t('buildingDetail.config.vendorLock') }}</label>
-                    <p class="config-help">{{ t('buildingDetail.config.vendorLockHelp') }}</p>
-                    <input
-                      type="text"
-                      class="form-input"
-                      :placeholder="t('buildingDetail.config.vendorLockPlaceholder')"
-                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.vendorLockCompanyId ?? ''"
-                      @input="updateSelectedUnitConfig('vendorLockCompanyId', ($event.target as HTMLInputElement).value || null)"
-                    />
-                  </div>
                 </template>
 
                 <!-- Manufacturing unit config -->
@@ -5547,6 +5768,7 @@ watch(
   border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 1.25rem 1.5rem;
+  margin-top: 1.25rem;
   margin-bottom: 1.5rem;
 }
 
@@ -5629,7 +5851,7 @@ watch(
 .chain-step-value {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--color-text-primary);
+  color: #0f172a;
   word-break: break-word;
 }
 
@@ -6463,6 +6685,112 @@ watch(
   font-size: 0.875rem;
   font-weight: 600;
   margin: 0 0 0.75rem;
+}
+
+.purchase-selector-trigger {
+  width: 100%;
+  justify-content: center;
+}
+
+.purchase-selection-summary {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border-top: 1px solid var(--color-border);
+  display: grid;
+  gap: 0.2rem;
+}
+
+.purchase-selection-meta {
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+}
+
+.purchase-selector-page {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(15, 23, 42, 0.82);
+  padding: 2rem;
+  overflow: auto;
+}
+
+.purchase-selector-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  background: var(--color-bg);
+  border-radius: 18px;
+  border: 1px solid var(--color-border);
+  padding: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.purchase-selector-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.purchase-selector-header h2 {
+  margin: 0.2rem 0 0;
+}
+
+.purchase-selector-eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.purchase-selector-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1.2fr 0.8fr;
+}
+
+.purchase-selector-card {
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 1rem;
+  background: var(--color-surface-raised);
+}
+
+.purchase-vendor-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.purchase-vendor-card {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 0.2rem;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  padding: 0.85rem 0.95rem;
+  cursor: pointer;
+  margin-top: 0.75rem;
+}
+
+.purchase-vendor-card.selected {
+  border-color: var(--color-primary);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.purchase-vendor-card span {
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+}
+
+.purchase-selector-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .config-field {
@@ -7466,7 +7794,7 @@ watch(
 .procurement-mode-label {
   font-weight: 600;
   font-size: 0.88rem;
-  color: var(--color-text);
+  color: #0f172a;
 }
 
 .procurement-mode-desc {
@@ -7869,4 +8197,14 @@ watch(
   font-size: 0.8rem;
   color: #065f46;
   margin: 0.35rem 0 0;
+}
+
+@media (max-width: 900px) {
+  .purchase-selector-page {
+    padding: 1rem;
+  }
+
+  .purchase-selector-grid {
+    grid-template-columns: 1fr;
+  }
 }</style>

@@ -417,7 +417,7 @@ public static class ProcurementPreviewService
             SourceType = ProcurementSourceType.LocalB2B,
             CanExecute = false,
             BlockReason = ProcurementBlockReason.NoStock,
-            BlockMessage = "No qualifying B2B supply found in this city. Check that you have a B2B Sales unit in another building with stock and a qualifying price.",
+            BlockMessage = "No qualifying same-city B2B supply was found. Configure a B2B Sales unit with matching stock in another building, or select a vendor/company that already has inventory available at a qualifying price and quality.",
         };
     }
 }
