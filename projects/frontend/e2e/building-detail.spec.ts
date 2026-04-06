@@ -12,6 +12,20 @@ function getGridCell(section: ReturnType<typeof getGridSection>, x: number, y: n
   return section.locator('.unit-row').nth(y).locator('.grid-cell').nth(x)
 }
 
+async function openPurchaseSelector(page: Parameters<typeof test>[0]['page']) {
+  await page.getByRole('button', { name: /product and vendor/i }).click()
+  await expect(page.getByRole('dialog', { name: 'Choose product and vendor' })).toBeVisible()
+}
+
+async function selectPurchaseItem(page: Parameters<typeof test>[0]['page'], searchTerm: string, optionName: RegExp) {
+  await openPurchaseSelector(page)
+  const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+  await dialog.getByPlaceholder(/search/i).fill(searchTerm)
+  await dialog.getByRole('button', { name: optionName }).first().click()
+  await dialog.getByRole('button', { name: 'Done' }).click()
+  await expect(dialog).toBeHidden()
+}
+
 test.describe('Building detail upgrades', () => {
   test('allows revising links while a unit upgrade is still pending', async ({ page }) => {
     const player = makePlayer()
@@ -292,8 +306,9 @@ test.describe('Building detail upgrades', () => {
     await expect(page.getByText('Unit Configuration')).toBeVisible()
     await expect(page.getByText('Unit Settings')).toBeVisible()
     await expect(page.getByText('Input Item')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Choose product and vendor' })).toBeVisible()
     await expect(page.getByText('Max Price')).toBeVisible()
-    await expect(page.getByText('Procurement Mode')).toBeVisible()
+    await expect(page.locator('.config-field').filter({ has: page.getByText('Procurement Mode', { exact: true }) })).toBeVisible()
 
     // Click on Manufacturing unit
     await getGridCell(plannedSection, 1, 0).click()
@@ -1459,8 +1474,11 @@ test.describe('Building detail upgrades', () => {
     await getGridCell(plannedSection, 0, 0).click()
 
     await expect(page.getByText('Input Item')).toBeVisible()
-    await expect(page.getByText('Electronic Components')).toBeVisible()
-    await expect(page.getByText('Wooden Chair')).toHaveCount(0)
+    await openPurchaseSelector(page)
+    const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+    await expect(dialog.getByText('Electronic Components')).toBeVisible()
+    await expect(dialog.getByText('Wooden Chair')).toHaveCount(0)
+    await dialog.getByRole('button', { name: 'Done' }).click()
   })
 
   test('manufacturing selector only shows outputs supported by linked inputs', async ({ page }) => {
@@ -2803,9 +2821,12 @@ test.describe('Building detail upgrades', () => {
     const plannedSection = getGridSection(page, 'Planned Upgrade')
     await getGridCell(plannedSection, 0, 0).click()
 
-    const searchInput = page.locator('.sidebar .selector-search')
+    await openPurchaseSelector(page)
+    const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+    const searchInput = dialog.getByPlaceholder(/search/i)
     await searchInput.fill('wood')
     await expect(searchInput).toHaveValue('wood')
+    await dialog.getByRole('button', { name: 'Done' }).click()
 
     // Switch procurement mode using label clicks (EXCHANGE, then OPTIMAL)
     await page
@@ -3107,7 +3128,7 @@ test.describe('Global exchange market', () => {
     // Config panel should open for the placed PURCHASE unit
     await expect(page.getByText('Unit Configuration')).toBeVisible()
     await expect(page.getByText('Input Item')).toBeVisible()
-    await expect(page.getByText('Procurement Mode')).toBeVisible()
+    await expect(page.locator('.config-field').filter({ has: page.getByText('Procurement Mode', { exact: true }) })).toBeVisible()
 
     // Set procurement mode to EXCHANGE via label click
     await page
@@ -4451,8 +4472,7 @@ test.describe('Production chain configuration', () => {
 
     // Configure with Wood resource via the item selector
     await expect(page.getByText('Input Item')).toBeVisible()
-    await page.getByPlaceholder(/Search/i).fill('Wood')
-    await page.getByRole('button', { name: /^Wood/ }).first().click()
+    await selectPurchaseItem(page, 'Wood', /^Wood/)
 
     // Save the configuration
     const storeBtn = page.getByRole('button', { name: /Store Upgrade/i })
@@ -4734,9 +4754,8 @@ test.describe('Production chain configuration', () => {
     await expect(page.getByText('Input Item')).toBeVisible()
     // Onboarding guide should be visible for FACTORY PURCHASE unit
     await expect(page.getByText(/raw material this factory will buy/i)).toBeVisible()
-    await page.getByPlaceholder(/Search/i).fill('Wood')
-    await page.getByRole('button', { name: /^Wood/ }).first().click()
-    await expect(page.locator('.selected-chip')).toContainText('Wood')
+    await selectPurchaseItem(page, 'Wood', /^Wood/)
+    await expect(page.locator('.purchase-selection-summary')).toContainText('Wood')
 
     // Step 4: Configure the MANUFACTURING unit — Wooden Chair should appear (Wood recipe matches)
     await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
@@ -4837,11 +4856,7 @@ test.describe('Production chain configuration', () => {
     // by re-clicking PURCHASE and switching to Wood
     await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
     await expect(page.getByText('Input Item')).toBeVisible()
-    // Clear the current selection (scope to the config panel to avoid strict-mode issues
-    // when multiple chips exist across the sidebar and the planned grid cells).
-    await page.locator('.unit-config-fields .selected-chip').click() // deselect Grain
-    await page.getByPlaceholder(/Search/i).fill('Wood')
-    await page.getByRole('button', { name: /^Wood/ }).first().click()
+    await selectPurchaseItem(page, 'Wood', /^Wood/)
 
     // Now PURCHASE has Wood but MANUFACTURING has Bread (which requires Grain) — incompatible!
     // Click Store Upgrade — the mock should return RECIPE_INPUT_MISMATCH
@@ -7080,7 +7095,7 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(panel).toBeVisible()
 
     // Price chart should be visible
-    const priceChart = panel.locator('[aria-label="Realized Price per Tick"]')
+    const priceChart = panel.locator('.mi-bar-chart-price')
     await expect(priceChart).toBeVisible()
     // Price bars should be rendered for each tick
     await expect(priceChart.locator('.mi-bar-price').first()).toBeVisible()
@@ -8486,7 +8501,7 @@ test.describe('Procurement mode configuration', () => {
     await getGridCell(plannedSection, 0, 0).click()
 
     // Procurement Mode section should appear
-    await expect(page.getByText('Procurement Mode')).toBeVisible()
+    await expect(page.locator('.config-field').filter({ has: page.getByText('Procurement Mode', { exact: true }) })).toBeVisible()
 
     // Should show OPTIMAL as selected (default) — check via label class
     await expect(page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) })).toHaveClass(/selected/)
@@ -8582,8 +8597,138 @@ test.describe('Procurement mode configuration', () => {
       .filter({ has: page.locator('.procurement-mode-label', { hasText: 'Local Supplier' }) })
       .click()
 
-    // Vendor lock input should appear
-    await expect(page.getByText('Lock to Vendor')).toBeVisible()
+    // Purchase selector button remains the single entry point for product/vendor selection
+    await expect(page.getByRole('button', { name: 'Choose product and vendor' })).toBeVisible()
+    await openPurchaseSelector(page)
+    const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+    await expect(dialog.getByText('Vendor link')).toBeVisible()
+    await expect(dialog.getByText('Your own company')).toBeVisible()
+  })
+
+  test('sales shop purchase selector can lock sourcing to your own company and persists it on save', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-shop-own',
+      playerId: player.id,
+      name: 'Own Supply Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-own-shop',
+          companyId: 'company-shop-own',
+          cityId: 'city-ba',
+          type: 'SALES_SHOP',
+          name: 'Own Shop',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 1,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'own-shop-purchase',
+              buildingId: 'building-own-shop',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            } satisfies MockBuildingUnit,
+            {
+              id: 'own-shop-sales',
+              buildingId: 'building-own-shop',
+              unitType: 'PUBLIC_SALES',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: true,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+        {
+          id: 'building-own-factory',
+          companyId: 'company-shop-own',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Own Factory',
+          latitude: 48.16,
+          longitude: 17.12,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'own-factory-b2b',
+              buildingId: 'building-own-factory',
+              unitType: 'B2B_SALES',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              productTypeId: 'prod-chair',
+              minPrice: 45,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-own-shop')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 0, 0).click()
+    await selectPurchaseItem(page, 'chair', /Wooden Chair/)
+
+    await openPurchaseSelector(page)
+    const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+    await dialog.getByRole('button', { name: 'Your own company' }).click()
+    await dialog.getByRole('button', { name: 'Done' }).click()
+
+    await expect(page.locator('.purchase-selection-summary')).toContainText('Wooden Chair')
+    await expect(page.locator('.purchase-selection-summary')).toContainText('Your own company')
+
+    await page.getByRole('button', { name: /Store Upgrade/i }).click()
+
+    const pendingUnits = state.players[0].companies[0].buildings[0].pendingConfiguration?.units ?? []
+    const purchaseUnit = pendingUnits.find((unit) => unit.unitType === 'PURCHASE')
+    expect(purchaseUnit?.productTypeId).toBe('prod-chair')
+    expect(purchaseUnit?.vendorLockCompanyId).toBe('company-shop-own')
+    expect(purchaseUnit?.purchaseSource).toBe('LOCAL')
   })
 
   test('procurement preview card shows for active PURCHASE unit in view mode', async ({ page }) => {
