@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  buildBuildingFinancialChartModel,
-  type BuildingFinancialChartTick,
-  type BuildingFinancialSeriesKey,
-} from '@/lib/buildingFinancialChart'
+import { buildBuildingFinancialChartModel, type BuildingFinancialChartTick, type BuildingFinancialSeriesKey } from '@/lib/buildingFinancialChart'
 import type { BuildingFinancialTickSnapshot } from '@/types'
 
 const props = defineProps<{
@@ -82,11 +78,11 @@ function getTickTitle(tick: BuildingFinancialChartTick): string {
   <div class="building-financial-chart-card">
     <template v-if="chartModel.hasData">
       <div class="building-financial-chart-header">
-      <div>
-        <span class="building-financial-chart-caption">{{ t('buildingDetail.overview.chartTitle') }}</span>
-        <strong v-if="activeTick" class="building-financial-active-tick">{{ t('buildingDetail.overview.tickLabel', { tick: activeTick.tick }) }}</strong>
-      </div>
-      <p class="config-help">{{ t('buildingDetail.overview.hoverHint') }}</p>
+        <div>
+          <span class="building-financial-chart-caption">{{ t('buildingDetail.overview.chartTitle') }}</span>
+          <strong v-if="activeTick" class="building-financial-active-tick">{{ t('buildingDetail.overview.tickLabel', { tick: activeTick.tick }) }}</strong>
+        </div>
+        <p class="config-help">{{ t('buildingDetail.overview.hoverHint') }}</p>
       </div>
 
       <div class="building-financial-chart-detail-grid">
@@ -97,12 +93,7 @@ function getTickTitle(tick: BuildingFinancialChartTick): string {
       </div>
 
       <div class="building-financial-chart-shell">
-        <svg
-          class="building-financial-chart"
-          :viewBox="`0 0 ${plotWidth} ${plotHeight}`"
-          role="img"
-          :aria-label="t('buildingDetail.overview.chartAriaLabel')"
-        >
+        <svg class="building-financial-chart" :viewBox="`0 0 ${plotWidth} ${plotHeight}`" role="img" :aria-label="t('buildingDetail.overview.chartAriaLabel')">
           <line
             v-for="ratio in gridLineRatios"
             :key="ratio"
@@ -112,23 +103,10 @@ function getTickTitle(tick: BuildingFinancialChartTick): string {
             :x2="plotWidth"
             :y2="plotHeight - plotHeight * ratio"
           />
-          <line
-            class="building-financial-chart-grid-line building-financial-chart-baseline"
-            x1="0"
-            :y1="chartModel.zeroLineY"
-            :x2="plotWidth"
-            :y2="chartModel.zeroLineY"
-          />
+          <line class="building-financial-chart-grid-line building-financial-chart-baseline" x1="0" :y1="chartModel.zeroLineY" :x2="plotWidth" :y2="chartModel.zeroLineY" />
 
           <g v-for="series in chartModel.series" :key="series.key">
-            <polyline
-              class="building-financial-chart-line"
-              fill="none"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              :stroke="seriesDisplay[series.key].color"
-              :points="series.polylinePoints"
-            />
+            <polyline class="building-financial-chart-line" fill="none" stroke-linecap="round" stroke-linejoin="round" :stroke="seriesDisplay[series.key].color" :points="series.polylinePoints" />
             <circle
               v-for="point in series.points"
               :key="`${series.key}-${point.tick}`"
@@ -144,10 +122,7 @@ function getTickTitle(tick: BuildingFinancialChartTick): string {
           </g>
         </svg>
 
-        <div
-          class="building-financial-chart-hit-grid"
-          :style="{ gridTemplateColumns: `repeat(${Math.max(chartModel.ticks.length, 1)}, minmax(0, 1fr))` }"
-        >
+        <div class="building-financial-chart-hit-grid" :style="{ gridTemplateColumns: `repeat(${Math.max(chartModel.ticks.length, 1)}, minmax(0, 1fr))` }">
           <button
             v-for="(tick, index) in chartModel.ticks"
             :key="`tick-hit-${tick.tick}`"
@@ -223,8 +198,7 @@ function getTickTitle(tick: BuildingFinancialChartTick): string {
   position: relative;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-surface-muted) 84%, white 16%), var(--color-surface));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface-muted) 84%, white 16%), var(--color-surface));
   padding: 0.85rem;
   overflow: hidden;
 }

@@ -23,7 +23,7 @@ describe('buildBuildingFinancialChartModel', () => {
     const profitSeries = model.series.find((series) => series.key === 'profit')
     expect(profitSeries?.points).toHaveLength(3)
     expect(profitSeries?.points[1]?.value).toBe(-10)
-    expect((profitSeries?.points[1]?.y ?? 0)).toBeGreaterThan(model.zeroLineY)
+    expect(profitSeries?.points[1]?.y ?? 0).toBeGreaterThan(model.zeroLineY)
   })
 
   it('treats an all-zero timeline as no data', () => {

@@ -60,11 +60,7 @@ function getScaleCeiling(value: number): number {
 }
 
 function getScaleBounds(entries: BuildingFinancialTickSnapshot[]): { minValue: number; maxValue: number } {
-  const values = entries.flatMap((entry) => [
-    normalizeMetric(entry.sales),
-    normalizeMetric(entry.costs),
-    normalizeMetric(entry.profit),
-  ])
+  const values = entries.flatMap((entry) => [normalizeMetric(entry.sales), normalizeMetric(entry.costs), normalizeMetric(entry.profit)])
 
   const minObservedValue = values.reduce((currentMin, value) => Math.min(currentMin, value), 0)
   const maxObservedValue = values.reduce((currentMax, value) => Math.max(currentMax, value), 0)
@@ -92,11 +88,7 @@ function getYCoordinate(value: number, minValue: number, maxValue: number, heigh
   return roundMetric(height - ratio * height)
 }
 
-export function buildBuildingFinancialChartModel(
-  entries: BuildingFinancialTickSnapshot[],
-  width: number,
-  height: number,
-): BuildingFinancialChartModel {
+export function buildBuildingFinancialChartModel(entries: BuildingFinancialTickSnapshot[], width: number, height: number): BuildingFinancialChartModel {
   const sortedEntries = [...entries].sort((left, right) => left.tick - right.tick)
   const hasData = sortedEntries.some((entry) => entry.sales > 0 || entry.costs > 0 || entry.profit !== 0)
   const { minValue, maxValue } = getScaleBounds(sortedEntries)
