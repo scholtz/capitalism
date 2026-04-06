@@ -338,7 +338,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var response = await _client.GetAsync("/");
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("Capitalism V API", body.GetProperty("name").GetString());
+        Assert.Equal("Capitalism V Game API", body.GetProperty("name").GetString());
     }
 
     [Fact]

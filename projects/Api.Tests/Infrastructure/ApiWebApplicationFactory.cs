@@ -20,6 +20,8 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>
         {
             configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {
+                // Unique per-factory SQLite connection string triggers the SQLite path in Program.cs
+                // for the Testing environment, ensuring test-class isolation.
                 ["ConnectionStrings:GameCatalog"] = $"Data Source={_databasePath}",
                 ["SeedData:AdminEmail"] = "admin@capitalism.local",
                 ["SeedData:AdminDisplayName"] = "Platform Admin",

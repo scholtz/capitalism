@@ -1067,14 +1067,16 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             .Where(lot => lot.BuildingId == premiumShop.Id || lot.BuildingId == outskirtsShop.Id)
             .ToDictionaryAsync(lot => lot.BuildingId!.Value);
 
-        var revenuesByBuilding = await db.PublicSalesRecords
+        var revenuesByBuilding = (await db.PublicSalesRecords
             .Where(record => record.BuildingId == premiumShop.Id || record.BuildingId == outskirtsShop.Id)
+            .ToListAsync())
             .GroupBy(record => record.BuildingId)
-            .ToDictionaryAsync(group => group.Key, group => group.Sum(record => record.Revenue));
-        var demandByBuilding = await db.PublicSalesRecords
+            .ToDictionary(group => group.Key, group => group.Sum(record => record.Revenue));
+        var demandByBuilding = (await db.PublicSalesRecords
             .Where(record => record.BuildingId == premiumShop.Id || record.BuildingId == outskirtsShop.Id)
+            .ToListAsync())
             .GroupBy(record => record.BuildingId)
-            .ToDictionaryAsync(group => group.Key, group => group.Sum(record => record.Demand));
+            .ToDictionary(group => group.Key, group => group.Sum(record => record.Demand));
 
         Assert.True(lotsByBuilding[premiumShop.Id].PopulationIndex > lotsByBuilding[outskirtsShop.Id].PopulationIndex,
             "The premium retail lot should retain a higher population index than the outskirt lot during the land market phase.");
