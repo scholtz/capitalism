@@ -9,6 +9,9 @@ namespace Api.Engine.Phases;
 /// and brand awareness. When multiple sellers compete in the same city for the
 /// same product, total city demand is shared proportionally based on each
 /// seller's competitiveness score (price attractiveness × quality × brand).
+/// A public-sell index then limits each offer to 0-50% of its current stock
+/// based on market saturation, competition, pricing, quality, brand, and lot
+/// location so oversupplied markets clear more slowly.
 /// Revenue is credited to the owning company.
 /// Runs early so that sales consume inventory produced in prior ticks.
 /// </summary>
@@ -53,13 +56,10 @@ public sealed class PublicSalesPhase : ITickPhase
                     continue;
 
                 lotsByBuildingId.TryGetValue(building.Id, out var lot);
-                var salesCapacity = GameConstants.SalesCapacity(unit.Level) * efficiency;
-                var usedCapacity = 0m;
 
                 foreach (var inv in inventories)
                 {
                     if (inv.Quantity <= 0m) continue;
-                    if (usedCapacity >= salesCapacity) break;
 
                     Guid? itemId = inv.ProductTypeId ?? inv.ResourceTypeId;
                     if (itemId is null) continue;
@@ -67,6 +67,7 @@ public sealed class PublicSalesPhase : ITickPhase
                     decimal basePrice;
                     string? industry = null;
                     string? productName = null;
+                    decimal? brandAwareness = null;
                     if (inv.ProductTypeId.HasValue && context.ProductTypesById.TryGetValue(inv.ProductTypeId.Value, out var pt))
                     {
                         basePrice = pt.BasePrice;
@@ -86,20 +87,18 @@ public sealed class PublicSalesPhase : ITickPhase
                     if (price <= 0m) price = basePrice;
 
                     var populationIndex = lot?.PopulationIndex > 0m ? lot.PopulationIndex : 1m;
-                    var priceRatio = basePrice > 0m ? price / basePrice : 1m;
-                    var priceMultiplier = Math.Max(0m, 2m - priceRatio);
-                    var qualityMultiplier = Math.Max(0.1m, inv.Quality);
+                    var priceFactor = ComputePriceFactor(basePrice, price);
+                    var qualityMultiplier = Math.Max(0.15m, inv.Quality);
+                    var qualityDemandFactor = ComputeQualityDemandFactor(inv.Quality);
 
                     var brand = context.FindBrand(building.CompanyId, inv.ProductTypeId, industry);
-                    var brandMultiplier = 0.3m + (brand?.Awareness ?? 0m) * 0.7m;
+                    brandAwareness = Math.Clamp(brand?.Awareness ?? 0m, 0m, 1m);
+                    var brandFactor = ComputeBrandFactor(brandAwareness.Value);
 
                     // Competitiveness score determines market-share allocation.
                     // PopulationIndex represents foot traffic / location advantage.
-                    var competitiveness = priceMultiplier * qualityMultiplier * brandMultiplier * populationIndex;
+                    var competitiveness = priceFactor * qualityMultiplier * brandFactor * populationIndex;
                     if (competitiveness <= 0m) continue;
-
-                    var availableCapacity = salesCapacity - usedCapacity;
-                    var maxCanSell = Math.Min(inv.Quantity, availableCapacity);
 
                     offers.Add(new SalesOffer
                     {
@@ -116,12 +115,14 @@ public sealed class PublicSalesPhase : ITickPhase
                         Industry = industry,
                         ProductName = productName,
                         PopulationIndex = populationIndex,
+                        PriceFactor = priceFactor,
+                        QualityDemandFactor = qualityDemandFactor,
+                        BrandAwareness = brandAwareness.Value,
+                        BrandFactor = brandFactor,
                         Competitiveness = competitiveness,
-                        MaxCanSell = maxCanSell,
+                        CurrentStock = inv.Quantity,
+                        MaxCanSell = inv.Quantity,
                     });
-
-                    // Reserve capacity for this inventory slot.
-                    usedCapacity += maxCanSell;
                 }
             }
         }
@@ -143,17 +144,32 @@ public sealed class PublicSalesPhase : ITickPhase
 
             // City-level base demand for this product (population-driven, no location bias).
             var cityBaseDemand = city.Population * GameConstants.BaseDemandPerCapita;
+            if (cityBaseDemand <= 0m)
+                continue;
+
+            var totalCurrentStock = groupList.Sum(o => o.CurrentStock);
+            var saturationFactor = ComputeSaturationFactor(cityBaseDemand, totalCurrentStock);
+            var maxPopulationIndex = Math.Max(1m, groupList.Max(o => o.PopulationIndex));
+            var weightedDemandAttractiveness = totalCurrentStock > 0m
+                ? groupList.Sum(offer => offer.CurrentStock * ComputeDemandAttractiveness(offer, maxPopulationIndex)) / totalCurrentStock
+                : 0m;
+            var effectiveCityDemand = cityBaseDemand * ComputeMarketDemandFactor(saturationFactor, weightedDemandAttractiveness);
+            if (effectiveCityDemand <= 0m)
+                continue;
 
             // Total competitiveness of all sellers (used for market-share split).
             var totalCompetitiveness = groupList.Sum(o => o.Competitiveness);
+            if (totalCompetitiveness <= 0m)
+                continue;
 
             foreach (var offer in groupList)
             {
                 // Market share: each seller's fraction of city demand based on competitiveness.
-                // For a single seller, marketShare = 1.0 and demand = cityBaseDemand × competitiveness.
-                // For multiple sellers, demand is proportionally split so total ≤ cityBaseDemand × avgCompetitiveness.
+                // For a single seller, marketShare = 1.0 and demand = effectiveCityDemand.
+                // For multiple sellers, the effective demand is proportionally split based on
+                // each seller's competitiveness so stronger offers win a larger share.
                 var marketShare = offer.Competitiveness / totalCompetitiveness;
-                var demand = cityBaseDemand * marketShare;
+                var demand = effectiveCityDemand * marketShare;
 
                 // Enforce unit-level sales capacity.
                 unitSoldTotals.TryGetValue(offer.Unit.Id, out var unitSoldSoFar);
@@ -166,8 +182,23 @@ public sealed class PublicSalesPhase : ITickPhase
                 }
 
                 var remainingCapacity = Math.Max(0m, salesCapacity - unitSoldSoFar);
+                if (remainingCapacity <= 0m)
+                    continue;
 
-                var sold = Math.Min(demand, Math.Min(offer.MaxCanSell, remainingCapacity));
+                var locationFactor = ComputeLocationFactor(offer.PopulationIndex, maxPopulationIndex);
+                var competitionFactor = ComputeCompetitionFactor(marketShare);
+                var publicSellIndex = ComputePublicSellIndex(
+                    saturationFactor,
+                    offer.PriceFactor,
+                    offer.QualityDemandFactor,
+                    offer.BrandFactor,
+                    locationFactor,
+                    competitionFactor);
+                var stockTurnoverCap = offer.CurrentStock * 0.5m * publicSellIndex;
+
+                var sold = Math.Min(
+                    demand,
+                    Math.Min(stockTurnoverCap, Math.Min(offer.MaxCanSell, remainingCapacity)));
                 sold = Math.Max(0m, Math.Floor(sold * 10000m) / 10000m);
                 if (sold <= 0m) continue;
 
@@ -219,6 +250,85 @@ public sealed class PublicSalesPhase : ITickPhase
         }
     }
 
+    private static decimal ComputePriceFactor(decimal basePrice, decimal price)
+    {
+        if (basePrice <= 0m)
+            return 1m;
+
+        var priceRatio = price / basePrice;
+        return Math.Clamp(2m - priceRatio, 0.05m, 1m);
+    }
+
+    private static decimal ComputeQualityDemandFactor(decimal quality) =>
+        Math.Clamp(0.2m + Math.Min(1m, quality) * 0.8m, 0.2m, 1m);
+
+    private static decimal ComputeBrandFactor(decimal awareness) =>
+        Math.Clamp(0.2m + awareness * 0.8m, 0.2m, 1m);
+
+    private static decimal ComputeSaturationFactor(decimal cityBaseDemand, decimal totalCurrentStock)
+    {
+        if (cityBaseDemand <= 0m)
+            return 0m;
+
+        if (totalCurrentStock <= 0m)
+            return 1m;
+
+        return Math.Clamp(cityBaseDemand / totalCurrentStock, 0.05m, 1m);
+    }
+
+    private static decimal ComputeLocationFactor(decimal populationIndex, decimal maxPopulationIndex)
+    {
+        if (maxPopulationIndex <= 0m)
+            return 1m;
+
+        return Math.Clamp(populationIndex / maxPopulationIndex, 0.25m, 1m);
+    }
+
+    private static decimal ComputeDemandAttractiveness(SalesOffer offer, decimal maxPopulationIndex)
+    {
+        var locationFactor = ComputeLocationFactor(offer.PopulationIndex, maxPopulationIndex);
+        return Math.Clamp(
+            offer.PriceFactor * 0.40m
+            + offer.QualityDemandFactor * 0.25m
+            + offer.BrandFactor * 0.20m
+            + locationFactor * 0.15m,
+            0.05m,
+            1m);
+    }
+
+    private static decimal ComputeMarketDemandFactor(decimal saturationFactor, decimal weightedDemandAttractiveness)
+    {
+        var marketAbsorptionFactor = 0.25m + (0.75m * saturationFactor);
+        return Math.Clamp(marketAbsorptionFactor * Math.Max(0.15m, weightedDemandAttractiveness), 0.05m, 1m);
+    }
+
+    private static decimal ComputeCompetitionFactor(decimal marketShare)
+    {
+        if (marketShare <= 0m)
+            return 0.05m;
+
+        return Math.Clamp((decimal)Math.Sqrt((double)marketShare), 0.05m, 1m);
+    }
+
+    private static decimal ComputePublicSellIndex(
+        decimal saturationFactor,
+        decimal priceFactor,
+        decimal qualityDemandFactor,
+        decimal brandFactor,
+        decimal locationFactor,
+        decimal competitionFactor)
+    {
+        return Math.Clamp(
+            saturationFactor * 0.40m
+            + priceFactor * 0.15m
+            + qualityDemandFactor * 0.10m
+            + brandFactor * 0.10m
+            + locationFactor * 0.10m
+            + competitionFactor * 0.15m,
+            0.05m,
+            1m);
+    }
+
     /// <summary>
     /// Intermediate structure holding a single seller's offer for one product in one city.
     /// </summary>
@@ -237,7 +347,12 @@ public sealed class PublicSalesPhase : ITickPhase
         public string? Industry { get; init; }
         public string? ProductName { get; init; }
         public decimal PopulationIndex { get; init; }
+        public decimal PriceFactor { get; init; }
+        public decimal QualityDemandFactor { get; init; }
+        public decimal BrandAwareness { get; init; }
+        public decimal BrandFactor { get; init; }
         public decimal Competitiveness { get; init; }
+        public decimal CurrentStock { get; init; }
         public decimal MaxCanSell { get; init; }
     }
 }

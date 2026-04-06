@@ -411,6 +411,120 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         return (company.Id, building.Id);
     }
 
+    private static City CreatePublicSalesTestCity(string suffix, int population) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = $"Public Sales {suffix}",
+        CountryCode = "TS",
+        Latitude = 48.15,
+        Longitude = 17.11,
+        Population = population,
+        AverageRentPerSqm = 18m,
+        BaseSalaryPerManhour = 12m,
+    };
+
+    private static (Guid CompanyId, Guid BuildingId, Guid UnitId) AddPublicSalesSeller(
+        AppDbContext db,
+        City city,
+        ProductType product,
+        string suffix,
+        decimal stockQuantity,
+        decimal quality = 0.85m,
+        decimal priceMultiplier = 1m,
+        decimal populationIndex = 1m,
+        decimal brandAwareness = 0m)
+    {
+        var player = new Player
+        {
+            Id = Guid.NewGuid(),
+            Email = $"public-sales-{suffix}-{Guid.NewGuid():N}@test.com",
+            DisplayName = $"Public Sales {suffix}",
+            PasswordHash = "hash",
+            Role = PlayerRole.Player,
+        };
+        db.Players.Add(player);
+
+        var company = new Company
+        {
+            Id = Guid.NewGuid(),
+            PlayerId = player.Id,
+            Name = $"Public Sales Co {suffix}",
+            Cash = 2_000_000m,
+        };
+        db.Companies.Add(company);
+
+        var coordinateOffset = Math.Abs(Guid.NewGuid().GetHashCode() % 500) / 100000d;
+        var building = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = BuildingType.SalesShop,
+            Name = $"Sales Shop {suffix}",
+            Latitude = city.Latitude + coordinateOffset,
+            Longitude = city.Longitude + coordinateOffset,
+            Level = 1,
+        };
+        db.Buildings.Add(building);
+
+        var unit = new BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = UnitType.PublicSales,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ProductTypeId = product.Id,
+            MinPrice = product.BasePrice * priceMultiplier,
+        };
+        db.BuildingUnits.Add(unit);
+
+        db.Inventories.Add(new Inventory
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            BuildingUnitId = unit.Id,
+            ProductTypeId = product.Id,
+            Quantity = stockQuantity,
+            Quality = quality,
+        });
+
+        db.BuildingLots.Add(new BuildingLot
+        {
+            Id = Guid.NewGuid(),
+            CityId = city.Id,
+            Name = $"Retail Lot {suffix}",
+            Description = "Isolated retail test lot.",
+            District = "Retail District",
+            Latitude = building.Latitude,
+            Longitude = building.Longitude,
+            PopulationIndex = populationIndex,
+            BasePrice = 100_000m,
+            Price = 100_000m,
+            SuitableTypes = BuildingType.SalesShop,
+            OwnerCompanyId = company.Id,
+            BuildingId = building.Id,
+        });
+
+        if (brandAwareness > 0m)
+        {
+            db.Brands.Add(new Brand
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = company.Id,
+                Name = $"Brand {suffix}",
+                Scope = BrandScope.Product,
+                ProductTypeId = product.Id,
+                Awareness = brandAwareness,
+                Quality = 0m,
+                MarketingEfficiencyMultiplier = 1m,
+            });
+        }
+
+        return (company.Id, building.Id, unit.Id);
+    }
+
     #endregion
 
     [Fact]
@@ -592,6 +706,175 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         // Sales should have generated revenue.
         Assert.True(company.Cash > cashBefore,
             "Company cash should increase after public sales.");
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_OversuppliedMarket_SellsLessThanBalancedMarket()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(candidate => candidate.Slug == "wooden-chair");
+
+        var balancedCity = CreatePublicSalesTestCity("Balanced", 20_000);
+        var oversuppliedCity = CreatePublicSalesTestCity("Oversupplied", 20_000);
+        db.Cities.AddRange(balancedCity, oversuppliedCity);
+
+        var (_, _, balancedUnitId) = AddPublicSalesSeller(
+            db,
+            balancedCity,
+            product,
+            "Balanced",
+            stockQuantity: 40m,
+            quality: 0.9m,
+            populationIndex: 1m);
+        var (_, _, oversuppliedUnitId) = AddPublicSalesSeller(
+            db,
+            oversuppliedCity,
+            product,
+            "Oversupplied",
+            stockQuantity: 200m,
+            quality: 0.9m,
+            populationIndex: 1m);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var balancedSold = await db.PublicSalesRecords
+            .Where(record => record.BuildingUnitId == balancedUnitId)
+            .Select(record => record.QuantitySold)
+            .SingleAsync();
+        var oversuppliedSold = await db.PublicSalesRecords
+            .Where(record => record.BuildingUnitId == oversuppliedUnitId)
+            .Select(record => record.QuantitySold)
+            .SingleAsync();
+
+        Assert.True(
+            oversuppliedSold < balancedSold,
+            $"Oversupplied market should sell less than a balanced market. Balanced sold {balancedSold}, oversupplied sold {oversuppliedSold}.");
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_OversuppliedMarket_VariesSalesAcrossTicks()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(candidate => candidate.Slug == "wooden-chair");
+
+        var city = CreatePublicSalesTestCity("Tick Variation", 10_000);
+        db.Cities.Add(city);
+        var (_, _, unitId) = AddPublicSalesSeller(
+            db,
+            city,
+            product,
+            "Tick Variation",
+            stockQuantity: 30m,
+            quality: 0.9m,
+            populationIndex: 1m);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+        await processor.ProcessTickAsync();
+        await processor.ProcessTickAsync();
+
+        var soldQuantities = await db.PublicSalesRecords
+            .Where(record => record.BuildingUnitId == unitId)
+            .OrderBy(record => record.Tick)
+            .Select(record => record.QuantitySold)
+            .ToListAsync();
+
+        Assert.Equal(3, soldQuantities.Count);
+        Assert.All(soldQuantities, quantity => Assert.True(quantity > 0m, "Every tick should sell some stock in this setup."));
+        Assert.True(
+            soldQuantities.Distinct().Count() > 1,
+            $"Sales should vary between ticks once saturation responds to changing stock. Quantities: {string.Join(", ", soldQuantities)}");
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_NeverSellsMoreThanHalfOfCurrentStock()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(candidate => candidate.Slug == "wooden-chair");
+
+        var city = CreatePublicSalesTestCity("Stock Cap", 1_000_000);
+        db.Cities.Add(city);
+        var (_, _, unitId) = AddPublicSalesSeller(
+            db,
+            city,
+            product,
+            "Stock Cap",
+            stockQuantity: 10m,
+            quality: 1m,
+            populationIndex: 1.2m,
+            brandAwareness: 1m);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var sold = await db.PublicSalesRecords
+            .Where(record => record.BuildingUnitId == unitId)
+            .Select(record => record.QuantitySold)
+            .SingleAsync();
+
+        Assert.True(
+            sold <= 5m,
+            $"A public sales unit must never sell more than 50% of its current stock in one tick. Sold {sold} from 10 units.");
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_BrandAwarenessImprovesSalesAgainstComparableCompetitor()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(candidate => candidate.Slug == "wooden-chair");
+
+        var city = CreatePublicSalesTestCity("Brand Battle", 50_000);
+        db.Cities.Add(city);
+
+        var (_, brandedBuildingId, brandedUnitId) = AddPublicSalesSeller(
+            db,
+            city,
+            product,
+            "Brand Battle Branded",
+            stockQuantity: 60m,
+            quality: 0.9m,
+            populationIndex: 1m,
+            brandAwareness: 0.9m);
+        var (_, plainBuildingId, plainUnitId) = AddPublicSalesSeller(
+            db,
+            city,
+            product,
+            "Brand Battle Plain",
+            stockQuantity: 60m,
+            quality: 0.9m,
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var salesByBuilding = await db.PublicSalesRecords
+            .Where(record => record.BuildingId == brandedBuildingId || record.BuildingId == plainBuildingId)
+            .ToListAsync();
+
+        var brandedSold = salesByBuilding
+            .Where(record => record.BuildingUnitId == brandedUnitId)
+            .Sum(record => record.QuantitySold);
+        var plainSold = salesByBuilding
+            .Where(record => record.BuildingUnitId == plainUnitId)
+            .Sum(record => record.QuantitySold);
+
+        Assert.True(
+            brandedSold > plainSold,
+            $"Higher brand awareness should win more public sales. Branded sold {brandedSold}, plain sold {plainSold}.");
     }
 
     [Fact]
