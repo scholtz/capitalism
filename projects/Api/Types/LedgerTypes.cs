@@ -63,6 +63,26 @@ public sealed class BuildingLedgerSummary
     public decimal Costs { get; set; }
 }
 
+public sealed class BuildingFinancialTimeline
+{
+    public Guid BuildingId { get; set; }
+    public string BuildingName { get; set; } = string.Empty;
+    public long DataFromTick { get; set; }
+    public long DataToTick { get; set; }
+    public decimal TotalSales { get; set; }
+    public decimal TotalCosts { get; set; }
+    public decimal TotalProfit { get; set; }
+    public List<BuildingFinancialTickSnapshot> Timeline { get; set; } = [];
+}
+
+public sealed class BuildingFinancialTickSnapshot
+{
+    public long Tick { get; set; }
+    public decimal Sales { get; set; }
+    public decimal Costs { get; set; }
+    public decimal Profit { get; set; }
+}
+
 public sealed class LedgerEntryResult
 {
     public Guid Id { get; set; }

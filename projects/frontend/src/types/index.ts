@@ -644,6 +644,24 @@ export interface BuildingLedgerSummary {
   costs: number
 }
 
+export interface BuildingFinancialTickSnapshot {
+  tick: number
+  sales: number
+  costs: number
+  profit: number
+}
+
+export interface BuildingFinancialTimeline {
+  buildingId: string
+  buildingName: string
+  dataFromTick: number
+  dataToTick: number
+  totalSales: number
+  totalCosts: number
+  totalProfit: number
+  timeline: BuildingFinancialTickSnapshot[]
+}
+
 export interface LedgerEntryResult {
   id: string
   category: string

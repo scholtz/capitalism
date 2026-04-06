@@ -36,6 +36,7 @@ import type {
   Building,
   BuildingConfigurationPlanRemoval,
   BuildingConfigurationPlanUnit,
+  BuildingFinancialTimeline,
   BuildingUnit,
   BuildingUnitInventory,
   BuildingUnitInventorySummary,
@@ -228,6 +229,8 @@ const unitOperationalStatusesLoading = ref(false)
 // Recent tick-by-tick activity feed for the building
 const recentActivity = ref<BuildingRecentActivityEvent[]>([])
 const recentActivityLoading = ref(false)
+const buildingFinancialTimeline = ref<BuildingFinancialTimeline | null>(null)
+const buildingFinancialTimelineLoading = ref(false)
 
 // R&D research progress state
 const researchBrands = ref<ResearchBrandState[]>([])
@@ -581,6 +584,21 @@ const selectedDraftPurchaseUnit = computed(() =>
 )
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
+const buildingOverviewCityName = computed(() => getCityName(building.value?.cityId))
+const buildingOverviewMapRoute = computed(() => {
+  if (!building.value) return null
+
+  return {
+    name: 'city-map',
+    params: { id: building.value.cityId },
+    query: { building: building.value.id },
+  }
+})
+const buildingFinancialSnapshots = computed(() => buildingFinancialTimeline.value?.timeline ?? [])
+const buildingFinancialHasActivity = computed(() => buildingFinancialSnapshots.value.some((snapshot) => snapshot.sales > 0 || snapshot.costs > 0 || snapshot.profit !== 0))
+const buildingFinancialMaxSales = computed(() => buildingFinancialSnapshots.value.reduce((max, snapshot) => Math.max(max, snapshot.sales), 0))
+const buildingFinancialMaxCosts = computed(() => buildingFinancialSnapshots.value.reduce((max, snapshot) => Math.max(max, snapshot.costs), 0))
+const buildingFinancialMaxProfitMagnitude = computed(() => buildingFinancialSnapshots.value.reduce((max, snapshot) => Math.max(max, Math.abs(snapshot.profit)), 0))
 
 /** Computed competitive price suggestion for the currently selected B2B_SALES draft unit. */
 const b2bSuggestedPrice = computed<number | null>(() => {
@@ -606,6 +624,8 @@ const miMaxPricePerUnit = computed(() =>
 const currentPublicSalesMinPrice = computed(() =>
   typeof selectedPublicSalesUnit.value?.minPrice === 'number' ? selectedPublicSalesUnit.value.minPrice : 0,
 )
+
+let activeBuildingFinancialTimelineRequest = 0
 
 type ExchangeOfferItem = AnnotatedExchangeOffer
 
@@ -2065,6 +2085,29 @@ function formatCurrency(value: number | null | undefined): string {
   return `$${formatter.format(amount)}`
 }
 
+function getCityName(cityId: string | null | undefined): string {
+  if (!cityId) return t('common.notAvailable')
+  return cities.value.find((city) => city.id === cityId)?.name ?? t('common.notAvailable')
+}
+
+function formatGpsLocation(latitude: number | null | undefined, longitude: number | null | undefined): string {
+  if (latitude == null || longitude == null) return t('common.notAvailable')
+
+  const latitudeDirection = latitude >= 0 ? 'N' : 'S'
+  const longitudeDirection = longitude >= 0 ? 'E' : 'W'
+  return `${Math.abs(latitude).toFixed(5)}°${latitudeDirection}, ${Math.abs(longitude).toFixed(5)}°${longitudeDirection}`
+}
+
+function getOverviewBarHeight(value: number, maxValue: number): string {
+  if (value <= 0 || maxValue <= 0) return '0%'
+  return `${Math.max(2, (value / maxValue) * 100).toFixed(1)}%`
+}
+
+function getOverviewProfitBarHeight(value: number): string {
+  if (value === 0 || buildingFinancialMaxProfitMagnitude.value <= 0) return '0%'
+  return `${Math.max(2, (Math.abs(value) / buildingFinancialMaxProfitMagnitude.value) * 50).toFixed(1)}%`
+}
+
 function getConfiguredItemImageUrl(unit: GridUnit | undefined): string | null {
   const resourceTypeId = unit && 'resourceTypeId' in unit ? unit.resourceTypeId : null
   if (!resourceTypeId) return null
@@ -2778,6 +2821,59 @@ async function loadRecentActivity(buildingId: string) {
   }
 }
 
+async function loadBuildingFinancialTimeline(buildingId: string, isRefresh = false) {
+  if (!auth.token) {
+    buildingFinancialTimeline.value = null
+    buildingFinancialTimelineLoading.value = false
+    return
+  }
+
+  const requestId = ++activeBuildingFinancialTimelineRequest
+  if (!isRefresh || buildingFinancialTimeline.value == null) {
+    buildingFinancialTimelineLoading.value = true
+  }
+
+  try {
+    const data = await gqlRequest<{ buildingFinancialTimeline: BuildingFinancialTimeline }>(
+      `query BuildingFinancialTimeline($buildingId: UUID!, $limit: Int) {
+        buildingFinancialTimeline(buildingId: $buildingId, limit: $limit) {
+          buildingId
+          buildingName
+          dataFromTick
+          dataToTick
+          totalSales
+          totalCosts
+          totalProfit
+          timeline {
+            tick
+            sales
+            costs
+            profit
+          }
+        }
+      }`,
+      { buildingId, limit: 30 },
+    )
+    if (requestId !== activeBuildingFinancialTimelineRequest) {
+      return
+    }
+
+    buildingFinancialTimeline.value = data.buildingFinancialTimeline
+  } catch {
+    if (requestId !== activeBuildingFinancialTimelineRequest) {
+      return
+    }
+
+    if (!isRefresh) {
+      buildingFinancialTimeline.value = null
+    }
+  } finally {
+    if (requestId === activeBuildingFinancialTimelineRequest) {
+      buildingFinancialTimelineLoading.value = false
+    }
+  }
+}
+
 async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
   const requestId = ++activeBuildingLoadRequest
   const shouldShowLoading = !building.value
@@ -3006,6 +3102,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
     await Promise.all([loadGlobalExchangeOffers(), loadResearchBrands(), loadCityMediaHouses()])
     void loadUnitOperationalStatuses(buildingId.value)
     void loadRecentActivity(buildingId.value)
+    void loadBuildingFinancialTimeline(buildingId.value)
   } catch (reason: unknown) {
     if (requestId !== activeBuildingLoadRequest) {
       return
@@ -3045,6 +3142,7 @@ useTickRefresh(async () => {
   }
   void loadUnitOperationalStatuses(buildingId.value)
   void loadRecentActivity(buildingId.value)
+  void loadBuildingFinancialTimeline(buildingId.value, true)
 })
 
 watch(
@@ -5260,9 +5358,9 @@ watch(
         <div v-else class="sidebar sidebar-placeholder">
           <div class="unit-config">
             <div class="unit-config-header">
-              <h3>{{ t('buildingDetail.unitDetails') }}</h3>
+              <h3>{{ isEditing ? t('buildingDetail.unitDetails') : t('buildingDetail.overview.title') }}</h3>
             </div>
-            <div class="unit-detail placeholder-detail">
+            <div v-if="isEditing" class="unit-detail placeholder-detail">
               <h4>{{ t('buildingDetail.sidebarPlaceholderTitle') }}</h4>
               <p class="unit-desc">
                 {{ isEditing ? t('buildingDetail.sidebarPlaceholderBodyEditing') : t('buildingDetail.sidebarPlaceholderBody') }}
@@ -5275,6 +5373,114 @@ watch(
                     {{ t('buildingDetail.cashAfterApply', { cash: formatCurrency(projectedCompanyCashAfterApply) }) }}
                   </span>
                 </div>
+              </div>
+            </div>
+            <div v-else class="unit-detail building-overview-detail">
+              <p class="building-overview-name">{{ building.name }}</p>
+              <p class="unit-desc">{{ t('buildingDetail.overview.subtitle', { type: formatBuildingType(building.type) }) }}</p>
+
+              <div class="unit-insight-card building-location-card">
+                <h5>{{ t('buildingDetail.overview.locationTitle') }}</h5>
+                <div class="building-overview-location-grid">
+                  <div class="building-overview-location-row">
+                    <span class="building-overview-label">{{ t('buildingDetail.overview.city') }}</span>
+                    <strong>{{ buildingOverviewCityName }}</strong>
+                  </div>
+                  <div class="building-overview-location-row">
+                    <span class="building-overview-label">{{ t('buildingDetail.overview.gps') }}</span>
+                    <strong>{{ formatGpsLocation(building.latitude, building.longitude) }}</strong>
+                  </div>
+                </div>
+                <RouterLink v-if="buildingOverviewMapRoute" :to="buildingOverviewMapRoute" class="btn btn-secondary btn-sm building-overview-map-link">
+                  {{ t('buildingDetail.overview.showOnMap') }}
+                </RouterLink>
+              </div>
+
+              <div class="unit-insight-card building-financial-card">
+                <h5>{{ t('buildingDetail.overview.statsTitle') }}</h5>
+                <p v-if="buildingFinancialTimeline" class="config-help">
+                  {{ t('buildingDetail.overview.tickWindow', { start: buildingFinancialTimeline.dataFromTick, end: buildingFinancialTimeline.dataToTick }) }}
+                </p>
+                <p v-else-if="buildingFinancialTimelineLoading" class="config-help">{{ t('common.loading') }}</p>
+
+                <div class="mi-summary-grid">
+                  <div class="mi-metric">
+                    <span class="mi-metric-label">{{ t('buildingDetail.overview.sales') }}</span>
+                    <strong class="mi-metric-value">{{ formatCurrency(buildingFinancialTimeline?.totalSales ?? 0) }}</strong>
+                  </div>
+                  <div class="mi-metric">
+                    <span class="mi-metric-label">{{ t('buildingDetail.overview.costs') }}</span>
+                    <strong class="mi-metric-value">{{ formatCurrency(buildingFinancialTimeline?.totalCosts ?? 0) }}</strong>
+                  </div>
+                  <div class="mi-metric">
+                    <span class="mi-metric-label">{{ t('buildingDetail.overview.profit') }}</span>
+                    <strong
+                      class="mi-metric-value"
+                      :class="{
+                        'building-profit-positive-text': (buildingFinancialTimeline?.totalProfit ?? 0) >= 0,
+                        'building-profit-negative-text': (buildingFinancialTimeline?.totalProfit ?? 0) < 0,
+                      }"
+                    >
+                      {{ formatCurrency(buildingFinancialTimeline?.totalProfit ?? 0) }}
+                    </strong>
+                  </div>
+                </div>
+
+                <template v-if="buildingFinancialTimeline">
+                  <div class="mi-chart-section">
+                    <span class="mi-chart-label">{{ t('buildingDetail.overview.salesChart') }}</span>
+                    <div class="mi-bar-chart" role="img" :aria-label="t('buildingDetail.overview.salesChart')">
+                      <div
+                        v-for="snapshot in buildingFinancialSnapshots"
+                        :key="`sales-${snapshot.tick}`"
+                        class="mi-bar mi-bar-revenue"
+                        :style="{ height: getOverviewBarHeight(snapshot.sales, buildingFinancialMaxSales) }"
+                        :title="`T${snapshot.tick}: ${formatCurrency(snapshot.sales)}`"
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div class="mi-chart-section">
+                    <span class="mi-chart-label">{{ t('buildingDetail.overview.costsChart') }}</span>
+                    <div class="mi-bar-chart" role="img" :aria-label="t('buildingDetail.overview.costsChart')">
+                      <div
+                        v-for="snapshot in buildingFinancialSnapshots"
+                        :key="`costs-${snapshot.tick}`"
+                        class="mi-bar mi-bar-cost"
+                        :style="{ height: getOverviewBarHeight(snapshot.costs, buildingFinancialMaxCosts) }"
+                        :title="`T${snapshot.tick}: ${formatCurrency(snapshot.costs)}`"
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div class="mi-chart-section">
+                    <span class="mi-chart-label">{{ t('buildingDetail.overview.profitChart') }}</span>
+                    <div class="building-profit-chart" role="img" :aria-label="t('buildingDetail.overview.profitChart')">
+                      <div class="building-profit-baseline"></div>
+                      <div
+                        v-for="snapshot in buildingFinancialSnapshots"
+                        :key="`profit-${snapshot.tick}`"
+                        class="building-profit-bar-shell"
+                        :title="`T${snapshot.tick}: ${formatCurrency(snapshot.profit)}`"
+                      >
+                        <div
+                          v-if="snapshot.profit !== 0"
+                          class="building-profit-bar"
+                          :class="snapshot.profit > 0 ? 'building-profit-bar-positive' : 'building-profit-bar-negative'"
+                          :style="{ height: getOverviewProfitBarHeight(snapshot.profit) }"
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p v-if="!buildingFinancialHasActivity" class="mi-empty-state">
+                    {{ t('buildingDetail.overview.noFinancialData') }}
+                  </p>
+                </template>
+
+                <p v-else-if="!buildingFinancialTimelineLoading" class="mi-empty-state">
+                  {{ t('buildingDetail.overview.loadFailed') }}
+                </p>
               </div>
             </div>
           </div>
@@ -7192,8 +7398,47 @@ watch(
   min-height: 240px;
 }
 
+.building-overview-detail {
+  min-height: 240px;
+}
+
+.building-overview-name {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
 .placeholder-summary-card {
   border-top-style: dashed;
+}
+
+.building-overview-location-grid {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.building-overview-location-row {
+  padding: 0.8rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
+  border-radius: var(--radius-md, 8px);
+  background: color-mix(in srgb, var(--color-surface-raised, var(--color-surface)) 94%, white 6%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.building-overview-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.building-overview-map-link {
+  width: fit-content;
 }
 
 .grid-cell.clickable {
@@ -7433,6 +7678,70 @@ watch(
 .mi-bar-price {
   background: #d97706;
   opacity: 0.8;
+}
+
+.mi-bar-cost {
+  background: #dc2626;
+  opacity: 0.8;
+}
+
+.building-profit-chart {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  height: 72px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  overflow: hidden;
+}
+
+.building-profit-baseline {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 90%, transparent);
+}
+
+.building-profit-bar-shell {
+  position: relative;
+  flex: 1;
+  min-width: 3px;
+}
+
+.building-profit-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.building-profit-bar-positive {
+  bottom: 50%;
+  border-radius: 2px 2px 0 0;
+  background: #16a34a;
+}
+
+.building-profit-bar-negative {
+  top: 50%;
+  border-radius: 0 0 2px 2px;
+  background: #dc2626;
+}
+
+.building-profit-positive-text {
+  color: #15803d;
+}
+
+.building-profit-negative-text {
+  color: #b91c1c;
+}
+
+@media (max-width: 640px) {
+  .building-overview-map-link {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .mi-section {

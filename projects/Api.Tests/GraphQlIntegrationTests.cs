@@ -15098,7 +15098,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         _client = factory.CreateClient();
     }
 
-    private async Task<JsonElement> ExecuteGraphQlAsync(string query, object? variables = null, string? token = null)
+    private static async Task<JsonElement> ExecuteGraphQlAsync(HttpClient client, string query, object? variables = null, string? token = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/graphql");
         request.Content = new System.Net.Http.StringContent(
@@ -15111,14 +15111,18 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         }
 
-        var response = await _client.SendAsync(request);
+        var response = await client.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
         return System.Text.Json.JsonSerializer.Deserialize<JsonElement>(body);
     }
 
-    private async Task<string> RegisterAndGetTokenAsync(string email, string displayName = "Tester", string password = "TestPass123!")
+    private Task<JsonElement> ExecuteGraphQlAsync(string query, object? variables = null, string? token = null)
+        => ExecuteGraphQlAsync(_client, query, variables, token);
+
+    private static async Task<string> RegisterAndGetTokenAsync(HttpClient client, string email, string displayName = "Tester", string password = "TestPass123!")
     {
         var result = await ExecuteGraphQlAsync(
+            client,
             """
             mutation Register($input: RegisterInput!) {
               register(input: $input) { token }
@@ -15127,6 +15131,9 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
             new { input = new { email, displayName, password } });
         return result.GetProperty("data").GetProperty("register").GetProperty("token").GetString()!;
     }
+
+    private Task<string> RegisterAndGetTokenAsync(string email, string displayName = "Tester", string password = "TestPass123!")
+        => RegisterAndGetTokenAsync(_client, email, displayName, password);
 
     private async Task ResetGameStateAsync()
     {
@@ -15906,6 +15913,140 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
             }
             """,
             new { buildingId = Guid.NewGuid(), limit = 10 });
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0, "Unauthenticated call must return errors.");
+    }
+
+    [Fact]
+    public async Task BuildingFinancialTimeline_ReturnsSalesCostsAndProfitByTick()
+    {
+        var (token, buildingId) = await SeedOperationalStatusTestAsync("building-financial",
+            (db, bid, companyId, _) =>
+            {
+                var gameState = db.GameStates.First();
+                gameState.CurrentTick = 42;
+
+                db.LedgerEntries.AddRange(
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        Category = LedgerCategory.Revenue,
+                        Description = "Retail sale",
+                        Amount = 120m,
+                        RecordedAtTick = 40,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        Category = LedgerCategory.PurchasingCost,
+                        Description = "Input sourcing",
+                        Amount = -30m,
+                        RecordedAtTick = 40,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        Category = LedgerCategory.LaborCost,
+                        Description = "Labor",
+                        Amount = -10m,
+                        RecordedAtTick = 41,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        Category = LedgerCategory.Revenue,
+                        Description = "Wholesale sale",
+                        Amount = 80m,
+                        RecordedAtTick = 42,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        Category = LedgerCategory.Marketing,
+                        Description = "Campaign spend",
+                        Amount = -20m,
+                        RecordedAtTick = 42,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    });
+            });
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingFinancialTimeline($buildingId: UUID!, $limit: Int) {
+              buildingFinancialTimeline(buildingId: $buildingId, limit: $limit) {
+                buildingId
+                buildingName
+                dataFromTick
+                dataToTick
+                totalSales
+                totalCosts
+                totalProfit
+                timeline {
+                  tick
+                  sales
+                  costs
+                  profit
+                }
+              }
+            }
+            """,
+            new { buildingId, limit = 3 },
+            token);
+
+        var timeline = result.GetProperty("data").GetProperty("buildingFinancialTimeline");
+        Assert.Equal(buildingId.ToString(), timeline.GetProperty("buildingId").GetString());
+        Assert.Equal(40, timeline.GetProperty("dataFromTick").GetInt64());
+        Assert.Equal(42, timeline.GetProperty("dataToTick").GetInt64());
+        Assert.Equal(200m, timeline.GetProperty("totalSales").GetDecimal());
+        Assert.Equal(60m, timeline.GetProperty("totalCosts").GetDecimal());
+        Assert.Equal(140m, timeline.GetProperty("totalProfit").GetDecimal());
+
+        var snapshots = timeline.GetProperty("timeline").EnumerateArray().ToList();
+        Assert.Equal(3, snapshots.Count);
+
+        Assert.Equal(40, snapshots[0].GetProperty("tick").GetInt64());
+        Assert.Equal(120m, snapshots[0].GetProperty("sales").GetDecimal());
+        Assert.Equal(30m, snapshots[0].GetProperty("costs").GetDecimal());
+        Assert.Equal(90m, snapshots[0].GetProperty("profit").GetDecimal());
+
+        Assert.Equal(41, snapshots[1].GetProperty("tick").GetInt64());
+        Assert.Equal(0m, snapshots[1].GetProperty("sales").GetDecimal());
+        Assert.Equal(10m, snapshots[1].GetProperty("costs").GetDecimal());
+        Assert.Equal(-10m, snapshots[1].GetProperty("profit").GetDecimal());
+
+        Assert.Equal(42, snapshots[2].GetProperty("tick").GetInt64());
+        Assert.Equal(80m, snapshots[2].GetProperty("sales").GetDecimal());
+        Assert.Equal(20m, snapshots[2].GetProperty("costs").GetDecimal());
+        Assert.Equal(60m, snapshots[2].GetProperty("profit").GetDecimal());
+    }
+
+    [Fact]
+    public async Task BuildingFinancialTimeline_Unauthenticated_ReturnsError()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingFinancialTimeline($buildingId: UUID!) {
+              buildingFinancialTimeline(buildingId: $buildingId) {
+                buildingId
+              }
+            }
+            """,
+            new { buildingId = Guid.NewGuid() });
 
         var errors = result.GetProperty("errors");
         Assert.True(errors.GetArrayLength() > 0, "Unauthenticated call must return errors.");
@@ -17657,9 +17798,11 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     public async Task SourcingCandidates_GlobalExchange_ReturnsRankedCandidatesWithLandedCost()
     {
         var email = $"sc-ranked-{Guid.NewGuid():N}@test.com";
-        var token = await RegisterAndGetTokenAsync(email, "SCRanked");
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "SCRanked");
 
-        await using var scope = _factory.Services.CreateAsyncScope();
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var player = await db.Players.FirstAsync(p => p.Email == email);
@@ -17693,6 +17836,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         await db.SaveChangesAsync();
 
         var result = await ExecuteGraphQlAsync(
+            isolatedClient,
             "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { sourceType sourceCityId sourceCityName exchangePricePerUnit transitCostPerUnit deliveredPricePerUnit estimatedQuality distanceKm isEligible blockReason isRecommended rank } }",
             new { unitId = unit.Id.ToString() },
             token);
@@ -17732,9 +17876,11 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     public async Task SourcingCandidates_MaxPriceFilter_MarksExpensiveCandidatesIneligible()
     {
         var email = $"sc-maxprice-{Guid.NewGuid():N}@test.com";
-        var token = await RegisterAndGetTokenAsync(email, "SCMaxPrice");
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "SCMaxPrice");
 
-        await using var scope = _factory.Services.CreateAsyncScope();
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var player = await db.Players.FirstAsync(p => p.Email == email);
@@ -17770,6 +17916,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         await db.SaveChangesAsync();
 
         var result = await ExecuteGraphQlAsync(
+            isolatedClient,
             "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { isEligible blockReason } }",
             new { unitId = unit.Id.ToString() },
             token);
@@ -17787,9 +17934,11 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     public async Task SourcingCandidates_MinQualityFilter_MarksLowQualityCandidatesIneligible()
     {
         var email = $"sc-minquality-{Guid.NewGuid():N}@test.com";
-        var token = await RegisterAndGetTokenAsync(email, "SCMinQuality");
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "SCMinQuality");
 
-        await using var scope = _factory.Services.CreateAsyncScope();
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var player = await db.Players.FirstAsync(p => p.Email == email);
@@ -17825,6 +17974,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         await db.SaveChangesAsync();
 
         var result = await ExecuteGraphQlAsync(
+            isolatedClient,
             "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { isEligible blockReason } }",
             new { unitId = unit.Id.ToString() },
             token);
@@ -17841,9 +17991,11 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     public async Task SourcingCandidates_NotConfigured_ReturnsEmptyList()
     {
         var email = $"sc-noconfig-{Guid.NewGuid():N}@test.com";
-        var token = await RegisterAndGetTokenAsync(email, "SCNoConfig");
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "SCNoConfig");
 
-        await using var scope = _factory.Services.CreateAsyncScope();
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var player = await db.Players.FirstAsync(p => p.Email == email);
@@ -17875,6 +18027,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         await db.SaveChangesAsync();
 
         var result = await ExecuteGraphQlAsync(
+            isolatedClient,
             "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { rank } }",
             new { unitId = unit.Id.ToString() },
             token);
@@ -17887,9 +18040,11 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     public async Task SourcingCandidates_Unauthenticated_ReturnsEmptyList()
     {
         var email = $"sc-anon-{Guid.NewGuid():N}@test.com";
-        var token = await RegisterAndGetTokenAsync(email, "SCAnonOwner");
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "SCAnonOwner");
 
-        await using var scope = _factory.Services.CreateAsyncScope();
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var player = await db.Players.FirstAsync(p => p.Email == email);
@@ -17923,6 +18078,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
 
         // Query without auth token – returns empty list (unit not found for unauthenticated caller)
         var result = await ExecuteGraphQlAsync(
+            isolatedClient,
             "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { rank } }",
             new { unitId = unit.Id.ToString() },
             null);
@@ -17939,9 +18095,11 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     public async Task SourcingCandidates_SameCityCandidate_HasZeroTransitCost()
     {
         var email = $"sc-local-{Guid.NewGuid():N}@test.com";
-        var token = await RegisterAndGetTokenAsync(email, "SCLocal");
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "SCLocal");
 
-        await using var scope = _factory.Services.CreateAsyncScope();
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var player = await db.Players.FirstAsync(p => p.Email == email);
@@ -17975,6 +18133,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         await db.SaveChangesAsync();
 
         var result = await ExecuteGraphQlAsync(
+            isolatedClient,
             "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { sourceCityId transitCostPerUnit distanceKm } }",
             new { unitId = unit.Id.ToString() },
             token);

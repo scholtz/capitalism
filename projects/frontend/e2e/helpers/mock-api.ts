@@ -394,6 +394,17 @@ export type MockPublicSalesAnalytics = {
   brandAwareness: number | null
 }
 
+export type MockBuildingFinancialTimeline = {
+  buildingId: string
+  buildingName: string
+  dataFromTick: number
+  dataToTick: number
+  totalSales: number
+  totalCosts: number
+  totalProfit: number
+  timeline: Array<{ tick: number; sales: number; costs: number; profit: number }>
+}
+
 export type MockLoanOffer = {
   id: string
   bankBuildingId: string
@@ -459,6 +470,8 @@ export type MockState = {
   publicSalesRecords: MockPublicSalesRecord[]
   /** Public sales analytics by unit ID */
   publicSalesAnalytics: Record<string, MockPublicSalesAnalytics>
+  /** Building financial history keyed by building ID */
+  buildingFinancialTimelines: Record<string, MockBuildingFinancialTimeline>
   /** Loan offers available in the marketplace */
   loanOffers: MockLoanOffer[]
   /** Active loans for the current player's companies */
@@ -631,6 +644,42 @@ function buildMockLedgerSummaryPayload(summary: MockLedgerSummary, gameState: Mo
     incomeTaxDueGameYear: summary.incomeTaxDueGameYear ?? computeMockGameYear(incomeTaxDueAtTick),
     isIncomeTaxSettled: summary.isIncomeTaxSettled ?? gameYear < currentGameYear,
     history: summary.history ?? [buildMockLedgerHistoryYear(summary, currentGameYear)],
+  }
+}
+
+function buildMockBuildingFinancialTimeline(state: MockState, buildingId: string, limit = 30): MockBuildingFinancialTimeline | null {
+  const explicitTimeline = state.buildingFinancialTimelines[buildingId]
+  if (explicitTimeline) {
+    return explicitTimeline
+  }
+
+  const building = state.players
+    .flatMap((player) => player.companies)
+    .flatMap((company) => company.buildings)
+    .find((candidate) => candidate.id === buildingId)
+
+  if (!building) {
+    return null
+  }
+
+  const safeLimit = Math.max(1, limit)
+  const dataToTick = state.gameState.currentTick
+  const dataFromTick = Math.max(0, dataToTick - (safeLimit - 1))
+
+  return {
+    buildingId,
+    buildingName: building.name,
+    dataFromTick,
+    dataToTick,
+    totalSales: 0,
+    totalCosts: 0,
+    totalProfit: 0,
+    timeline: Array.from({ length: dataToTick - dataFromTick + 1 }, (_, index) => ({
+      tick: dataFromTick + index,
+      sales: 0,
+      costs: 0,
+      profit: 0,
+    })),
   }
 }
 
@@ -1202,6 +1251,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     researchBrands: {},
     publicSalesRecords: [],
     publicSalesAnalytics: {},
+    buildingFinancialTimelines: {},
     loanOffers: [],
     myLoans: [],
     procurementPreviews: {},
@@ -3189,6 +3239,18 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { buildingRecentActivity: [] } }),
+      })
+    }
+
+    if (query.includes('buildingFinancialTimeline')) {
+      const buildingId = body.variables?.buildingId
+      const limit = Number(body.variables?.limit ?? 30)
+      const buildingFinancialTimeline = buildMockBuildingFinancialTimeline(state, buildingId, limit)
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { buildingFinancialTimeline } }),
       })
     }
 

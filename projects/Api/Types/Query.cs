@@ -1351,6 +1351,83 @@ public sealed class Query
             .ToList();
     }
 
+    /// <summary>
+    /// Returns recent per-tick financial snapshots for a building based on ledger entries.
+    /// Positive building ledger entries count as sales; negative entries count as costs.
+    /// </summary>
+    [Authorize]
+    public async Task<BuildingFinancialTimeline> GetBuildingFinancialTimeline(
+        Guid buildingId,
+        int? limit,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var building = await db.Buildings
+            .AsNoTracking()
+            .Include(candidate => candidate.Company)
+            .FirstOrDefaultAsync(candidate => candidate.Id == buildingId);
+
+        if (building is null || building.Company.PlayerId != userId)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Building not found or you don't own it.")
+                    .SetCode("BUILDING_NOT_FOUND")
+                    .Build());
+        }
+
+        var safeLimit = Math.Clamp(limit ?? 30, 1, 120);
+        var currentTick = await db.GameStates
+            .AsNoTracking()
+            .Select(state => (long?)state.CurrentTick)
+            .FirstOrDefaultAsync() ?? 0L;
+        var windowStart = Math.Max(0L, currentTick - (safeLimit - 1L));
+
+        var entries = await db.LedgerEntries
+            .AsNoTracking()
+            .Where(entry => entry.BuildingId == buildingId && entry.RecordedAtTick >= windowStart && entry.RecordedAtTick <= currentTick)
+            .OrderBy(entry => entry.RecordedAtTick)
+            .ToListAsync();
+
+        var entriesByTick = entries
+            .GroupBy(entry => entry.RecordedAtTick)
+            .ToDictionary(group => group.Key, group => group.ToList());
+
+        var snapshots = new List<BuildingFinancialTickSnapshot>();
+        for (var tick = windowStart; tick <= currentTick; tick++)
+        {
+            var tickEntries = entriesByTick.GetValueOrDefault(tick) ?? [];
+            var sales = tickEntries
+                .Where(entry => entry.Amount > 0m)
+                .Sum(entry => entry.Amount);
+            var costs = Math.Abs(tickEntries
+                .Where(entry => entry.Amount < 0m)
+                .Sum(entry => entry.Amount));
+
+            snapshots.Add(new BuildingFinancialTickSnapshot
+            {
+                Tick = tick,
+                Sales = sales,
+                Costs = costs,
+                Profit = sales - costs,
+            });
+        }
+
+        return new BuildingFinancialTimeline
+        {
+            BuildingId = building.Id,
+            BuildingName = building.Name,
+            DataFromTick = windowStart,
+            DataToTick = currentTick,
+            TotalSales = snapshots.Sum(snapshot => snapshot.Sales),
+            TotalCosts = snapshots.Sum(snapshot => snapshot.Costs),
+            TotalProfit = snapshots.Sum(snapshot => snapshot.Profit),
+            Timeline = snapshots,
+        };
+    }
+
     private static string FormatQuantity(decimal qty) =>
         qty == Math.Floor(qty) ? ((int)qty).ToString() : qty.ToString("0.####");
 

@@ -440,6 +440,96 @@ test.describe('Building detail upgrades', () => {
     await expect(page.locator('.meta-pill.for-sale')).toBeVisible()
   })
 
+  test('shows building overview stats and opens the city map focused on the building lot', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-overview',
+      playerId: player.id,
+      name: 'Overview Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-overview',
+          companyId: 'company-overview',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Overview Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.buildingLots.push({
+      id: 'lot-overview-building',
+      cityId: 'city-ba',
+      name: 'Central Factory Lot',
+      description: 'Existing production lot in the city core.',
+      district: 'Central District',
+      latitude: 48.15,
+      longitude: 17.11,
+      populationIndex: 1.12,
+      basePrice: 100000,
+      price: 112000,
+      suitableTypes: 'FACTORY',
+      ownerCompanyId: 'company-overview',
+      buildingId: 'building-overview',
+      ownerCompany: { id: 'company-overview', name: 'Overview Co' },
+      building: { id: 'building-overview', name: 'Overview Factory', type: 'FACTORY' },
+      resourceType: null,
+      materialQuality: null,
+      materialQuantity: null,
+    })
+    state.buildingFinancialTimelines['building-overview'] = {
+      buildingId: 'building-overview',
+      buildingName: 'Overview Factory',
+      dataFromTick: 40,
+      dataToTick: 42,
+      totalSales: 560,
+      totalCosts: 290,
+      totalProfit: 270,
+      timeline: [
+        { tick: 40, sales: 180, costs: 90, profit: 90 },
+        { tick: 41, sales: 140, costs: 120, profit: 20 },
+        { tick: 42, sales: 240, costs: 80, profit: 160 },
+      ],
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-overview')
+
+    const overview = page.locator('.building-overview-detail')
+    await expect(page.getByRole('heading', { name: 'Building Overview' })).toBeVisible()
+    await expect(overview.getByText('Bratislava')).toBeVisible()
+    await expect(overview.getByText('48.15000°N, 17.11000°E')).toBeVisible()
+    await expect(overview.getByText('$560')).toBeVisible()
+    await expect(overview.getByText('$290')).toBeVisible()
+    await expect(overview.getByText('$270')).toBeVisible()
+    await expect(overview.getByRole('img', { name: 'Sales per Tick' })).toBeVisible()
+    await expect(overview.getByRole('img', { name: 'Costs per Tick' })).toBeVisible()
+    await expect(overview.getByRole('img', { name: 'Profit per Tick' })).toBeVisible()
+
+    await overview.getByRole('link', { name: 'Show on Map' }).click()
+
+    await expect(page).toHaveURL(/\/city\/city-ba\?building=building-overview/)
+    await expect(page.getByRole('heading', { name: 'Central Factory Lot' })).toBeVisible()
+    await expect(page.getByText('Your Property')).toBeVisible()
+  })
+
   test('shows read-only unit details when clicking active grid cells', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({

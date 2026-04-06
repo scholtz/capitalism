@@ -28,6 +28,7 @@ const auth = useAuthStore()
 const gameStateStore = useGameStateStore()
 
 const cityId = computed(() => route.params.id as string)
+const highlightedBuildingId = computed(() => (typeof route.query.building === 'string' ? route.query.building : null))
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -358,6 +359,23 @@ function selectLot(lot: BuildingLot) {
   }
 }
 
+function selectRequestedBuildingLot() {
+  const buildingId = highlightedBuildingId.value
+  if (!buildingId) return
+
+  const matchingLot = lots.value.find((lot) => lot.buildingId === buildingId)
+  if (!matchingLot) return
+
+  if (selectedLot.value?.id === matchingLot.id) {
+    if (map) {
+      map.panTo([matchingLot.latitude, matchingLot.longitude])
+    }
+    return
+  }
+
+  selectLot(matchingLot)
+}
+
 function startPurchase() {
   purchaseMode.value = true
   purchaseError.value = null
@@ -465,6 +483,15 @@ watch(filteredLots, () => {
   }
 })
 
+watch(
+  () => [highlightedBuildingId.value, lots.value.map((lot) => `${lot.id}:${lot.buildingId ?? ''}`).join('|')],
+  () => {
+    if (highlightedBuildingId.value) {
+      selectRequestedBuildingLot()
+    }
+  },
+)
+
 onMounted(async () => {
   await fetchData()
   void fetchMediaHouses()
@@ -472,6 +499,7 @@ onMounted(async () => {
   if (viewMode.value === 'map') {
     initMap()
   }
+  selectRequestedBuildingLot()
 })
 
 onUnmounted(() => {
