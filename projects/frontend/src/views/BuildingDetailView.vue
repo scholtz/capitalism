@@ -51,6 +51,7 @@ import type {
   ResearchBrandState,
   ResourceType,
   CityMediaHouseInfo,
+  SourcingCandidate,
 } from '@/types'
 import type { HorizontalLinkState, VerticalLinkState } from '@/lib/linkHelpers'
 
@@ -135,6 +136,11 @@ const exchangeSortBy = ref<ExchangeSortBy>('deliveredPrice')
 const procurementPreview = ref<ProcurementPreview | null>(null)
 const procurementPreviewLoading = ref(false)
 let activeProcurementPreviewRequest = 0
+
+// Sourcing comparison (all candidates ranked by landed cost for PURCHASE units)
+const sourcingCandidates = ref<SourcingCandidate[]>([])
+const sourcingCandidatesLoading = ref(false)
+let activeSourcingCandidatesRequest = 0
 
 // Operational status per unit (ACTIVE/IDLE/BLOCKED/FULL/UNCONFIGURED)
 const unitOperationalStatuses = ref<BuildingUnitOperationalStatus[]>([])
@@ -524,6 +530,19 @@ const bestExchangeOfferCityId = computed<string | null>(() => {
 })
 
 const logisticsTrapWarning = computed(() => detectLogisticsTrap(annotatedExchangeOffers.value))
+
+// Whether sticker price (before transit) differs from landed-cost ranking in the comparison.
+const sourcingCheapestStickerDiffersFromBestLanded = computed(() => {
+  const candidates = sourcingCandidates.value.filter((c) => c.isEligible)
+  if (candidates.length < 2) return false
+  const byLanded = [...candidates].sort((a, b) => (a.deliveredPricePerUnit ?? 0) - (b.deliveredPricePerUnit ?? 0))
+  const bySticker = [...candidates].sort(
+    (a, b) =>
+      (a.exchangePricePerUnit ?? a.deliveredPricePerUnit ?? 0) -
+      (b.exchangePricePerUnit ?? b.deliveredPricePerUnit ?? 0),
+  )
+  return byLanded[0]?.sourceCityId !== bySticker[0]?.sourceCityId
+})
 
 const selectedPurchaseResourceSlug = computed<string | null>(() => {
   const resourceId = selectedPurchaseUnit.value?.resourceTypeId ?? null
@@ -2251,6 +2270,52 @@ async function loadProcurementPreview() {
   }
 }
 
+async function loadSourcingCandidates() {
+  const unit = selectedPurchaseUnit.value
+  if (!unit || !('id' in unit)) {
+    sourcingCandidates.value = []
+    sourcingCandidatesLoading.value = false
+    return
+  }
+  const unitId = unit.id
+  const requestId = ++activeSourcingCandidatesRequest
+
+  sourcingCandidatesLoading.value = true
+  try {
+    const data = await gqlRequest<{ sourcingCandidates: SourcingCandidate[] }>(
+      `query SourcingCandidates($unitId: UUID!) {
+        sourcingCandidates(buildingUnitId: $unitId) {
+          sourceType
+          sourceCityId
+          sourceCityName
+          sourceVendorCompanyId
+          sourceVendorName
+          exchangePricePerUnit
+          transitCostPerUnit
+          deliveredPricePerUnit
+          estimatedQuality
+          distanceKm
+          isEligible
+          blockReason
+          blockMessage
+          isRecommended
+          rank
+        }
+      }`,
+      { unitId },
+    )
+    if (requestId !== activeSourcingCandidatesRequest) return
+    sourcingCandidates.value = data.sourcingCandidates ?? []
+  } catch {
+    if (requestId !== activeSourcingCandidatesRequest) return
+    sourcingCandidates.value = []
+  } finally {
+    if (requestId === activeSourcingCandidatesRequest) {
+      sourcingCandidatesLoading.value = false
+    }
+  }
+}
+
 async function loadResearchBrands() {
   const companyId = building.value?.companyId
   if (!companyId || building.value?.type !== 'RESEARCH_DEVELOPMENT') return
@@ -2714,8 +2779,10 @@ watch(
   (unitId) => {
     if (unitId) {
       void loadProcurementPreview()
+      void loadSourcingCandidates()
     } else {
       procurementPreview.value = null
+      sourcingCandidates.value = []
     }
   },
 )
@@ -4411,7 +4478,115 @@ watch(
                 </div>
               </div>
 
-              <!-- Market Intelligence panel for PUBLIC_SALES units -->
+              <!-- Sourcing Comparison Panel (shown in view mode for PURCHASE units with a resource configured) -->
+              <div
+                v-if="selectedPurchaseUnit && (selectedPurchaseUnit.resourceTypeId || selectedPurchaseUnit.productTypeId)"
+                class="sourcing-comparison unit-insight-card"
+                aria-label="Sourcing Comparison"
+              >
+                <h5 class="sourcing-comparison-title">{{ t('buildingDetail.sourcingComparison.title') }}</h5>
+                <p class="sourcing-comparison-subtitle config-help">{{ t('buildingDetail.sourcingComparison.subtitle') }}</p>
+
+                <div v-if="sourcingCandidatesLoading" class="sourcing-comparison-loading">
+                  {{ t('buildingDetail.sourcingComparison.loading') }}
+                </div>
+
+                <template v-else-if="sourcingCandidates.length > 0">
+                  <!-- Logistics note: cheapest sticker ≠ best landed -->
+                  <p v-if="sourcingCheapestStickerDiffersFromBestLanded" class="sourcing-trap-note">
+                    ℹ️ {{ t('buildingDetail.sourcingComparison.cheapestNotBest') }}
+                  </p>
+
+                  <!-- Candidate table -->
+                  <div class="sourcing-table-wrapper">
+                    <table class="sourcing-table">
+                      <thead>
+                        <tr>
+                          <th>{{ t('buildingDetail.sourcingComparison.colSource') }}</th>
+                          <th>{{ t('buildingDetail.sourcingComparison.colOfferPrice') }}</th>
+                          <th>{{ t('buildingDetail.sourcingComparison.colTransit') }}</th>
+                          <th class="col-landed">{{ t('buildingDetail.sourcingComparison.colLanded') }}</th>
+                          <th>{{ t('buildingDetail.sourcingComparison.colQuality') }}</th>
+                          <th>{{ t('buildingDetail.sourcingComparison.colStatus') }}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr
+                          v-for="candidate in sourcingCandidates"
+                          :key="`${candidate.rank}-${candidate.sourceCityId ?? candidate.sourceVendorCompanyId}`"
+                          :class="[
+                            'sourcing-row',
+                            candidate.isRecommended ? 'recommended' : '',
+                            !candidate.isEligible ? 'ineligible' : '',
+                          ]"
+                        >
+                          <td class="sourcing-col-source">
+                            <span class="source-type-badge">{{ t(`buildingDetail.sourcingComparison.sourceType_${candidate.sourceType}`) }}</span>
+                            <span class="source-name">
+                              {{ candidate.sourceCityName ?? candidate.sourceVendorName ?? '—' }}
+                            </span>
+                            <span v-if="candidate.distanceKm && candidate.distanceKm > 0" class="source-distance">
+                              {{ t('buildingDetail.sourcingComparison.distanceKm', { km: Math.round(candidate.distanceKm) }) }}
+                            </span>
+                          </td>
+                          <td class="sourcing-col-offer">
+                            <span v-if="candidate.exchangePricePerUnit !== null">
+                              ${{ candidate.exchangePricePerUnit.toFixed(2) }}
+                            </span>
+                            <span v-else-if="candidate.deliveredPricePerUnit !== null">
+                              ${{ candidate.deliveredPricePerUnit.toFixed(2) }}
+                            </span>
+                            <span v-else>—</span>
+                          </td>
+                          <td class="sourcing-col-transit">
+                            <span v-if="candidate.transitCostPerUnit !== null && candidate.transitCostPerUnit > 0" class="transit-cost">
+                              +${{ candidate.transitCostPerUnit.toFixed(2) }}
+                            </span>
+                            <span v-else class="transit-free">{{ t('buildingDetail.sourcingComparison.localFree') }}</span>
+                          </td>
+                          <td class="sourcing-col-landed col-landed">
+                            <strong v-if="candidate.deliveredPricePerUnit !== null">
+                              ${{ candidate.deliveredPricePerUnit.toFixed(2) }}
+                            </strong>
+                            <span v-else>—</span>
+                          </td>
+                          <td class="sourcing-col-quality">
+                            <span v-if="candidate.estimatedQuality !== null">{{ formatPercent(candidate.estimatedQuality) }}</span>
+                            <span v-else>—</span>
+                          </td>
+                          <td class="sourcing-col-status">
+                            <span v-if="candidate.isRecommended" class="status-badge recommended-badge">
+                              ★ {{ t('buildingDetail.sourcingComparison.recommended') }}
+                            </span>
+                            <span v-else-if="candidate.isEligible" class="status-badge eligible-badge">
+                              {{ t('buildingDetail.sourcingComparison.eligible') }}
+                            </span>
+                            <span
+                              v-else
+                              class="status-badge blocked-badge"
+                              :title="candidate.blockMessage ?? ''"
+                            >
+                              {{ t(`buildingDetail.sourcingComparison.blockReason_${candidate.blockReason ?? 'UNKNOWN'}`) }}
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <!-- Filter hint when some candidates are blocked -->
+                  <p
+                    v-if="sourcingCandidates.some((c) => !c.isEligible)"
+                    class="sourcing-filter-hint config-help"
+                  >
+                    {{ t('buildingDetail.sourcingComparison.filterHint') }}
+                  </p>
+                </template>
+
+                <div v-else class="sourcing-comparison-empty">
+                  {{ t('buildingDetail.sourcingComparison.empty') }}
+                </div>
+              </div>
               <div v-if="selectedPublicSalesUnit" class="unit-insight-card market-intelligence-panel" aria-label="Market Intelligence">
                 <h5>{{ t('buildingDetail.marketIntelligence.title') }}</h5>
                 <p class="config-help">{{ t('buildingDetail.marketIntelligence.subtitle') }}</p>
@@ -7174,6 +7349,162 @@ watch(
   color: var(--color-text-secondary);
   margin: 0.15rem 0 0.35rem;
   line-height: 1.45;
+}
+
+/* ── Sourcing Comparison Panel ── */
+.sourcing-comparison {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface, #f8fafc);
+}
+
+.sourcing-comparison-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.25rem;
+}
+
+.sourcing-comparison-subtitle {
+  margin: 0 0 0.75rem;
+  font-size: 0.78rem;
+}
+
+.sourcing-comparison-loading,
+.sourcing-comparison-empty {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.sourcing-trap-note {
+  font-size: 0.78rem;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+  padding: 0.35rem 0.6rem;
+  margin-bottom: 0.6rem;
+  line-height: 1.4;
+}
+
+.sourcing-table-wrapper {
+  overflow-x: auto;
+  margin: 0 -0.5rem;
+}
+
+.sourcing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.sourcing-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  white-space: nowrap;
+}
+
+.sourcing-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--color-border-muted, #f0f4f8);
+  vertical-align: top;
+}
+
+.sourcing-row.recommended {
+  background: #f0fdf4;
+}
+
+.sourcing-row.ineligible {
+  opacity: 0.65;
+}
+
+.sourcing-row.recommended td {
+  border-bottom-color: #bbf7d0;
+}
+
+.sourcing-col-source {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 7rem;
+}
+
+.source-type-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.source-name {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.source-distance {
+  font-size: 0.68rem;
+  color: var(--color-text-secondary);
+}
+
+.sourcing-col-transit .transit-cost {
+  color: #b45309;
+  font-weight: 500;
+}
+
+.sourcing-col-transit .transit-free {
+  font-size: 0.72rem;
+  color: #059669;
+}
+
+.col-landed {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.sourcing-row.recommended .col-landed strong {
+  color: #059669;
+}
+
+.sourcing-row.ineligible .col-landed strong {
+  color: #dc2626;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.recommended-badge {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.eligible-badge {
+  background: #e0f2fe;
+  color: #0c4a6e;
+}
+
+.blocked-badge {
+  background: #fee2e2;
+  color: #991b1b;
+  cursor: help;
+}
+
+.sourcing-filter-hint {
+  margin-top: 0.6rem;
+  font-size: 0.75rem;
 }
 
 /* ── Quick Price Update Panel ── */

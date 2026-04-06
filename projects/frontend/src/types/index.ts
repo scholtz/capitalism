@@ -910,3 +910,27 @@ export interface ProcurementPreview {
   blockReason: string | null
   blockMessage: string | null
 }
+
+/**
+ * A single sourcing candidate for a purchase unit.
+ * Each candidate represents one possible supply route with a full landed-cost
+ * breakdown (exchange price + transit cost = delivered price).
+ * Returned by the `sourcingCandidates` GraphQL query.
+ */
+export interface SourcingCandidate {
+  sourceType: 'GLOBAL_EXCHANGE' | 'PLAYER_EXCHANGE_ORDER' | 'LOCAL_B2B' | 'LOCKED_VENDOR' | 'NO_SOURCE'
+  sourceCityId: string | null
+  sourceCityName: string | null
+  sourceVendorCompanyId: string | null
+  sourceVendorName: string | null
+  exchangePricePerUnit: number | null
+  transitCostPerUnit: number | null
+  deliveredPricePerUnit: number | null
+  estimatedQuality: number | null
+  distanceKm: number | null
+  isEligible: boolean
+  blockReason: string | null
+  blockMessage: string | null
+  isRecommended: boolean
+  rank: number
+}

@@ -2247,6 +2247,39 @@ public sealed class Query
         var company = unit.Building.Company;
         return await ProcurementPreviewService.ComputeAsync(db, unit, company);
     }
+
+    /// <summary>
+    /// Returns the full ranked list of sourcing candidates for a PURCHASE unit,
+    /// including global exchange offers from every city, player-placed exchange orders,
+    /// and local B2B suppliers. Each candidate includes the full landed-cost breakdown
+    /// (exchange price, transit cost, delivered price) and eligibility state so the
+    /// player can compare options and understand why a cheaper-looking route may be
+    /// blocked by a quality or price filter.
+    ///
+    /// Requires authentication. The authenticated player must own the building that
+    /// contains the unit.
+    /// </summary>
+    [Authorize]
+    public async Task<List<SourcingCandidate>> GetSourcingCandidates(
+        Guid buildingUnitId,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building)
+            .ThenInclude(b => b.Company)
+            .FirstOrDefaultAsync(u => u.Id == buildingUnitId);
+
+        if (unit is null || unit.Building.Company.PlayerId != userId)
+            return [];
+
+        if (unit.UnitType != Data.Entities.UnitType.Purchase)
+            return [];
+
+        return await SourcingComparisonService.GetCandidatesAsync(db, unit, unit.Building.Company);
+    }
 }
 
 /// <summary>Payload for player ranking.</summary>

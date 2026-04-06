@@ -465,6 +465,8 @@ export type MockState = {
   myLoans: MockLoan[]
   /** Mock procurement preview response keyed by unit ID. If null/missing, returns a default GLOBAL_EXCHANGE preview. */
   procurementPreviews: Record<string, object | null>
+  /** Mock sourcing candidates response keyed by unit ID. If null/missing, returns default candidates. */
+  sourcingCandidates: Record<string, object[] | null>
 }
 
 const mockStateByPage = new WeakMap<Page, MockState>()
@@ -1203,6 +1205,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     loanOffers: [],
     myLoans: [],
     procurementPreviews: {},
+    sourcingCandidates: {},
     ...initial,
   }
 
@@ -3490,6 +3493,70 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { procurementPreview } }),
+      })
+    }
+
+    if (query.includes('sourcingCandidates')) {
+      const unitId: string = body.variables?.unitId ?? body.variables?.buildingUnitId ?? ''
+      const custom = state.sourcingCandidates[unitId]
+      const defaultCandidates = [
+        {
+          sourceType: 'GLOBAL_EXCHANGE',
+          sourceCityId: 'city-ba',
+          sourceCityName: 'Bratislava',
+          sourceVendorCompanyId: null,
+          sourceVendorName: null,
+          exchangePricePerUnit: 8.5,
+          transitCostPerUnit: 0,
+          deliveredPricePerUnit: 8.5,
+          estimatedQuality: 0.7,
+          distanceKm: 0,
+          isEligible: true,
+          blockReason: null,
+          blockMessage: null,
+          isRecommended: true,
+          rank: 1,
+        },
+        {
+          sourceType: 'GLOBAL_EXCHANGE',
+          sourceCityId: 'city-pr',
+          sourceCityName: 'Prague',
+          sourceVendorCompanyId: null,
+          sourceVendorName: null,
+          exchangePricePerUnit: 7.2,
+          transitCostPerUnit: 2.8,
+          deliveredPricePerUnit: 10.0,
+          estimatedQuality: 0.82,
+          distanceKm: 310,
+          isEligible: true,
+          blockReason: null,
+          blockMessage: null,
+          isRecommended: false,
+          rank: 2,
+        },
+        {
+          sourceType: 'GLOBAL_EXCHANGE',
+          sourceCityId: 'city-vi',
+          sourceCityName: 'Vienna',
+          sourceVendorCompanyId: null,
+          sourceVendorName: null,
+          exchangePricePerUnit: 9.8,
+          transitCostPerUnit: 0.15,
+          deliveredPricePerUnit: 9.95,
+          estimatedQuality: 0.65,
+          distanceKm: 55,
+          isEligible: true,
+          blockReason: null,
+          blockMessage: null,
+          isRecommended: false,
+          rank: 3,
+        },
+      ]
+      const sourcingCandidates = custom !== undefined ? custom : defaultCandidates
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { sourcingCandidates } }),
       })
     }
 

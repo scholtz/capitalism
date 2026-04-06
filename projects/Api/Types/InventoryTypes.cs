@@ -130,6 +130,61 @@ public static class ProcurementBlockReason
 }
 
 /// <summary>
+/// A single sourcing candidate evaluated for a purchase unit.
+/// Each candidate represents one possible supply route (a global exchange city,
+/// a player-placed exchange sell order, or a local B2B source).
+/// The list of candidates is ranked by landed cost so the player can compare
+/// options and understand why one route may be cheaper after transport.
+/// </summary>
+public sealed class SourcingCandidate
+{
+    /// <summary>Source type: GLOBAL_EXCHANGE, PLAYER_EXCHANGE_ORDER, LOCAL_B2B, or LOCKED_VENDOR.</summary>
+    public string SourceType { get; set; } = ProcurementSourceType.NoSource;
+
+    /// <summary>Source city ID (for exchange or city-level B2B candidates).</summary>
+    public Guid? SourceCityId { get; set; }
+
+    /// <summary>Human-readable source city name.</summary>
+    public string? SourceCityName { get; set; }
+
+    /// <summary>Vendor company ID (for player exchange order or locked-vendor candidates).</summary>
+    public Guid? SourceVendorCompanyId { get; set; }
+
+    /// <summary>Human-readable vendor company name.</summary>
+    public string? SourceVendorName { get; set; }
+
+    /// <summary>Exchange price per unit at the source city (before transit cost).</summary>
+    public decimal? ExchangePricePerUnit { get; set; }
+
+    /// <summary>Transit cost per unit from source city to destination building.</summary>
+    public decimal? TransitCostPerUnit { get; set; }
+
+    /// <summary>Total landed cost per unit = ExchangePricePerUnit + TransitCostPerUnit.</summary>
+    public decimal? DeliveredPricePerUnit { get; set; }
+
+    /// <summary>Estimated quality of goods at this source (0.0–1.0).</summary>
+    public decimal? EstimatedQuality { get; set; }
+
+    /// <summary>Straight-line distance in km from source city to destination city.</summary>
+    public double? DistanceKm { get; set; }
+
+    /// <summary>Whether this candidate passes all active filters (max price, min quality, vendor lock).</summary>
+    public bool IsEligible { get; set; }
+
+    /// <summary>Machine-readable reason code when IsEligible is false.</summary>
+    public string? BlockReason { get; set; }
+
+    /// <summary>Human-readable explanation when IsEligible is false.</summary>
+    public string? BlockMessage { get; set; }
+
+    /// <summary>True for the single best valid candidate (lowest landed cost among eligible).</summary>
+    public bool IsRecommended { get; set; }
+
+    /// <summary>1-based rank among all candidates when sorted by delivered price (eligible first, then ineligible).</summary>
+    public int Rank { get; set; }
+}
+
+/// <summary>
 /// A single human-readable event from a building's recent tick history.
 /// Covers purchasing, manufacturing, resource movement, and public sales.
 /// </summary>

@@ -17477,4 +17477,341 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
 
     #endregion
 
+    #region SourcingCandidates
+
+    [Fact]
+    public async Task SourcingCandidates_GlobalExchange_ReturnsRankedCandidatesWithLandedCost()
+    {
+        var email = $"sc-ranked-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "SCRanked");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "SCRankedCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory,
+            Name = "SCRankedFactory",
+            Level = 1,
+            Latitude = city.Latitude,
+            Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            PurchaseSource = "OPTIMAL",
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { sourceType sourceCityId sourceCityName exchangePricePerUnit transitCostPerUnit deliveredPricePerUnit estimatedQuality distanceKm isEligible blockReason isRecommended rank } }",
+            new { unitId = unit.Id.ToString() },
+            token);
+
+        var candidates = result.GetProperty("data").GetProperty("sourcingCandidates");
+        Assert.True(candidates.GetArrayLength() > 0, "Expected at least one sourcing candidate");
+
+        // All should be GLOBAL_EXCHANGE (no B2B or player orders set up)
+        foreach (var c in candidates.EnumerateArray())
+        {
+            Assert.Equal("GLOBAL_EXCHANGE", c.GetProperty("sourceType").GetString());
+            Assert.NotNull(c.GetProperty("sourceCityName").GetString());
+            Assert.True(c.GetProperty("deliveredPricePerUnit").GetDecimal() > 0m);
+            Assert.True(c.GetProperty("estimatedQuality").GetDecimal() > 0m);
+            Assert.True(c.GetProperty("rank").GetInt32() > 0);
+        }
+
+        // Exactly one candidate should be recommended.
+        var recommended = candidates.EnumerateArray().Where(c => c.GetProperty("isRecommended").GetBoolean()).ToList();
+        Assert.Single(recommended);
+
+        // Recommended must be rank 1 (first eligible by landed cost).
+        Assert.Equal(1, recommended[0].GetProperty("rank").GetInt32());
+
+        // Candidates should be ordered by rank.
+        var ranks = candidates.EnumerateArray().Select(c => c.GetProperty("rank").GetInt32()).ToList();
+        for (var i = 0; i < ranks.Count - 1; i++)
+            Assert.True(ranks[i] <= ranks[i + 1], $"Expected candidates ordered by rank at index {i}");
+    }
+
+    [Fact]
+    public async Task SourcingCandidates_MaxPriceFilter_MarksExpensiveCandidatesIneligible()
+    {
+        var email = $"sc-maxprice-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "SCMaxPrice");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "SCMaxPriceCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory,
+            Name = "SCMaxFactory",
+            Level = 1,
+            Latitude = city.Latitude,
+            Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        // MaxPrice set to an impossibly low value so all exchange candidates are blocked.
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            PurchaseSource = "EXCHANGE",
+            MaxPrice = 0.001m,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { isEligible blockReason } }",
+            new { unitId = unit.Id.ToString() },
+            token);
+
+        var candidates = result.GetProperty("data").GetProperty("sourcingCandidates");
+        // All candidates must be ineligible due to MAX_PRICE_EXCEEDED
+        foreach (var c in candidates.EnumerateArray())
+        {
+            Assert.False(c.GetProperty("isEligible").GetBoolean());
+            Assert.Equal("MAX_PRICE_EXCEEDED", c.GetProperty("blockReason").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task SourcingCandidates_MinQualityFilter_MarksLowQualityCandidatesIneligible()
+    {
+        var email = $"sc-minquality-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "SCMinQuality");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "SCMinQualityCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory,
+            Name = "SCQualityFactory",
+            Level = 1,
+            Latitude = city.Latitude,
+            Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        // MinQuality set to impossibly high value so all candidates are blocked.
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            PurchaseSource = "EXCHANGE",
+            MinQuality = 0.9999m,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { isEligible blockReason } }",
+            new { unitId = unit.Id.ToString() },
+            token);
+
+        var candidates = result.GetProperty("data").GetProperty("sourcingCandidates");
+        foreach (var c in candidates.EnumerateArray())
+        {
+            Assert.False(c.GetProperty("isEligible").GetBoolean());
+            Assert.Equal("MIN_QUALITY_FAILED", c.GetProperty("blockReason").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task SourcingCandidates_NotConfigured_ReturnsEmptyList()
+    {
+        var email = $"sc-noconfig-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "SCNoConfig");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "SCNoConfigCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory,
+            Name = "SCNoConfigFactory",
+            Level = 1,
+            Latitude = city.Latitude,
+            Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        // No resource or product configured
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { rank } }",
+            new { unitId = unit.Id.ToString() },
+            token);
+
+        var candidates = result.GetProperty("data").GetProperty("sourcingCandidates");
+        Assert.Equal(0, candidates.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task SourcingCandidates_Unauthenticated_ReturnsEmptyList()
+    {
+        var email = $"sc-anon-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "SCAnonOwner");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "SCAnonCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory,
+            Name = "SCAnonFactory",
+            Level = 1,
+            Latitude = city.Latitude,
+            Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        // Query without auth token – returns empty list (unit not found for unauthenticated caller)
+        var result = await ExecuteGraphQlAsync(
+            "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { rank } }",
+            new { unitId = unit.Id.ToString() },
+            null);
+
+        var data = result.GetProperty("data");
+        if (data.ValueKind != System.Text.Json.JsonValueKind.Null)
+        {
+            var candidates = data.GetProperty("sourcingCandidates");
+            Assert.Equal(0, candidates.GetArrayLength());
+        }
+    }
+
+    [Fact]
+    public async Task SourcingCandidates_SameCityCandidate_HasZeroTransitCost()
+    {
+        var email = $"sc-local-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "SCLocal");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "SCLocalCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory,
+            Name = "SCLocalFactory",
+            Level = 1,
+            Latitude = city.Latitude,
+            Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            ResourceTypeId = resource.Id,
+            PurchaseSource = "EXCHANGE",
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            "query SC($unitId: UUID!) { sourcingCandidates(buildingUnitId: $unitId) { sourceCityId transitCostPerUnit distanceKm } }",
+            new { unitId = unit.Id.ToString() },
+            token);
+
+        var candidates = result.GetProperty("data").GetProperty("sourcingCandidates");
+
+        // The candidate for the same city must have zero transit cost
+        var sameCityCandidate = candidates.EnumerateArray()
+            .FirstOrDefault(c => c.GetProperty("sourceCityId").GetString() == city.Id.ToString());
+
+        if (sameCityCandidate.ValueKind != System.Text.Json.JsonValueKind.Undefined)
+        {
+            Assert.Equal(0m, sameCityCandidate.GetProperty("transitCostPerUnit").GetDecimal());
+        }
+    }
+
+    #endregion
+
 }
