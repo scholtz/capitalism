@@ -5,13 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
 import { trackStartupPackEvent, emitStartupPackViewEvents } from '@/lib/startupPackAnalytics'
 import { computeSimulatedProfit, trackOnboardingEvent } from '@/lib/onboardingAnalytics'
-import {
-  getLocalizedProductDescription,
-  getLocalizedProductName,
-  getLocalizedRecipeIngredientName,
-  getLocalizedResourceName,
-  getProductImageUrl,
-} from '@/lib/catalogPresentation'
+import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedRecipeIngredientName, getLocalizedResourceName, getProductImageUrl } from '@/lib/catalogPresentation'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import {
   canProceedStep3 as checkCanProceedStep3,
@@ -27,17 +21,7 @@ import {
 import OnboardingLotSelector from '@/components/onboarding/OnboardingLotSelector.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTickCountdown } from '@/composables/useTickCountdown'
-import type {
-  BuildingLot,
-  City,
-  FirstSaleMission,
-  GameState,
-  OnboardingResult,
-  OnboardingStartResult,
-  ProductType,
-  StartupPackClaimResult,
-  StartupPackOffer,
-} from '@/types'
+import type { BuildingLot, City, FirstSaleMission, GameState, OnboardingResult, OnboardingStartResult, ProductType, StartupPackClaimResult, StartupPackOffer } from '@/types'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -69,9 +53,7 @@ function hasStoredSessionToken() {
   return !!cookieToken && !!cookieExpires && new Date(cookieExpires) > new Date()
 }
 
-const hasAuthenticatedSession = computed(
-  () => auth.isAuthenticated || !!auth.player || hasStoredSessionToken(),
-)
+const hasAuthenticatedSession = computed(() => auth.isAuthenticated || !!auth.player || hasStoredSessionToken())
 
 const PROGRESS_KEY = 'onboarding_progress'
 const PERSONAL_STARTING_CASH = 200_000
@@ -248,9 +230,7 @@ const starterCompany = computed(() => {
 
   return auth.player?.companies.find((company) => company.id === companyId) ?? null
 })
-const selectedIpoOption = computed(
-  () => ipoOptions.find((option) => option.raiseTarget === selectedIpoRaiseTarget.value) ?? ipoOptions[0],
-)
+const selectedIpoOption = computed(() => ipoOptions.find((option) => option.raiseTarget === selectedIpoRaiseTarget.value) ?? ipoOptions[0])
 const companyStartingCash = computed(() => FOUNDER_CONTRIBUTION + selectedIpoOption.value.raiseTarget)
 const remainingPersonalCash = computed(() => PERSONAL_STARTING_CASH - FOUNDER_CONTRIBUTION)
 const starterCash = computed(() => onboardingCompanyCash.value ?? starterCompany.value?.cash ?? companyStartingCash.value)
@@ -263,7 +243,7 @@ const recommendedShopLotIds = computed(() => getRecommendedShopLotIds(availableS
 const sortedProducts = computed(() => {
   const prods = [...products.value]
   if (selectedProductId.value) {
-    const selected = prods.find(p => p.id === selectedProductId.value)
+    const selected = prods.find((p) => p.id === selectedProductId.value)
     if (selected) {
       prods.splice(prods.indexOf(selected), 1)
       prods.unshift(selected)
@@ -274,41 +254,22 @@ const sortedProducts = computed(() => {
 
 const canProceedStep1 = computed(() => !!selectedIndustry.value)
 const canProceedStep2 = computed(() => !!selectedCityId.value)
-const canProceedStep3 = computed(() =>
-  checkCanProceedStep3(companyName.value, selectedFactoryLot.value, companyStartingCash.value),
-)
-const canProceedStep4 = computed(() =>
-  checkCanProceedStep4(selectedProductId.value, selectedShopLot.value, starterCash.value),
-)
+const canProceedStep3 = computed(() => checkCanProceedStep3(companyName.value, selectedFactoryLot.value, companyStartingCash.value))
+const canProceedStep4 = computed(() => checkCanProceedStep4(selectedProductId.value, selectedShopLot.value, starterCash.value))
 const canShowStep4Summary = computed(() => !!selectedProduct.value && !!selectedFactoryLot.value && !!selectedShopLot.value)
-const activeStartupPackOffer = computed(() =>
-  startupPackOffer.value
-  && ['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(startupPackOffer.value.status)
-    ? startupPackOffer.value
-    : null,
-)
-const claimedStartupPackOffer = computed(() =>
-  startupPackOffer.value?.status === 'CLAIMED' ? startupPackOffer.value : null,
-)
-const expiredStartupPackOffer = computed(() =>
-  startupPackOffer.value?.status === 'EXPIRED' ? startupPackOffer.value : null,
-)
+const activeStartupPackOffer = computed(() => (startupPackOffer.value && ['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(startupPackOffer.value.status) ? startupPackOffer.value : null))
+const claimedStartupPackOffer = computed(() => (startupPackOffer.value?.status === 'CLAIMED' ? startupPackOffer.value : null))
+const expiredStartupPackOffer = computed(() => (startupPackOffer.value?.status === 'EXPIRED' ? startupPackOffer.value : null))
 
 /**
  * True when the player has completed the lot flow but has not yet completed
  * the first-sale milestone. In this state the configure-guide step (step 5)
  * should be shown even after a page refresh.
  */
-const isResumingConfigureStep = computed(() =>
-  !!auth.player?.onboardingCompletedAtUtc
-  && !auth.player.onboardingFirstSaleCompletedAtUtc
-  && !!auth.player.onboardingShopBuildingId,
-)
+const isResumingConfigureStep = computed(() => !!auth.player?.onboardingCompletedAtUtc && !auth.player.onboardingFirstSaleCompletedAtUtc && !!auth.player.onboardingShopBuildingId)
 
 /** Building ID for the "Configure My Sales Shop" CTA. Works both in-session and after resume. */
-const shopBuildingId = computed(() =>
-  completionResult.value?.salesShop.id ?? auth.player?.onboardingShopBuildingId ?? null,
-)
+const shopBuildingId = computed(() => completionResult.value?.salesShop.id ?? auth.player?.onboardingShopBuildingId ?? null)
 
 /** Cash balance to show in the configure-guide panel. Works in-session and after resume. */
 const configureGuideCash = computed(() => {
@@ -333,17 +294,11 @@ const simulatedProfit = computed(() => {
     const unitCost = r.resourceType?.basePrice ?? 0
     return sum + unitCost * r.quantity
   }, 0)
-  return computeSimulatedProfit(
-    selectedProduct.value.basePrice,
-    selectedProduct.value.outputQuantity,
-    recipeCost > 0 ? recipeCost : undefined,
-  )
+  return computeSimulatedProfit(selectedProduct.value.basePrice, selectedProduct.value.outputQuantity, recipeCost > 0 ? recipeCost : undefined)
 })
 
 function findResumedShopBasePrice(): number | null {
-  const resumedShop = auth.player?.companies
-    .flatMap((company) => company.buildings)
-    .find((building) => building.id === shopBuildingId.value)
+  const resumedShop = auth.player?.companies.flatMap((company) => company.buildings).find((building) => building.id === shopBuildingId.value)
   const publicSalesUnit = resumedShop?.units.find((unit) => unit.unitType === 'PUBLIC_SALES')
   return publicSalesUnit?.minPrice ?? null
 }
@@ -448,11 +403,7 @@ function resolveMaxReachableStep(): number {
   // In guest mode, if factory lot is selected (simulated purchase complete), step 4 is reachable.
   // If shop lot AND product are also selected (guest completed step 4), step 5 is reachable.
   if (isGuestMode.value) {
-    const guestCompletedAllSteps =
-      !!selectedFactoryLotId.value
-      && onboardingCompanyCash.value !== null
-      && !!selectedShopLotId.value
-      && !!selectedProductId.value
+    const guestCompletedAllSteps = !!selectedFactoryLotId.value && onboardingCompanyCash.value !== null && !!selectedShopLotId.value && !!selectedProductId.value
     if (guestCompletedAllSteps) return 5
     if (selectedFactoryLotId.value && onboardingCompanyCash.value !== null) return 4
     return getMaxReachableStep({
@@ -487,7 +438,7 @@ function saveProgress() {
         industry: selectedIndustry.value,
         cityId: selectedCityId.value,
         productId: selectedProductId.value,
-          ipoRaiseTarget: selectedIpoRaiseTarget.value,
+        ipoRaiseTarget: selectedIpoRaiseTarget.value,
         companyName: companyName.value,
         factoryLotId: selectedFactoryLotId.value,
         shopLotId: selectedShopLotId.value,
@@ -534,10 +485,7 @@ function restoreProgress() {
   }
 }
 
-watch(
-  [step, selectedIndustry, selectedCityId, selectedProductId, selectedIpoRaiseTarget, companyName, selectedFactoryLotId, selectedShopLotId],
-  saveProgress,
-)
+watch([step, selectedIndustry, selectedCityId, selectedProductId, selectedIpoRaiseTarget, companyName, selectedFactoryLotId, selectedShopLotId], saveProgress)
 
 watch(step, async (currentStep) => {
   const currentKey = stepToKey(currentStep)
@@ -594,9 +542,7 @@ async function syncOngoingOnboardingState() {
   selectedCityId.value = auth.player.onboardingCityId ?? selectedCityId.value
   selectedFactoryLotId.value = auth.player.onboardingFactoryLotId ?? selectedFactoryLotId.value
 
-  const ongoingCompany = auth.player.companies.find(
-    (company) => company.id === auth.player?.onboardingCompanyId,
-  )
+  const ongoingCompany = auth.player.companies.find((company) => company.id === auth.player?.onboardingCompanyId)
   if (ongoingCompany) {
     companyName.value = ongoingCompany.name
     onboardingCompanyCash.value = ongoingCompany.cash
@@ -641,9 +587,7 @@ onMounted(async () => {
   try {
     loading.value = true
     const [industriesData, citiesData] = await Promise.all([
-      gqlRequest<{ starterIndustries: { industries: string[] } }>(
-        '{ starterIndustries { industries } }',
-      ),
+      gqlRequest<{ starterIndustries: { industries: string[] } }>('{ starterIndustries { industries } }'),
       gqlRequest<{ cities: City[] }>(CITIES_QUERY),
     ])
 
@@ -849,9 +793,7 @@ async function completeOnboarding() {
     error.value = e instanceof Error ? e.message : t('onboarding.lotUnavailableBody')
     await auth.fetchMe()
     await loadLots()
-    onboardingCompanyCash.value =
-      auth.player?.companies.find((company) => company.id === auth.player?.onboardingCompanyId)?.cash
-      ?? onboardingCompanyCash.value
+    onboardingCompanyCash.value = auth.player?.companies.find((company) => company.id === auth.player?.onboardingCompanyId)?.cash ?? onboardingCompanyCash.value
     if (selectedShopLot.value?.ownerCompanyId) {
       selectedShopLotId.value = ''
     }
@@ -928,14 +870,7 @@ async function saveGuestProgress() {
     }
 
     // Try to run the real mutations with the saved guest choices
-    if (
-      selectedIndustry.value
-      && selectedCityId.value
-      && companyName.value
-      && selectedFactoryLotId.value
-      && selectedProductId.value
-      && selectedShopLotId.value
-    ) {
+    if (selectedIndustry.value && selectedCityId.value && companyName.value && selectedFactoryLotId.value && selectedProductId.value && selectedShopLotId.value) {
       try {
         loading.value = true
         error.value = null
@@ -1023,10 +958,7 @@ async function saveGuestProgress() {
         } else {
           // Any other backend failure (network outage, validation error, auth mismatch,
           // duplicate submit, etc.) must be shown explicitly — NOT masked as a lot-conflict.
-          error.value =
-            migrationErr instanceof Error
-              ? migrationErr.message
-              : t('onboarding.guestMigrationGenericError')
+          error.value = migrationErr instanceof Error ? migrationErr.message : t('onboarding.guestMigrationGenericError')
         }
       } finally {
         loading.value = false
@@ -1239,11 +1171,7 @@ async function loadFirstSaleMission() {
     firstSaleMission.value = data.firstSaleMission
 
     // Auto-complete the milestone when the simulation has recorded a real first sale
-    if (
-      data.firstSaleMission.phase === 'FIRST_SALE_RECORDED'
-      && !milestoneCompleted.value
-      && !milestoneLoading.value
-    ) {
+    if (data.firstSaleMission.phase === 'FIRST_SALE_RECORDED' && !milestoneCompleted.value && !milestoneLoading.value) {
       await markMilestoneComplete()
     }
   } catch (err) {
@@ -1297,9 +1225,7 @@ function formatTimeRemaining(expiresAtUtc: string): string {
 
 async function loadGameState() {
   try {
-    const data = await gqlRequest<{ gameState: GameState }>(
-      '{ gameState { currentTick lastTickAtUtc tickIntervalSeconds taxRate } }',
-    )
+    const data = await gqlRequest<{ gameState: GameState }>('{ gameState { currentTick lastTickAtUtc tickIntervalSeconds taxRate } }')
     gameState.value = data.gameState
     startTickCountdown()
   } catch {
@@ -1363,13 +1289,7 @@ useTickRefresh(async () => {
           <p class="step-desc">{{ t('onboarding.step1Desc') }}</p>
         </div>
         <div class="industry-grid">
-          <button
-            v-for="ind in industries"
-            :key="ind"
-            class="industry-card"
-            :class="{ selected: selectedIndustry === ind }"
-            @click="selectedIndustry = ind"
-          >
+          <button v-for="ind in industries" :key="ind" class="industry-card" :class="{ selected: selectedIndustry === ind }" @click="selectedIndustry = ind">
             <span class="card-icon">{{ industryIcons[ind] || '🏭' }}</span>
             <span class="card-title">{{ formatIndustry(ind) }}</span>
             <span class="card-first-product">{{ t(industryFirstProductKeys[ind] || '') }}</span>
@@ -1391,13 +1311,7 @@ useTickRefresh(async () => {
           <p class="step-desc">{{ t('onboarding.step2Desc') }}</p>
         </div>
         <div class="city-grid">
-          <button
-            v-for="city in cities"
-            :key="city.id"
-            class="city-card"
-            :class="{ selected: selectedCityId === city.id }"
-            @click="selectedCityId = city.id"
-          >
+          <button v-for="city in cities" :key="city.id" class="city-card" :class="{ selected: selectedCityId === city.id }" @click="selectedCityId = city.id">
             <div class="city-header">
               <span class="card-icon">🏙️</span>
               <span class="card-title">{{ city.name }}</span>
@@ -1473,14 +1387,7 @@ useTickRefresh(async () => {
 
         <div class="form-group compact">
           <label for="companyName">{{ t('onboarding.companyName') }}</label>
-          <input
-            id="companyName"
-            v-model="companyName"
-            type="text"
-            required
-            maxlength="200"
-            :placeholder="t('onboarding.companyNamePlaceholder')"
-          />
+          <input id="companyName" v-model="companyName" type="text" required maxlength="200" :placeholder="t('onboarding.companyNamePlaceholder')" />
         </div>
 
         <div class="guidance-panel">
@@ -1558,13 +1465,7 @@ useTickRefresh(async () => {
             {{ auth.isProSubscriber ? t('onboarding.proCatalogUnlocked') : t('onboarding.proCatalogNote') }}
           </p>
           <div class="product-grid">
-            <button
-              v-for="prod in sortedProducts"
-              :key="prod.id"
-              class="product-card"
-              :class="{ selected: selectedProductId === prod.id }"
-              @click="selectedProductId = prod.id"
-            >
+            <button v-for="prod in sortedProducts" :key="prod.id" class="product-card" :class="{ selected: selectedProductId === prod.id }" @click="selectedProductId = prod.id">
               <img :src="getProductImage(prod)" :alt="getProductName(prod)" class="product-image" />
               <span class="card-title">{{ getProductName(prod) }}</span>
               <span class="product-price">${{ prod.basePrice }}{{ t('onboarding.perUnit') }}</span>
@@ -1757,7 +1658,15 @@ useTickRefresh(async () => {
             <span class="price-panel-icon">💲</span>
             <div>
               <strong>{{ t('onboarding.guestPriceTitle') }}</strong>
-              <p>{{ t('onboarding.guestPriceDesc', { product: getProductName(selectedProduct), price: '$' + formatCurrency(guestConfiguredShopPrice), basePrice: '$' + formatCurrency(selectedProduct.basePrice) }) }}</p>
+              <p>
+                {{
+                  t('onboarding.guestPriceDesc', {
+                    product: getProductName(selectedProduct),
+                    price: '$' + formatCurrency(guestConfiguredShopPrice),
+                    basePrice: '$' + formatCurrency(selectedProduct.basePrice),
+                  })
+                }}
+              </p>
             </div>
           </div>
           <p class="price-panel-tip">{{ t('onboarding.guestPriceTip') }}</p>
@@ -1774,23 +1683,21 @@ useTickRefresh(async () => {
           </div>
 
           <ul class="guest-keeps-list" aria-label="What you keep when you save">
-            <li>✅ <strong>{{ companyName || t('onboarding.guestCompanyPlaceholder') }}</strong> — {{ t('onboarding.guestSaveKeepsCompany') }}</li>
-            <li v-if="selectedCity">✅ <strong>{{ selectedCity.name }}</strong> — {{ t('onboarding.guestSaveKeepsCity') }}</li>
-            <li v-if="selectedProduct">✅ <strong>{{ getProductName(selectedProduct) }}</strong> — {{ t('onboarding.guestSaveKeepsProduct') }}</li>
+            <li>
+              ✅ <strong>{{ companyName || t('onboarding.guestCompanyPlaceholder') }}</strong> — {{ t('onboarding.guestSaveKeepsCompany') }}
+            </li>
+            <li v-if="selectedCity">
+              ✅ <strong>{{ selectedCity.name }}</strong> — {{ t('onboarding.guestSaveKeepsCity') }}
+            </li>
+            <li v-if="selectedProduct">
+              ✅ <strong>{{ getProductName(selectedProduct) }}</strong> — {{ t('onboarding.guestSaveKeepsProduct') }}
+            </li>
             <li>✅ {{ t('onboarding.guestSaveKeepsSetup') }}</li>
           </ul>
 
           <div class="guest-auth-toggle">
-            <button
-              class="btn-tab"
-              :class="{ active: guestAuthMode === 'register' }"
-              @click="guestAuthMode = 'register'"
-            >{{ t('onboarding.guestRegister') }}</button>
-            <button
-              class="btn-tab"
-              :class="{ active: guestAuthMode === 'login' }"
-              @click="guestAuthMode = 'login'"
-            >{{ t('onboarding.guestLogin') }}</button>
+            <button class="btn-tab" :class="{ active: guestAuthMode === 'register' }" @click="guestAuthMode = 'register'">{{ t('onboarding.guestRegister') }}</button>
+            <button class="btn-tab" :class="{ active: guestAuthMode === 'login' }" @click="guestAuthMode = 'login'">{{ t('onboarding.guestLogin') }}</button>
           </div>
 
           <div class="guest-auth-form">
@@ -2049,11 +1956,7 @@ useTickRefresh(async () => {
                   'badge-awaiting': firstSaleMission.phase === 'AWAITING_FIRST_SALE',
                 }"
               >
-                {{
-                  firstSaleMission.phase === 'CONFIGURE_SHOP'
-                    ? t('onboarding.missionPhaseConfigureShop')
-                    : t('onboarding.missionPhaseAwaiting')
-                }}
+                {{ firstSaleMission.phase === 'CONFIGURE_SHOP' ? t('onboarding.missionPhaseConfigureShop') : t('onboarding.missionPhaseAwaiting') }}
               </span>
             </div>
             <ul v-if="firstSaleMission.blockers.length > 0" class="mission-blockers">
@@ -2068,11 +1971,7 @@ useTickRefresh(async () => {
 
           <div class="milestone-complete">
             <p class="milestone-complete-hint">{{ t('onboarding.milestoneCompleteHint') }}</p>
-            <button
-              class="btn btn-secondary"
-              :disabled="milestoneLoading"
-              @click="markMilestoneComplete"
-            >
+            <button class="btn btn-secondary" :disabled="milestoneLoading" @click="markMilestoneComplete">
               {{ milestoneLoading ? t('common.loading') : t('onboarding.milestoneCompleteCta') }}
               <span v-if="!milestoneLoading" class="btn-arrow">✓</span>
             </button>
@@ -2091,12 +1990,7 @@ useTickRefresh(async () => {
           </div>
 
           <!-- First-sale celebration: concrete business feedback -->
-          <div
-            v-if="firstSaleMission && firstSaleMission.firstSaleRevenue !== null"
-            class="first-sale-celebration"
-            role="region"
-            aria-label="First sale details"
-          >
+          <div v-if="firstSaleMission && firstSaleMission.firstSaleRevenue !== null" class="first-sale-celebration" role="region" aria-label="First sale details">
             <h4>{{ t('onboarding.firstSaleCelebrationTitle') }}</h4>
             <p>{{ t('onboarding.firstSaleCelebrationDesc') }}</p>
             <dl class="first-sale-stats">
@@ -2139,11 +2033,7 @@ useTickRefresh(async () => {
 
           <div class="business-live-actions">
             <button class="btn btn-primary btn-lg" @click="navigateToDashboard">
-              {{
-                firstSaleMission?.firstSaleRevenue !== null
-                  ? t('onboarding.firstSaleCelebrationCta')
-                  : t('onboarding.businessLiveDashboardCta')
-              }}
+              {{ firstSaleMission?.firstSaleRevenue !== null ? t('onboarding.firstSaleCelebrationCta') : t('onboarding.businessLiveDashboardCta') }}
               <span class="btn-arrow">→</span>
             </button>
             <RouterLink to="/leaderboard" class="btn btn-secondary">
@@ -2354,7 +2244,9 @@ useTickRefresh(async () => {
 .product-card.selected {
   border-color: var(--color-primary);
   background: rgba(0, 71, 255, 0.08);
-  box-shadow: 0 0 0 1px var(--color-primary), 0 4px 16px rgba(0, 71, 255, 0.15);
+  box-shadow:
+    0 0 0 1px var(--color-primary),
+    0 4px 16px rgba(0, 71, 255, 0.15);
 }
 
 .card-icon {
@@ -2539,7 +2431,9 @@ useTickRefresh(async () => {
 .ipo-card.selected {
   border-color: var(--color-primary);
   background: rgba(0, 71, 255, 0.08);
-  box-shadow: 0 0 0 1px var(--color-primary), 0 4px 16px rgba(0, 71, 255, 0.15);
+  box-shadow:
+    0 0 0 1px var(--color-primary),
+    0 4px 16px rgba(0, 71, 255, 0.15);
 }
 
 .ipo-metric {
