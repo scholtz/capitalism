@@ -1,11 +1,5 @@
 import { expect, test } from '@playwright/test'
-import {
-  makeChairProduct,
-  makePlayer,
-  setupMockApi,
-  type MockBuildingUnit,
-  type MockPublicSalesAnalytics,
-} from './helpers/mock-api'
+import { makeChairProduct, makePlayer, setupMockApi, type MockBuildingUnit, type MockPublicSalesAnalytics } from './helpers/mock-api'
 
 function getGridSection(page: Parameters<typeof test>[0]['page'], heading: string) {
   return page
@@ -2810,8 +2804,14 @@ test.describe('Building detail upgrades', () => {
     await expect(searchInput).toHaveValue('wood')
 
     // Switch procurement mode using label clicks (EXCHANGE, then OPTIMAL)
-    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) }).click()
-    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) }).click()
+    await page
+      .locator('.procurement-mode-option')
+      .filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) })
+      .click()
+    await page
+      .locator('.procurement-mode-option')
+      .filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) })
+      .click()
 
     await expect(page.locator('.loading')).toHaveCount(0)
     await expect(page.locator('.sidebar')).toBeVisible()
@@ -3106,7 +3106,10 @@ test.describe('Global exchange market', () => {
     await expect(page.getByText('Procurement Mode')).toBeVisible()
 
     // Set procurement mode to EXCHANGE via label click
-    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) }).click()
+    await page
+      .locator('.procurement-mode-option')
+      .filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) })
+      .click()
 
     // Exchange offers should become visible once source = EXCHANGE and there is a resource set
     // (exchange loads when source changes; since no resource is set yet the panel may be hidden)
@@ -3544,9 +3547,7 @@ test.describe('Global exchange market', () => {
     await expect(bratislavaOffer.getByText(/Transit: \$0/)).toBeVisible()
   })
 
-  test('higher-quality offer is selected when min quality threshold excludes cheaper alternatives', async ({
-    page,
-  }) => {
+  test('higher-quality offer is selected when min quality threshold excludes cheaper alternatives', async ({ page }) => {
     // Scenario: Building is in Bratislava (destination city = same city = 0 transit).
     //
     // Bratislava: abundance 0.7 → quality 0.77, no transit, delivered ≈ $11.17/t
@@ -3881,9 +3882,7 @@ test.describe('Global exchange market — narrow layout', () => {
 // ── Full end-to-end exchange sourcing flow ────────────────────────────────────
 
 test.describe('Global exchange sourcing — end-to-end flow', () => {
-  test('configure EXCHANGE source, save, and verify exchange panel shows in read-only mode', async ({
-    page,
-  }) => {
+  test('configure EXCHANGE source, save, and verify exchange panel shows in read-only mode', async ({ page }) => {
     // Full sourcing flow: start with a configured PURCHASE unit with EXCHANGE source,
     // review the exchange offers panel (source price, transit, delivered cost),
     // modify the max price constraint to widen the offer selection,
@@ -4007,9 +4006,7 @@ test.describe('Global exchange sourcing — end-to-end flow', () => {
     await expect(page.locator('.exchange-offer-item')).toHaveCount(3)
   })
 
-  test('negative path: stale sourcing — all exchange offers blocked in read-only view shows actionable warning', async ({
-    page,
-  }) => {
+  test('negative path: stale sourcing — all exchange offers blocked in read-only view shows actionable warning', async ({ page }) => {
     // Simulates a "stale sourcing" scenario: a purchase unit was configured with EXCHANGE
     // source and a maxPrice that is now too low for any offer (prices rose above the cap).
     // The UI must show a clear, actionable warning so the player knows they need to
@@ -6264,9 +6261,7 @@ test.describe('R&D Research Progress Panel', () => {
     // Brand scope selector is shown for BRAND_QUALITY unit
     await expect(page.getByText('Brand Scope')).toBeVisible()
     // Help text explaining the three scope options is visible (from i18n key researchBrandHelp)
-    await expect(
-      page.getByText(/company-wide branding efficiency.*product category.*single product line/i),
-    ).toBeVisible()
+    await expect(page.getByText(/company-wide branding efficiency.*product category.*single product line/i)).toBeVisible()
   })
 })
 
@@ -6274,11 +6269,7 @@ test.describe('R&D Research Progress Panel', () => {
 
 test.describe('Global exchange market — per-industry resource coverage', () => {
   // Helper that builds a building with a single PURCHASE unit targeting the given resource.
-  function makePurchaseBuilding(
-    resourceId: string,
-    buildingId: string,
-    cityId = 'city-ba',
-  ) {
+  function makePurchaseBuilding(resourceId: string, buildingId: string, cityId = 'city-ba') {
     return {
       id: buildingId,
       companyId: `company-${buildingId}`,
@@ -6318,9 +6309,7 @@ test.describe('Global exchange market — per-industry resource coverage', () =>
     }
   }
 
-  test('Grain (Food Processing input) purchase unit shows exchange offers for all cities', async ({
-    page,
-  }) => {
+  test('Grain (Food Processing input) purchase unit shows exchange offers for all cities', async ({ page }) => {
     // A PURCHASE unit targeting Grain (Food Processing raw material) must show
     // exchange offers from all seeded cities with price/transit/delivered breakdown.
     const player = makePlayer()
@@ -6378,9 +6367,7 @@ test.describe('Global exchange market — per-industry resource coverage', () =>
     await expect(page.locator('.offer-best-badge')).toHaveCount(1)
   })
 
-  test('Chemical Minerals (Healthcare input) purchase unit shows exchange offers for all cities', async ({
-    page,
-  }) => {
+  test('Chemical Minerals (Healthcare input) purchase unit shows exchange offers for all cities', async ({ page }) => {
     // A PURCHASE unit targeting Chemical Minerals (Healthcare raw material) must show
     // exchange offers. Chemical Minerals has no city-specific abundance in mock data,
     // so the default abundance (0.05) is used for all cities — exchange price is higher
@@ -6404,9 +6391,7 @@ test.describe('Global exchange market — per-industry resource coverage', () =>
     }, `token-${player.id}`)
 
     await page.goto('/building/building-chem-exch')
-    await expect(
-      page.getByRole('heading', { name: 'building-chem-exch Factory' }),
-    ).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'building-chem-exch Factory' })).toBeVisible()
 
     const activeSection = page
       .locator('.grid-section')
@@ -6441,9 +6426,7 @@ test.describe('Global exchange market — per-industry resource coverage', () =>
     await expect(braOffer.getByText(/Transit: \$0/)).toBeVisible()
   })
 
-  test('changing minQuality in edit mode reactively blocks/unblocks exchange offers without saving', async ({
-    page,
-  }) => {
+  test('changing minQuality in edit mode reactively blocks/unblocks exchange offers without saving', async ({ page }) => {
     // Proves that the exchange offer panel reacts immediately when the player edits
     // the minQuality threshold in the planning sidebar — no save required.
     //
@@ -6464,9 +6447,7 @@ test.describe('Global exchange market — per-industry resource coverage', () =>
         population: 475000,
         averageRentPerSqm: 14,
         baseSalaryPerManhour: 18,
-        resources: [
-          { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.5 },
-        ],
+        resources: [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.5 }],
       },
       {
         id: 'city-pr',
@@ -6477,9 +6458,7 @@ test.describe('Global exchange market — per-industry resource coverage', () =>
         population: 1350000,
         averageRentPerSqm: 18,
         baseSalaryPerManhour: 22,
-        resources: [
-          { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.8 },
-        ],
+        resources: [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.8 }],
       },
     ]
 
@@ -6702,7 +6681,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await page.goto('/building/building-shop-mi')
 
     // Click the PUBLIC_SALES unit to select it
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -6782,7 +6764,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
 
     await page.goto('/building/building-shop-mi')
 
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -6839,7 +6824,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
 
     await page.goto('/building/building-shop-mi')
 
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -6889,7 +6877,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
 
     await page.goto('/building/building-shop-mi')
 
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -6940,7 +6931,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
 
     await page.goto('/building/building-shop-mi')
 
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -6956,7 +6950,7 @@ test.describe('Public Sales Market Intelligence panel', () => {
     // Panel should not overflow horizontally
     const panelBox = await panel.boundingBox()
     expect(panelBox).not.toBeNull()
-     
+
     expect(panelBox!.width).toBeLessThanOrEqual(375)
   })
 
@@ -7015,7 +7009,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await page.goto('/building/building-factory-mi')
 
     // Click the STORAGE unit
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const storageCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0)
     await storageCell.click()
 
@@ -7068,7 +7065,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
 
     await page.goto('/building/building-shop-mi')
 
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -7120,7 +7120,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
 
     await page.goto('/building/building-shop-mi')
 
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -7174,7 +7177,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
 
     await page.goto('/building/building-shop-mi')
 
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -7238,7 +7244,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
     await page.goto('/building/building-shop-mi')
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -7290,7 +7299,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
 
     await page.goto('/building/building-shop-mi')
 
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -7353,7 +7365,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
 
     await page.goto('/building/building-shop-mi')
 
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -7411,7 +7426,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
 
     await page.goto('/building/building-shop-mi')
 
-    const activeSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
     const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await psCell.click()
 
@@ -7513,9 +7531,7 @@ test.describe('Mine building edit mode', () => {
     await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
   })
 
-  test('mine edit mode: allowed unit types match mine building type (MINING, STORAGE, B2B_SALES)', async ({
-    page,
-  }) => {
+  test('mine edit mode: allowed unit types match mine building type (MINING, STORAGE, B2B_SALES)', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-mine-types',
@@ -7608,9 +7624,7 @@ test.describe('Sales shop edit mode — unit type picker', () => {
     return player
   }
 
-  test('sales shop unit picker shows exactly PURCHASE, MARKETING, and PUBLIC_SALES options', async ({
-    page,
-  }) => {
+  test('sales shop unit picker shows exactly PURCHASE, MARKETING, and PUBLIC_SALES options', async ({ page }) => {
     const player = makeEmptySalesShopForPicker()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
@@ -7645,9 +7659,7 @@ test.describe('Sales shop edit mode — unit type picker', () => {
     await expect(page.locator('.picker-option').filter({ hasText: 'B2B Sales' })).toHaveCount(0)
   })
 
-  test('player adds MARKETING unit to empty sales shop and sees it in the planned grid', async ({
-    page,
-  }) => {
+  test('player adds MARKETING unit to empty sales shop and sees it in the planned grid', async ({ page }) => {
     const player = makeEmptySalesShopForPicker()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
@@ -7685,9 +7697,7 @@ test.describe('Sales shop edit mode — unit type picker', () => {
     await expect(storeBtn).toBeEnabled()
   })
 
-  test('full flow: PURCHASE → MARKETING → PUBLIC_SALES shop layout saved as pending upgrade', async ({
-    page,
-  }) => {
+  test('full flow: PURCHASE → MARKETING → PUBLIC_SALES shop layout saved as pending upgrade', async ({ page }) => {
     const player = makeEmptySalesShopForPicker()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
@@ -8106,11 +8116,7 @@ test.describe('Destination-aware purchase sourcing', () => {
    * Helper: builds a minimal factory in Bratislava with a PURCHASE unit
    * targeting the given resource at EXCHANGE source.
    */
-  function makeExchangeFactory(
-    resourceId: string,
-    buildingId: string,
-    buildingName: string,
-  ) {
+  function makeExchangeFactory(resourceId: string, buildingId: string, buildingName: string) {
     return {
       id: buildingId,
       companyId: `company-${buildingId}`,
@@ -8148,9 +8154,7 @@ test.describe('Destination-aware purchase sourcing', () => {
     }
   }
 
-  test('shows logistics-trap warning when distant city has cheaper sticker but worse delivered price', async ({
-    page,
-  }) => {
+  test('shows logistics-trap warning when distant city has cheaper sticker but worse delivered price', async ({ page }) => {
     // Set up a scenario where Prague has a cheaper exchange (sticker) price for Wood
     // than Bratislava, but higher transit cost makes it more expensive delivered.
     // Bratislava abundance 0.4 → sticker ~$13.63, delivered $13.63 (same city, 0 transit).
@@ -8170,15 +8174,9 @@ test.describe('Destination-aware purchase sourcing', () => {
     // Override Wood abundances to create the logistics trap:
     // Bratislava: low abundance → higher sticker, but 0 transit → good delivered
     // Prague: medium abundance → lower sticker, but 300km transit → bad delivered
-    state.cities[0]!.resources = [
-      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.4 },
-    ]
-    state.cities[1]!.resources = [
-      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.5 },
-    ]
-    state.cities[2]!.resources = [
-      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 },
-    ]
+    state.cities[0]!.resources = [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.4 }]
+    state.cities[1]!.resources = [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.5 }]
+    state.cities[2]!.resources = [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 }]
 
     state.currentUserId = player.id
     state.currentToken = `token-${player.id}`
@@ -8215,9 +8213,7 @@ test.describe('Destination-aware purchase sourcing', () => {
     await expect(prOffer).not.toHaveClass(/offer-best/)
   })
 
-  test('no logistics-trap warning when cheapest sticker is also cheapest delivered', async ({
-    page,
-  }) => {
+  test('no logistics-trap warning when cheapest sticker is also cheapest delivered', async ({ page }) => {
     // When Bratislava has the highest abundance it gets the lowest exchange price
     // AND 0 transit (same city), so sticker and delivered both win at Bratislava.
     // No logistics trap should be shown.
@@ -8233,15 +8229,9 @@ test.describe('Destination-aware purchase sourcing', () => {
 
     const state = setupMockApi(page, { players: [player] })
     // Bratislava has the highest abundance → cheapest sticker AND cheapest delivered (0 transit).
-    state.cities[0]!.resources = [
-      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.9 },
-    ]
-    state.cities[1]!.resources = [
-      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 },
-    ]
-    state.cities[2]!.resources = [
-      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 },
-    ]
+    state.cities[0]!.resources = [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.9 }]
+    state.cities[1]!.resources = [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 }]
+    state.cities[2]!.resources = [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 }]
 
     state.currentUserId = player.id
     state.currentToken = `token-${player.id}`
@@ -8284,15 +8274,9 @@ test.describe('Destination-aware purchase sourcing', () => {
     })
 
     const state = setupMockApi(page, { players: [player] })
-    state.cities[0]!.resources = [
-      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.4 },
-    ]
-    state.cities[1]!.resources = [
-      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.5 },
-    ]
-    state.cities[2]!.resources = [
-      { resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 },
-    ]
+    state.cities[0]!.resources = [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.4 }]
+    state.cities[1]!.resources = [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.5 }]
+    state.cities[2]!.resources = [{ resourceType: { id: 'res-wood', name: 'Wood', slug: 'wood', category: 'ORGANIC' }, abundance: 0.1 }]
 
     state.currentUserId = player.id
     state.currentToken = `token-${player.id}`
@@ -8340,9 +8324,7 @@ test.describe('Destination-aware purchase sourcing', () => {
     await expect(offerItems.first()).toContainText('Bratislava')
   })
 
-  test('View on Global Exchange link navigates to exchange with resource and city pre-selected', async ({
-    page,
-  }) => {
+  test('View on Global Exchange link navigates to exchange with resource and city pre-selected', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-link',
@@ -8430,12 +8412,7 @@ test.describe('Procurement mode configuration', () => {
   /**
    * Helper: builds a minimal factory in Bratislava with a PURCHASE unit (OPTIMAL mode by default).
    */
-  function makeProcurementFactory(
-    buildingId: string,
-    buildingName: string,
-    purchaseSource: string = 'OPTIMAL',
-    lockedCityId: string | null = null,
-  ) {
+  function makeProcurementFactory(buildingId: string, buildingName: string, purchaseSource: string = 'OPTIMAL', lockedCityId: string | null = null) {
     return {
       id: buildingId,
       companyId: `company-proc-${buildingId}`,
@@ -8511,7 +8488,10 @@ test.describe('Procurement mode configuration', () => {
     await expect(page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) })).toHaveClass(/selected/)
 
     // Changing to EXCHANGE should work
-    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) }).click()
+    await page
+      .locator('.procurement-mode-option')
+      .filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) })
+      .click()
     await expect(page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) })).toHaveClass(/selected/)
 
     // LOCAL option should also be present
@@ -8552,7 +8532,10 @@ test.describe('Procurement mode configuration', () => {
     await expect(page.getByText('Lock to Source City')).toBeHidden()
 
     // Switch to EXCHANGE mode using label click
-    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) }).click()
+    await page
+      .locator('.procurement-mode-option')
+      .filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) })
+      .click()
 
     // City lock dropdown should now appear
     await expect(page.getByText('Lock to Source City')).toBeVisible()
@@ -8590,7 +8573,10 @@ test.describe('Procurement mode configuration', () => {
     await getGridCell(plannedSection, 0, 0).click()
 
     // Switch to LOCAL mode using label click
-    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Local Supplier' }) }).click()
+    await page
+      .locator('.procurement-mode-option')
+      .filter({ has: page.locator('.procurement-mode-label', { hasText: 'Local Supplier' }) })
+      .click()
 
     // Vendor lock input should appear
     await expect(page.getByText('Lock to Vendor')).toBeVisible()
@@ -8724,7 +8710,10 @@ test.describe('Procurement mode configuration', () => {
     await getGridCell(plannedSection, 0, 0).click()
 
     // Switch to EXCHANGE to show the city lock dropdown
-    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) }).click()
+    await page
+      .locator('.procurement-mode-option')
+      .filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) })
+      .click()
     await expect(page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Global Exchange' }) })).toHaveClass(/selected/)
 
     // City lock dropdown should be visible in EXCHANGE mode
@@ -8732,7 +8721,10 @@ test.describe('Procurement mode configuration', () => {
     await expect(cityLockDropdown).toBeVisible()
 
     // Now switch back to OPTIMAL – city lock dropdown should disappear
-    await page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) }).click()
+    await page
+      .locator('.procurement-mode-option')
+      .filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) })
+      .click()
     await expect(page.locator('.procurement-mode-option').filter({ has: page.locator('.procurement-mode-label', { hasText: 'Optimal Landed Cost' }) })).toHaveClass(/selected/)
 
     // City lock dropdown must be hidden – OPTIMAL mode must not expose city restriction
@@ -9011,9 +9003,7 @@ test.describe('Sourcing Comparison Panel', () => {
     await expect(viennaRow).toContainText('Vienna')
   })
 
-  test('sourcing comparison shows landed cost = offer price + transit (distinguishes raw from delivered)', async ({
-    page,
-  }) => {
+  test('sourcing comparison shows landed cost = offer price + transit (distinguishes raw from delivered)', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-sc-landedcost',

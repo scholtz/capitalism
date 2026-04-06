@@ -3928,7 +3928,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ errors: [{ message: 'Unit not found or you don\'t own it.', extensions: { code: 'UNIT_NOT_FOUND' } }] }),
+          body: JSON.stringify({ errors: [{ message: "Unit not found or you don't own it.", extensions: { code: 'UNIT_NOT_FOUND' } }] }),
         })
       }
 
@@ -4096,7 +4096,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ errors: [{ message: 'Unit not found or you don\'t own it.', extensions: { code: 'UNIT_NOT_FOUND' } }] }),
+          body: JSON.stringify({ errors: [{ message: "Unit not found or you don't own it.", extensions: { code: 'UNIT_NOT_FOUND' } }] }),
         })
       }
 

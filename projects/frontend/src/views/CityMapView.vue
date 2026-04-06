@@ -759,7 +759,9 @@ watch(viewMode, async (mode) => {
                 </div>
 
                 <div class="form-group">
-                  <label>{{ t('cityMap.buildingName') }} <span class="optional-hint">({{ t('common.optional') }})</span></label>
+                  <label
+                    >{{ t('cityMap.buildingName') }} <span class="optional-hint">({{ t('common.optional') }})</span></label
+                  >
                   <input v-model="buildingName" type="text" class="form-input" :placeholder="t('cityMap.buildingNamePlaceholder')" />
                 </div>
 

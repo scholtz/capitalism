@@ -540,7 +540,8 @@ export default {
       title: 'Neue Fabrik — Bereit zur Einrichtung',
       body: 'Diese Fabrik hat noch keine konfigurierten Einheiten. Wenden Sie das Starter-Layout an, um mit der Produktion zu beginnen, und passen Sie die Einheiten dann an Ihre Strategie an.',
       applyStarter: 'Starter-Layout anwenden',
-      starterLayoutDesc: 'Starter-Layout: Einkauf (0,0) → Fertigung (1,0) → Lager (2,0) → B2B-Verkauf (3,0) — die Mindestkette zum Kauf von Ressourcen, Herstellung von Waren, Lagerhaltung und Großhandelsverkauf.',
+      starterLayoutDesc:
+        'Starter-Layout: Einkauf (0,0) → Fertigung (1,0) → Lager (2,0) → B2B-Verkauf (3,0) — die Mindestkette zum Kauf von Ressourcen, Herstellung von Waren, Lagerhaltung und Großhandelsverkauf.',
       whatNext:
         'Nach dem Speichern dieses Layouts werden die Einheiten in den nächsten Ticks gebaut. Konfigurieren Sie dann jede Einheit mit einer Ressource, einem Produkt und einem Preis, um Ihre erste Produktionskette zu vervollständigen.',
     },
@@ -571,7 +572,8 @@ export default {
       changeSelection: 'Produkt und Lieferant ändern',
       notSelected: 'Noch kein Artikel ausgewählt',
       vendorTitle: 'Lieferantenverknüpfung',
-      vendorHelp: 'Wählen Sie, wie diese Einkaufseinheit den ausgewählten Artikel beziehen soll. Wenn Sie in einem Ladengeschäft Ihre eigene Firma wählen, wird das Geschäft direkt mit dem B2B-Angebot Ihrer Fabrik in derselben Stadt verknüpft.',
+      vendorHelp:
+        'Wählen Sie, wie diese Einkaufseinheit den ausgewählten Artikel beziehen soll. Wenn Sie in einem Ladengeschäft Ihre eigene Firma wählen, wird das Geschäft direkt mit dem B2B-Angebot Ihrer Fabrik in derselben Stadt verknüpft.',
       vendorAutoTitle: 'Beste Quelle automatisch wählen',
       vendorAuto: 'Kein Lieferant ist gesperrt. Die Engine wählt die beste zulässige Quelle für den gewählten Beschaffungsmodus.',
       vendorOwnCompany: 'Ihre eigene Firma',
@@ -966,8 +968,7 @@ export default {
       success: 'Bestand verworfen. Der Verlust wurde im Unternehmens-Ledger erfasst.',
       error: 'Bestand konnte nicht verworfen werden. Bitte versuchen Sie es erneut.',
       confirmTitle: 'Verwerfen bestätigen',
-      confirmBody:
-        'Dadurch wird der gesamte Bestand in dieser Einheit dauerhaft gelöscht und der Verlust in Ihr Ledger eingetragen. Dies kann nicht rückgängig gemacht werden. Fortfahren?',
+      confirmBody: 'Dadurch wird der gesamte Bestand in dieser Einheit dauerhaft gelöscht und der Verlust in Ihr Ledger eingetragen. Dies kann nicht rückgängig gemacht werden. Fortfahren?',
       confirmYes: 'Ja, alles verwerfen',
     },
   },

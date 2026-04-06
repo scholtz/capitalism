@@ -18,14 +18,7 @@ import {
   getVerticalLinkArrow,
   getVerticalLinkState,
 } from '@/lib/linkHelpers'
-import {
-  annotateExchangeOffers,
-  selectOptimalOffer,
-  sortExchangeOffers,
-  detectLogisticsTrap,
-  type AnnotatedExchangeOffer,
-  type ExchangeSortBy,
-} from '@/lib/globalExchange'
+import { annotateExchangeOffers, selectOptimalOffer, sortExchangeOffers, detectLogisticsTrap, type AnnotatedExchangeOffer, type ExchangeSortBy } from '@/lib/globalExchange'
 import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedResourceDescription, getLocalizedResourceName } from '@/lib/catalogPresentation'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { gqlRequest } from '@/lib/graphql'
@@ -576,12 +569,8 @@ const selectedDisplayUnit = computed<GridUnit | undefined>(() => {
   return getUnitAtFrom(activeUnits.value, selectedCell.value.x, selectedCell.value.y)
 })
 const selectedPurchaseUnit = computed(() => (selectedDisplayUnit.value?.unitType === 'PURCHASE' ? selectedDisplayUnit.value : undefined))
-const selectedPublicSalesUnit = computed(() =>
-  !isEditing.value && selectedDisplayUnit.value?.unitType === 'PUBLIC_SALES' ? selectedDisplayUnit.value : undefined,
-)
-const selectedDraftPurchaseUnit = computed(() =>
-  isEditing.value && selectedDisplayUnit.value?.unitType === 'PURCHASE' ? (selectedDisplayUnit.value as EditableGridUnit) : undefined,
-)
+const selectedPublicSalesUnit = computed(() => (!isEditing.value && selectedDisplayUnit.value?.unitType === 'PUBLIC_SALES' ? selectedDisplayUnit.value : undefined))
+const selectedDraftPurchaseUnit = computed(() => (isEditing.value && selectedDisplayUnit.value?.unitType === 'PURCHASE' ? (selectedDisplayUnit.value as EditableGridUnit) : undefined))
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
 const buildingOverviewCityName = computed(() => getCityName(building.value?.cityId))
@@ -609,21 +598,13 @@ const b2bSuggestedPrice = computed<number | null>(() => {
 })
 
 /** Max revenue across all history ticks – used to normalise the revenue bar chart heights. */
-const miMaxRevenue = computed(() =>
-  publicSalesAnalytics.value?.revenueHistory.reduce((m, s) => Math.max(m, s.revenue), 0) ?? 0,
-)
+const miMaxRevenue = computed(() => publicSalesAnalytics.value?.revenueHistory.reduce((m, s) => Math.max(m, s.revenue), 0) ?? 0)
 /** Max quantity across all history ticks – used to normalise the quantity bar chart heights. */
-const miMaxQuantitySold = computed(() =>
-  publicSalesAnalytics.value?.revenueHistory.reduce((m, s) => Math.max(m, s.quantitySold), 0) ?? 0,
-)
+const miMaxQuantitySold = computed(() => publicSalesAnalytics.value?.revenueHistory.reduce((m, s) => Math.max(m, s.quantitySold), 0) ?? 0)
 /** Max price per unit across all price history ticks – used to normalise the price bar chart heights. */
-const miMaxPricePerUnit = computed(() =>
-  publicSalesAnalytics.value?.priceHistory.reduce((m, s) => Math.max(m, s.pricePerUnit), 0) ?? 0,
-)
+const miMaxPricePerUnit = computed(() => publicSalesAnalytics.value?.priceHistory.reduce((m, s) => Math.max(m, s.pricePerUnit), 0) ?? 0)
 // Current configured min price for the selected PUBLIC_SALES unit (0 if not set)
-const currentPublicSalesMinPrice = computed(() =>
-  typeof selectedPublicSalesUnit.value?.minPrice === 'number' ? selectedPublicSalesUnit.value.minPrice : 0,
-)
+const currentPublicSalesMinPrice = computed(() => (typeof selectedPublicSalesUnit.value?.minPrice === 'number' ? selectedPublicSalesUnit.value.minPrice : 0))
 
 let activeBuildingFinancialTimelineRequest = 0
 
@@ -635,9 +616,7 @@ const annotatedExchangeOffers = computed<ExchangeOfferItem[]>(() => {
   return annotateExchangeOffers(exchangeOffers.value, maxPrice, minQuality)
 })
 
-const exchangeOfferItems = computed<ExchangeOfferItem[]>(() =>
-  sortExchangeOffers(annotatedExchangeOffers.value, exchangeSortBy.value),
-)
+const exchangeOfferItems = computed<ExchangeOfferItem[]>(() => sortExchangeOffers(annotatedExchangeOffers.value, exchangeSortBy.value))
 
 const allExchangeOffersBlocked = computed(() => exchangeOfferItems.value.length > 0 && exchangeOfferItems.value.every((o) => o.blocked))
 
@@ -652,11 +631,7 @@ const sourcingCheapestStickerDiffersFromBestLanded = computed(() => {
   const candidates = sourcingCandidates.value.filter((c) => c.isEligible)
   if (candidates.length < 2) return false
   const byLanded = [...candidates].sort((a, b) => (a.deliveredPricePerUnit ?? 0) - (b.deliveredPricePerUnit ?? 0))
-  const bySticker = [...candidates].sort(
-    (a, b) =>
-      (a.exchangePricePerUnit ?? a.deliveredPricePerUnit ?? 0) -
-      (b.exchangePricePerUnit ?? b.deliveredPricePerUnit ?? 0),
-  )
+  const bySticker = [...candidates].sort((a, b) => (a.exchangePricePerUnit ?? a.deliveredPricePerUnit ?? 0) - (b.exchangePricePerUnit ?? b.deliveredPricePerUnit ?? 0))
   return byLanded[0]?.sourceCityId !== bySticker[0]?.sourceCityId
 })
 
@@ -672,10 +647,7 @@ const purchaseSelectorItems = computed<SelectorItem[]>(() => {
   }
 
   if (building.value?.type === 'SALES_SHOP') {
-    return [
-      ...allSelectableItems.value.filter((item) => item.kind === 'product'),
-      ...allSelectableItems.value.filter((item) => item.kind === 'resource'),
-    ]
+    return [...allSelectableItems.value.filter((item) => item.kind === 'product'), ...allSelectableItems.value.filter((item) => item.kind === 'resource')]
   }
 
   return allSelectableItems.value
@@ -693,10 +665,10 @@ const purchaseVendorOptions = computed<PurchaseVendorOption[]>(() => {
   for (const company of purchaseVendorCompanies.value) {
     for (const vendorBuilding of company.buildings) {
       if (vendorBuilding.cityId !== cityId || vendorBuilding.id === building.value?.id) continue
-      const matches = vendorBuilding.units.some((candidate) =>
-        candidate.unitType === 'B2B_SALES'
-        && ((selection.kind === 'product' && candidate.productTypeId === selection.id)
-          || (selection.kind === 'resource' && candidate.resourceTypeId === selection.id)),
+      const matches = vendorBuilding.units.some(
+        (candidate) =>
+          candidate.unitType === 'B2B_SALES' &&
+          ((selection.kind === 'product' && candidate.productTypeId === selection.id) || (selection.kind === 'resource' && candidate.resourceTypeId === selection.id)),
       )
 
       if (matches) {
@@ -3342,12 +3314,7 @@ watch(
               <h3>{{ t('buildingDetail.purchaseSelector.vendorTitle') }}</h3>
               <p class="config-help">{{ t('buildingDetail.purchaseSelector.vendorHelp') }}</p>
 
-              <button
-                type="button"
-                class="purchase-vendor-card"
-                :class="{ selected: selectedDraftPurchaseUnit?.vendorLockCompanyId == null }"
-                @click="selectPurchaseVendor(null)"
-              >
+              <button type="button" class="purchase-vendor-card" :class="{ selected: selectedDraftPurchaseUnit?.vendorLockCompanyId == null }" @click="selectPurchaseVendor(null)">
                 <strong>{{ t('buildingDetail.purchaseSelector.vendorAutoTitle') }}</strong>
                 <span>{{ t('buildingDetail.purchaseSelector.vendorAuto') }}</span>
               </button>
@@ -3386,12 +3353,7 @@ watch(
       </div>
 
       <!-- Property management panel: APARTMENT / COMMERCIAL buildings -->
-      <div
-        v-if="building.type === 'APARTMENT' || building.type === 'COMMERCIAL'"
-        class="property-panel"
-        role="region"
-        aria-label="property management"
-      >
+      <div v-if="building.type === 'APARTMENT' || building.type === 'COMMERCIAL'" class="property-panel" role="region" aria-label="property management">
         <div class="property-panel-header">
           <h2 class="property-panel-title">{{ t('property.panelTitle') }}</h2>
           <button class="btn btn-primary btn-sm" @click="openRentDialog">
@@ -3409,7 +3371,7 @@ watch(
           </div>
           <div class="property-metric">
             <span class="property-metric-label">{{ t('property.occupancy') }}</span>
-            <span class="property-metric-value" :class="{'property-metric-zero': building.occupancyPercent === 0}">
+            <span class="property-metric-value" :class="{ 'property-metric-zero': building.occupancyPercent === 0 }">
               {{ building.occupancyPercent != null ? building.occupancyPercent.toFixed(1) + '%' : t('common.notAvailable') }}
             </span>
           </div>
@@ -3422,8 +3384,7 @@ watch(
           <div v-if="building.occupancyPercent != null && building.totalAreaSqm != null" class="property-metric">
             <span class="property-metric-label">{{ t('property.occupiedArea') }}</span>
             <span class="property-metric-value">
-              {{ Math.round(building.totalAreaSqm * (building.occupancyPercent / 100)).toLocaleString() }} m²
-              / {{ building.totalAreaSqm.toLocaleString() }} m²
+              {{ Math.round(building.totalAreaSqm * (building.occupancyPercent / 100)).toLocaleString() }} m² / {{ building.totalAreaSqm.toLocaleString() }} m²
             </span>
           </div>
         </div>
@@ -3432,12 +3393,12 @@ watch(
         <div v-if="building.pendingPricePerSqm != null" class="pending-rent-notice" role="status">
           <span class="pending-rent-icon">⏳</span>
           <span class="pending-rent-text">
-            {{ t('property.pendingRentNotice', {
-              rent: '€' + building.pendingPricePerSqm.toFixed(2),
-              ticks: building.pendingPriceActivationTick != null
-                ? Math.max(0, building.pendingPriceActivationTick - currentTick)
-                : '—'
-            }) }}
+            {{
+              t('property.pendingRentNotice', {
+                rent: '€' + building.pendingPricePerSqm.toFixed(2),
+                ticks: building.pendingPriceActivationTick != null ? Math.max(0, building.pendingPriceActivationTick - currentTick) : '—',
+              })
+            }}
           </span>
         </div>
 
@@ -3466,11 +3427,7 @@ watch(
             />
             <p v-if="rentSaveError" class="rent-dialog-error">{{ rentSaveError }}</p>
             <div class="rent-dialog-actions">
-              <button
-                class="btn btn-primary"
-                :disabled="savingRent || newRentPerSqm === null || newRentPerSqm < 0"
-                @click="saveRentPerSqm"
-              >
+              <button class="btn btn-primary" :disabled="savingRent || newRentPerSqm === null || newRentPerSqm < 0" @click="saveRentPerSqm">
                 {{ savingRent ? t('common.saving') : t('property.scheduleRentBtn') }}
               </button>
               <button class="btn btn-secondary" @click="closeRentDialog">{{ t('common.cancel') }}</button>
@@ -3490,12 +3447,7 @@ watch(
       </div>
 
       <!-- R&D Research Progress panel: RESEARCH_DEVELOPMENT buildings -->
-      <div
-        v-if="building.type === 'RESEARCH_DEVELOPMENT'"
-        class="research-progress-panel"
-        role="region"
-        aria-label="research progress"
-      >
+      <div v-if="building.type === 'RESEARCH_DEVELOPMENT'" class="research-progress-panel" role="region" aria-label="research progress">
         <div class="research-progress-header">
           <h2 class="research-progress-title">🔬 {{ t('research.panelTitle') }}</h2>
         </div>
@@ -3508,17 +3460,13 @@ watch(
         </div>
 
         <div v-else class="research-brand-list">
-          <div
-            v-for="brand in researchBrands"
-            :key="brand.id"
-            class="research-brand-card"
-          >
+          <div v-for="brand in researchBrands" :key="brand.id" class="research-brand-card">
             <div class="research-brand-header">
               <span class="research-brand-name">{{ brand.productName || brand.name }}</span>
               <span class="research-brand-scope-badge">
-                {{ brand.scope === 'PRODUCT' ? t('buildingDetail.config.scopeProduct')
-                  : brand.scope === 'CATEGORY' ? t('buildingDetail.config.scopeCategory')
-                  : t('buildingDetail.config.scopeCompany') }}
+                {{
+                  brand.scope === 'PRODUCT' ? t('buildingDetail.config.scopeProduct') : brand.scope === 'CATEGORY' ? t('buildingDetail.config.scopeCategory') : t('buildingDetail.config.scopeCompany')
+                }}
               </span>
             </div>
             <div v-if="brand.industryCategory" class="research-brand-industry">
@@ -3536,14 +3484,8 @@ watch(
               <!-- Marketing Efficiency metric (BRAND_QUALITY R&D result) -->
               <div v-if="brand.marketingEfficiencyMultiplier > 1" class="research-metric">
                 <span class="research-metric-label">{{ t('research.marketingEfficiencyLabel') }}</span>
-                <div
-                  class="research-progress-bar"
-                  :aria-label="`Marketing efficiency ${brand.marketingEfficiencyMultiplier.toFixed(2)}x`"
-                >
-                  <div
-                    class="research-progress-fill research-progress-efficiency"
-                    :style="{ width: `${Math.min(100, (brand.marketingEfficiencyMultiplier - 1) * 100).toFixed(1)}%` }"
-                  ></div>
+                <div class="research-progress-bar" :aria-label="`Marketing efficiency ${brand.marketingEfficiencyMultiplier.toFixed(2)}x`">
+                  <div class="research-progress-fill research-progress-efficiency" :style="{ width: `${Math.min(100, (brand.marketingEfficiencyMultiplier - 1) * 100).toFixed(1)}%` }"></div>
                 </div>
                 <span class="research-metric-value">{{ brand.marketingEfficiencyMultiplier.toFixed(2) }}×</span>
               </div>
@@ -3951,7 +3893,14 @@ watch(
                       {{ t('buildingDetail.unitChangeRemoved', { type: t(`buildingDetail.unitTypes.${change.unitType}`), x: change.gridX, y: change.gridY }) }}
                     </template>
                     <template v-else>
-                      {{ t('buildingDetail.unitChangeReplaced', { from: t(`buildingDetail.unitTypes.${change.previousUnitType}`), to: t(`buildingDetail.unitTypes.${change.unitType}`), x: change.gridX, y: change.gridY }) }}
+                      {{
+                        t('buildingDetail.unitChangeReplaced', {
+                          from: t(`buildingDetail.unitTypes.${change.previousUnitType}`),
+                          to: t(`buildingDetail.unitTypes.${change.unitType}`),
+                          x: change.gridX,
+                          y: change.gridY,
+                        })
+                      }}
                     </template>
                   </span>
                   <span class="unit-change-meta">
@@ -4148,19 +4097,15 @@ watch(
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.inputItem') }}</label>
                     <button type="button" class="btn btn-secondary purchase-selector-trigger" @click="openPurchaseSelector">
-                      {{
-                        selectedPurchaseSelection
-                          ? t('buildingDetail.purchaseSelector.changeSelection')
-                          : t('buildingDetail.purchaseSelector.chooseSelection')
-                      }}
+                      {{ selectedPurchaseSelection ? t('buildingDetail.purchaseSelector.changeSelection') : t('buildingDetail.purchaseSelector.chooseSelection') }}
                     </button>
                     <div class="purchase-selection-summary">
                       <strong>
                         {{
                           selectedPurchaseSelection
-                            ? (selectedPurchaseSelection.kind === 'resource'
+                            ? selectedPurchaseSelection.kind === 'resource'
                               ? getResourceName(selectedDraftPurchaseUnit?.resourceTypeId ?? null)
-                              : getProductName(selectedDraftPurchaseUnit?.productTypeId ?? null))
+                              : getProductName(selectedDraftPurchaseUnit?.productTypeId ?? null)
                             : t('buildingDetail.purchaseSelector.notSelected')
                         }}
                       </strong>
@@ -4221,10 +4166,7 @@ watch(
                   </div>
 
                   <!-- City lock (shown when EXCHANGE mode is selected) -->
-                  <div
-                    class="config-field"
-                    v-if="(getDraftUnitAt(selectedCell.x, selectedCell.y)!.purchaseSource ?? 'OPTIMAL') === 'EXCHANGE'"
-                  >
+                  <div class="config-field" v-if="(getDraftUnitAt(selectedCell.x, selectedCell.y)!.purchaseSource ?? 'OPTIMAL') === 'EXCHANGE'">
                     <label class="config-label">{{ t('buildingDetail.config.lockedCity') }}</label>
                     <p class="config-help">{{ t('buildingDetail.config.lockedCityHelp') }}</p>
                     <select
@@ -4236,7 +4178,6 @@ watch(
                       <option v-for="city in cities" :key="city.id" :value="city.id">{{ city.name }}</option>
                     </select>
                   </div>
-
                 </template>
 
                 <!-- Manufacturing unit config -->
@@ -4273,16 +4214,9 @@ watch(
                       min="0.01"
                       step="0.01"
                     />
-                    <p
-                      v-if="b2bSuggestedPrice !== null"
-                      class="config-help config-price-hint"
-                    >
+                    <p v-if="b2bSuggestedPrice !== null" class="config-help config-price-hint">
                       {{ t('buildingDetail.config.b2bSuggestedPrice', { price: b2bSuggestedPrice!.toFixed(2) }) }}
-                      <button
-                        type="button"
-                        class="btn-link"
-                        @click="updateSelectedUnitConfig('minPrice', b2bSuggestedPrice)"
-                      >{{ t('buildingDetail.config.b2bUseSuggested') }}</button>
+                      <button type="button" class="btn-link" @click="updateSelectedUnitConfig('minPrice', b2bSuggestedPrice)">{{ t('buildingDetail.config.b2bUseSuggested') }}</button>
                     </p>
                   </div>
                   <div class="config-field">
@@ -4352,12 +4286,7 @@ watch(
                       @change="updateSelectedUnitConfig('mediaHouseBuildingId', ($event.target as HTMLSelectElement).value || null)"
                     >
                       <option value="">{{ t('buildingDetail.config.noMediaHouse') }}</option>
-                      <option
-                        v-for="mh in cityMediaHouses"
-                        :key="mh.id"
-                        :value="mh.id"
-                        :disabled="mh.isUnderConstruction || mh.powerStatus === 'OFFLINE'"
-                      >
+                      <option v-for="mh in cityMediaHouses" :key="mh.id" :value="mh.id" :disabled="mh.isUnderConstruction || mh.powerStatus === 'OFFLINE'">
                         {{ mh.name }} ({{ mh.mediaType ?? '?' }}, ×{{ mh.effectivenessMultiplier.toFixed(1) }})
                         <template v-if="mh.isUnderConstruction"> – {{ t('buildingDetail.config.underConstruction') }}</template>
                         <template v-else-if="mh.powerStatus === 'OFFLINE'"> – {{ t('buildingDetail.config.offline') }}</template>
@@ -4366,9 +4295,7 @@ watch(
                     <p v-if="cityMediaHouses.length === 0 && !cityMediaHousesLoading" class="config-hint">
                       {{ t('buildingDetail.config.noMediaHouseAvailable') }}
                     </p>
-                    <p v-else-if="selectedDraftMediaHouse" class="config-hint">
-                      {{ t('buildingDetail.config.channelEffect') }} ×{{ selectedDraftMediaHouse.effectivenessMultiplier.toFixed(1) }}
-                    </p>
+                    <p v-else-if="selectedDraftMediaHouse" class="config-hint">{{ t('buildingDetail.config.channelEffect') }} ×{{ selectedDraftMediaHouse.effectivenessMultiplier.toFixed(1) }}</p>
                   </div>
                 </template>
 
@@ -4609,19 +4536,21 @@ watch(
                   </p>
                   <!-- Logistics trap warning -->
                   <div v-if="logisticsTrapWarning" class="logistics-trap-warning" role="alert">
-                    {{ t('buildingDetail.exchange.logisticsTrap', {
-                      cheapCity: logisticsTrapWarning.cheaperStickerCityName,
-                      cheapExchange: '$' + logisticsTrapWarning.cheaperStickerExchangePrice,
-                      cheapDelivered: '$' + logisticsTrapWarning.cheaperStickerDeliveredPrice,
-                      bestCity: logisticsTrapWarning.recommendedCityName,
-                      bestDelivered: '$' + logisticsTrapWarning.recommendedDeliveredPrice,
-                    }) }}
+                    {{
+                      t('buildingDetail.exchange.logisticsTrap', {
+                        cheapCity: logisticsTrapWarning.cheaperStickerCityName,
+                        cheapExchange: '$' + logisticsTrapWarning.cheaperStickerExchangePrice,
+                        cheapDelivered: '$' + logisticsTrapWarning.cheaperStickerDeliveredPrice,
+                        bestCity: logisticsTrapWarning.recommendedCityName,
+                        bestDelivered: '$' + logisticsTrapWarning.recommendedDeliveredPrice,
+                      })
+                    }}
                   </div>
                   <!-- Sort controls -->
                   <div class="exchange-sort-controls" v-if="exchangeOfferItems.length > 1">
                     <span class="exchange-sort-label">{{ t('buildingDetail.exchange.sortBy') }}</span>
                     <button
-                      v-for="dim in (['deliveredPrice', 'exchangePrice', 'quality'] as ExchangeSortBy[])"
+                      v-for="dim in ['deliveredPrice', 'exchangePrice', 'quality'] as ExchangeSortBy[]"
                       :key="dim"
                       :class="['exchange-sort-btn', { active: exchangeSortBy === dim }]"
                       @click="exchangeSortBy = dim"
@@ -4654,11 +4583,7 @@ watch(
                     </li>
                   </ul>
                   <!-- Link to Global Exchange -->
-                  <RouterLink
-                    v-if="selectedPurchaseResourceSlug"
-                    :to="{ name: 'exchange', query: { resource: selectedPurchaseResourceSlug, city: building?.cityId } }"
-                    class="exchange-view-link"
-                  >
+                  <RouterLink v-if="selectedPurchaseResourceSlug" :to="{ name: 'exchange', query: { resource: selectedPurchaseResourceSlug, city: building?.cityId } }" class="exchange-view-link">
                     {{ t('buildingDetail.exchange.viewOnExchange') }}
                   </RouterLink>
                 </template>
@@ -4724,7 +4649,8 @@ watch(
                   {{ t('buildingDetail.config.maxPrice') }}: ${{ (getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).maxPrice }}
                 </span>
                 <span class="stat" v-if="(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).purchaseSource">
-                  {{ t('buildingDetail.config.procurementMode') }}: {{ t(`buildingDetail.config.procurementMode_${(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).purchaseSource}`) }}
+                  {{ t('buildingDetail.config.procurementMode') }}:
+                  {{ t(`buildingDetail.config.procurementMode_${(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).purchaseSource}`) }}
                 </span>
                 <span class="stat" v-if="(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).saleVisibility">
                   {{ t('buildingDetail.config.saleVisibility') }}: {{ (getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y) as BuildingUnit).saleVisibility }}
@@ -4746,27 +4672,18 @@ watch(
               >
                 <h5>{{ t('buildingDetail.operationalStatus.title') }}</h5>
                 <div class="operational-status-row">
-                  <span
-                    class="status-badge"
-                    :class="`status-${selectedActiveUnitOperationalStatus.status.toLowerCase()}`"
-                  >
+                  <span class="status-badge" :class="`status-${selectedActiveUnitOperationalStatus.status.toLowerCase()}`">
                     {{ t(`buildingDetail.operationalStatus.${selectedActiveUnitOperationalStatus.status}`) }}
                   </span>
                   <span v-if="selectedActiveUnitOperationalStatus.idleTicks > 0" class="idle-ticks-label">
                     {{ t('buildingDetail.operationalStatus.idleTicks', { count: selectedActiveUnitOperationalStatus.idleTicks }) }}
                   </span>
                 </div>
-                <p
-                  v-if="selectedActiveUnitOperationalStatus.blockedReason"
-                  class="blocked-reason-text"
-                >
+                <p v-if="selectedActiveUnitOperationalStatus.blockedReason" class="blocked-reason-text">
                   {{ selectedActiveUnitOperationalStatus.blockedReason }}
                 </p>
                 <!-- Next-tick operating costs breakdown -->
-                <div
-                  v-if="selectedActiveUnitOperationalStatus.nextTickLaborCost != null || selectedActiveUnitOperationalStatus.nextTickEnergyCost != null"
-                  class="operating-costs-row"
-                >
+                <div v-if="selectedActiveUnitOperationalStatus.nextTickLaborCost != null || selectedActiveUnitOperationalStatus.nextTickEnergyCost != null" class="operating-costs-row">
                   <span class="operating-cost-label">{{ t('buildingDetail.operatingCost.title') }}</span>
                   <span v-if="selectedActiveUnitOperationalStatus.nextTickLaborCost != null" class="operating-cost-item">
                     {{ t('buildingDetail.operatingCost.labor', { cost: formatCurrency(selectedActiveUnitOperationalStatus.nextTickLaborCost) }) }}
@@ -4841,10 +4758,7 @@ watch(
                   ></span>
                 </div>
                 <!-- Flush storage action for STORAGE, MINING, and MANUFACTURING units -->
-                <div
-                  v-if="['STORAGE', 'MINING', 'MANUFACTURING'].includes(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y)!.unitType)"
-                  class="flush-storage-section"
-                >
+                <div v-if="['STORAGE', 'MINING', 'MANUFACTURING'].includes(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y)!.unitType)" class="flush-storage-section">
                   <button
                     class="btn btn-danger btn-sm"
                     :disabled="flushingStorage || getUnitInventorySummary(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y))!.quantity === 0"
@@ -4858,10 +4772,9 @@ watch(
                   <div v-if="showFlushConfirmDialog" class="flush-confirm-dialog" role="dialog" :aria-label="t('buildingDetail.flushStorage.confirmTitle')">
                     <p class="flush-confirm-msg">{{ t('buildingDetail.flushStorage.confirmBody') }}</p>
                     <div class="flush-confirm-actions">
-                      <button
-                        class="btn btn-danger btn-sm"
-                        @click="submitFlushStorage(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y)!.id)"
-                      >{{ t('buildingDetail.flushStorage.confirmYes') }}</button>
+                      <button class="btn btn-danger btn-sm" @click="submitFlushStorage(getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y)!.id)">
+                        {{ t('buildingDetail.flushStorage.confirmYes') }}
+                      </button>
                       <button class="btn btn-ghost btn-sm" @click="showFlushConfirmDialog = false">{{ t('common.cancel') }}</button>
                     </div>
                   </div>
@@ -4891,19 +4804,21 @@ watch(
                   </p>
                   <!-- Logistics trap warning -->
                   <div v-if="logisticsTrapWarning" class="logistics-trap-warning" role="alert">
-                    {{ t('buildingDetail.exchange.logisticsTrap', {
-                      cheapCity: logisticsTrapWarning.cheaperStickerCityName,
-                      cheapExchange: '$' + logisticsTrapWarning.cheaperStickerExchangePrice,
-                      cheapDelivered: '$' + logisticsTrapWarning.cheaperStickerDeliveredPrice,
-                      bestCity: logisticsTrapWarning.recommendedCityName,
-                      bestDelivered: '$' + logisticsTrapWarning.recommendedDeliveredPrice,
-                    }) }}
+                    {{
+                      t('buildingDetail.exchange.logisticsTrap', {
+                        cheapCity: logisticsTrapWarning.cheaperStickerCityName,
+                        cheapExchange: '$' + logisticsTrapWarning.cheaperStickerExchangePrice,
+                        cheapDelivered: '$' + logisticsTrapWarning.cheaperStickerDeliveredPrice,
+                        bestCity: logisticsTrapWarning.recommendedCityName,
+                        bestDelivered: '$' + logisticsTrapWarning.recommendedDeliveredPrice,
+                      })
+                    }}
                   </div>
                   <!-- Sort controls -->
                   <div class="exchange-sort-controls" v-if="exchangeOfferItems.length > 1">
                     <span class="exchange-sort-label">{{ t('buildingDetail.exchange.sortBy') }}</span>
                     <button
-                      v-for="dim in (['deliveredPrice', 'exchangePrice', 'quality'] as ExchangeSortBy[])"
+                      v-for="dim in ['deliveredPrice', 'exchangePrice', 'quality'] as ExchangeSortBy[]"
                       :key="dim"
                       :class="['exchange-sort-btn', { active: exchangeSortBy === dim }]"
                       @click="exchangeSortBy = dim"
@@ -4936,25 +4851,16 @@ watch(
                     </li>
                   </ul>
                   <!-- Link to Global Exchange -->
-                  <RouterLink
-                    v-if="selectedPurchaseResourceSlug"
-                    :to="{ name: 'exchange', query: { resource: selectedPurchaseResourceSlug, city: building?.cityId } }"
-                    class="exchange-view-link"
-                  >
+                  <RouterLink v-if="selectedPurchaseResourceSlug" :to="{ name: 'exchange', query: { resource: selectedPurchaseResourceSlug, city: building?.cityId } }" class="exchange-view-link">
                     {{ t('buildingDetail.exchange.viewOnExchange') }}
                   </RouterLink>
                 </template>
               </div>
 
               <!-- Procurement Preview Card (shown in view mode for PURCHASE units) -->
-              <div
-                v-if="selectedPurchaseUnit"
-                class="procurement-preview unit-insight-card"
-              >
+              <div v-if="selectedPurchaseUnit" class="procurement-preview unit-insight-card">
                 <h5 class="procurement-preview-title">{{ t('buildingDetail.procurementPreview.title') }}</h5>
-                <div v-if="procurementPreviewLoading" class="procurement-preview-loading">
-                  {{ t('common.loading') }}…
-                </div>
+                <div v-if="procurementPreviewLoading" class="procurement-preview-loading">{{ t('common.loading') }}…</div>
                 <div v-else-if="procurementPreview" class="procurement-preview-content">
                   <div v-if="procurementPreview.canExecute" class="procurement-preview-ok">
                     <span class="preview-status ok">✓ {{ t('buildingDetail.procurementPreview.willExecute') }}</span>
@@ -5023,9 +4929,7 @@ watch(
 
                 <template v-else-if="sourcingCandidates.length > 0">
                   <!-- Logistics note: cheapest sticker ≠ best landed -->
-                  <p v-if="sourcingCheapestStickerDiffersFromBestLanded" class="sourcing-trap-note">
-                    ℹ️ {{ t('buildingDetail.sourcingComparison.cheapestNotBest') }}
-                  </p>
+                  <p v-if="sourcingCheapestStickerDiffersFromBestLanded" class="sourcing-trap-note">ℹ️ {{ t('buildingDetail.sourcingComparison.cheapestNotBest') }}</p>
 
                   <!-- Candidate table -->
                   <div class="sourcing-table-wrapper">
@@ -5044,11 +4948,7 @@ watch(
                         <tr
                           v-for="candidate in sourcingCandidates"
                           :key="`${candidate.rank}-${candidate.sourceCityId ?? candidate.sourceVendorCompanyId}`"
-                          :class="[
-                            'sourcing-row',
-                            candidate.isRecommended ? 'recommended' : '',
-                            !candidate.isEligible ? 'ineligible' : '',
-                          ]"
+                          :class="['sourcing-row', candidate.isRecommended ? 'recommended' : '', !candidate.isEligible ? 'ineligible' : '']"
                         >
                           <td class="sourcing-col-source">
                             <span class="source-type-badge">{{ t(`buildingDetail.sourcingComparison.sourceType_${candidate.sourceType}`) }}</span>
@@ -5060,24 +4960,16 @@ watch(
                             </span>
                           </td>
                           <td class="sourcing-col-offer">
-                            <span v-if="candidate.exchangePricePerUnit !== null">
-                              ${{ candidate.exchangePricePerUnit.toFixed(2) }}
-                            </span>
-                            <span v-else-if="candidate.deliveredPricePerUnit !== null">
-                              ${{ candidate.deliveredPricePerUnit.toFixed(2) }}
-                            </span>
+                            <span v-if="candidate.exchangePricePerUnit !== null"> ${{ candidate.exchangePricePerUnit.toFixed(2) }} </span>
+                            <span v-else-if="candidate.deliveredPricePerUnit !== null"> ${{ candidate.deliveredPricePerUnit.toFixed(2) }} </span>
                             <span v-else>—</span>
                           </td>
                           <td class="sourcing-col-transit">
-                            <span v-if="candidate.transitCostPerUnit !== null && candidate.transitCostPerUnit > 0" class="transit-cost">
-                              +${{ candidate.transitCostPerUnit.toFixed(2) }}
-                            </span>
+                            <span v-if="candidate.transitCostPerUnit !== null && candidate.transitCostPerUnit > 0" class="transit-cost"> +${{ candidate.transitCostPerUnit.toFixed(2) }} </span>
                             <span v-else class="transit-free">{{ t('buildingDetail.sourcingComparison.localFree') }}</span>
                           </td>
                           <td class="sourcing-col-landed col-landed">
-                            <strong v-if="candidate.deliveredPricePerUnit !== null">
-                              ${{ candidate.deliveredPricePerUnit.toFixed(2) }}
-                            </strong>
+                            <strong v-if="candidate.deliveredPricePerUnit !== null"> ${{ candidate.deliveredPricePerUnit.toFixed(2) }} </strong>
                             <span v-else>—</span>
                           </td>
                           <td class="sourcing-col-quality">
@@ -5085,17 +4977,11 @@ watch(
                             <span v-else>—</span>
                           </td>
                           <td class="sourcing-col-status">
-                            <span v-if="candidate.isRecommended" class="sc-badge sc-badge--recommended">
-                              ★ {{ t('buildingDetail.sourcingComparison.recommended') }}
-                            </span>
+                            <span v-if="candidate.isRecommended" class="sc-badge sc-badge--recommended"> ★ {{ t('buildingDetail.sourcingComparison.recommended') }} </span>
                             <span v-else-if="candidate.isEligible" class="sc-badge sc-badge--eligible">
                               {{ t('buildingDetail.sourcingComparison.eligible') }}
                             </span>
-                            <span
-                              v-else
-                              class="sc-badge sc-badge--blocked"
-                              :title="candidate.blockMessage ?? ''"
-                            >
+                            <span v-else class="sc-badge sc-badge--blocked" :title="candidate.blockMessage ?? ''">
                               {{ t(`buildingDetail.sourcingComparison.blockReason_${candidate.blockReason ?? 'UNKNOWN'}`) }}
                             </span>
                           </td>
@@ -5105,10 +4991,7 @@ watch(
                   </div>
 
                   <!-- Filter hint when some candidates are blocked -->
-                  <p
-                    v-if="sourcingCandidates.some((c) => !c.isEligible)"
-                    class="sourcing-filter-hint config-help"
-                  >
+                  <p v-if="sourcingCandidates.some((c) => !c.isEligible)" class="sourcing-filter-hint config-help">
                     {{ t('buildingDetail.sourcingComparison.filterHint') }}
                   </p>
                 </template>
@@ -5216,9 +5099,7 @@ watch(
                         class="mi-share-row"
                         :class="{ 'mi-share-row-you': entry.companyId === building?.companyId, 'mi-share-row-unmet': entry.isUnmet }"
                       >
-                        <span class="mi-share-label">
-                          {{ entry.label }}{{ entry.companyId === building?.companyId ? ' ★' : '' }}{{ entry.isUnmet ? ' ⬚' : '' }}
-                        </span>
+                        <span class="mi-share-label"> {{ entry.label }}{{ entry.companyId === building?.companyId ? ' ★' : '' }}{{ entry.isUnmet ? ' ⬚' : '' }} </span>
                         <div class="mi-share-bar-wrap">
                           <div class="mi-share-bar" :class="{ 'mi-share-bar-unmet': entry.isUnmet }" :style="{ width: `${(entry.share * 100).toFixed(1)}%` }"></div>
                         </div>
@@ -5232,7 +5113,10 @@ watch(
                     <div class="mi-context-grid">
                       <div v-if="publicSalesAnalytics.elasticityIndex !== null" class="mi-context-item">
                         <span class="mi-context-label">{{ t('buildingDetail.marketIntelligence.elasticityIndex') }}</span>
-                        <strong class="mi-context-value" :class="{ 'mi-elastic-high': (publicSalesAnalytics.elasticityIndex ?? 0) < -1.5, 'mi-elastic-low': (publicSalesAnalytics.elasticityIndex ?? 0) > -0.5 }">
+                        <strong
+                          class="mi-context-value"
+                          :class="{ 'mi-elastic-high': (publicSalesAnalytics.elasticityIndex ?? 0) < -1.5, 'mi-elastic-low': (publicSalesAnalytics.elasticityIndex ?? 0) > -0.5 }"
+                        >
                           {{ publicSalesAnalytics.elasticityIndex.toFixed(2) }}
                         </strong>
                         <span class="mi-context-hint">{{ t('buildingDetail.marketIntelligence.elasticityHint') }}</span>
@@ -5260,10 +5144,7 @@ watch(
                   </div>
 
                   <!-- Demand signal -->
-                  <div
-                    class="mi-demand-card"
-                    :class="`mi-demand-${publicSalesAnalytics.demandSignal.toLowerCase().replace(/_/g, '-')}`"
-                  >
+                  <div class="mi-demand-card" :class="`mi-demand-${publicSalesAnalytics.demandSignal.toLowerCase().replace(/_/g, '-')}`">
                     <div class="mi-demand-header">
                       <span class="mi-demand-title">{{ t('buildingDetail.marketIntelligence.demandSignal.title') }}</span>
                       <span class="mi-demand-badge">{{ t(`buildingDetail.marketIntelligence.demandSignal.${publicSalesAnalytics.demandSignal}`) }}</span>
@@ -5289,14 +5170,18 @@ watch(
                       }"
                     >
                       <template v-if="quickPriceInput > currentPublicSalesMinPrice">
-                        {{ t('buildingDetail.marketIntelligence.priceUpdate.raisingHint', {
-                          elasticity: Math.abs(publicSalesAnalytics.elasticityIndex).toFixed(1),
-                        }) }}
+                        {{
+                          t('buildingDetail.marketIntelligence.priceUpdate.raisingHint', {
+                            elasticity: Math.abs(publicSalesAnalytics.elasticityIndex).toFixed(1),
+                          })
+                        }}
                       </template>
                       <template v-else-if="quickPriceInput < currentPublicSalesMinPrice">
-                        {{ t('buildingDetail.marketIntelligence.priceUpdate.loweringHint', {
-                          elasticity: Math.abs(publicSalesAnalytics.elasticityIndex).toFixed(1),
-                        }) }}
+                        {{
+                          t('buildingDetail.marketIntelligence.priceUpdate.loweringHint', {
+                            elasticity: Math.abs(publicSalesAnalytics.elasticityIndex).toFixed(1),
+                          })
+                        }}
                       </template>
                     </div>
 
@@ -5313,11 +5198,7 @@ watch(
                         :step="0.01"
                         v-model.number="quickPriceInput"
                       />
-                      <button
-                        class="btn btn-primary mi-price-update-btn"
-                        :disabled="quickPriceSaving || quickPriceInput === null || quickPriceInput <= 0"
-                        @click="submitQuickPriceUpdate"
-                      >
+                      <button class="btn btn-primary mi-price-update-btn" :disabled="quickPriceSaving || quickPriceInput === null || quickPriceInput <= 0" @click="submitQuickPriceUpdate">
                         {{ quickPriceSaving ? t('buildingDetail.marketIntelligence.priceUpdate.saving') : t('buildingDetail.marketIntelligence.priceUpdate.apply') }}
                       </button>
                     </div>
@@ -6855,7 +6736,6 @@ watch(
   margin-top: 0.25rem;
 }
 
-
 .config-warnings {
   background: rgba(255, 109, 0, 0.08);
   border: 1px solid rgba(255, 109, 0, 0.3);
@@ -7193,7 +7073,10 @@ watch(
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .exchange-sort-btn.active {
@@ -8058,10 +7941,18 @@ watch(
   color: var(--color-text);
 }
 
-.activity-purchased .activity-tick { color: #1d4ed8; }
-.activity-manufactured .activity-tick { color: #059669; }
-.activity-sold .activity-tick { color: #7c3aed; }
-.activity-moved .activity-tick { color: #92400e; }
+.activity-purchased .activity-tick {
+  color: #1d4ed8;
+}
+.activity-manufactured .activity-tick {
+  color: #059669;
+}
+.activity-sold .activity-tick {
+  color: #7c3aed;
+}
+.activity-moved .activity-tick {
+  color: #92400e;
+}
 
 /* ── Procurement Mode Selector ── */
 .procurement-mode-options {
@@ -8078,7 +7969,9 @@ watch(
   border: 1px solid var(--color-border, #e2e8f0);
   border-radius: 6px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
   gap: 0.15rem;
 }
 
@@ -8516,4 +8409,5 @@ watch(
   .purchase-selector-grid {
     grid-template-columns: 1fr;
   }
-}</style>
+}
+</style>

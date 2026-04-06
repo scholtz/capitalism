@@ -540,7 +540,8 @@ export default {
       title: 'New Factory — Ready to Set Up',
       body: 'This factory has no units configured yet. Apply the starter layout to begin producing, then customise units to match your strategy.',
       applyStarter: 'Apply Starter Layout',
-      starterLayoutDesc: 'Starter layout: Purchase (0,0) → Manufacturing (1,0) → Storage (2,0) → B2B Sales (3,0) — the minimum chain to buy resources, manufacture goods, hold stock, and sell wholesale.',
+      starterLayoutDesc:
+        'Starter layout: Purchase (0,0) → Manufacturing (1,0) → Storage (2,0) → B2B Sales (3,0) — the minimum chain to buy resources, manufacture goods, hold stock, and sell wholesale.',
       whatNext: 'After saving this layout, the units will be built over the next few ticks. Then configure each unit with a resource, product, and price to complete your first production chain.',
     },
     shopStarterSetup: {
@@ -962,8 +963,7 @@ export default {
       success: 'Inventory discarded. The loss has been recorded in the company ledger.',
       error: 'Failed to discard inventory. Please try again.',
       confirmTitle: 'Confirm Discard',
-      confirmBody:
-        'This will permanently delete all inventory in this unit and record the loss in your ledger. This cannot be undone. Continue?',
+      confirmBody: 'This will permanently delete all inventory in this unit and record the loss in your ledger. This cannot be undone. Continue?',
       confirmYes: 'Yes, Discard All',
     },
   },
