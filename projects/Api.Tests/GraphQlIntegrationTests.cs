@@ -8215,6 +8215,34 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         // 10,000 total shares always — Growth IPO issues all 10k but founder holds only ~33%
         Assert.Equal(10_000m, startData.GetProperty("company").GetProperty("totalSharesIssued").GetDecimal());
+
+        // ROADMAP: "varying his own shares to be ... 33% in the company."
+        // Verify the founder's personal shareholding is 33.33% and personal cash is $150k.
+        var companyId = startData.GetProperty("company").GetProperty("id").GetString()!;
+        var personAccountResult = await ExecuteGraphQlAsync(
+            """
+            {
+                personAccount {
+                    personalCash
+                    shareholdings {
+                        companyId
+                        shareCount
+                        ownershipRatio
+                    }
+                }
+            }
+            """,
+            token: token);
+
+        var personAccount = personAccountResult.GetProperty("data").GetProperty("personAccount");
+        // Personal cash = $200k starting - $50k founder contribution = $150k (same for all IPO plans)
+        Assert.Equal(150_000m, personAccount.GetProperty("personalCash").GetDecimal());
+
+        var founderHolding = personAccount.GetProperty("shareholdings").EnumerateArray().Single();
+        Assert.Equal(companyId, founderHolding.GetProperty("companyId").GetString());
+        // Growth IPO: 10000 shares × 0.3333 = 3333 founder shares → 33.33% ownership
+        Assert.Equal(3_333m, founderHolding.GetProperty("shareCount").GetDecimal());
+        Assert.Equal(0.3333m, founderHolding.GetProperty("ownershipRatio").GetDecimal());
     }
 
     [Fact]

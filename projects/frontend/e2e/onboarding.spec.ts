@@ -4406,6 +4406,188 @@ test.describe('Guest migration — all starter industries (AC2, AC9, AC13)', () 
     await expect(page.locator('.achievement-item', { hasText: 'Bread' })).toBeVisible()
     expect(state.currentUserId).toBeTruthy()
   })
+
+  test('guest can register and migrate Healthcare progress in Vienna city to authenticated account', async ({
+    page,
+  }) => {
+    // ROADMAP city coverage: completes the 3×3 migration matrix (all industries × all cities).
+    // Verifies guest → register → empire launched for Healthcare in Vienna.
+    const state = setupMockApi(page)
+    state.buildingLots = [
+      ...state.buildingLots,
+      {
+        id: 'lot-vienna-hc-factory-mig',
+        cityId: 'city-vi',
+        name: 'Vienna Pharma Mig Park',
+        description: 'Factory-capable lot in Vienna for Healthcare migration test.',
+        district: 'Industrial Zone',
+        latitude: 48.212,
+        longitude: 16.378,
+        populationIndex: 0.65,
+        basePrice: 78_000,
+        price: 78_000,
+        suitableTypes: 'FACTORY,MINE',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+      {
+        id: 'lot-vienna-hc-shop-mig',
+        cityId: 'city-vi',
+        name: 'Vienna Medicine Mig Row',
+        description: 'Retail space in Vienna for Healthcare migration test.',
+        district: 'Commercial District',
+        latitude: 48.204,
+        longitude: 16.369,
+        populationIndex: 1.0,
+        basePrice: 85_000,
+        price: 85_000,
+        suitableTypes: 'SALES_SHOP,COMMERCIAL',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+    ]
+
+    await page.goto('/onboarding')
+
+    // Step 1: Healthcare
+    await page.locator('.industry-card', { hasText: 'Healthcare' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Vienna (the third city)
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Vienna' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot in Vienna
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Vienna Pharma Migration Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Vienna Pharma Mig Park/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Basic Medicine product + Vienna shop lot
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Basic Medicine' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Vienna Medicine Mig Row/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress screen
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Register to migrate
+    await page.locator('#guestEmail').fill('vienna-healthcare-migration@test.com')
+    await page.locator('#guestDisplayName').fill('Vienna Pharma Tycoon')
+    await page.locator('#guestPassword').fill('ViennaHealthPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Completion screen confirms empire launched in Vienna with Healthcare product
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.locator('.achievement-item', { hasText: 'Basic Medicine' })).toBeVisible()
+    expect(state.currentUserId).toBeTruthy()
+  })
+
+  test('guest can register and migrate Healthcare progress in Prague city to authenticated account', async ({
+    page,
+  }) => {
+    // ROADMAP city coverage: completes the 3×3 migration matrix (all industries × all cities).
+    // Verifies guest → register → empire launched for Healthcare in Prague.
+    const state = setupMockApi(page)
+    state.buildingLots = [
+      ...state.buildingLots,
+      {
+        id: 'lot-prague-hc-factory-mig',
+        cityId: 'city-pr',
+        name: 'Prague Pharma Mig Park',
+        description: 'Factory-capable lot in Prague for Healthcare migration test.',
+        district: 'Industrial Zone',
+        latitude: 50.081,
+        longitude: 14.441,
+        populationIndex: 0.65,
+        basePrice: 76_000,
+        price: 76_000,
+        suitableTypes: 'FACTORY,MINE',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+      {
+        id: 'lot-prague-hc-shop-mig',
+        cityId: 'city-pr',
+        name: 'Prague Medicine Mig Row',
+        description: 'Retail space in Prague for Healthcare migration test.',
+        district: 'Commercial District',
+        latitude: 50.074,
+        longitude: 14.431,
+        populationIndex: 1.0,
+        basePrice: 84_000,
+        price: 84_000,
+        suitableTypes: 'SALES_SHOP,COMMERCIAL',
+        ownerCompanyId: null,
+        buildingId: null,
+        ownerCompany: null,
+        building: null,
+        resourceType: null,
+        materialQuality: null,
+        materialQuantity: null,
+      },
+    ]
+
+    await page.goto('/onboarding')
+
+    // Step 1: Healthcare
+    await page.locator('.industry-card', { hasText: 'Healthcare' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 2: Prague (the second city)
+    await expect(page.getByRole('heading', { name: 'Choose Your City' })).toBeVisible()
+    await page.locator('.city-card', { hasText: 'Prague' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    // Step 3: factory lot in Prague
+    await expect(page.getByRole('heading', { name: 'Choose Your First Factory Lot' })).toBeVisible()
+    await page.getByLabel('Company Name').fill('Prague Pharma Migration Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Prague Pharma Mig Park/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    // Step 4: Basic Medicine product + Prague shop lot
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    await page.locator('.product-card', { hasText: 'Basic Medicine' }).click()
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Prague Medicine Mig Row/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Sales Shop' }).click()
+
+    // Step 5: save-progress screen
+    await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
+    await expect(page.locator('.guest-profit-preview')).toBeVisible()
+
+    // Register to migrate
+    await page.locator('#guestEmail').fill('prague-healthcare-migration@test.com')
+    await page.locator('#guestDisplayName').fill('Prague Pharma Tycoon')
+    await page.locator('#guestPassword').fill('PragueHealthPass1!')
+    await page.getByRole('button', { name: 'Save & Launch' }).click()
+
+    // Completion screen confirms empire launched in Prague with Healthcare product
+    await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
+    await expect(page.locator('.achievement-item', { hasText: 'Basic Medicine' })).toBeVisible()
+    expect(state.currentUserId).toBeTruthy()
+  })
 })
 
 test.describe('Cross-industry/city matrix — guest wizard completability (AC2, AC8)', () => {
