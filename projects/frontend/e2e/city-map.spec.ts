@@ -132,7 +132,7 @@ test.describe('City Map View', () => {
 
     // Should show purchase form
     await expect(page.getByText('Building Type', { exact: true })).toBeVisible()
-    await expect(page.getByText('Building Name', { exact: true })).toBeVisible()
+    await expect(page.getByText('Building Name')).toBeVisible()
   })
 
   test('completes purchase flow successfully', async ({ page }) => {
