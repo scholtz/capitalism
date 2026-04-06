@@ -132,6 +132,9 @@ public sealed class PublicSalesPhase : ITickPhase
         // Track actual sales per unit to enforce sales capacity across products.
         var unitSoldTotals = new Dictionary<Guid, decimal>();
 
+        // Pre-compute unit sales capacity to avoid redundant recalculations.
+        var unitCapacityCache = new Dictionary<Guid, decimal>();
+
         foreach (var group in grouped)
         {
             var groupList = group.ToList();
@@ -146,24 +149,22 @@ public sealed class PublicSalesPhase : ITickPhase
 
             foreach (var offer in groupList)
             {
-                // Each seller's demand = city base demand × their own competitiveness
-                // normalized so the total demand across all sellers sums to at most
-                // cityBaseDemand × (average competitiveness). This naturally splits
-                // demand when multiple sellers compete for the same product.
-                var demand = cityBaseDemand * offer.Competitiveness;
-
-                // When there are multiple sellers, scale down by the number of
-                // competitors to prevent infinite market expansion.
-                if (groupList.Count > 1)
-                {
-                    var marketShare = offer.Competitiveness / totalCompetitiveness;
-                    demand = cityBaseDemand * marketShare * offer.Competitiveness;
-                }
+                // Market share: each seller's fraction of city demand based on competitiveness.
+                // For a single seller, marketShare = 1.0 and demand = cityBaseDemand × competitiveness.
+                // For multiple sellers, demand is proportionally split so total ≤ cityBaseDemand × avgCompetitiveness.
+                var marketShare = offer.Competitiveness / totalCompetitiveness;
+                var demand = cityBaseDemand * marketShare;
 
                 // Enforce unit-level sales capacity.
                 unitSoldTotals.TryGetValue(offer.Unit.Id, out var unitSoldSoFar);
-                var salesCapacity = GameConstants.SalesCapacity(offer.Unit.Level)
-                    * TickContext.GetPowerEfficiency(offer.Building);
+
+                if (!unitCapacityCache.TryGetValue(offer.Unit.Id, out var salesCapacity))
+                {
+                    salesCapacity = GameConstants.SalesCapacity(offer.Unit.Level)
+                        * TickContext.GetPowerEfficiency(offer.Building);
+                    unitCapacityCache[offer.Unit.Id] = salesCapacity;
+                }
+
                 var remainingCapacity = Math.Max(0m, salesCapacity - unitSoldSoFar);
 
                 var sold = Math.Min(demand, Math.Min(offer.MaxCanSell, remainingCapacity));

@@ -117,6 +117,7 @@ export function constructionTicksRemaining(
  */
 export function canSubmitPurchaseForm(
   buildingType: string,
+  /** @deprecated Building name is now optional; kept for call-site compatibility. */
   _buildingName: string,
   companyId: string,
   purchasing: boolean,
