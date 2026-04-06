@@ -118,7 +118,9 @@ const error = ref<string | null>(null)
 const saveError = ref<string | null>(null)
 const companyCash = ref<number | null>(null)
 const isEditing = ref(false)
-const selectedCell = ref<{ x: number; y: number } | null>(null)
+type GridCellSelection = { x: number; y: number }
+
+const selectedCell = ref<GridCellSelection | null>(null)
 const showUnitPicker = ref(false)
 const draftUnits = ref<EditableGridUnit[]>([])
 const editBaselineUnits = ref<EditableGridUnit[]>([])
@@ -131,6 +133,57 @@ const unitResourceHistories = ref<BuildingUnitResourceHistoryPoint[]>([])
 const exchangeOffers = ref<GlobalExchangeOffer[]>([])
 const exchangeOffersLoading = ref(false)
 const exchangeSortBy = ref<ExchangeSortBy>('deliveredPrice')
+
+function parseUnitQuery(value: unknown): GridCellSelection | null {
+  if (typeof value !== 'string') return null
+  const match = value.match(/^([0-3]),([0-3])$/)
+  if (!match) return null
+
+  const x = Number(match[1])
+  const y = Number(match[2])
+  if (!Number.isInteger(x) || !Number.isInteger(y)) return null
+
+  return { x, y }
+}
+
+function syncSelectedCellQuery(cell: GridCellSelection | null) {
+  const nextUnit = cell ? `${cell.x},${cell.y}` : undefined
+  const currentUnit = typeof route.query.unit === 'string' ? route.query.unit : undefined
+  if (currentUnit === nextUnit) return
+
+  void router.replace({
+    query: {
+      ...route.query,
+      unit: nextUnit,
+    },
+  })
+}
+
+function setReadOnlySelectedCell(cell: GridCellSelection | null) {
+  selectedCell.value = cell
+  syncSelectedCellQuery(cell)
+}
+
+function restoreReadOnlySelectedCell(units: GridUnit[]) {
+  const requestedCell = parseUnitQuery(route.query.unit)
+  if (!requestedCell) {
+    selectedCell.value = null
+    return
+  }
+
+  const hasUnit = !!getUnitAtFrom(units, requestedCell.x, requestedCell.y)
+  if (!hasUnit) {
+    selectedCell.value = null
+    syncSelectedCellQuery(null)
+    return
+  }
+
+  selectedCell.value = requestedCell
+}
+
+function clickReadOnlyCell(x: number, y: number) {
+  setReadOnlySelectedCell(getUnitAtFrom(activeUnits.value, x, y) ? { x, y } : null)
+}
 
 // Procurement preview (next-tick execution preview for PURCHASE units)
 const procurementPreview = ref<ProcurementPreview | null>(null)
@@ -622,7 +675,7 @@ function startEditing() {
   setDraftUnitsFrom(sourceUnits)
   setEditBaselineFrom(sourceUnits)
   isEditing.value = true
-  selectedCell.value = null
+  setReadOnlySelectedCell(null)
   showUnitPicker.value = false
 }
 
@@ -631,7 +684,7 @@ function cancelEditing() {
   setDraftUnitsFrom(sourceUnits)
   setEditBaselineFrom(sourceUnits)
   isEditing.value = false
-  selectedCell.value = null
+  setReadOnlySelectedCell(null)
   showUnitPicker.value = false
   saveError.value = null
 }
@@ -724,7 +777,7 @@ function applyStarterLayout() {
   setDraftUnitsFrom(starterUnits)
   setEditBaselineFrom([])
   isEditing.value = true
-  selectedCell.value = null
+  setReadOnlySelectedCell(null)
   showUnitPicker.value = false
 }
 
@@ -788,7 +841,7 @@ function applyShopStarterLayout() {
   setDraftUnitsFrom(shopStarterUnits)
   setEditBaselineFrom([])
   isEditing.value = true
-  selectedCell.value = null
+  setReadOnlySelectedCell(null)
   showUnitPicker.value = false
 }
 
@@ -2703,7 +2756,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
       setDraftUnitsFrom(sourceUnits)
       setEditBaselineFrom(sourceUnits)
       isEditing.value = false
-      selectedCell.value = null
+      restoreReadOnlySelectedCell(building.value.units)
       showUnitPicker.value = false
     }
 
@@ -2752,6 +2805,15 @@ useTickRefresh(async () => {
   void loadUnitOperationalStatuses(buildingId.value)
   void loadRecentActivity(buildingId.value)
 })
+
+watch(
+  () => route.query.unit,
+  () => {
+    if (!isEditing.value) {
+      restoreReadOnlySelectedCell(activeUnits.value)
+    }
+  },
+)
 
 watch(
   () => [
@@ -3307,8 +3369,8 @@ watch(
                       role="button"
                       :tabindex="getUnitAtFrom(activeUnits, x, y) ? 0 : -1"
                       :aria-label="getGridCellAriaLabel(getUnitAtFrom(activeUnits, x, y))"
-                      @click="selectedCell = getUnitAtFrom(activeUnits, x, y) ? { x, y } : null"
-                      @keydown.enter.space.prevent="selectedCell = getUnitAtFrom(activeUnits, x, y) ? { x, y } : null"
+                      @click="clickReadOnlyCell(x, y)"
+                      @keydown.enter.space.prevent="clickReadOnlyCell(x, y)"
                     >
                       <template v-if="getUnitAtFrom(activeUnits, x, y)">
                         <div class="cell-heading" aria-hidden="true">
@@ -3617,7 +3679,7 @@ watch(
           <div v-if="!showUnitPicker && getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)" class="unit-config">
             <div class="unit-config-header">
               <h3>{{ t('buildingDetail.unitConfiguration') }}</h3>
-              <button class="btn btn-ghost" @click="selectedCell = null">{{ t('common.close') }}</button>
+              <button class="btn btn-ghost" @click="setReadOnlySelectedCell(null)">{{ t('common.close') }}</button>
             </div>
             <div class="unit-detail">
               <h4>{{ t(`buildingDetail.unitTypes.${getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!.unitType}`) }}</h4>
@@ -4197,7 +4259,7 @@ watch(
           <div class="unit-config">
             <div class="unit-config-header">
               <h3>{{ t('buildingDetail.unitDetails') }}</h3>
-              <button class="btn btn-ghost" @click="selectedCell = null">{{ t('common.close') }}</button>
+              <button class="btn btn-ghost" @click="setReadOnlySelectedCell(null)">{{ t('common.close') }}</button>
             </div>
             <div class="unit-detail">
               <h4>{{ t(`buildingDetail.unitTypes.${getUnitAtFrom(activeUnits, selectedCell.x, selectedCell.y)!.unitType}`) }}</h4>

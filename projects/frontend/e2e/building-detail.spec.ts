@@ -579,6 +579,74 @@ test.describe('Building detail upgrades', () => {
     await expect(exchangeSection.getByText('Vienna')).toBeVisible()
   })
 
+  test('preserves readonly unit selection in the route so refresh keeps the sidebar open', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-route',
+      playerId: player.id,
+      name: 'Route Memory Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-route',
+          companyId: 'company-route',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Route Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'route-1',
+              buildingId: 'building-route',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              maxPrice: 120,
+              purchaseSource: 'EXCHANGE',
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-route')
+    const activeSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(activeSection, 0, 0).click()
+
+    await expect(page).toHaveURL(/\/building\/building-route\?unit=0(?:,|%2C)0$/)
+    await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
+
+    await page.reload()
+
+    await expect(page).toHaveURL(/\/building\/building-route\?unit=0(?:,|%2C)0$/)
+    await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
+    await expect(page.getByText('Procurement Mode: Global Exchange')).toBeVisible()
+  })
+
   test('shows configured resource image, sourcing costs, and new-unit cost while planning', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
