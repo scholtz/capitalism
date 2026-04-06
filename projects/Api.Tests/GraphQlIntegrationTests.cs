@@ -15924,8 +15924,30 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         var (token, buildingId) = await SeedOperationalStatusTestAsync("building-financial",
             (db, bid, companyId, _) =>
             {
+                var primaryUnitId = Guid.NewGuid();
+                var secondaryUnitId = Guid.NewGuid();
                 var gameState = db.GameStates.First();
                 gameState.CurrentTick = 42;
+
+                db.BuildingUnits.AddRange(
+                    new BuildingUnit
+                    {
+                        Id = primaryUnitId,
+                        BuildingId = bid,
+                        UnitType = UnitType.PublicSales,
+                        GridX = 0,
+                        GridY = 0,
+                        Level = 1,
+                    },
+                    new BuildingUnit
+                    {
+                        Id = secondaryUnitId,
+                        BuildingId = bid,
+                        UnitType = UnitType.Purchase,
+                        GridX = 1,
+                        GridY = 0,
+                        Level = 1,
+                    });
 
                 db.LedgerEntries.AddRange(
                     new LedgerEntry
@@ -15933,6 +15955,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
                         Id = Guid.NewGuid(),
                         CompanyId = companyId,
                         BuildingId = bid,
+                        BuildingUnitId = primaryUnitId,
                         Category = LedgerCategory.Revenue,
                         Description = "Retail sale",
                         Amount = 120m,
@@ -15944,6 +15967,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
                         Id = Guid.NewGuid(),
                         CompanyId = companyId,
                         BuildingId = bid,
+                        BuildingUnitId = secondaryUnitId,
                         Category = LedgerCategory.PurchasingCost,
                         Description = "Input sourcing",
                         Amount = -30m,
@@ -15955,6 +15979,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
                         Id = Guid.NewGuid(),
                         CompanyId = companyId,
                         BuildingId = bid,
+                        BuildingUnitId = secondaryUnitId,
                         Category = LedgerCategory.LaborCost,
                         Description = "Labor",
                         Amount = -10m,
@@ -15966,6 +15991,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
                         Id = Guid.NewGuid(),
                         CompanyId = companyId,
                         BuildingId = bid,
+                        BuildingUnitId = primaryUnitId,
                         Category = LedgerCategory.Revenue,
                         Description = "Wholesale sale",
                         Amount = 80m,
@@ -15977,6 +16003,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
                         Id = Guid.NewGuid(),
                         CompanyId = companyId,
                         BuildingId = bid,
+                        BuildingUnitId = primaryUnitId,
                         Category = LedgerCategory.Marketing,
                         Description = "Campaign spend",
                         Amount = -20m,
@@ -16033,6 +16060,159 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         Assert.Equal(80m, snapshots[2].GetProperty("sales").GetDecimal());
         Assert.Equal(20m, snapshots[2].GetProperty("costs").GetDecimal());
         Assert.Equal(60m, snapshots[2].GetProperty("profit").GetDecimal());
+    }
+
+    [Fact]
+    public async Task BuildingFinancialTimeline_DefaultWindow_AggregatesOperationalEntriesAcrossUnits()
+    {
+        var (token, buildingId) = await SeedOperationalStatusTestAsync("building-financial-window",
+            (db, bid, companyId, _) =>
+            {
+                var salesUnitId = Guid.NewGuid();
+                var purchaseUnitId = Guid.NewGuid();
+                var gameState = db.GameStates.First();
+                gameState.CurrentTick = 140;
+
+                db.BuildingUnits.AddRange(
+                    new BuildingUnit
+                    {
+                        Id = salesUnitId,
+                        BuildingId = bid,
+                        UnitType = UnitType.PublicSales,
+                        GridX = 0,
+                        GridY = 0,
+                        Level = 1,
+                    },
+                    new BuildingUnit
+                    {
+                        Id = purchaseUnitId,
+                        BuildingId = bid,
+                        UnitType = UnitType.Purchase,
+                        GridX = 1,
+                        GridY = 0,
+                        Level = 1,
+                    });
+
+                db.LedgerEntries.AddRange(
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        BuildingUnitId = salesUnitId,
+                        Category = LedgerCategory.Revenue,
+                        Description = "Outside window sale",
+                        Amount = 999m,
+                        RecordedAtTick = 40,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        BuildingUnitId = salesUnitId,
+                        Category = LedgerCategory.Revenue,
+                        Description = "Window sale one",
+                        Amount = 50m,
+                        RecordedAtTick = 41,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        BuildingUnitId = salesUnitId,
+                        Category = LedgerCategory.Revenue,
+                        Description = "Window sale two",
+                        Amount = 70m,
+                        RecordedAtTick = 75,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        BuildingUnitId = purchaseUnitId,
+                        Category = LedgerCategory.PurchasingCost,
+                        Description = "Window sourcing cost",
+                        Amount = -20m,
+                        RecordedAtTick = 75,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        BuildingUnitId = purchaseUnitId,
+                        Category = LedgerCategory.Marketing,
+                        Description = "Window marketing cost",
+                        Amount = -10m,
+                        RecordedAtTick = 140,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        Category = LedgerCategory.PropertyPurchase,
+                        Description = "Capital purchase should not affect operations",
+                        Amount = -5000m,
+                        RecordedAtTick = 140,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    });
+            });
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingFinancialTimeline($buildingId: UUID!) {
+              buildingFinancialTimeline(buildingId: $buildingId) {
+                dataFromTick
+                dataToTick
+                totalSales
+                totalCosts
+                totalProfit
+                timeline {
+                  tick
+                  sales
+                  costs
+                  profit
+                }
+              }
+            }
+            """,
+            new { buildingId },
+            token);
+
+        var timeline = result.GetProperty("data").GetProperty("buildingFinancialTimeline");
+        Assert.Equal(41, timeline.GetProperty("dataFromTick").GetInt64());
+        Assert.Equal(140, timeline.GetProperty("dataToTick").GetInt64());
+        Assert.Equal(120m, timeline.GetProperty("totalSales").GetDecimal());
+        Assert.Equal(30m, timeline.GetProperty("totalCosts").GetDecimal());
+        Assert.Equal(90m, timeline.GetProperty("totalProfit").GetDecimal());
+
+        var snapshots = timeline.GetProperty("timeline").EnumerateArray().ToList();
+        Assert.Equal(100, snapshots.Count);
+
+        var snapshotsByTick = snapshots.ToDictionary(
+            snapshot => snapshot.GetProperty("tick").GetInt64(),
+            snapshot => snapshot);
+
+        Assert.Equal(50m, snapshotsByTick[41].GetProperty("sales").GetDecimal());
+        Assert.Equal(0m, snapshotsByTick[41].GetProperty("costs").GetDecimal());
+        Assert.Equal(50m, snapshotsByTick[41].GetProperty("profit").GetDecimal());
+
+        Assert.Equal(70m, snapshotsByTick[75].GetProperty("sales").GetDecimal());
+        Assert.Equal(20m, snapshotsByTick[75].GetProperty("costs").GetDecimal());
+        Assert.Equal(50m, snapshotsByTick[75].GetProperty("profit").GetDecimal());
+
+        Assert.Equal(0m, snapshotsByTick[140].GetProperty("sales").GetDecimal());
+        Assert.Equal(10m, snapshotsByTick[140].GetProperty("costs").GetDecimal());
+        Assert.Equal(-10m, snapshotsByTick[140].GetProperty("profit").GetDecimal());
     }
 
     [Fact]

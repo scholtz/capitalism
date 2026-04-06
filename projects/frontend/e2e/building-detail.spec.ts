@@ -513,9 +513,13 @@ test.describe('Building detail upgrades', () => {
     await expect(overview.getByText('$560')).toBeVisible()
     await expect(overview.getByText('$290')).toBeVisible()
     await expect(overview.getByText('$270')).toBeVisible()
-    await expect(overview.getByRole('img', { name: 'Sales per Tick' })).toBeVisible()
-    await expect(overview.getByRole('img', { name: 'Costs per Tick' })).toBeVisible()
-    await expect(overview.getByRole('img', { name: 'Profit per Tick' })).toBeVisible()
+    const chartCard = overview.locator('.building-financial-chart-card')
+    await expect(chartCard.getByRole('img', { name: 'Building financial history' })).toBeVisible()
+    await chartCard.locator('.building-financial-hit-area').nth(1).hover()
+    await expect(chartCard.locator('.building-financial-active-tick')).toHaveText('Tick 41')
+    await expect(chartCard.locator('.building-financial-chart-detail-stat').nth(0)).toContainText('$140')
+    await expect(chartCard.locator('.building-financial-chart-detail-stat').nth(1)).toContainText('$120')
+    await expect(chartCard.locator('.building-financial-chart-detail-stat').nth(2)).toContainText('$20')
 
     await overview.getByRole('link', { name: 'Show on Map' }).click()
 

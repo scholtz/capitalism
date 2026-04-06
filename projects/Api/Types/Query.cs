@@ -1351,9 +1351,26 @@ public sealed class Query
             .ToList();
     }
 
+    private static readonly HashSet<string> BuildingFinancialRevenueCategories =
+    [
+        LedgerCategory.Revenue,
+        LedgerCategory.MediaHouseIncome,
+        LedgerCategory.RentIncome,
+    ];
+
+    private static readonly HashSet<string> BuildingFinancialCostCategories =
+    [
+        LedgerCategory.PurchasingCost,
+        LedgerCategory.LaborCost,
+        LedgerCategory.EnergyCost,
+        LedgerCategory.Marketing,
+        LedgerCategory.DiscardedResources,
+    ];
+
     /// <summary>
-    /// Returns recent per-tick financial snapshots for a building based on ledger entries.
-    /// Positive building ledger entries count as sales; negative entries count as costs.
+    /// Returns recent per-tick operational sales, costs, and profit for a building across all of its units.
+    /// Uses building-scoped ledger entries and excludes one-time capital events such as property purchase,
+    /// construction, and upgrades so the chart reflects operating performance.
     /// </summary>
     [Authorize]
     public async Task<BuildingFinancialTimeline> GetBuildingFinancialTimeline(
@@ -1378,7 +1395,7 @@ public sealed class Query
                     .Build());
         }
 
-        var safeLimit = Math.Clamp(limit ?? 30, 1, 120);
+        var safeLimit = Math.Clamp(limit ?? 100, 1, 100);
         var currentTick = await db.GameStates
             .AsNoTracking()
             .Select(state => (long?)state.CurrentTick)
@@ -1387,7 +1404,17 @@ public sealed class Query
 
         var entries = await db.LedgerEntries
             .AsNoTracking()
-            .Where(entry => entry.BuildingId == buildingId && entry.RecordedAtTick >= windowStart && entry.RecordedAtTick <= currentTick)
+            .Where(entry => entry.BuildingId == buildingId
+                && entry.RecordedAtTick >= windowStart
+                && entry.RecordedAtTick <= currentTick
+                && (BuildingFinancialRevenueCategories.Contains(entry.Category)
+                    || BuildingFinancialCostCategories.Contains(entry.Category)))
+            .Select(entry => new
+            {
+                entry.RecordedAtTick,
+                entry.Category,
+                entry.Amount,
+            })
             .OrderBy(entry => entry.RecordedAtTick)
             .ToListAsync();
 
@@ -1400,11 +1427,11 @@ public sealed class Query
         {
             var tickEntries = entriesByTick.GetValueOrDefault(tick) ?? [];
             var sales = tickEntries
-                .Where(entry => entry.Amount > 0m)
+                .Where(entry => BuildingFinancialRevenueCategories.Contains(entry.Category))
                 .Sum(entry => entry.Amount);
-            var costs = Math.Abs(tickEntries
-                .Where(entry => entry.Amount < 0m)
-                .Sum(entry => entry.Amount));
+            var costs = tickEntries
+                .Where(entry => BuildingFinancialCostCategories.Contains(entry.Category))
+                .Sum(entry => Math.Abs(entry.Amount));
 
             snapshots.Add(new BuildingFinancialTickSnapshot
             {

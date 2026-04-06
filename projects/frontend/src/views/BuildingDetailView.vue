@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AdvancedItemSelector from '@/components/buildings/AdvancedItemSelector.vue'
+import BuildingFinancialTimelineChart from '@/components/buildings/BuildingFinancialTimelineChart.vue'
 import UnitResourceHistoryPanel from '@/components/buildings/UnitResourceHistoryPanel.vue'
 import { getInventorySourcingCostPerUnit, getPlannedUnitConstructionCost, getTotalInventorySourcingCost, getUnitConstructionCost, sumPlannedConfigurationCost } from '@/lib/buildingUnitEconomics'
 import { isProductLocked } from '@/lib/productAccess'
@@ -585,9 +586,6 @@ const buildingOverviewMapRoute = computed(() => {
 })
 const buildingFinancialSnapshots = computed(() => buildingFinancialTimeline.value?.timeline ?? [])
 const buildingFinancialHasActivity = computed(() => buildingFinancialSnapshots.value.some((snapshot) => snapshot.sales > 0 || snapshot.costs > 0 || snapshot.profit !== 0))
-const buildingFinancialMaxSales = computed(() => buildingFinancialSnapshots.value.reduce((max, snapshot) => Math.max(max, snapshot.sales), 0))
-const buildingFinancialMaxCosts = computed(() => buildingFinancialSnapshots.value.reduce((max, snapshot) => Math.max(max, snapshot.costs), 0))
-const buildingFinancialMaxProfitMagnitude = computed(() => buildingFinancialSnapshots.value.reduce((max, snapshot) => Math.max(max, Math.abs(snapshot.profit)), 0))
 
 /** Computed competitive price suggestion for the currently selected B2B_SALES draft unit. */
 const b2bSuggestedPrice = computed<number | null>(() => {
@@ -2070,16 +2068,6 @@ function formatGpsLocation(latitude: number | null | undefined, longitude: numbe
   return `${Math.abs(latitude).toFixed(5)}°${latitudeDirection}, ${Math.abs(longitude).toFixed(5)}°${longitudeDirection}`
 }
 
-function getOverviewBarHeight(value: number, maxValue: number): string {
-  if (value <= 0 || maxValue <= 0) return '0%'
-  return `${Math.max(2, (value / maxValue) * 100).toFixed(1)}%`
-}
-
-function getOverviewProfitBarHeight(value: number): string {
-  if (value === 0 || buildingFinancialMaxProfitMagnitude.value <= 0) return '0%'
-  return `${Math.max(2, (Math.abs(value) / buildingFinancialMaxProfitMagnitude.value) * 50).toFixed(1)}%`
-}
-
 function getConfiguredItemImageUrl(unit: GridUnit | undefined): string | null {
   const resourceTypeId = unit && 'resourceTypeId' in unit ? unit.resourceTypeId : null
   if (!resourceTypeId) return null
@@ -2824,7 +2812,7 @@ async function loadBuildingFinancialTimeline(buildingId: string, isRefresh = fal
           }
         }
       }`,
-      { buildingId, limit: 30 },
+      { buildingId, limit: 100 },
     )
     if (requestId !== activeBuildingFinancialTimelineRequest) {
       return
@@ -5308,53 +5296,9 @@ watch(
                 </div>
 
                 <template v-if="buildingFinancialTimeline">
-                  <div class="mi-chart-section">
-                    <span class="mi-chart-label">{{ t('buildingDetail.overview.salesChart') }}</span>
-                    <div class="mi-bar-chart" role="img" :aria-label="t('buildingDetail.overview.salesChart')">
-                      <div
-                        v-for="snapshot in buildingFinancialSnapshots"
-                        :key="`sales-${snapshot.tick}`"
-                        class="mi-bar mi-bar-revenue"
-                        :style="{ height: getOverviewBarHeight(snapshot.sales, buildingFinancialMaxSales) }"
-                        :title="`T${snapshot.tick}: ${formatCurrency(snapshot.sales)}`"
-                      ></div>
-                    </div>
-                  </div>
+                  <BuildingFinancialTimelineChart v-if="buildingFinancialHasActivity" :timeline="buildingFinancialSnapshots" />
 
-                  <div class="mi-chart-section">
-                    <span class="mi-chart-label">{{ t('buildingDetail.overview.costsChart') }}</span>
-                    <div class="mi-bar-chart" role="img" :aria-label="t('buildingDetail.overview.costsChart')">
-                      <div
-                        v-for="snapshot in buildingFinancialSnapshots"
-                        :key="`costs-${snapshot.tick}`"
-                        class="mi-bar mi-bar-cost"
-                        :style="{ height: getOverviewBarHeight(snapshot.costs, buildingFinancialMaxCosts) }"
-                        :title="`T${snapshot.tick}: ${formatCurrency(snapshot.costs)}`"
-                      ></div>
-                    </div>
-                  </div>
-
-                  <div class="mi-chart-section">
-                    <span class="mi-chart-label">{{ t('buildingDetail.overview.profitChart') }}</span>
-                    <div class="building-profit-chart" role="img" :aria-label="t('buildingDetail.overview.profitChart')">
-                      <div class="building-profit-baseline"></div>
-                      <div
-                        v-for="snapshot in buildingFinancialSnapshots"
-                        :key="`profit-${snapshot.tick}`"
-                        class="building-profit-bar-shell"
-                        :title="`T${snapshot.tick}: ${formatCurrency(snapshot.profit)}`"
-                      >
-                        <div
-                          v-if="snapshot.profit !== 0"
-                          class="building-profit-bar"
-                          :class="snapshot.profit > 0 ? 'building-profit-bar-positive' : 'building-profit-bar-negative'"
-                          :style="{ height: getOverviewProfitBarHeight(snapshot.profit) }"
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <p v-if="!buildingFinancialHasActivity" class="mi-empty-state">
+                  <p v-else class="mi-empty-state">
                     {{ t('buildingDetail.overview.noFinancialData') }}
                   </p>
                 </template>
@@ -7515,101 +7459,6 @@ watch(
   border-radius: var(--radius-md);
   padding: 0.75rem;
   margin: 0.5rem 0 0.75rem;
-}
-
-.mi-chart-section {
-  margin-bottom: 1rem;
-}
-
-.mi-chart-label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  margin-bottom: 0.35rem;
-}
-
-.mi-bar-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 48px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 4px 4px 0;
-  overflow: hidden;
-}
-
-.mi-bar {
-  flex: 1;
-  min-width: 3px;
-  border-radius: 2px 2px 0 0;
-  transition: height 0.2s ease;
-}
-
-.mi-bar-revenue {
-  background: var(--color-primary, #0047ff);
-  opacity: 0.8;
-}
-
-.mi-bar-quantity {
-  background: #16a34a;
-  opacity: 0.8;
-}
-
-.mi-bar-price {
-  background: #d97706;
-  opacity: 0.8;
-}
-
-.mi-bar-cost {
-  background: #dc2626;
-  opacity: 0.8;
-}
-
-.building-profit-chart {
-  position: relative;
-  display: flex;
-  gap: 2px;
-  height: 72px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 4px;
-  overflow: hidden;
-}
-
-.building-profit-baseline {
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  top: 50%;
-  border-top: 1px solid color-mix(in srgb, var(--color-border) 90%, transparent);
-}
-
-.building-profit-bar-shell {
-  position: relative;
-  flex: 1;
-  min-width: 3px;
-}
-
-.building-profit-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-}
-
-.building-profit-bar-positive {
-  bottom: 50%;
-  border-radius: 2px 2px 0 0;
-  background: #16a34a;
-}
-
-.building-profit-bar-negative {
-  top: 50%;
-  border-radius: 0 0 2px 2px;
-  background: #dc2626;
 }
 
 .building-profit-positive-text {

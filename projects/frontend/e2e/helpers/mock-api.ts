@@ -647,7 +647,7 @@ function buildMockLedgerSummaryPayload(summary: MockLedgerSummary, gameState: Mo
   }
 }
 
-function buildMockBuildingFinancialTimeline(state: MockState, buildingId: string, limit = 30): MockBuildingFinancialTimeline | null {
+function buildMockBuildingFinancialTimeline(state: MockState, buildingId: string, limit = 100): MockBuildingFinancialTimeline | null {
   const explicitTimeline = state.buildingFinancialTimelines[buildingId]
   if (explicitTimeline) {
     return explicitTimeline
@@ -3244,7 +3244,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
 
     if (query.includes('buildingFinancialTimeline')) {
       const buildingId = body.variables?.buildingId
-      const limit = Number(body.variables?.limit ?? 30)
+      const limit = Number(body.variables?.limit ?? 100)
       const buildingFinancialTimeline = buildMockBuildingFinancialTimeline(state, buildingId, limit)
 
       return route.fulfill({
