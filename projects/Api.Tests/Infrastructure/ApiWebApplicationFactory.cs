@@ -20,7 +20,7 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>
         {
             configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:EventsCatalog"] = $"Data Source={_databasePath}",
+                ["ConnectionStrings:GameCatalog"] = $"Data Source={_databasePath}",
                 ["SeedData:AdminEmail"] = "admin@capitalism.local",
                 ["SeedData:AdminDisplayName"] = "Platform Admin",
                 ["SeedData:AdminPassword"] = "ChangeMe123!",

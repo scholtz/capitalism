@@ -763,11 +763,23 @@ public sealed class AppDbInitializer(
         //   b) If the database has no __EFMigrationsHistory table, every currently-defined
         //      migration is marked as already applied so that MigrateAsync (step c) does not
         //      attempt to re-create tables that already exist.
-        await EnsureMigrationsHistoryBaselineAsync();
+        var baselinedMigrationsHistory = await EnsureMigrationsHistoryBaselineAsync();
+
+        if (baselinedMigrationsHistory)
+        {
+            return;
+        }
 
         //   c) Apply any migrations that are not yet recorded in __EFMigrationsHistory.
         //      This is a no-op for brand-new or already up-to-date databases.
-        await dbContext.Database.MigrateAsync();
+        try
+        {
+            await dbContext.Database.MigrateAsync();
+        }
+        catch (Exception exc)
+        {
+            Console.Error.WriteLine($"An error occurred while applying migrations: {exc.Message}");
+        }
     }
 
     /// <summary>
@@ -779,7 +791,7 @@ public sealed class AppDbInitializer(
     /// If <c>__EFMigrationsHistory</c> already exists the method returns immediately; it never
     /// removes or alters existing history rows.
     /// </summary>
-    private async Task EnsureMigrationsHistoryBaselineAsync()
+    private async Task<bool> EnsureMigrationsHistoryBaselineAsync()
     {
         // The EF Core migration history table name matches the default used by
         // SqliteHistoryRepository (and other relational providers).
@@ -819,7 +831,7 @@ public sealed class AppDbInitializer(
                 Convert.ToInt64(await checkCmd.ExecuteScalarAsync() ?? 0L) > 0;
 
             if (historyExists)
-                return; // Already managed by migrations — nothing to do.
+                return false; // Already managed by migrations — nothing to do.
 
             // Create the history table using the SQLite-compatible schema that EF Core generates.
             await using var createCmd = connection.CreateCommand();
@@ -860,6 +872,8 @@ public sealed class AppDbInitializer(
 
                 await insertCmd.ExecuteNonQueryAsync();
             }
+
+            return true;
         }
         finally
         {

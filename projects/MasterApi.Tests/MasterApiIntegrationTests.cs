@@ -5,6 +5,7 @@ using MasterApi.Tests.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using MasterApi;
 
 namespace MasterApi.Tests;
 

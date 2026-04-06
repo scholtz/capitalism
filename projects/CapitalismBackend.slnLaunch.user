@@ -1,0 +1,17 @@
+[
+  {
+    "Name": "BothMasterAndGameApi",
+    "Projects": [
+      {
+        "Path": "Api\\Api.csproj",
+        "Action": "Start",
+        "DebugTarget": "Container (Dockerfile)"
+      },
+      {
+        "Path": "MasterApi\\MasterApi.csproj",
+        "Action": "Start",
+        "DebugTarget": "Container (Dockerfile)"
+      }
+    ]
+  }
+]

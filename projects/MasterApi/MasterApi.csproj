@@ -1,40 +1,41 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>preview</LangVersion>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<LangVersion>preview</LangVersion>
+		<UserSecretsId>c94cdb38-4887-4843-aec4-a27a6e5b7e0e</UserSecretsId>
+		<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+		<RootNamespace>MasterApi</RootNamespace>
+		<DependencyAwareStart>true</DependencyAwareStart>
+	</PropertyGroup>
 
-  <ItemGroup Condition="'$(ImplicitUsings)' == 'enable'">
-    <Using Include="MasterApi" />
-  </ItemGroup>
+	<ItemGroup Condition="'$(ImplicitUsings)' == 'enable'">
+		<Using Include="MasterApi" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="HotChocolate.AspNetCore" Version="15.1.12" />
-    <PackageReference Include="HotChocolate.AspNetCore.Authorization" Version="15.1.12" />
-    <PackageReference Include="HotChocolate.Types.Analyzers" Version="15.1.12">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.5" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.5">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.5" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="HotChocolate.AspNetCore" Version="15.1.12" />
+		<PackageReference Include="HotChocolate.AspNetCore.Authorization" Version="15.1.12" />
+		<PackageReference Include="HotChocolate.Types.Analyzers" Version="15.1.12">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.5" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.5">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.5" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
+		<PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.23.0" />
+		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Data\Entities\" />
-    <Folder Include="Types\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Api\Api.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+		<Folder Include="Data\Entities\" />
+		<Folder Include="Types\" />
+	</ItemGroup>
 
 </Project>

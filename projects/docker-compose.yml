@@ -1,0 +1,41 @@
+﻿version: '3.8'
+
+services:
+  postgresmaster:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: master
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data3
+
+  masterapi:
+    build:
+      context: .
+      dockerfile: MasterApi/Dockerfile
+    ports:
+      - "44364:44364"
+    depends_on:
+      - postgresmaster
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=https://+:44364
+      - ConnectionStrings__MasterCatalog=Host=postgresmaster;Port=5432;Database=gamemaster;Username=postgres;Password=password
+  game1:
+    build:
+      context: .
+      dockerfile: Api/Dockerfile
+    ports:
+      - "44356:44356"
+    depends_on:
+      - postgresmaster
+      - masterapi
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=https://+:44356
+      - ConnectionStrings__GameCatalog=Host=postgresmaster;Port=5432;Database=game1;Username=postgres;Password=password
+
+volumes:
+  postgres_data:
