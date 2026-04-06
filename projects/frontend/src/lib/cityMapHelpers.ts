@@ -117,9 +117,9 @@ export function constructionTicksRemaining(
  */
 export function canSubmitPurchaseForm(
   buildingType: string,
-  buildingName: string,
+  _buildingName: string,
   companyId: string,
   purchasing: boolean,
 ): boolean {
-  return !!buildingType && !!buildingName.trim() && !!companyId && !purchasing
+  return !!buildingType && !!companyId && !purchasing
 }

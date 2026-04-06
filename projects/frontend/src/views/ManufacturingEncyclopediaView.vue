@@ -353,6 +353,7 @@ function navigateToEntry(slug: string) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem;
+  margin-top: 1.5rem;
 }
 
 .resource-card {
@@ -423,6 +424,7 @@ function navigateToEntry(slug: string) {
 
 .filters {
   align-items: center;
+  margin-top: 1.5rem;
 }
 
 .filter-input,

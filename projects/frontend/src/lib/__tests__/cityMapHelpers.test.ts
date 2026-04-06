@@ -153,12 +153,12 @@ describe('canSubmitPurchaseForm', () => {
     expect(canSubmitPurchaseForm('', 'My Factory', 'company-1', false)).toBe(false)
   })
 
-  it('returns false when buildingName is empty', () => {
-    expect(canSubmitPurchaseForm('FACTORY', '', 'company-1', false)).toBe(false)
+  it('returns true when buildingName is empty (auto-generated on server)', () => {
+    expect(canSubmitPurchaseForm('FACTORY', '', 'company-1', false)).toBe(true)
   })
 
-  it('returns false when buildingName is only whitespace', () => {
-    expect(canSubmitPurchaseForm('FACTORY', '   ', 'company-1', false)).toBe(false)
+  it('returns true when buildingName is only whitespace (auto-generated on server)', () => {
+    expect(canSubmitPurchaseForm('FACTORY', '   ', 'company-1', false)).toBe(true)
   })
 
   it('returns false when companyId is empty', () => {

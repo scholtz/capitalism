@@ -389,7 +389,7 @@ async function confirmPurchase() {
           companyId: activeCompany.value.id,
           lotId: selectedLot.value.id,
           buildingType: selectedBuildingType.value,
-          buildingName: buildingName.value,
+          buildingName: buildingName.value.trim() || null,
           mediaType: selectedBuildingType.value === 'MEDIA_HOUSE' ? selectedMediaType.value || null : null,
         },
       },
@@ -731,7 +731,7 @@ watch(viewMode, async (mode) => {
                 </div>
 
                 <div class="form-group">
-                  <label>{{ t('cityMap.buildingName') }}</label>
+                  <label>{{ t('cityMap.buildingName') }} <span class="optional-hint">({{ t('common.optional') }})</span></label>
                   <input v-model="buildingName" type="text" class="form-input" :placeholder="t('cityMap.buildingNamePlaceholder')" />
                 </div>
 

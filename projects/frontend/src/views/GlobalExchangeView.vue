@@ -116,9 +116,11 @@ async function loadCitiesAndResources() {
   }
 }
 
-async function loadOffers() {
+async function loadOffers(isRefresh = false) {
   if (!selectedCityId.value) return
-  loading.value = true
+  if (!isRefresh) {
+    loading.value = true
+  }
   error.value = null
   try {
     const data = await gqlRequest<{ globalExchangeOffers: GlobalExchangeOffer[] }>(
@@ -136,7 +138,7 @@ async function loadOffers() {
 }
 
 async function refreshAll() {
-  await loadOffers()
+  await loadOffers(true)
 }
 
 onMounted(async () => {

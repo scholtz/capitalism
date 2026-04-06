@@ -5,14 +5,16 @@ import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { deepEqual } from '@/lib/utils'
-import type { PlayerRanking } from '@/types'
+import type { PlayerRanking, CompanyRanking } from '@/types'
 
 const { t } = useI18n()
 const auth = useAuthStore()
 
 const rankings = ref<PlayerRanking[]>([])
+const companyRankings = ref<CompanyRanking[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+const activeTab = ref<'players' | 'companies'>('players')
 
 const RANKINGS_QUERY = `
   {
@@ -25,16 +27,35 @@ const RANKINGS_QUERY = `
       inventoryValue
       companyCount
     }
+    companyRankings {
+      companyId
+      companyName
+      playerId
+      ownerDisplayName
+      totalWealth
+      cash
+      buildingValue
+      inventoryValue
+      buildingCount
+    }
   }
 `
 
-async function fetchRankings() {
-  loading.value = true
+async function fetchRankings(isRefresh = false) {
+  if (!isRefresh) {
+    loading.value = true
+  }
   error.value = null
   try {
-    const data = await gqlRequest<{ rankings: PlayerRanking[] }>(RANKINGS_QUERY)
+    const data = await gqlRequest<{
+      rankings: PlayerRanking[]
+      companyRankings: CompanyRanking[]
+    }>(RANKINGS_QUERY)
     if (!deepEqual(rankings.value, data.rankings)) {
       rankings.value = data.rankings
+    }
+    if (!deepEqual(companyRankings.value, data.companyRankings)) {
+      companyRankings.value = data.companyRankings
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : t('leaderboard.loadFailed')
@@ -51,7 +72,7 @@ onMounted(async () => {
   await fetchRankings()
 })
 
-useTickRefresh(fetchRankings)
+useTickRefresh(() => fetchRankings(true))
 
 function formatWealth(value: number): string {
   if (value >= 1_000_000) {
@@ -84,6 +105,28 @@ const currentPlayerId = computed(() => auth.player?.id ?? null)
     </div>
 
     <div class="container leaderboard-content">
+      <!-- Tab switcher -->
+      <div class="tab-switcher" role="tablist">
+        <button
+          role="tab"
+          :aria-selected="activeTab === 'players'"
+          class="tab-btn"
+          :class="{ active: activeTab === 'players' }"
+          @click="activeTab = 'players'"
+        >
+          👤 {{ t('leaderboard.tabPlayers') }}
+        </button>
+        <button
+          role="tab"
+          :aria-selected="activeTab === 'companies'"
+          class="tab-btn"
+          :class="{ active: activeTab === 'companies' }"
+          @click="activeTab = 'companies'"
+        >
+          🏢 {{ t('leaderboard.tabCompanies') }}
+        </button>
+      </div>
+
       <div v-if="loading" class="state-box">
         <span class="state-icon">⏳</span>
         <p>{{ t('common.loading') }}</p>
@@ -92,53 +135,102 @@ const currentPlayerId = computed(() => auth.player?.id ?? null)
       <div v-else-if="error" class="state-box state-error">
         <span class="state-icon">⚠️</span>
         <p>{{ error }}</p>
-        <button class="btn btn-secondary" aria-label="Retry loading leaderboard" @click="fetchRankings">
+        <button class="btn btn-secondary" aria-label="Retry loading leaderboard" @click="fetchRankings()">
           {{ t('common.tryAgain') }}
         </button>
       </div>
 
-      <div v-else-if="rankings.length === 0" class="state-box">
-        <span class="state-icon">🏆</span>
-        <p class="state-title">{{ t('leaderboard.emptyTitle') }}</p>
-        <p class="state-desc">{{ t('leaderboard.emptyDesc') }}</p>
-        <RouterLink to="/onboarding" class="btn btn-primary">{{ t('leaderboard.startEmpire') }}</RouterLink>
-      </div>
+      <!-- Player rankings tab -->
+      <template v-else-if="activeTab === 'players'">
+        <div v-if="rankings.length === 0" class="state-box">
+          <span class="state-icon">🏆</span>
+          <p class="state-title">{{ t('leaderboard.emptyTitle') }}</p>
+          <p class="state-desc">{{ t('leaderboard.emptyDesc') }}</p>
+          <RouterLink to="/onboarding" class="btn btn-primary">{{ t('leaderboard.startEmpire') }}</RouterLink>
+        </div>
 
-      <div v-else class="rankings-list">
-        <div
-          v-for="(rank, index) in rankings"
-          :key="rank.playerId"
-          class="rank-card"
-          :class="{
-            'rank-top3': index < 3,
-            'rank-gold': index === 0,
-            'rank-silver': index === 1,
-            'rank-bronze': index === 2,
-            'rank-self': rank.playerId === currentPlayerId,
-          }"
-        >
-          <div class="rank-badge">{{ rankBadge(index) }}</div>
-          <div class="rank-info">
-            <div class="rank-name">
-              {{ rank.displayName }}
-              <span v-if="rank.playerId === currentPlayerId" class="you-badge">{{ t('leaderboard.you') }}</span>
+        <div v-else class="rankings-list">
+          <div
+            v-for="(rank, index) in rankings"
+            :key="rank.playerId"
+            class="rank-card"
+            :class="{
+              'rank-top3': index < 3,
+              'rank-gold': index === 0,
+              'rank-silver': index === 1,
+              'rank-bronze': index === 2,
+              'rank-self': rank.playerId === currentPlayerId,
+            }"
+          >
+            <div class="rank-badge">{{ rankBadge(index) }}</div>
+            <div class="rank-info">
+              <div class="rank-name">
+                {{ rank.displayName }}
+                <span v-if="rank.playerId === currentPlayerId" class="you-badge">{{ t('leaderboard.you') }}</span>
+              </div>
+              <div class="rank-companies">
+                {{ t('leaderboard.companiesCount', { n: rank.companyCount }) }}
+              </div>
             </div>
-            <div class="rank-companies">
-              {{ t('leaderboard.companiesCount', { n: rank.companyCount }) }}
-            </div>
-          </div>
-          <div class="rank-wealth">
-            <div class="total-wealth">{{ formatWealth(rank.totalWealth) }}</div>
-            <div class="wealth-breakdown">
-              <span class="breakdown-item" :title="t('leaderboard.cashTooltip')"> 💵 {{ formatWealth(rank.cashTotal) }} </span>
-              <span class="breakdown-sep">·</span>
-              <span class="breakdown-item" :title="t('leaderboard.buildingsTooltip')"> 🏗️ {{ formatWealth(rank.buildingValue) }} </span>
-              <span class="breakdown-sep">·</span>
-              <span class="breakdown-item" :title="t('leaderboard.inventoryTooltip')"> 📦 {{ formatWealth(rank.inventoryValue) }} </span>
+            <div class="rank-wealth">
+              <div class="total-wealth">{{ formatWealth(rank.totalWealth) }}</div>
+              <div class="wealth-breakdown">
+                <span class="breakdown-item" :title="t('leaderboard.cashTooltip')"> 💵 {{ formatWealth(rank.cashTotal) }} </span>
+                <span class="breakdown-sep">·</span>
+                <span class="breakdown-item" :title="t('leaderboard.buildingsTooltip')"> 🏗️ {{ formatWealth(rank.buildingValue) }} </span>
+                <span class="breakdown-sep">·</span>
+                <span class="breakdown-item" :title="t('leaderboard.inventoryTooltip')"> 📦 {{ formatWealth(rank.inventoryValue) }} </span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </template>
+
+      <!-- Company rankings tab -->
+      <template v-else-if="activeTab === 'companies'">
+        <div v-if="companyRankings.length === 0" class="state-box">
+          <span class="state-icon">🏢</span>
+          <p class="state-title">{{ t('leaderboard.emptyCompanyTitle') }}</p>
+          <p class="state-desc">{{ t('leaderboard.emptyCompanyDesc') }}</p>
+          <RouterLink to="/onboarding" class="btn btn-primary">{{ t('leaderboard.startEmpire') }}</RouterLink>
+        </div>
+
+        <div v-else class="rankings-list">
+          <div
+            v-for="(rank, index) in companyRankings"
+            :key="rank.companyId"
+            class="rank-card"
+            :class="{
+              'rank-top3': index < 3,
+              'rank-gold': index === 0,
+              'rank-silver': index === 1,
+              'rank-bronze': index === 2,
+              'rank-self': rank.playerId === currentPlayerId,
+            }"
+          >
+            <div class="rank-badge">{{ rankBadge(index) }}</div>
+            <div class="rank-info">
+              <div class="rank-name">
+                {{ rank.companyName }}
+                <span v-if="rank.playerId === currentPlayerId" class="you-badge">{{ t('leaderboard.you') }}</span>
+              </div>
+              <div class="rank-companies">
+                {{ t('leaderboard.ownedBy', { name: rank.ownerDisplayName }) }} · {{ t('leaderboard.buildingsCount', { n: rank.buildingCount }) }}
+              </div>
+            </div>
+            <div class="rank-wealth">
+              <div class="total-wealth">{{ formatWealth(rank.totalWealth) }}</div>
+              <div class="wealth-breakdown">
+                <span class="breakdown-item" :title="t('leaderboard.cashTooltip')"> 💵 {{ formatWealth(rank.cash) }} </span>
+                <span class="breakdown-sep">·</span>
+                <span class="breakdown-item" :title="t('leaderboard.buildingsTooltip')"> 🏗️ {{ formatWealth(rank.buildingValue) }} </span>
+                <span class="breakdown-sep">·</span>
+                <span class="breakdown-item" :title="t('leaderboard.inventoryTooltip')"> 📦 {{ formatWealth(rank.inventoryValue) }} </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
 
       <div class="leaderboard-explainer">
         <h3>{{ t('leaderboard.howItWorksTitle') }}</h3>
@@ -199,6 +291,41 @@ const currentPlayerId = computed(() => auth.player?.id ?? null)
 
 .leaderboard-content {
   padding: 2.5rem 1rem 4rem;
+}
+
+/* ── Tab switcher ──────────────────────────────────────────────────────────── */
+.tab-switcher {
+  display: flex;
+  gap: 0.5rem;
+  max-width: 800px;
+  margin: 0 auto 1.5rem;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.tab-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.tab-btn.active {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
 }
 
 /* ── States ─────────────────────────────────────────────────────────────────── */

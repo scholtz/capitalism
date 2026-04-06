@@ -505,6 +505,19 @@ export interface PlayerRanking {
   companyCount: number
 }
 
+/** Matches backend CompanyRanking response */
+export interface CompanyRanking {
+  companyId: string
+  companyName: string
+  playerId: string
+  ownerDisplayName: string
+  totalWealth: number
+  cash: number
+  buildingValue: number
+  inventoryValue: number
+  buildingCount: number
+}
+
 /** Matches backend GameState entity */
 export interface GameState {
   currentTick: number

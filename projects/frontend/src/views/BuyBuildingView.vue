@@ -46,7 +46,7 @@ const selectedLot = computed<BuildingLot | null>(() => {
 })
 
 const canSubmit = computed(
-  () => !!selectedType.value && !!selectedCityId.value && !!buildingName.value.trim() && !!selectedLot.value,
+  () => !!selectedType.value && !!selectedCityId.value && !!selectedLot.value,
 )
 
 onMounted(async () => {
@@ -141,7 +141,7 @@ async function buyBuilding() {
           companyId: selectedCompany.value.id,
           lotId: selectedLot.value.id,
           buildingType: selectedType.value,
-          buildingName: buildingName.value,
+          buildingName: buildingName.value.trim() || null,
         },
       },
     )
@@ -191,12 +191,11 @@ async function buyBuilding() {
         <div v-if="selectedType" class="form-section">
           <div class="form-row">
             <div class="form-group">
-              <label for="buildingName">{{ t('buildings.buildingName') }}</label>
+              <label for="buildingName">{{ t('buildings.buildingName') }} <span class="optional-hint">({{ t('common.optional') }})</span></label>
               <input
                 id="buildingName"
                 v-model="buildingName"
                 type="text"
-                required
                 maxlength="200"
                 :placeholder="t('buildings.buildingNamePlaceholder')"
               />
