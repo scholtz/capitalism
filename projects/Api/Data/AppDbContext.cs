@@ -336,6 +336,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(p => p.Slug).HasMaxLength(200);
             e.Property(p => p.Industry).HasMaxLength(50);
             e.Property(p => p.BasePrice).HasPrecision(18, 2);
+            e.Property(p => p.PriceElasticity).HasPrecision(5, 4);
             e.Property(p => p.OutputQuantity).HasPrecision(18, 4);
             e.Property(p => p.EnergyConsumptionMwh).HasPrecision(18, 4);
             e.Property(p => p.BasicLaborHours).HasPrecision(18, 4);

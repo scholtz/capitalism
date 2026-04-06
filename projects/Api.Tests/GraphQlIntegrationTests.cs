@@ -12612,10 +12612,10 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             token: token);
 
         var analytics = analyticsResult.GetProperty("data").GetProperty("publicSalesAnalytics");
-        // At price = basePrice: elasticity = -(1.0) / (2.0 - 1.0) = -1.0
         Assert.False(analytics.GetProperty("elasticityIndex").ValueKind == System.Text.Json.JsonValueKind.Null, "ElasticityIndex should be returned");
         var elas = analytics.GetProperty("elasticityIndex").GetDecimal();
-        Assert.True(Math.Abs(elas - (-1.0m)) < 0.01m, $"Elasticity at base price should be -1.0, got {elas}");
+        var expectedElasticity = PublicSalesPricingModel.ComputeElasticityIndex(productType.PriceElasticity);
+        Assert.True(Math.Abs(elas - expectedElasticity) < 0.01m, $"Elasticity should reflect the product definition. Expected {expectedElasticity}, got {elas}");
     }
 
     [Fact]

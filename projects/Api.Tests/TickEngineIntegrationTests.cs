@@ -423,6 +423,23 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         BaseSalaryPerManhour = 12m,
     };
 
+    private static ProductType CreatePublicSalesTestProduct(string suffix, decimal basePrice, decimal priceElasticity) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = $"Price Test Product {suffix}",
+        Slug = $"price-test-product-{suffix}-{Guid.NewGuid():N}",
+        Industry = Industry.FoodProcessing,
+        BasePrice = basePrice,
+        PriceElasticity = priceElasticity,
+        BaseCraftTicks = 1,
+        OutputQuantity = 1m,
+        EnergyConsumptionMwh = 0.1m,
+        BasicLaborHours = 0.25m,
+        UnitName = "Piece",
+        UnitSymbol = "pcs",
+        Description = "Isolated product used to verify public-sales pricing behavior.",
+    };
+
     private static (Guid CompanyId, Guid BuildingId, Guid UnitId) AddPublicSalesSeller(
         AppDbContext db,
         City city,
@@ -825,6 +842,102 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         Assert.True(
             sold <= 5m,
             $"A public sales unit must never sell more than 50% of its current stock in one tick. Sold {sold} from 10 units.");
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_PriceIndex_MaxMarkupPreventsSales()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var product = CreatePublicSalesTestProduct("max", 100m, 0.5m);
+        db.ProductTypes.Add(product);
+
+        var city = CreatePublicSalesTestCity("Price Max", 1_000_000);
+        db.Cities.Add(city);
+
+        var maxPriceRatio = PublicSalesPricingModel.ComputeMaxPriceRatio(product.PriceElasticity);
+        var (_, _, unitId) = AddPublicSalesSeller(
+            db,
+            city,
+            product,
+            "Price Max",
+            stockQuantity: 40m,
+            quality: 1m,
+            priceMultiplier: maxPriceRatio,
+            populationIndex: 1.2m,
+            brandAwareness: 1m);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var salesRecords = await db.PublicSalesRecords
+            .Where(record => record.BuildingUnitId == unitId)
+            .ToListAsync();
+        var remainingStock = await db.Inventories
+            .Where(inventory => inventory.BuildingUnitId == unitId)
+            .Select(inventory => inventory.Quantity)
+            .SingleAsync();
+
+        Assert.Empty(salesRecords);
+        Assert.Equal(40m, remainingStock);
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_PriceIndex_MoreElasticProductSellsLessAtMidMarkup()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var lessElasticProduct = CreatePublicSalesTestProduct("less-elastic", 100m, 0.2m);
+        var moreElasticProduct = CreatePublicSalesTestProduct("more-elastic", 100m, 0.8m);
+        db.ProductTypes.AddRange(lessElasticProduct, moreElasticProduct);
+
+        var lessElasticCity = CreatePublicSalesTestCity("Less Elastic", 100_000);
+        var moreElasticCity = CreatePublicSalesTestCity("More Elastic", 100_000);
+        db.Cities.AddRange(lessElasticCity, moreElasticCity);
+
+        var lessElasticMidRatio = 1m + ((PublicSalesPricingModel.ComputeMaxPriceRatio(lessElasticProduct.PriceElasticity) - 1m) / 2m);
+        var moreElasticMidRatio = 1m + ((PublicSalesPricingModel.ComputeMaxPriceRatio(moreElasticProduct.PriceElasticity) - 1m) / 2m);
+
+        var (_, _, lessElasticUnitId) = AddPublicSalesSeller(
+            db,
+            lessElasticCity,
+            lessElasticProduct,
+            "Less Elastic Mid",
+            stockQuantity: 40m,
+            quality: 1m,
+            priceMultiplier: lessElasticMidRatio,
+            populationIndex: 1m);
+        var (_, _, moreElasticUnitId) = AddPublicSalesSeller(
+            db,
+            moreElasticCity,
+            moreElasticProduct,
+            "More Elastic Mid",
+            stockQuantity: 40m,
+            quality: 1m,
+            priceMultiplier: moreElasticMidRatio,
+            populationIndex: 1m);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var lessElasticSold = await db.PublicSalesRecords
+            .Where(record => record.BuildingUnitId == lessElasticUnitId)
+            .Select(record => record.QuantitySold)
+            .SingleAsync();
+        var moreElasticSold = await db.PublicSalesRecords
+            .Where(record => record.BuildingUnitId == moreElasticUnitId)
+            .Select(record => record.QuantitySold)
+            .SingleAsync();
+
+        Assert.True(
+            moreElasticSold < lessElasticSold,
+            $"More elastic products should sell less at the midpoint between base price and their max markup. Less elastic sold {lessElasticSold}, more elastic sold {moreElasticSold}.");
     }
 
     [Fact]

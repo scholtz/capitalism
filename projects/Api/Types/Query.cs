@@ -1869,26 +1869,16 @@ public sealed class Query
             }
         }
 
-        // Elasticity index: derived analytically from the demand formula
-        // demand = baseDemand * (2 - price/basePrice) * quality * brand
-        // Point elasticity: E = (dQ/Q) / (dP/P) = -price / (basePrice * (2 - price/basePrice))
-        // Uses the average recent price and the product's base price.
+        // Elasticity index: product-level buyer sensitivity used by the public-sales
+        // pricing model. More elastic products return a more negative value.
         decimal? elasticityIndex = null;
         var productTypeIdForElasticity = unit.ProductTypeId ?? records.FirstOrDefault()?.ProductTypeId;
-        if (productTypeIdForElasticity.HasValue && recentRecords.Count > 0)
+        if (productTypeIdForElasticity.HasValue)
         {
             var productType = await db.ProductTypes.FindAsync(productTypeIdForElasticity.Value);
-            if (productType is not null && productType.BasePrice > 0m)
+            if (productType is not null)
             {
-                var avgRecentPrice = recentRecords.Average(r => (double)r.PricePerUnit);
-                var basePrice = (double)productType.BasePrice;
-                var priceRatio = avgRecentPrice / basePrice;
-                var demandAtPrice = 2.0 - priceRatio; // linear demand factor from formula
-                if (demandAtPrice > 0.01)
-                {
-                    // Point elasticity E = -priceRatio / demandAtPrice
-                    elasticityIndex = (decimal)Math.Round(-priceRatio / demandAtPrice, 2);
-                }
+                elasticityIndex = PublicSalesPricingModel.ComputeElasticityIndex(productType.PriceElasticity);
             }
         }
 

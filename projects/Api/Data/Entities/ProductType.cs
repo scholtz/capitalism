@@ -27,6 +27,12 @@ public sealed class ProductType
     /// <summary>Base market price per unit.</summary>
     public decimal BasePrice { get; set; }
 
+    /// <summary>
+    /// Buyer sensitivity to markups in the public-sales model (0.0-1.0).
+    /// Higher values mean demand falls faster as price rises above base price.
+    /// </summary>
+    public decimal PriceElasticity { get; set; } = 0.35m;
+
     /// <summary>Base manufacturing time in ticks per unit.</summary>
     public int BaseCraftTicks { get; set; } = 1;
 

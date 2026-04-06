@@ -155,6 +155,7 @@ public sealed class AppDbInitializer(
             Slug = seed.Slug,
             Industry = seed.Industry,
             BasePrice = seed.BasePrice,
+            PriceElasticity = seed.PriceElasticity,
             BaseCraftTicks = seed.BaseCraftTicks,
             OutputQuantity = seed.OutputQuantity,
             EnergyConsumptionMwh = seed.EnergyConsumptionMwh,
@@ -442,7 +443,18 @@ public sealed class AppDbInitializer(
             outputQuantity,
             energyConsumptionMwh,
             ComputeBasicLaborHours(baseCraftTicks, energyConsumptionMwh, ingredients.Length),
+            DeterminePriceElasticity(industry),
             ingredients);
+
+    private static decimal DeterminePriceElasticity(string industry) => industry switch
+    {
+        Industry.FoodProcessing => 0.75m,
+        Industry.Healthcare => 0.20m,
+        Industry.Furniture => 0.35m,
+        Industry.Electronics => 0.55m,
+        Industry.Construction => 0.30m,
+        _ => 0.35m,
+    };
 
     private static decimal ComputeBasicLaborHours(int baseCraftTicks, decimal energyConsumptionMwh, int ingredientCount)
     {
@@ -907,6 +919,7 @@ public sealed class AppDbInitializer(
         decimal OutputQuantity,
         decimal EnergyConsumptionMwh,
         decimal BasicLaborHours,
+        decimal PriceElasticity,
         IReadOnlyList<RecipeSeed> Ingredients);
 
     private sealed record RecipeSeed(string? ResourceSlug, string? ProductSlug, decimal Quantity);
