@@ -345,6 +345,24 @@ export type MockProductType = {
   }[]
 }
 
+export type MockProductExchangeListing = {
+  orderId: string
+  productTypeId: string
+  productName: string
+  productSlug: string
+  productIndustry: string
+  unitSymbol: string
+  unitName: string
+  basePrice: number
+  pricePerUnit: number
+  remainingQuantity: number
+  sellerCityId: string
+  sellerCityName: string
+  sellerCompanyId: string
+  sellerCompanyName: string
+  createdAtUtc: string
+}
+
 export type MockResearchBrandState = {
   id: string
   companyId: string
@@ -487,6 +505,8 @@ export type MockState = {
   unitUpgradeInfoOverrides: Record<string, object | null>
   /** If set to a unit ID, scheduleUnitUpgrade will return INSUFFICIENT_FUNDS for that unit. */
   upgradeInsufficientFundsUnitId: string | null
+  /** Active player SELL exchange orders for products (the globalExchangeProductListings query). */
+  productExchangeListings: MockProductExchangeListing[]
 }
 
 const mockStateByPage = new WeakMap<Page, MockState>()
@@ -1265,6 +1285,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     sourcingCandidates: {},
     unitUpgradeInfoOverrides: {},
     upgradeInsufficientFundsUnitId: null,
+    productExchangeListings: [],
     ...initial,
   }
 
@@ -3300,6 +3321,18 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { globalExchangeOffers } }),
+      })
+    }
+
+    if (query.includes('globalExchangeProductListings')) {
+      const productTypeIdFilter = body.variables?.productTypeId
+      const listings = state.productExchangeListings.filter(
+        (l) => !productTypeIdFilter || l.productTypeId === productTypeIdFilter,
+      )
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { globalExchangeProductListings: listings } }),
       })
     }
 

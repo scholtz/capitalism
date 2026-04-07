@@ -240,6 +240,25 @@ export interface GlobalExchangeOffer {
   distanceKm: number
 }
 
+/** A product marketplace listing from a player-placed SELL exchange order. */
+export interface GlobalExchangeProductListing {
+  orderId: string
+  productTypeId: string
+  productName: string
+  productSlug: string
+  productIndustry: string
+  unitSymbol: string
+  unitName: string
+  basePrice: number
+  pricePerUnit: number
+  remainingQuantity: number
+  sellerCityId: string
+  sellerCityName: string
+  sellerCompanyId: string
+  sellerCompanyName: string
+  createdAtUtc: string
+}
+
 /** Matches backend ApplicationUser entity */
 export interface User {
   id: string

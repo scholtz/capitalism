@@ -673,6 +673,65 @@ public sealed class Query
     }
 
     /// <summary>
+    /// Returns product marketplace listings from active player SELL exchange orders.
+    /// Covers finished goods, intermediate goods, and any product types on the exchange.
+    /// This query is public and does not require authentication.
+    /// </summary>
+    public async Task<List<GlobalExchangeProductListing>> GetGlobalExchangeProductListings(
+        Guid? productTypeId,
+        [Service] AppDbContext db)
+    {
+        var ordersQuery = db.ExchangeOrders
+            .Where(o => o.Side == "SELL" && o.IsActive && o.RemainingQuantity > 0m && o.ProductTypeId.HasValue)
+            .Include(o => o.Company)
+            .Include(o => o.ExchangeBuilding)
+            .AsQueryable();
+
+        if (productTypeId.HasValue)
+            ordersQuery = ordersQuery.Where(o => o.ProductTypeId == productTypeId.Value);
+
+        var orders = await ordersQuery.OrderBy(o => o.PricePerUnit).ToListAsync();
+
+        var cityIds = orders.Select(o => o.ExchangeBuilding.CityId).Distinct().ToList();
+        var cities = await db.Cities
+            .Where(c => cityIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id);
+
+        var productTypeIds = orders.Select(o => o.ProductTypeId!.Value).Distinct().ToList();
+        var productTypes = await db.ProductTypes
+            .Where(p => productTypeIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id);
+
+        return orders
+            .Select(o =>
+            {
+                cities.TryGetValue(o.ExchangeBuilding.CityId, out var city);
+                productTypes.TryGetValue(o.ProductTypeId!.Value, out var product);
+                return new GlobalExchangeProductListing
+                {
+                    OrderId = o.Id,
+                    ProductTypeId = o.ProductTypeId!.Value,
+                    ProductName = product?.Name ?? string.Empty,
+                    ProductSlug = product?.Slug ?? string.Empty,
+                    ProductIndustry = product?.Industry ?? string.Empty,
+                    UnitSymbol = product?.UnitSymbol ?? string.Empty,
+                    UnitName = product?.UnitName ?? string.Empty,
+                    BasePrice = product?.BasePrice ?? 0m,
+                    PricePerUnit = o.PricePerUnit,
+                    RemainingQuantity = o.RemainingQuantity,
+                    SellerCityId = city?.Id ?? Guid.Empty,
+                    SellerCityName = city?.Name ?? string.Empty,
+                    SellerCompanyId = o.CompanyId,
+                    SellerCompanyName = o.Company.Name,
+                    CreatedAtUtc = o.CreatedAtUtc,
+                };
+            })
+            .OrderBy(l => l.ProductName)
+            .ThenBy(l => l.PricePerUnit)
+            .ToList();
+    }
+
+    /// <summary>
     /// Returns city-level global exchange offers for raw materials, including
     /// quality and estimated transit cost into the destination city.
     /// </summary>
@@ -2771,6 +2830,58 @@ public sealed class GlobalExchangeOffer
     public decimal TransitCostPerUnit { get; set; }
     public decimal DeliveredPricePerUnit { get; set; }
     public decimal DistanceKm { get; set; }
+}
+
+/// <summary>
+/// A product marketplace listing from a player-placed SELL exchange order.
+/// Represents a specific offer to sell a manufactured or intermediate product.
+/// </summary>
+public sealed class GlobalExchangeProductListing
+{
+    /// <summary>The exchange order ID backing this listing.</summary>
+    public Guid OrderId { get; set; }
+
+    /// <summary>The product type being offered.</summary>
+    public Guid ProductTypeId { get; set; }
+
+    /// <summary>Human-readable product name.</summary>
+    public string ProductName { get; set; } = string.Empty;
+
+    /// <summary>URL-friendly product identifier.</summary>
+    public string ProductSlug { get; set; } = string.Empty;
+
+    /// <summary>Industry category: FURNITURE, FOOD_PROCESSING, HEALTHCARE, etc.</summary>
+    public string ProductIndustry { get; set; } = string.Empty;
+
+    /// <summary>Short display symbol for the produced unit (e.g. pcs).</summary>
+    public string UnitSymbol { get; set; } = string.Empty;
+
+    /// <summary>Display name for the produced unit (e.g. Piece, Crate).</summary>
+    public string UnitName { get; set; } = string.Empty;
+
+    /// <summary>Base market price per unit from the product catalogue.</summary>
+    public decimal BasePrice { get; set; }
+
+    /// <summary>Asking price per unit for this specific listing.</summary>
+    public decimal PricePerUnit { get; set; }
+
+    /// <summary>Remaining quantity available in this order.</summary>
+    public decimal RemainingQuantity { get; set; }
+
+    /// <summary>City where the selling exchange building is located.</summary>
+    public Guid SellerCityId { get; set; }
+
+    /// <summary>Name of the seller's city.</summary>
+    public string SellerCityName { get; set; } = string.Empty;
+
+    /// <summary>Company that placed this sell order.</summary>
+    public Guid SellerCompanyId { get; set; }
+
+    /// <summary>Name of the selling company.</summary>
+    public string SellerCompanyName { get; set; } = string.Empty;
+
+    /// <summary>When this order was created.</summary>
+    public DateTime CreatedAtUtc { get; set; }
 }
 
 /// <summary>Inventory fill information for a single building unit.</summary>

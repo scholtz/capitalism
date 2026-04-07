@@ -9623,6 +9623,447 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             "Different cities must produce different exchange prices for the same resource (city rent multiplier).");
     }
 
+    // ── GlobalExchangeProductListings tests ──────────────────────────────────
+
+    [Fact]
+    public async Task GlobalExchangeProductListings_EmptyByDefault_WhenNoSellOrdersExist()
+    {
+        // With a freshly seeded DB and no player exchange orders for products,
+        // the product listings query must return an empty list.
+        var result = await ExecuteGraphQlAsync(
+            """
+            query {
+              globalExchangeProductListings {
+                productTypeId
+                productName
+                pricePerUnit
+                remainingQuantity
+                sellerCityName
+                sellerCompanyName
+              }
+            }
+            """,
+            variables: null,
+            token: null);
+
+        Assert.False(result.TryGetProperty("errors", out _), "globalExchangeProductListings must return without errors");
+        var listings = result.GetProperty("data").GetProperty("globalExchangeProductListings");
+        Assert.Equal(0, listings.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task GlobalExchangeProductListings_IsPublicQuery_WorksWithoutAuthentication()
+    {
+        // The product listings query must be publicly accessible like globalExchangeOffers.
+        var result = await ExecuteGraphQlAsync(
+            """
+            query {
+              globalExchangeProductListings {
+                productTypeId
+                productName
+                productSlug
+                productIndustry
+                basePrice
+                pricePerUnit
+                remainingQuantity
+                unitSymbol
+                sellerCityId
+                sellerCityName
+                sellerCompanyId
+                sellerCompanyName
+              }
+            }
+            """,
+            variables: null,
+            token: null);
+
+        Assert.False(result.TryGetProperty("errors", out _), "globalExchangeProductListings must be publicly accessible without auth");
+        var listings = result.GetProperty("data").GetProperty("globalExchangeProductListings");
+        // Empty by default (no orders placed) — just check no auth error.
+        Assert.NotNull(listings);
+    }
+
+    [Fact]
+    public async Task GlobalExchangeProductListings_ReturnsActiveSellOrdersForProducts()
+    {
+        // Arrange: create a player, company, exchange building, and a SELL order for a product.
+        var email = $"prod-listing-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "ProdListTester");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "ProdListCo", Cash = 500_000m };
+        db.Companies.Add(company);
+
+        var exchangeBuilding = new Api.Data.Entities.Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Exchange, Name = "ProdListExchange", Level = 1,
+        };
+        db.Buildings.Add(exchangeBuilding);
+
+        db.ExchangeOrders.Add(new Api.Data.Entities.ExchangeOrder
+        {
+            Id = Guid.NewGuid(),
+            ExchangeBuildingId = exchangeBuilding.Id,
+            CompanyId = company.Id,
+            Side = "SELL",
+            ProductTypeId = product.Id,
+            PricePerUnit = 55.00m,
+            Quantity = 100m,
+            RemainingQuantity = 100m,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        // Act
+        var result = await ExecuteGraphQlAsync(
+            """
+            query {
+              globalExchangeProductListings {
+                productTypeId
+                productName
+                productSlug
+                productIndustry
+                unitSymbol
+                basePrice
+                pricePerUnit
+                remainingQuantity
+                sellerCityName
+                sellerCompanyName
+              }
+            }
+            """,
+            variables: null,
+            token: null);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var listings = result.GetProperty("data").GetProperty("globalExchangeProductListings")
+            .EnumerateArray().ToList();
+
+        Assert.True(listings.Count >= 1, "At least one product listing must be returned");
+        var chairListing = listings.First(l =>
+            l.GetProperty("productSlug").GetString() == "wooden-chair" &&
+            l.GetProperty("sellerCompanyName").GetString() == "ProdListCo");
+        Assert.Equal("wooden-chair", chairListing.GetProperty("productSlug").GetString());
+        Assert.Equal("FURNITURE", chairListing.GetProperty("productIndustry").GetString());
+        Assert.Equal(55.00m, chairListing.GetProperty("pricePerUnit").GetDecimal());
+        Assert.Equal(100m, chairListing.GetProperty("remainingQuantity").GetDecimal());
+        Assert.Equal("ProdListCo", chairListing.GetProperty("sellerCompanyName").GetString());
+        Assert.Equal(city.Name, chairListing.GetProperty("sellerCityName").GetString());
+    }
+
+    [Fact]
+    public async Task GlobalExchangeProductListings_InactiveOrDepletedOrdersNotReturned()
+    {
+        // Orders that are IsActive=false or RemainingQuantity=0 must not appear.
+        var email = $"prod-listing-inactive-{Guid.NewGuid():N}@test.com";
+        await RegisterAndGetTokenAsync(email, "ProdListInactTester");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "ProdInactCo", Cash = 500_000m };
+        db.Companies.Add(company);
+
+        var exchangeBuilding = new Api.Data.Entities.Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Exchange, Name = "ProdInactExchange", Level = 1,
+        };
+        db.Buildings.Add(exchangeBuilding);
+
+        // Inactive order
+        db.ExchangeOrders.Add(new Api.Data.Entities.ExchangeOrder
+        {
+            Id = Guid.NewGuid(), ExchangeBuildingId = exchangeBuilding.Id, CompanyId = company.Id,
+            Side = "SELL", ProductTypeId = product.Id, PricePerUnit = 55.00m,
+            Quantity = 100m, RemainingQuantity = 100m, IsActive = false,
+        });
+        // Depleted order
+        db.ExchangeOrders.Add(new Api.Data.Entities.ExchangeOrder
+        {
+            Id = Guid.NewGuid(), ExchangeBuildingId = exchangeBuilding.Id, CompanyId = company.Id,
+            Side = "SELL", ProductTypeId = product.Id, PricePerUnit = 45.00m,
+            Quantity = 100m, RemainingQuantity = 0m, IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query {
+              globalExchangeProductListings {
+                productSlug
+                sellerCompanyName
+              }
+            }
+            """,
+            variables: null,
+            token: null);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var listings = result.GetProperty("data").GetProperty("globalExchangeProductListings")
+            .EnumerateArray()
+            .Where(l => l.GetProperty("sellerCompanyName").GetString() == "ProdInactCo")
+            .ToList();
+
+        Assert.Equal(0, listings.Count);
+    }
+
+    [Fact]
+    public async Task GlobalExchangeProductListings_FilteredByProductType_ReturnsOnlyMatchingProduct()
+    {
+        // Setup two product types with orders; filter by one should return only that product.
+        var email = $"prod-listing-filter-{Guid.NewGuid():N}@test.com";
+        await RegisterAndGetTokenAsync(email, "ProdListFilterTester");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var chairProduct = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+        var breadProduct = await db.ProductTypes.FirstAsync(p => p.Slug == "bread");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "ProdFilterCo", Cash = 500_000m };
+        db.Companies.Add(company);
+
+        var exchangeBuilding = new Api.Data.Entities.Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Exchange, Name = "ProdFilterExchange", Level = 1,
+        };
+        db.Buildings.Add(exchangeBuilding);
+
+        db.ExchangeOrders.Add(new Api.Data.Entities.ExchangeOrder
+        {
+            Id = Guid.NewGuid(), ExchangeBuildingId = exchangeBuilding.Id, CompanyId = company.Id,
+            Side = "SELL", ProductTypeId = chairProduct.Id, PricePerUnit = 55.00m,
+            Quantity = 50m, RemainingQuantity = 50m, IsActive = true,
+        });
+        db.ExchangeOrders.Add(new Api.Data.Entities.ExchangeOrder
+        {
+            Id = Guid.NewGuid(), ExchangeBuildingId = exchangeBuilding.Id, CompanyId = company.Id,
+            Side = "SELL", ProductTypeId = breadProduct.Id, PricePerUnit = 4.00m,
+            Quantity = 200m, RemainingQuantity = 200m, IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        // Filter by chair only
+        var result = await ExecuteGraphQlAsync(
+            """
+            query ProductListings($productTypeId: UUID) {
+              globalExchangeProductListings(productTypeId: $productTypeId) {
+                productSlug
+                sellerCompanyName
+              }
+            }
+            """,
+            new { productTypeId = chairProduct.Id.ToString() },
+            token: null);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var listings = result.GetProperty("data").GetProperty("globalExchangeProductListings")
+            .EnumerateArray()
+            .Where(l => l.GetProperty("sellerCompanyName").GetString() == "ProdFilterCo")
+            .ToList();
+
+        Assert.Equal(1, listings.Count);
+        Assert.Equal("wooden-chair", listings[0].GetProperty("productSlug").GetString());
+    }
+
+    [Fact]
+    public async Task GlobalExchangeProductListings_BuyOrdersNotIncluded()
+    {
+        // Only SELL orders should appear in product listings.
+        var email = $"prod-buy-order-{Guid.NewGuid():N}@test.com";
+        await RegisterAndGetTokenAsync(email, "ProdBuyTester");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "ProdBuyCo", Cash = 500_000m };
+        db.Companies.Add(company);
+
+        var exchangeBuilding = new Api.Data.Entities.Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Exchange, Name = "ProdBuyExchange", Level = 1,
+        };
+        db.Buildings.Add(exchangeBuilding);
+
+        // BUY order only — must NOT appear in product listings
+        db.ExchangeOrders.Add(new Api.Data.Entities.ExchangeOrder
+        {
+            Id = Guid.NewGuid(), ExchangeBuildingId = exchangeBuilding.Id, CompanyId = company.Id,
+            Side = "BUY", ProductTypeId = product.Id, PricePerUnit = 40.00m,
+            Quantity = 100m, RemainingQuantity = 100m, IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query {
+              globalExchangeProductListings {
+                productSlug
+                sellerCompanyName
+              }
+            }
+            """,
+            variables: null,
+            token: null);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var listings = result.GetProperty("data").GetProperty("globalExchangeProductListings")
+            .EnumerateArray()
+            .Where(l => l.GetProperty("sellerCompanyName").GetString() == "ProdBuyCo")
+            .ToList();
+
+        Assert.Equal(0, listings.Count);
+    }
+
+    [Fact]
+    public async Task GlobalExchangeProductListings_MultipleIndustries_AllReturned()
+    {
+        // Listings for Furniture, Food Processing, and Healthcare should all appear when present.
+        var email = $"prod-multi-industry-{Guid.NewGuid():N}@test.com";
+        await RegisterAndGetTokenAsync(email, "ProdMultiTester");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+
+        var chairProduct = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+        var breadProduct = await db.ProductTypes.FirstAsync(p => p.Slug == "bread");
+        var medicineProduct = await db.ProductTypes.FirstAsync(p => p.Slug == "basic-medicine");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "MultiIndCo", Cash = 500_000m };
+        db.Companies.Add(company);
+
+        var exchangeBuilding = new Api.Data.Entities.Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Exchange, Name = "MultiIndExchange", Level = 1,
+        };
+        db.Buildings.Add(exchangeBuilding);
+
+        db.ExchangeOrders.AddRange(
+            new Api.Data.Entities.ExchangeOrder
+            {
+                Id = Guid.NewGuid(), ExchangeBuildingId = exchangeBuilding.Id, CompanyId = company.Id,
+                Side = "SELL", ProductTypeId = chairProduct.Id, PricePerUnit = 55.00m,
+                Quantity = 50m, RemainingQuantity = 50m, IsActive = true,
+            },
+            new Api.Data.Entities.ExchangeOrder
+            {
+                Id = Guid.NewGuid(), ExchangeBuildingId = exchangeBuilding.Id, CompanyId = company.Id,
+                Side = "SELL", ProductTypeId = breadProduct.Id, PricePerUnit = 4.00m,
+                Quantity = 200m, RemainingQuantity = 200m, IsActive = true,
+            },
+            new Api.Data.Entities.ExchangeOrder
+            {
+                Id = Guid.NewGuid(), ExchangeBuildingId = exchangeBuilding.Id, CompanyId = company.Id,
+                Side = "SELL", ProductTypeId = medicineProduct.Id, PricePerUnit = 60.00m,
+                Quantity = 80m, RemainingQuantity = 80m, IsActive = true,
+            }
+        );
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query {
+              globalExchangeProductListings {
+                productSlug
+                productIndustry
+                sellerCompanyName
+              }
+            }
+            """,
+            variables: null,
+            token: null);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var listings = result.GetProperty("data").GetProperty("globalExchangeProductListings")
+            .EnumerateArray()
+            .Where(l => l.GetProperty("sellerCompanyName").GetString() == "MultiIndCo")
+            .ToList();
+
+        Assert.Equal(3, listings.Count);
+        var industries = listings.Select(l => l.GetProperty("productIndustry").GetString()).ToHashSet();
+        Assert.Contains("FURNITURE", industries);
+        Assert.Contains("FOOD_PROCESSING", industries);
+        Assert.Contains("HEALTHCARE", industries);
+    }
+
+    [Fact]
+    public async Task GlobalExchangeProductListings_ResourceOrdersNotIncluded()
+    {
+        // Exchange orders for raw materials (ResourceTypeId set) must not appear in product listings.
+        var email = $"prod-res-order-{Guid.NewGuid():N}@test.com";
+        await RegisterAndGetTokenAsync(email, "ProdResTester");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "ProdResCo", Cash = 500_000m };
+        db.Companies.Add(company);
+
+        var exchangeBuilding = new Api.Data.Entities.Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Exchange, Name = "ProdResExchange", Level = 1,
+        };
+        db.Buildings.Add(exchangeBuilding);
+
+        // Resource SELL order — must NOT appear in product listings
+        db.ExchangeOrders.Add(new Api.Data.Entities.ExchangeOrder
+        {
+            Id = Guid.NewGuid(), ExchangeBuildingId = exchangeBuilding.Id, CompanyId = company.Id,
+            Side = "SELL", ResourceTypeId = resource.Id, PricePerUnit = 10.00m,
+            Quantity = 500m, RemainingQuantity = 500m, IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query {
+              globalExchangeProductListings {
+                productSlug
+                sellerCompanyName
+              }
+            }
+            """,
+            variables: null,
+            token: null);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var listings = result.GetProperty("data").GetProperty("globalExchangeProductListings")
+            .EnumerateArray()
+            .Where(l => l.GetProperty("sellerCompanyName").GetString() == "ProdResCo")
+            .ToList();
+
+        Assert.Equal(0, listings.Count);
+    }
+
     [Fact]
     public async Task StoreBuildingConfiguration_PurchaseUnit_PersistsExchangeSourceAndConstraints()
     {

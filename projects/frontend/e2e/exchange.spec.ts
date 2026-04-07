@@ -911,3 +911,334 @@ test.describe('Global Exchange — city URL persistence', () => {
     await expect(viennaTab).toHaveClass(/active/)
   })
 })
+
+// ── Product marketplace tab ──────────────────────────────────────────────────
+
+test.describe('Global Exchange — Products marketplace tab', () => {
+  test('shows Raw Materials and Products mode tabs', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+
+    await expect(page.getByRole('tab', { name: 'Raw Materials' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Products' })).toBeVisible()
+  })
+
+  test('Raw Materials tab is active by default', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Resources tab is active, city tabs are visible
+    const rawTab = page.getByRole('tab', { name: 'Raw Materials' })
+    await expect(rawTab).toHaveClass(/active/)
+
+    // City tabs only appear for resources mode
+    await expect(page.locator('.city-tabs')).toBeVisible()
+  })
+
+  test('clicking Products tab switches to product marketplace', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+
+    await page.getByRole('tab', { name: 'Products' }).click()
+
+    // City tabs should be hidden; products hint should appear
+    await expect(page.locator('.city-tabs')).toBeHidden()
+    await expect(page.locator('.products-mode-hint')).toBeVisible()
+  })
+
+  test('Products tab shows empty state when no listings exist', async ({ page }) => {
+    setupMockApi(page, { productExchangeListings: [] })
+    await page.goto('/exchange')
+
+    await page.getByRole('tab', { name: 'Products' }).click()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // The page should show the product marketplace with no listings
+    await expect(page.locator('.products-mode-hint')).toBeVisible()
+  })
+
+  test('Products tab shows listings when sell orders exist', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const bratislava = cities.find((c) => c.name === 'Bratislava')!
+    const player = makePlayer()
+
+    const chairListing = {
+      orderId: 'order-chair-1',
+      productTypeId: 'prod-chair',
+      productName: 'Wooden Chair',
+      productSlug: 'wooden-chair',
+      productIndustry: 'FURNITURE',
+      unitSymbol: 'chairs',
+      unitName: 'Chair',
+      basePrice: 45,
+      pricePerUnit: 55,
+      remainingQuantity: 100,
+      sellerCityId: bratislava.id,
+      sellerCityName: bratislava.name,
+      sellerCompanyId: 'company-seller-1',
+      sellerCompanyName: 'Furniture Co',
+      createdAtUtc: new Date().toISOString(),
+    }
+
+    setupMockApi(page, {
+      cities,
+      players: [player],
+      productExchangeListings: [chairListing],
+    })
+
+    await page.goto('/exchange')
+    await page.getByRole('tab', { name: 'Products' }).click()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Product row should be visible
+    await expect(page.locator('.product-row').filter({ hasText: 'Wooden Chair' })).toBeVisible()
+
+    // Industry badge should show
+    await expect(page.locator('.product-industry-badge', { hasText: 'Furniture' })).toBeVisible()
+
+    // Listing details should be visible
+    await expect(page.locator('.listing-price', { hasText: '$55' })).toBeVisible()
+    await expect(page.locator('.listing-quantity', { hasText: '100' })).toBeVisible()
+    await expect(page.locator('.listing-seller', { hasText: 'Furniture Co' })).toBeVisible()
+    await expect(page.locator('.listing-city', { hasText: 'Bratislava' })).toBeVisible()
+  })
+
+  test('Products tab shows price vs base comparison', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const bratislava = cities.find((c) => c.name === 'Bratislava')!
+
+    const listingAboveBase = {
+      orderId: 'order-above-base',
+      productTypeId: 'prod-chair',
+      productName: 'Wooden Chair',
+      productSlug: 'wooden-chair',
+      productIndustry: 'FURNITURE',
+      unitSymbol: 'chairs',
+      unitName: 'Chair',
+      basePrice: 45,
+      pricePerUnit: 55, // 22% above base
+      remainingQuantity: 50,
+      sellerCityId: bratislava.id,
+      sellerCityName: bratislava.name,
+      sellerCompanyId: 'company-seller-2',
+      sellerCompanyName: 'Premium Furniture',
+      createdAtUtc: new Date().toISOString(),
+    }
+
+    const listingBelowBase = {
+      orderId: 'order-below-base',
+      productTypeId: 'prod-chair',
+      productName: 'Wooden Chair',
+      productSlug: 'wooden-chair',
+      productIndustry: 'FURNITURE',
+      unitSymbol: 'chairs',
+      unitName: 'Chair',
+      basePrice: 45,
+      pricePerUnit: 40, // below base
+      remainingQuantity: 200,
+      sellerCityId: bratislava.id,
+      sellerCityName: bratislava.name,
+      sellerCompanyId: 'company-seller-3',
+      sellerCompanyName: 'Discount Furniture',
+      createdAtUtc: new Date().toISOString(),
+    }
+
+    setupMockApi(page, {
+      cities,
+      productExchangeListings: [listingAboveBase, listingBelowBase],
+    })
+
+    await page.goto('/exchange')
+    await page.getByRole('tab', { name: 'Products' }).click()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Above base should show red badge
+    await expect(page.locator('.price-above-base').first()).toBeVisible()
+    // Below base should show green badge
+    await expect(page.locator('.price-below-base').first()).toBeVisible()
+  })
+
+  test('Products tab industry filter narrows results', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const bratislava = cities.find((c) => c.name === 'Bratislava')!
+
+    const chairListing = {
+      orderId: 'order-chair-filter',
+      productTypeId: 'prod-chair',
+      productName: 'Wooden Chair',
+      productSlug: 'wooden-chair',
+      productIndustry: 'FURNITURE',
+      unitSymbol: 'chairs',
+      unitName: 'Chair',
+      basePrice: 45,
+      pricePerUnit: 50,
+      remainingQuantity: 50,
+      sellerCityId: bratislava.id,
+      sellerCityName: bratislava.name,
+      sellerCompanyId: 'company-f',
+      sellerCompanyName: 'Furniture Inc',
+      createdAtUtc: new Date().toISOString(),
+    }
+
+    const breadListing = {
+      orderId: 'order-bread-filter',
+      productTypeId: 'prod-bread',
+      productName: 'Bread',
+      productSlug: 'bread',
+      productIndustry: 'FOOD_PROCESSING',
+      unitSymbol: 'loaves',
+      unitName: 'Loaf',
+      basePrice: 3,
+      pricePerUnit: 4,
+      remainingQuantity: 200,
+      sellerCityId: bratislava.id,
+      sellerCityName: bratislava.name,
+      sellerCompanyId: 'company-fp',
+      sellerCompanyName: 'Bakery Inc',
+      createdAtUtc: new Date().toISOString(),
+    }
+
+    setupMockApi(page, {
+      cities,
+      productExchangeListings: [chairListing, breadListing],
+    })
+
+    await page.goto('/exchange')
+    await page.getByRole('tab', { name: 'Products' }).click()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Both products visible initially
+    await expect(page.locator('.product-row').filter({ hasText: 'Wooden Chair' })).toBeVisible()
+    await expect(page.locator('.product-row').filter({ hasText: 'Bread' })).toBeVisible()
+
+    // Filter to FURNITURE only
+    await page.locator('#industry-select').selectOption('FURNITURE')
+
+    // Only Wooden Chair should be visible
+    await expect(page.locator('.product-row').filter({ hasText: 'Wooden Chair' })).toBeVisible()
+    await expect(page.locator('.product-row').filter({ hasText: 'Bread' })).toHaveCount(0)
+  })
+
+  test('Products tab search filters by product name', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const bratislava = cities.find((c) => c.name === 'Bratislava')!
+
+    const chairListing = {
+      orderId: 'order-chair-search',
+      productTypeId: 'prod-chair',
+      productName: 'Wooden Chair',
+      productSlug: 'wooden-chair',
+      productIndustry: 'FURNITURE',
+      unitSymbol: 'chairs',
+      unitName: 'Chair',
+      basePrice: 45,
+      pricePerUnit: 50,
+      remainingQuantity: 50,
+      sellerCityId: bratislava.id,
+      sellerCityName: bratislava.name,
+      sellerCompanyId: 'company-f-s',
+      sellerCompanyName: 'Search Furniture',
+      createdAtUtc: new Date().toISOString(),
+    }
+
+    const breadListing = {
+      orderId: 'order-bread-search',
+      productTypeId: 'prod-bread',
+      productName: 'Bread',
+      productSlug: 'bread',
+      productIndustry: 'FOOD_PROCESSING',
+      unitSymbol: 'loaves',
+      unitName: 'Loaf',
+      basePrice: 3,
+      pricePerUnit: 4,
+      remainingQuantity: 200,
+      sellerCityId: bratislava.id,
+      sellerCityName: bratislava.name,
+      sellerCompanyId: 'company-fp-s',
+      sellerCompanyName: 'Search Bakery',
+      createdAtUtc: new Date().toISOString(),
+    }
+
+    setupMockApi(page, {
+      cities,
+      productExchangeListings: [chairListing, breadListing],
+    })
+
+    await page.goto('/exchange')
+    await page.getByRole('tab', { name: 'Products' }).click()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Search for "chair"
+    await page.getByPlaceholder('Search products').fill('chair')
+
+    await expect(page.locator('.product-row').filter({ hasText: 'Wooden Chair' })).toBeVisible()
+    await expect(page.locator('.product-row').filter({ hasText: 'Bread' })).toHaveCount(0)
+  })
+
+  test('Products mode selection persists in URL', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/exchange')
+
+    await page.getByRole('tab', { name: 'Products' }).click()
+    await expect(page).toHaveURL(/mode=products/)
+
+    await page.reload()
+    await expect(page.locator('.products-mode-hint')).toBeVisible()
+  })
+
+  test('Products tab shows listings for multiple industries', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const bratislava = cities.find((c) => c.name === 'Bratislava')!
+
+    const makeProductListing = (
+      id: string,
+      productName: string,
+      productSlug: string,
+      industry: string,
+      basePrice: number,
+      pricePerUnit: number,
+      unitSymbol: string,
+    ) => ({
+      orderId: `order-${id}`,
+      productTypeId: `prod-${id}`,
+      productName,
+      productSlug,
+      productIndustry: industry,
+      unitSymbol,
+      unitName: 'Piece',
+      basePrice,
+      pricePerUnit,
+      remainingQuantity: 100,
+      sellerCityId: bratislava.id,
+      sellerCityName: bratislava.name,
+      sellerCompanyId: `company-${id}`,
+      sellerCompanyName: `Company ${id}`,
+      createdAtUtc: new Date().toISOString(),
+    })
+
+    setupMockApi(page, {
+      cities,
+      productExchangeListings: [
+        makeProductListing('chair', 'Wooden Chair', 'wooden-chair', 'FURNITURE', 45, 50, 'chairs'),
+        makeProductListing('bread', 'Bread', 'bread', 'FOOD_PROCESSING', 3, 4, 'loaves'),
+        makeProductListing('medicine', 'Basic Medicine', 'basic-medicine', 'HEALTHCARE', 50, 60, 'bottles'),
+      ],
+    })
+
+    await page.goto('/exchange')
+    await page.getByRole('tab', { name: 'Products' }).click()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // All three industries should be visible
+    await expect(page.locator('.product-row').filter({ hasText: 'Wooden Chair' })).toBeVisible()
+    await expect(page.locator('.product-row').filter({ hasText: 'Bread' })).toBeVisible()
+    await expect(page.locator('.product-row').filter({ hasText: 'Basic Medicine' })).toBeVisible()
+
+    // Industry badges
+    await expect(page.locator('.product-industry-badge', { hasText: 'Furniture' })).toBeVisible()
+    await expect(page.locator('.product-industry-badge', { hasText: 'Food Processing' })).toBeVisible()
+    await expect(page.locator('.product-industry-badge', { hasText: 'Healthcare' })).toBeVisible()
+  })
+})
