@@ -60,6 +60,72 @@ test.describe('Leaderboard page', () => {
     await expect(page.locator('.total-wealth').getByText('$750.0K')).toBeVisible()
   })
 
+  test('shows ranked entries for companies on the companies tab', async ({ page }) => {
+    const player1 = makePlayer({ id: 'player-1', displayName: 'Alice' })
+    player1.companies.push({
+      id: 'comp-1',
+      playerId: 'player-1',
+      name: 'Alice Holdings',
+      cash: 1000000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+    const player2 = makePlayer({ id: 'player-2', displayName: 'Bob', email: 'bob@test.com' })
+    player2.companies.push({
+      id: 'comp-2',
+      playerId: 'player-2',
+      name: 'Bob Ventures',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+
+    setupMockApi(page, { players: [player1, player2] })
+    await page.goto('/leaderboard')
+    await page.getByRole('tab', { name: 'Richest Companies' }).click()
+
+    const cards = page.locator('.rank-card')
+    await expect(cards.first()).toContainText('Alice Holdings')
+    await expect(page.getByText('Owned by Alice')).toBeVisible()
+    await expect(page.getByText('Bob Ventures')).toBeVisible()
+  })
+
+  test('keeps player rankings visible when company rankings request fails', async ({ page }) => {
+    const player = makePlayer({ displayName: 'Fallback Hero' })
+    player.companies.push({
+      id: 'comp-1',
+      playerId: player.id,
+      name: 'Fallback Corp',
+      cash: 250000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+
+    setupMockApi(page, { players: [player] })
+    await page.route('**/graphql', async (route) => {
+      const body = route.request().postDataJSON() as { query?: string }
+      if (body.query?.includes('companyRankings')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'company rankings unavailable' }] }),
+        })
+        return
+      }
+      await route.fallback()
+    })
+
+    await page.goto('/leaderboard')
+
+    await expect(page.getByText('Fallback Hero')).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Richest Players' })).toHaveAttribute('aria-selected', 'true')
+
+    await page.getByRole('tab', { name: 'Richest Companies' }).click()
+    await expect(page.getByText('company rankings unavailable')).toBeVisible()
+    await page.getByRole('tab', { name: 'Richest Players' }).click()
+    await expect(page.getByText('Fallback Hero')).toBeVisible()
+  })
+
   test('highlights current player with YOU badge', async ({ page }) => {
     const player = makePlayer({ displayName: 'Hero' })
     player.companies.push({

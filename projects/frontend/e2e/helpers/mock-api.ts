@@ -3488,6 +3488,50 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('companyRankings')) {
+      const companyRankings = state.players
+        .filter((player) => player.role !== 'ADMIN')
+        .flatMap((player) =>
+          player.companies.map((company) => {
+            const buildingValue = company.buildings.reduce((sum, building) => {
+              const baseValues: Record<string, number> = {
+                MINE: 250000,
+                FACTORY: 200000,
+                SALES_SHOP: 150000,
+                RESEARCH_DEVELOPMENT: 300000,
+                APARTMENT: 400000,
+                COMMERCIAL: 350000,
+                MEDIA_HOUSE: 500000,
+                BANK: 600000,
+                EXCHANGE: 450000,
+                POWER_PLANT: 350000,
+              }
+              return sum + (baseValues[building.type] ?? 0) * building.level
+            }, 0)
+            const inventoryValue = 0
+
+            return {
+              companyId: company.id,
+              companyName: company.name,
+              playerId: player.id,
+              ownerDisplayName: player.displayName,
+              cash: company.cash,
+              buildingValue,
+              inventoryValue,
+              totalWealth: company.cash + buildingValue + inventoryValue,
+              buildingCount: company.buildings.length,
+            }
+          }),
+        )
+        .sort((left, right) => right.totalWealth - left.totalWealth)
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { companyRankings } }),
+      })
+    }
+
     if (query.includes('gameState')) {
       applyDueBuildingUpgrades(state)
       return route.fulfill({

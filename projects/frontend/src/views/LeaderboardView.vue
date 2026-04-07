@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
@@ -12,11 +12,14 @@ const auth = useAuthStore()
 
 const rankings = ref<PlayerRanking[]>([])
 const companyRankings = ref<CompanyRanking[]>([])
-const loading = ref(true)
-const error = ref<string | null>(null)
+const playerLoading = ref(true)
+const companyLoading = ref(false)
+const playerError = ref<string | null>(null)
+const companyError = ref<string | null>(null)
+const companyRankingsLoaded = ref(false)
 const activeTab = ref<'players' | 'companies'>('players')
 
-const RANKINGS_QUERY = `
+const PLAYER_RANKINGS_QUERY = `
   {
     rankings {
       playerId
@@ -27,6 +30,11 @@ const RANKINGS_QUERY = `
       inventoryValue
       companyCount
     }
+  }
+`
+
+const COMPANY_RANKINGS_QUERY = `
+  {
     companyRankings {
       companyId
       companyName
@@ -41,26 +49,42 @@ const RANKINGS_QUERY = `
   }
 `
 
-async function fetchRankings(isRefresh = false) {
+async function fetchPlayerRankings(isRefresh = false) {
   if (!isRefresh) {
-    loading.value = true
+    playerLoading.value = true
   }
-  error.value = null
+  playerError.value = null
   try {
     const data = await gqlRequest<{
       rankings: PlayerRanking[]
-      companyRankings: CompanyRanking[]
-    }>(RANKINGS_QUERY)
+    }>(PLAYER_RANKINGS_QUERY)
     if (!deepEqual(rankings.value, data.rankings)) {
       rankings.value = data.rankings
     }
+  } catch (e) {
+    playerError.value = e instanceof Error ? e.message : t('leaderboard.loadFailed')
+  } finally {
+    playerLoading.value = false
+  }
+}
+
+async function fetchCompanyRankings(isRefresh = false) {
+  if (!isRefresh) {
+    companyLoading.value = true
+  }
+  companyError.value = null
+  try {
+    const data = await gqlRequest<{
+      companyRankings: CompanyRanking[]
+    }>(COMPANY_RANKINGS_QUERY)
     if (!deepEqual(companyRankings.value, data.companyRankings)) {
       companyRankings.value = data.companyRankings
     }
+    companyRankingsLoaded.value = true
   } catch (e) {
-    error.value = e instanceof Error ? e.message : t('leaderboard.loadFailed')
+    companyError.value = e instanceof Error ? e.message : t('leaderboard.loadFailed')
   } finally {
-    loading.value = false
+    companyLoading.value = false
   }
 }
 
@@ -69,10 +93,33 @@ onMounted(async () => {
   if (auth.isAuthenticated) {
     void auth.fetchMe()
   }
-  await fetchRankings()
+  await Promise.allSettled([fetchPlayerRankings(), fetchCompanyRankings()])
 })
 
-useTickRefresh(() => fetchRankings(true))
+useTickRefresh(() => {
+  void fetchPlayerRankings(true)
+  if (companyRankingsLoaded.value || activeTab.value === 'companies') {
+    void fetchCompanyRankings(true)
+  }
+})
+
+watch(
+  activeTab,
+  (tab: 'players' | 'companies') => {
+    if (tab === 'companies' && !companyRankingsLoaded.value && !companyLoading.value) {
+      void fetchCompanyRankings()
+    }
+  },
+  { flush: 'post' },
+)
+
+function retryActiveTab() {
+  if (activeTab.value === 'companies') {
+    void fetchCompanyRankings()
+    return
+  }
+  void fetchPlayerRankings()
+}
 
 function formatWealth(value: number): string {
   if (value >= 1_000_000) {
@@ -127,22 +174,22 @@ const currentPlayerId = computed(() => auth.player?.id ?? null)
         </button>
       </div>
 
-      <div v-if="loading" class="state-box">
-        <span class="state-icon">⏳</span>
-        <p>{{ t('common.loading') }}</p>
-      </div>
-
-      <div v-else-if="error" class="state-box state-error">
-        <span class="state-icon">⚠️</span>
-        <p>{{ error }}</p>
-        <button class="btn btn-secondary" aria-label="Retry loading leaderboard" @click="fetchRankings()">
-          {{ t('common.tryAgain') }}
-        </button>
-      </div>
-
       <!-- Player rankings tab -->
-      <template v-else-if="activeTab === 'players'">
-        <div v-if="rankings.length === 0" class="state-box">
+      <template v-if="activeTab === 'players'">
+        <div v-if="playerLoading" class="state-box">
+          <span class="state-icon">⏳</span>
+          <p>{{ t('common.loading') }}</p>
+        </div>
+
+        <div v-else-if="playerError" class="state-box state-error">
+          <span class="state-icon">⚠️</span>
+          <p>{{ playerError }}</p>
+          <button class="btn btn-secondary" aria-label="Retry loading leaderboard" @click="retryActiveTab">
+            {{ t('common.tryAgain') }}
+          </button>
+        </div>
+
+        <div v-else-if="rankings.length === 0" class="state-box">
           <span class="state-icon">🏆</span>
           <p class="state-title">{{ t('leaderboard.emptyTitle') }}</p>
           <p class="state-desc">{{ t('leaderboard.emptyDesc') }}</p>
@@ -188,7 +235,20 @@ const currentPlayerId = computed(() => auth.player?.id ?? null)
 
       <!-- Company rankings tab -->
       <template v-else-if="activeTab === 'companies'">
-        <div v-if="companyRankings.length === 0" class="state-box">
+        <div v-if="companyLoading" class="state-box">
+          <span class="state-icon">⏳</span>
+          <p>{{ t('common.loading') }}</p>
+        </div>
+
+        <div v-else-if="companyError" class="state-box state-error">
+          <span class="state-icon">⚠️</span>
+          <p>{{ companyError }}</p>
+          <button class="btn btn-secondary" aria-label="Retry loading leaderboard" @click="retryActiveTab">
+            {{ t('common.tryAgain') }}
+          </button>
+        </div>
+
+        <div v-else-if="companyRankings.length === 0" class="state-box">
           <span class="state-icon">🏢</span>
           <p class="state-title">{{ t('leaderboard.emptyCompanyTitle') }}</p>
           <p class="state-desc">{{ t('leaderboard.emptyCompanyDesc') }}</p>

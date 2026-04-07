@@ -442,6 +442,19 @@ Root-cause of a quality failure (March 2026, PR #63 onboarding routing fix):
 4. **Explain in the PR description what the gap was and how the test proves it is fixed.** Link to the acceptance criterion it satisfies.
 5. **Do not consider a routing-only fix "done" without E2E proof.** Routing changes are easy to regress; tests are the safety net.
 
+## Leaderboard / multi-query UI resilience — do not blank a healthy tab
+
+Root-cause of a quality gap (April 2026, PR #239 / leaderboard split):
+- `LeaderboardView` requested `rankings` and `companyRankings` in one combined GraphQL query.
+- If `companyRankings` failed (for example due to backend/schema mismatch or mocked API drift), the whole page fell into a global error state and even the working player-rankings tab showed "Failed to fetch".
+- Existing E2E coverage only exercised the player tab happy path, so the company tab and partial-failure behavior were not proven.
+
+**Rules to prevent recurrence:**
+1. **When a page has multiple independently-usable tabs backed by different GraphQL fields, fetch them independently.** A failure in one tab must not blank the content of another healthy tab.
+2. **Do not use a single page-level error/loading state for independent tab datasets.** Keep per-tab loading/error state so the active working tab can still render.
+3. **When adding a new GraphQL field to a page that already works, add E2E coverage for both the new happy path and a partial-failure fallback.** For leaderboard, that means proving the companies tab renders and proving players still render when `companyRankings` fails.
+4. **Update the shared mock API helper for every new query field used by shipped UI.** Do not rely on partial mock payloads when the real page depends on the new field.
+
 ## PR draft state and CI triggering — do not leave PRs in draft
 
 Root-cause of a quality failure (March 2026, PR #76 guest onboarding):

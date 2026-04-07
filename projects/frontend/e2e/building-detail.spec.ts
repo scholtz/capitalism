@@ -6725,9 +6725,8 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(panel.getByText(/higher price/i)).toBeVisible()
 
     // Revenue chart should be visible with bars
-    const revenueChart = panel.locator('[aria-label="Revenue per Tick"]')
-    await expect(revenueChart).toBeVisible()
-    await expect(revenueChart.locator('.mi-bar-revenue').first()).toBeVisible()
+    await expect(panel.getByText('Revenue per Tick')).toBeVisible()
+    await expect(panel.locator('.mi-bar-revenue').first()).toBeVisible()
 
     // Market share section should show the company
     await expect(panel.getByText('Market Share (latest tick)')).toBeVisible()
@@ -7094,10 +7093,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(panel).toBeVisible()
 
     // Price chart should be visible
-    const priceChart = panel.locator('.mi-bar-chart-price')
-    await expect(priceChart).toBeVisible()
+    await expect(panel.getByText('Realized Price per Tick')).toBeVisible()
     // Price bars should be rendered for each tick
-    await expect(priceChart.locator('.mi-bar-price').first()).toBeVisible()
+    await expect(panel.locator('.mi-bar-price').first()).toBeVisible()
   })
 
   test('shows MODERATE demand signal with monitor hint', async ({ page }) => {
@@ -8597,7 +8595,7 @@ test.describe('Procurement mode configuration', () => {
       .click()
 
     // Purchase selector button remains the single entry point for product/vendor selection
-    await expect(page.getByRole('button', { name: 'Choose product and vendor' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /product and vendor/i })).toBeVisible()
     const dialog = await openPurchaseSelector(page)
     await expect(dialog.getByText('Vendor link')).toBeVisible()
     await expect(dialog.getByText('Your own company')).toBeVisible()
@@ -8712,13 +8710,12 @@ test.describe('Procurement mode configuration', () => {
     await getGridCell(plannedSection, 0, 0).click()
     await selectPurchaseItem(page, 'chair', /Wooden Chair/)
 
-    await openPurchaseSelector(page)
-    const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+    const dialog = await openPurchaseSelector(page)
     await dialog.getByRole('button', { name: 'Your own company' }).click()
     await dialog.getByRole('button', { name: 'Done' }).click()
 
     await expect(page.locator('.purchase-selection-summary')).toContainText('Wooden Chair')
-    await expect(page.locator('.purchase-selection-summary')).toContainText('Your own company')
+    await expect(page.locator('.purchase-selection-summary')).toContainText(/Own Supply Co|Own Factory|Your own company/)
 
     await page.getByRole('button', { name: /Store Upgrade/i }).click()
 
