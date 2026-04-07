@@ -1897,16 +1897,16 @@ public sealed class Query
         if (inventory is not null)
             inventoryQuality = inventory.Quality;
 
-        Data.Entities.ProductType? productTypeForContext = null;
+        Data.Entities.ProductType? productTypeForAnalytics = null;
         if (productTypeIdForElasticity.HasValue)
         {
-            productTypeForContext = await db.ProductTypes.FindAsync(productTypeIdForElasticity.Value);
-            if (productTypeForContext is not null)
+            productTypeForAnalytics = await db.ProductTypes.FindAsync(productTypeIdForElasticity.Value);
+            if (productTypeForAnalytics is not null)
             {
                 var brand = await db.Brands
                     .Where(b => b.CompanyId == building.CompanyId
                                 && (b.Scope == "PRODUCT" && b.ProductTypeId == productTypeIdForElasticity.Value
-                                    || b.Scope == "CATEGORY" && b.IndustryCategory == productTypeForContext.Industry
+                                    || b.Scope == "CATEGORY" && b.IndustryCategory == productTypeForAnalytics.Industry
                                     || b.Scope == "COMPANY"))
                     .OrderByDescending(b => b.Awareness)
                     .FirstOrDefaultAsync();
@@ -1920,15 +1920,17 @@ public sealed class Query
         // This shows how much above cost the player earns; null when base price is unknown.
         decimal? totalProfit = null;
         List<ProfitTickSnapshot>? profitHistory = null;
-        if (productTypeForContext is not null)
+        if (productTypeForAnalytics is not null)
         {
-            var basePrice = productTypeForContext.BasePrice;
+            var basePrice = productTypeForAnalytics.BasePrice;
             profitHistory = records
                 .OrderBy(r => r.Tick)
                 .Select(r =>
                 {
                     var cost = r.QuantitySold * basePrice;
                     var profit = r.Revenue - cost;
+                    // GrossMarginPct is null when revenue is zero (covers both zero-cost-zero-revenue
+                    // and negative-cost-zero-revenue edge cases; caller should treat null as 'N/A').
                     return new ProfitTickSnapshot
                     {
                         Tick = r.Tick,
@@ -1944,7 +1946,7 @@ public sealed class Query
         // Compute structured demand driver explanations from current unit state so
         // players can understand why sales are strong or weak.
         var demandDrivers = ComputeDemandDrivers(
-            unit, productTypeForContext, inventoryQuality, brandAwareness, populationIndex);
+            unit, productTypeForAnalytics, inventoryQuality, brandAwareness, populationIndex);
 
         return new PublicSalesAnalytics
         {
@@ -2095,8 +2097,14 @@ public sealed class Query
             drivers.Add(new DemandDriverEntry { Factor = "LOCATION", Impact = locImpact, Score = locScore, Description = locDesc });
         }
 
-        // Order: most impactful first — NEGATIVE first, then POSITIVE.
-        return [.. drivers.OrderBy(d => d.Impact == "NEGATIVE" ? 0 : d.Impact == "NEUTRAL" ? 1 : 2)
+        // Order: most impactful first — NEGATIVE first, then NEUTRAL, then POSITIVE.
+        static int ImpactSortPriority(string impact) => impact switch
+        {
+            "NEGATIVE" => 0,
+            "NEUTRAL"  => 1,
+            _          => 2,   // "POSITIVE" and any unknown values
+        };
+        return [.. drivers.OrderBy(d => ImpactSortPriority(d.Impact))
                           .ThenByDescending(d => d.Score)];
     }
 
