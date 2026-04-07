@@ -110,7 +110,6 @@ watch(
       void fetchCompanyRankings()
     }
   },
-  { flush: 'post' },
 )
 
 function retryActiveTab() {

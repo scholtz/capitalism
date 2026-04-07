@@ -8715,7 +8715,8 @@ test.describe('Procurement mode configuration', () => {
     await dialog.getByRole('button', { name: 'Done' }).click()
 
     await expect(page.locator('.purchase-selection-summary')).toContainText('Wooden Chair')
-    await expect(page.locator('.purchase-selection-summary')).toContainText(/Own Supply Co|Own Factory|Your own company/)
+    await expect(page.locator('.purchase-selection-summary')).toContainText('Own Supply Co')
+    await expect(page.locator('.purchase-selection-summary')).toContainText('Own Factory')
 
     await page.getByRole('button', { name: /Store Upgrade/i }).click()
 
