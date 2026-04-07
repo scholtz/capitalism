@@ -18581,4 +18581,458 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
 
     #endregion
 
+    #region UnitUpgrade
+
+    [Fact]
+    public async Task ScheduleUnitUpgrade_Success_CreatesPlanAndDeductsCash()
+    {
+        var email = $"uu-basic-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "UUBasic");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "UUCo", Cash = 50_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory, Name = "UUFactory",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id, UnitType = Api.Data.Entities.UnitType.Manufacturing,
+            GridX = 0, GridY = 0, Level = 1,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var mutation = """
+            mutation SUU($input: ScheduleUnitUpgradeInput!) {
+              scheduleUnitUpgrade(input: $input) {
+                id appliesAtTick totalTicksRequired
+                units { level isChanged ticksRequired unitType }
+              }
+            }
+            """;
+        var result = await ExecuteGraphQlAsync(isolatedClient, mutation,
+            new { input = new { unitId = unit.Id.ToString() } }, token);
+
+        var plan = result.GetProperty("data").GetProperty("scheduleUnitUpgrade");
+        Assert.Equal(10, plan.GetProperty("totalTicksRequired").GetInt32()); // level 1→2 = 10 ticks
+        var units = plan.GetProperty("units").EnumerateArray().ToList();
+        var targetUnit = units.Single(u => u.GetProperty("isChanged").GetBoolean());
+        Assert.Equal(2, targetUnit.GetProperty("level").GetInt32());
+        Assert.Equal("MANUFACTURING", targetUnit.GetProperty("unitType").GetString());
+
+        // Cash was deducted - reload from DB since mutation used a separate context
+        await db.Entry(company).ReloadAsync();
+        var expectedCost = Api.Engine.GameConstants.UnitUpgradeCost(Api.Data.Entities.UnitType.Manufacturing, 1);
+        Assert.Equal(50_000m - expectedCost, company.Cash);
+    }
+
+    [Fact]
+    public async Task ScheduleUnitUpgrade_MaxLevel_ReturnsError()
+    {
+        var email = $"uu-max-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "UUMax");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "UUMaxCo", Cash = 500_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory, Name = "UUMaxFactory",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id, UnitType = Api.Data.Entities.UnitType.Manufacturing,
+            GridX = 0, GridY = 0, Level = Api.Engine.GameConstants.MaxUnitLevel,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var mutation = """
+            mutation SUU($input: ScheduleUnitUpgradeInput!) {
+              scheduleUnitUpgrade(input: $input) { id }
+            }
+            """;
+        var result = await ExecuteGraphQlAsync(isolatedClient, mutation,
+            new { input = new { unitId = unit.Id.ToString() } }, token);
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0);
+        Assert.Contains("MAX_LEVEL_REACHED", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task ScheduleUnitUpgrade_InsufficientFunds_ReturnsError()
+    {
+        var email = $"uu-broke-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "UUBroke");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "UUBrokeCo", Cash = 1m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory, Name = "UUBrokeFactory",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id, UnitType = Api.Data.Entities.UnitType.Manufacturing,
+            GridX = 0, GridY = 0, Level = 1,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var mutation = """
+            mutation SUU($input: ScheduleUnitUpgradeInput!) {
+              scheduleUnitUpgrade(input: $input) { id }
+            }
+            """;
+        var result = await ExecuteGraphQlAsync(isolatedClient, mutation,
+            new { input = new { unitId = unit.Id.ToString() } }, token);
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0);
+        Assert.Contains("INSUFFICIENT_FUNDS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task ScheduleUnitUpgrade_PendingConfigurationExists_ReturnsError()
+    {
+        var email = $"uu-pending-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "UUPending");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var gameState = await db.GameStates.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "UUPendingCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory, Name = "UUPendingFactory",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id, UnitType = Api.Data.Entities.UnitType.Manufacturing,
+            GridX = 0, GridY = 0, Level = 1,
+        };
+        db.BuildingUnits.Add(unit);
+        // Add a blocking pending plan
+        var existingPlan = new Api.Data.Entities.BuildingConfigurationPlan
+        {
+            BuildingId = building.Id,
+            SubmittedAtTick = gameState.CurrentTick,
+            AppliesAtTick = gameState.CurrentTick + 50,
+            TotalTicksRequired = 50,
+        };
+        db.BuildingConfigurationPlans.Add(existingPlan);
+        await db.SaveChangesAsync();
+
+        var mutation = """
+            mutation SUU($input: ScheduleUnitUpgradeInput!) {
+              scheduleUnitUpgrade(input: $input) { id }
+            }
+            """;
+        var result = await ExecuteGraphQlAsync(isolatedClient, mutation,
+            new { input = new { unitId = unit.Id.ToString() } }, token);
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0);
+        Assert.Contains("PENDING_CONFIGURATION_EXISTS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task ScheduleUnitUpgrade_NonUpgradableType_ReturnsError()
+    {
+        var email = $"uu-noup-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "UUNoUp");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "UUNoUpCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.SalesShop, Name = "UUNoUpShop",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id, UnitType = Api.Data.Entities.UnitType.Marketing,
+            GridX = 0, GridY = 0, Level = 1,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var mutation = """
+            mutation SUU($input: ScheduleUnitUpgradeInput!) {
+              scheduleUnitUpgrade(input: $input) { id }
+            }
+            """;
+        var result = await ExecuteGraphQlAsync(isolatedClient, mutation,
+            new { input = new { unitId = unit.Id.ToString() } }, token);
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0);
+        Assert.Contains("UNIT_NOT_UPGRADABLE", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task ScheduleUnitUpgrade_TickEngine_CompletesUpgradeAtCorrectTick()
+    {
+        var email = $"uu-tick-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "UUTick");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "UUTickCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory, Name = "UUTickFactory",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id, UnitType = Api.Data.Entities.UnitType.Mining,
+            GridX = 0, GridY = 0, Level = 1,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        // Schedule the upgrade
+        var mutation = """
+            mutation SUU($input: ScheduleUnitUpgradeInput!) {
+              scheduleUnitUpgrade(input: $input) { appliesAtTick totalTicksRequired }
+            }
+            """;
+        var result = await ExecuteGraphQlAsync(isolatedClient, mutation,
+            new { input = new { unitId = unit.Id.ToString() } }, token);
+
+        var plan = result.GetProperty("data").GetProperty("scheduleUnitUpgrade");
+        Assert.Equal(10, plan.GetProperty("totalTicksRequired").GetInt32()); // level 1→2 = 10 ticks
+
+        // Process 10 ticks using same scope that has the seeded data loaded
+        var phases = scope.ServiceProvider.GetServices<ITickPhase>();
+        var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<Api.Engine.TickProcessor>();
+        var processor = new Api.Engine.TickProcessor(db, phases, logger);
+
+        for (int i = 0; i < 10; i++)
+            await processor.ProcessTickAsync();
+
+        // Unit should now be level 2 – reload since plan application modifies the tracked entity
+        await db.Entry(unit).ReloadAsync();
+        Assert.Equal(2, unit.Level);
+
+        // Plan should be gone
+        var planFromDb = await db.BuildingConfigurationPlans
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.BuildingId == building.Id);
+        Assert.Null(planFromDb);
+    }
+
+    [Fact]
+    public async Task UnitUpgradeInfo_ReturnsCorrectCostAndTicks()
+    {
+        var email = $"uui-info-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "UUIInfo");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "UUIInfoCo", Cash = 50_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory, Name = "UUIInfoFactory",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id, UnitType = Api.Data.Entities.UnitType.Manufacturing,
+            GridX = 0, GridY = 0, Level = 1,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var query = """
+            query UUI($unitId: UUID!) {
+              unitUpgradeInfo(unitId: $unitId) {
+                unitId unitType currentLevel nextLevel isMaxLevel isUpgradable
+                upgradeCost upgradeTicks currentStat nextStat statLabel
+              }
+            }
+            """;
+        var result = await ExecuteGraphQlAsync(isolatedClient, query,
+            new { unitId = unit.Id.ToString() }, token);
+
+        var info = result.GetProperty("data").GetProperty("unitUpgradeInfo");
+        Assert.Equal("MANUFACTURING", info.GetProperty("unitType").GetString());
+        Assert.Equal(1, info.GetProperty("currentLevel").GetInt32());
+        Assert.Equal(2, info.GetProperty("nextLevel").GetInt32());
+        Assert.False(info.GetProperty("isMaxLevel").GetBoolean());
+        Assert.True(info.GetProperty("isUpgradable").GetBoolean());
+        Assert.Equal(
+            Api.Engine.GameConstants.UnitUpgradeCost(Api.Data.Entities.UnitType.Manufacturing, 1),
+            info.GetProperty("upgradeCost").GetDecimal());
+        Assert.Equal(10, info.GetProperty("upgradeTicks").GetInt32());
+        // Stat: ManufacturingBatches(1)=1, ManufacturingBatches(2)=2
+        Assert.Equal(1m, info.GetProperty("currentStat").GetDecimal());
+        Assert.Equal(2m, info.GetProperty("nextStat").GetDecimal());
+    }
+
+    [Fact]
+    public async Task UnitUpgradeInfo_MaxLevel_ReturnsIsMaxLevel()
+    {
+        var email = $"uui-max-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "UUIMax");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "UUIMaxCo", Cash = 50_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory, Name = "UUIMaxFactory",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id, UnitType = Api.Data.Entities.UnitType.Storage,
+            GridX = 0, GridY = 0, Level = Api.Engine.GameConstants.MaxUnitLevel,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var query = """
+            query UUI($unitId: UUID!) {
+              unitUpgradeInfo(unitId: $unitId) {
+                currentLevel isMaxLevel upgradeCost upgradeTicks
+              }
+            }
+            """;
+        var result = await ExecuteGraphQlAsync(isolatedClient, query,
+            new { unitId = unit.Id.ToString() }, token);
+
+        var info = result.GetProperty("data").GetProperty("unitUpgradeInfo");
+        Assert.Equal(Api.Engine.GameConstants.MaxUnitLevel, info.GetProperty("currentLevel").GetInt32());
+        Assert.True(info.GetProperty("isMaxLevel").GetBoolean());
+        Assert.Equal(0m, info.GetProperty("upgradeCost").GetDecimal());
+        Assert.Equal(0, info.GetProperty("upgradeTicks").GetInt32());
+    }
+
+    [Fact]
+    public async Task ScheduleUnitUpgrade_Unauthenticated_ReturnsError()
+    {
+        var email = $"uu-anon-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        await RegisterAndGetTokenAsync(isolatedClient, email, "UUAnon");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "UUAnonCo", Cash = 100_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory, Name = "UUAnonFactory",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id, UnitType = Api.Data.Entities.UnitType.Manufacturing,
+            GridX = 0, GridY = 0, Level = 1,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var mutation = """
+            mutation SUU($input: ScheduleUnitUpgradeInput!) {
+              scheduleUnitUpgrade(input: $input) { id }
+            }
+            """;
+        // No token passed
+        var result = await ExecuteGraphQlAsync(isolatedClient, mutation,
+            new { input = new { unitId = unit.Id.ToString() } }, null);
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    #endregion
+
 }

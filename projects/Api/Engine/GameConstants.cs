@@ -145,6 +145,89 @@ public static class GameConstants
     /// </summary>
     public const decimal ConstrainedEfficiencyFactor = 0.5m;
 
+    // ── Unit upgrade constants ────────────────────────────────────────────────
+
+    /// <summary>Maximum upgrade level for building units.</summary>
+    public const int MaxUnitLevel = 4;
+
+    /// <summary>
+    /// Ticks required to upgrade a unit from <paramref name="currentLevel"/> to the next level.
+    /// Level 1→2 = 10 ticks, 2→3 = 100 ticks, 3→4 = 1000 ticks (roadmap spec).
+    /// </summary>
+    public static int UnitUpgradeTicks(int currentLevel) => currentLevel switch
+    {
+        1 => 10,
+        2 => 100,
+        3 => 1000,
+        _ => 10 * (int)Math.Pow(10, Math.Max(currentLevel - 1, 0))
+    };
+
+    /// <summary>
+    /// Cash cost to upgrade a unit of the given type from <paramref name="currentLevel"/> to the next level.
+    /// Costs scale with unit type strategic importance and level.
+    /// </summary>
+    public static decimal UnitUpgradeCost(string unitType, int currentLevel)
+    {
+        decimal baseCost = unitType switch
+        {
+            Data.Entities.UnitType.Mining         => 5_000m,
+            Data.Entities.UnitType.Storage        => 2_000m,
+            Data.Entities.UnitType.Manufacturing  => 8_000m,
+            Data.Entities.UnitType.Purchase       => 3_000m,
+            Data.Entities.UnitType.PublicSales    => 6_000m,
+            Data.Entities.UnitType.B2BSales       => 4_000m,
+            Data.Entities.UnitType.ProductQuality => 10_000m,
+            Data.Entities.UnitType.BrandQuality   => 10_000m,
+            Data.Entities.UnitType.Marketing      => 5_000m,
+            Data.Entities.UnitType.Branding       => 5_000m,
+            _                                     => 4_000m
+        };
+        // Each subsequent level costs 5× more: L1→L2 = base, L2→L3 = 5×base, L3→L4 = 25×base
+        return baseCost * (decimal)Math.Pow(5, Math.Max(currentLevel - 1, 0));
+    }
+
+    /// <summary>Returns true when the given unit type supports level upgrades.</summary>
+    public static bool IsUpgradableUnitType(string unitType) => unitType switch
+    {
+        Data.Entities.UnitType.Mining         => true,
+        Data.Entities.UnitType.Storage        => true,
+        Data.Entities.UnitType.Manufacturing  => true,
+        Data.Entities.UnitType.Purchase       => true,
+        Data.Entities.UnitType.PublicSales    => true,
+        Data.Entities.UnitType.B2BSales       => true,
+        Data.Entities.UnitType.ProductQuality => true,
+        Data.Entities.UnitType.BrandQuality   => true,
+        _                                     => false
+    };
+
+    /// <summary>Returns the primary stat value for a unit type at the given level (for UI display).</summary>
+    public static decimal GetUnitStat(string unitType, int level) => unitType switch
+    {
+        Data.Entities.UnitType.Mining         => MiningRate(level),
+        Data.Entities.UnitType.Storage        => StorageCapacity(level),
+        Data.Entities.UnitType.Manufacturing  => ManufacturingBatches(level),
+        Data.Entities.UnitType.Purchase       => PurchaseCapacity(level),
+        Data.Entities.UnitType.PublicSales    => SalesCapacity(level),
+        Data.Entities.UnitType.B2BSales       => SalesCapacity(level),
+        Data.Entities.UnitType.ProductQuality => ResearchQualityRate(level) * 1000m,
+        Data.Entities.UnitType.BrandQuality   => ResearchEfficiencyRate(level) * 1000m,
+        _                                     => (decimal)level
+    };
+
+    /// <summary>Returns a human-readable label for the primary stat of the given unit type.</summary>
+    public static string GetUnitStatLabel(string unitType) => unitType switch
+    {
+        Data.Entities.UnitType.Mining         => "units/tick",
+        Data.Entities.UnitType.Storage        => "capacity",
+        Data.Entities.UnitType.Manufacturing  => "batches/tick",
+        Data.Entities.UnitType.Purchase       => "units/tick",
+        Data.Entities.UnitType.PublicSales    => "units/tick",
+        Data.Entities.UnitType.B2BSales       => "units/tick",
+        Data.Entities.UnitType.ProductQuality => "quality‰/tick",
+        Data.Entities.UnitType.BrandQuality   => "efficiency‰/tick",
+        _                                     => "level"
+    };
+
     // ── Construction constants ────────────────────────────────────────────────
 
     /// <summary>

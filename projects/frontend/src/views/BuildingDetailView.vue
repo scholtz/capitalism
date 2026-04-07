@@ -25,6 +25,7 @@ import { useTickRefresh } from '@/composables/useTickRefresh'
 import { gqlRequest } from '@/lib/graphql'
 import { deepEqual } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
+import { useGameStateStore } from '@/stores/gameState'
 import { getUnitResourceHistoryItemKey, type UnitResourceHistoryItemOption } from '@/lib/unitResourceHistory'
 import type {
   Building,
@@ -125,6 +126,7 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const gameStateStore = useGameStateStore()
 
 const buildingId = computed(() => route.params.id as string)
 const building = ref<Building | null>(null)
@@ -270,6 +272,11 @@ const showFlushConfirmDialog = ref(false)
 const flushingStorage = ref(false)
 const flushStorageError = ref<string | null>(null)
 const flushStorageSuccess = ref(false)
+
+// Unit upgrade
+const schedulingUpgrade = ref(false)
+const unitUpgradeError = ref<string | null>(null)
+const unitUpgradeInfoCache = ref<import('@/types').UnitUpgradeInfo | null>(null)
 
 let activeBuildingLoadRequest = 0
 let activeExchangeOffersRequest = 0
@@ -2048,6 +2055,38 @@ const selectedActiveUnitOperationalStatus = computed<BuildingUnitOperationalStat
   return getUnitOperationalStatus(unit)
 })
 
+/** The pending upgrade plan unit for the currently selected cell, if any. */
+const selectedCellPendingUpgrade = computed<{
+  level: number
+  ticksRemaining: number
+} | null>(() => {
+  if (!selectedCell.value || !building.value?.pendingConfiguration) return null
+  const plan = building.value.pendingConfiguration
+  const tick = gameStateStore.gameState?.currentTick ?? currentTick.value
+  const planUnit = plan.units.find(
+    (u) =>
+      u.gridX === selectedCell.value!.x &&
+      u.gridY === selectedCell.value!.y &&
+      u.isChanged,
+  )
+  if (!planUnit) return null
+  const activeUnit = getUnitAtFrom(activeUnits.value, selectedCell.value.x, selectedCell.value.y)
+  if (!activeUnit || planUnit.level <= activeUnit.level) return null
+  return {
+    level: planUnit.level,
+    ticksRemaining: Math.max(0, planUnit.appliesAtTick - tick),
+  }
+})
+
+/** Upgrade info for the currently selected cell unit (cached from last fetch). */
+const selectedCellUpgradeInfo = computed<import('@/types').UnitUpgradeInfo | null>(() => {
+  if (!selectedCell.value) return null
+  const unit = getUnitAtFrom(activeUnits.value, selectedCell.value.x, selectedCell.value.y)
+  if (!unit || !unit.id) return null
+  if (unitUpgradeInfoCache.value?.unitId === unit.id) return unitUpgradeInfoCache.value
+  return null
+})
+
 function formatCurrency(value: number | null | undefined): string {
   const amount = value ?? 0
   const formatter = new Intl.NumberFormat(locale.value, {
@@ -2701,6 +2740,57 @@ async function submitFlushStorage(unitId: string) {
   }
 }
 
+/** Fetches and caches upgrade info for the given unit ID. */
+async function fetchUpgradeInfo(unitId: string) {
+  if (!auth.token) return
+  try {
+    const result = await gqlRequest<{ unitUpgradeInfo: import('@/types').UnitUpgradeInfo | null }>(
+      `query UUI($unitId: UUID!) {
+        unitUpgradeInfo(unitId: $unitId) {
+          unitId unitType currentLevel nextLevel isMaxLevel isUpgradable
+          upgradeCost upgradeTicks currentStat nextStat statLabel
+        }
+      }`,
+      { unitId },
+    )
+    unitUpgradeInfoCache.value = result.unitUpgradeInfo
+  } catch {
+    // silently ignore — upgrade panel will remain hidden
+  }
+}
+
+/** Schedules a unit level upgrade via the backend mutation. */
+async function submitUnitUpgrade(unitId: string) {
+  if (!auth.token || schedulingUpgrade.value) return
+  schedulingUpgrade.value = true
+  unitUpgradeError.value = null
+  try {
+    await gqlRequest<{ scheduleUnitUpgrade: { id: string } }>(
+      `mutation SUU($input: ScheduleUnitUpgradeInput!) {
+        scheduleUnitUpgrade(input: $input) { id appliesAtTick totalTicksRequired }
+      }`,
+      { input: { unitId } },
+    )
+    // Reload building to show the pending upgrade progress
+    await loadBuilding({ preserveDraft: isEditing.value })
+    // Refresh upgrade info cache so the panel transitions to pending state
+    await fetchUpgradeInfo(unitId)
+  } catch (err: unknown) {
+    const raw = err instanceof Error ? err.message : String(err)
+    if (raw.includes('INSUFFICIENT_FUNDS')) {
+      unitUpgradeError.value = t('buildingDetail.unitUpgrade.errorInsufficientFunds')
+    } else if (raw.includes('MAX_LEVEL_REACHED')) {
+      unitUpgradeError.value = t('buildingDetail.unitUpgrade.errorMaxLevel')
+    } else if (raw.includes('PENDING_CONFIGURATION_EXISTS')) {
+      unitUpgradeError.value = t('buildingDetail.unitUpgrade.errorPendingPlan')
+    } else {
+      unitUpgradeError.value = t('buildingDetail.unitUpgrade.errorGeneric')
+    }
+  } finally {
+    schedulingUpgrade.value = false
+  }
+}
+
 /**
  * Returns a competitive price suggestion for a B2B_SALES unit based on
  * the product that a linked MANUFACTURING unit will produce.
@@ -3201,6 +3291,22 @@ watch(
     quickPriceInput.value = selectedPublicSalesUnit.value?.minPrice ?? null
   },
   { immediate: true },
+)
+
+// Fetch upgrade info when a live (non-editing) unit is selected
+watch(
+  () => {
+    if (isEditing.value || !selectedCell.value) return null
+    const unit = getUnitAtFrom(activeUnits.value, selectedCell.value.x, selectedCell.value.y)
+    return unit?.id ?? null
+  },
+  (unitId) => {
+    unitUpgradeInfoCache.value = null
+    unitUpgradeError.value = null
+    if (unitId) {
+      void fetchUpgradeInfo(unitId)
+    }
+  },
 )
 </script>
 
@@ -4686,6 +4792,74 @@ watch(
                   <span v-if="selectedActiveUnitOperationalStatus.nextTickEnergyCost != null" class="operating-cost-item">
                     {{ t('buildingDetail.operatingCost.energy', { cost: formatCurrency(selectedActiveUnitOperationalStatus.nextTickEnergyCost) }) }}
                   </span>
+                </div>
+              </div>
+
+              <!-- Unit Upgrade Panel -->
+              <div
+                v-if="selectedCellUpgradeInfo !== null"
+                class="unit-insight-card unit-upgrade-panel"
+                aria-label="Unit Upgrade"
+              >
+                <h5>{{ t('buildingDetail.unitUpgrade.sectionTitle') }}</h5>
+
+                <!-- Upgrade in progress (from pending configuration) -->
+                <div v-if="selectedCellPendingUpgrade" class="unit-upgrade-in-progress">
+                  <div class="unit-upgrade-progress-badge">⏳</div>
+                  <div class="unit-upgrade-progress-body">
+                    <strong>{{ t('buildingDetail.unitUpgrade.pendingTitle') }}</strong>
+                    <p class="unit-upgrade-progress-desc">
+                      {{ t('buildingDetail.unitUpgrade.pendingBody', {
+                        level: selectedCellPendingUpgrade.level,
+                        ticks: selectedCellPendingUpgrade.ticksRemaining,
+                      }) }}
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Max level state -->
+                <div v-else-if="selectedCellUpgradeInfo.isMaxLevel" class="unit-upgrade-max-level">
+                  <span class="unit-upgrade-max-badge">★</span>
+                  <span>{{ t('buildingDetail.unitUpgrade.maxLevel') }}</span>
+                  <p class="unit-upgrade-max-note">{{ t('buildingDetail.unitUpgrade.maxLevelNote') }}</p>
+                </div>
+
+                <!-- Not upgradable -->
+                <div v-else-if="!selectedCellUpgradeInfo.isUpgradable" class="unit-upgrade-not-available">
+                  <p>{{ t('buildingDetail.unitUpgrade.notUpgradable') }}</p>
+                </div>
+
+                <!-- Upgrade available -->
+                <div v-else class="unit-upgrade-available">
+                  <div class="unit-upgrade-levels">
+                    <span class="unit-upgrade-level current-level">{{ t('buildingDetail.unitUpgrade.currentLevel', { level: selectedCellUpgradeInfo.currentLevel }) }}</span>
+                    <span class="unit-upgrade-arrow">→</span>
+                    <span class="unit-upgrade-level next-level">{{ t('buildingDetail.unitUpgrade.nextLevel', { level: selectedCellUpgradeInfo.nextLevel }) }}</span>
+                  </div>
+                  <div class="unit-upgrade-stats">
+                    <div class="unit-upgrade-stat-row">
+                      <span class="unit-upgrade-stat-label">{{ selectedCellUpgradeInfo.statLabel }}</span>
+                      <span class="unit-upgrade-stat-values">
+                        <span class="stat-current">{{ selectedCellUpgradeInfo.currentStat.toFixed(1) }}</span>
+                        <span class="stat-arrow"> → </span>
+                        <span class="stat-next">{{ selectedCellUpgradeInfo.nextStat.toFixed(1) }}</span>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="unit-upgrade-meta">
+                    <span class="unit-upgrade-cost">{{ t('buildingDetail.unitUpgrade.cost', { cost: formatCurrency(selectedCellUpgradeInfo.upgradeCost) }) }}</span>
+                    <span class="unit-upgrade-duration">{{ t('buildingDetail.unitUpgrade.duration', { ticks: selectedCellUpgradeInfo.upgradeTicks }) }}</span>
+                  </div>
+                  <p v-if="unitUpgradeError" class="form-error">{{ unitUpgradeError }}</p>
+                  <button
+                    class="btn btn-primary btn-sm unit-upgrade-confirm-btn"
+                    :disabled="schedulingUpgrade"
+                    @click="submitUnitUpgrade(getUnitAtFrom(activeUnits, selectedCell!.x, selectedCell!.y)!.id)"
+                  >
+                    {{ schedulingUpgrade
+                      ? t('buildingDetail.unitUpgrade.confirmingButton')
+                      : t('buildingDetail.unitUpgrade.confirmButton') }}
+                  </button>
                 </div>
               </div>
 
@@ -8364,6 +8538,127 @@ watch(
   margin-top: 0.75rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--color-border);
+}
+
+/* ── Unit upgrade panel ─────────────────────────────────────────────── */
+.unit-upgrade-panel h5 {
+  margin-bottom: 0.5rem;
+}
+
+.unit-upgrade-in-progress {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.unit-upgrade-progress-badge {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.unit-upgrade-progress-body strong {
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+}
+
+.unit-upgrade-progress-desc {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  margin: 0.2rem 0 0;
+}
+
+.unit-upgrade-max-level {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.unit-upgrade-max-badge {
+  color: #d97706;
+  font-size: 1.1rem;
+}
+
+.unit-upgrade-max-note {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  margin: 0.3rem 0 0;
+}
+
+.unit-upgrade-not-available p {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.unit-upgrade-levels {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.unit-upgrade-level {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+}
+
+.current-level {
+  background: var(--color-surface-secondary, #f3f4f6);
+  color: var(--color-text-primary);
+}
+
+.next-level {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.unit-upgrade-arrow {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.unit-upgrade-stats {
+  margin-bottom: 0.5rem;
+}
+
+.unit-upgrade-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  padding: 0.2rem 0;
+}
+
+.unit-upgrade-stat-label {
+  color: var(--color-text-secondary);
+}
+
+.stat-current {
+  color: var(--color-text-secondary);
+}
+
+.stat-next {
+  color: #065f46;
+  font-weight: 600;
+}
+
+.unit-upgrade-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.6rem;
+}
+
+.unit-upgrade-cost {
+  font-weight: 500;
+}
+
+.unit-upgrade-confirm-btn {
+  width: 100%;
 }
 
 .flush-confirm-dialog {

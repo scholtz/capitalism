@@ -2595,6 +2595,51 @@ public sealed class Query
 
         return await SourcingComparisonService.GetCandidatesAsync(db, unit, unit.Building.Company);
     }
+
+    /// <summary>
+    /// Returns upgrade information for a building unit: cost, duration, and stat projections.
+    /// Returns null if the unit is not found or the caller does not own it.
+    /// </summary>
+    [Authorize]
+    public async Task<UnitUpgradeInfo?> GetUnitUpgradeInfo(
+        Guid unitId,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building)
+            .ThenInclude(b => b.Company)
+            .FirstOrDefaultAsync(u => u.Id == unitId);
+
+        if (unit is null || unit.Building.Company.PlayerId != userId)
+            return null;
+
+        var isUpgradable = Engine.GameConstants.IsUpgradableUnitType(unit.UnitType);
+        var isMaxLevel = unit.Level >= Engine.GameConstants.MaxUnitLevel;
+
+        return new UnitUpgradeInfo
+        {
+            UnitId = unit.Id,
+            UnitType = unit.UnitType,
+            CurrentLevel = unit.Level,
+            NextLevel = isMaxLevel ? unit.Level : unit.Level + 1,
+            IsMaxLevel = isMaxLevel,
+            IsUpgradable = isUpgradable,
+            UpgradeCost = isUpgradable && !isMaxLevel
+                ? Engine.GameConstants.UnitUpgradeCost(unit.UnitType, unit.Level)
+                : 0m,
+            UpgradeTicks = isUpgradable && !isMaxLevel
+                ? Engine.GameConstants.UnitUpgradeTicks(unit.Level)
+                : 0,
+            CurrentStat = Engine.GameConstants.GetUnitStat(unit.UnitType, unit.Level),
+            NextStat = isMaxLevel
+                ? Engine.GameConstants.GetUnitStat(unit.UnitType, unit.Level)
+                : Engine.GameConstants.GetUnitStat(unit.UnitType, unit.Level + 1),
+            StatLabel = Engine.GameConstants.GetUnitStatLabel(unit.UnitType),
+        };
+    }
 }
 
 /// <summary>Payload for player ranking.</summary>
@@ -2995,4 +3040,20 @@ public sealed class LoanSummary
     public decimal AccumulatedPenalty { get; set; }
     public DateTime AcceptedAtUtc { get; set; }
     public DateTime? ClosedAtUtc { get; set; }
+}
+
+/// <summary>Upgrade info for a single building unit: cost, timing, and stat projections.</summary>
+public sealed class UnitUpgradeInfo
+{
+    public Guid UnitId { get; set; }
+    public string UnitType { get; set; } = string.Empty;
+    public int CurrentLevel { get; set; }
+    public int NextLevel { get; set; }
+    public bool IsMaxLevel { get; set; }
+    public bool IsUpgradable { get; set; }
+    public decimal UpgradeCost { get; set; }
+    public int UpgradeTicks { get; set; }
+    public decimal CurrentStat { get; set; }
+    public decimal NextStat { get; set; }
+    public string StatLabel { get; set; } = string.Empty;
 }

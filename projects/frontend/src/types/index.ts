@@ -991,3 +991,18 @@ export interface SourcingCandidate {
   isRecommended: boolean
   rank: number
 }
+
+/** Upgrade info for a single building unit: cost, timing, and stat projections. */
+export interface UnitUpgradeInfo {
+  unitId: string
+  unitType: string
+  currentLevel: number
+  nextLevel: number
+  isMaxLevel: boolean
+  isUpgradable: boolean
+  upgradeCost: number
+  upgradeTicks: number
+  currentStat: number
+  nextStat: number
+  statLabel: string
+}

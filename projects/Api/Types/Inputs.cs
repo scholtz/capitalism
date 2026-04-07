@@ -397,3 +397,10 @@ public sealed class FlushStorageInput
     /// <summary>The building unit whose inventory should be discarded.</summary>
     public Guid BuildingUnitId { get; set; }
 }
+
+/// <summary>Input for scheduling a level upgrade on a building unit.</summary>
+public sealed class ScheduleUnitUpgradeInput
+{
+    /// <summary>The building unit to upgrade.</summary>
+    public Guid UnitId { get; set; }
+}
