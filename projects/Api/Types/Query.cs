@@ -682,7 +682,8 @@ public sealed class Query
         [Service] AppDbContext db)
     {
         var ordersQuery = db.ExchangeOrders
-            .Where(o => o.Side == "SELL" && o.IsActive && o.RemainingQuantity > 0m && o.ProductTypeId.HasValue)
+            .Where(o => o.Side == "SELL" && o.IsActive && o.RemainingQuantity > 0m
+                        && o.ProductTypeId.HasValue && !o.ResourceTypeId.HasValue)
             .Include(o => o.Company)
             .Include(o => o.ExchangeBuilding)
             .AsQueryable();

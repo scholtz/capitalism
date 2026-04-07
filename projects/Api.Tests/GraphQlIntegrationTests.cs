@@ -10065,6 +10065,63 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task GlobalExchangeProductListings_OrderWithBothProductTypeIdAndResourceTypeId_IsExcluded()
+    {
+        // An exchange order that has BOTH ProductTypeId and ResourceTypeId set is an ambiguous/corrupt record.
+        // It must NOT appear in the product marketplace so raw-material orders cannot leak into the Products tab.
+        var email = $"mixed-order-{Guid.NewGuid():N}@test.com";
+        await RegisterAndGetTokenAsync(email, "MixedOrderTester");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var resource = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+        var product = await db.ProductTypes.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), PlayerId = player.Id, Name = "MixedOrderCo", Cash = 500_000m };
+        db.Companies.Add(company);
+
+        var exchangeBuilding = new Api.Data.Entities.Building
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Exchange, Name = "MixedExchange", Level = 1,
+        };
+        db.Buildings.Add(exchangeBuilding);
+
+        // Mixed order: both ProductTypeId AND ResourceTypeId are set — must be excluded from product listings
+        db.ExchangeOrders.Add(new Api.Data.Entities.ExchangeOrder
+        {
+            Id = Guid.NewGuid(), ExchangeBuildingId = exchangeBuilding.Id, CompanyId = company.Id,
+            Side = "SELL", ResourceTypeId = resource.Id, ProductTypeId = product.Id,
+            PricePerUnit = 20.00m, Quantity = 100m, RemainingQuantity = 100m, IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query {
+              globalExchangeProductListings {
+                productSlug
+                sellerCompanyName
+              }
+            }
+            """,
+            variables: null,
+            token: null);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var listings = result.GetProperty("data").GetProperty("globalExchangeProductListings")
+            .EnumerateArray()
+            .Where(l => l.GetProperty("sellerCompanyName").GetString() == "MixedOrderCo")
+            .ToList();
+
+        Assert.Equal(0, listings.Count);
+    }
+
+
+    [Fact]
     public async Task StoreBuildingConfiguration_PurchaseUnit_PersistsExchangeSourceAndConstraints()
     {
         var email = $"exchange-cfg-{Guid.NewGuid():N}@test.com";
