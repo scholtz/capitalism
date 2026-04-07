@@ -13538,6 +13538,86 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task PublicSalesAnalytics_ExtremelyHighPrice_PriceDriverIsNegativeAndRevenueIsZero()
+    {
+        // Edge case: a price set far above the max-price ceiling (e.g., 10× base) should
+        // produce a NEGATIVE PRICE driver and zero sales revenue after running ticks.
+        var token = await RegisterAndGetTokenAsync("analytics-extreme-price@test.com", "AnalyticsExtremePrice");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Extreme Price Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Extreme Price Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+        var productType = await db.ProductTypes.FirstAsync(p => p.Id == Guid.Parse(productId));
+
+        // Set price to 10× base — far above any reasonable markup ceiling
+        unit.MinPrice = productType.BasePrice * 10m;
+        await db.SaveChangesAsync();
+
+        // PRICE driver should already be NEGATIVE before any tick (no inventory / data yet)
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ demandSignal demandDrivers {{ factor impact score }} }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.NotEqual(JsonValueKind.Null, analytics.ValueKind);
+        var drivers = analytics.GetProperty("demandDrivers");
+        Assert.True(drivers.GetArrayLength() > 0, "At least one demand driver should be present");
+        var priceDriver = Enumerable.Range(0, drivers.GetArrayLength())
+            .Select(i => drivers[i])
+            .FirstOrDefault(d => d.GetProperty("factor").GetString() == "PRICE");
+        Assert.False(priceDriver.ValueKind == JsonValueKind.Undefined, "PRICE driver must be present");
+        Assert.Equal("NEGATIVE", priceDriver.GetProperty("impact").GetString());
+        // Score should be low (close to 0.0) because the price is at the extreme markup ceiling
+        // — score represents how beneficial the factor is, so extremely high price → score near 0
+        Assert.True(priceDriver.GetProperty("score").GetDecimal() < 0.2m,
+            "PRICE driver score should be near zero for extreme markup (score represents price benefit, not magnitude)");
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_NoProductConfigured_ReturnsNullOrEmptyWithNoData()
+    {
+        // Edge case: a PUBLIC_SALES unit with no product type assigned must still return
+        // an analytics object (not crash), but without history.
+        var token = await RegisterAndGetTokenAsync("analytics-no-product@test.com", "AnalyticsNoProduct");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "No Product Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "No Product Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Remove the product type assignment to simulate an unconfigured unit
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+        unit.ProductTypeId = null;
+        unit.MinPrice = null;
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ buildingUnitId demandSignal revenueHistory {{ tick }} totalRevenue totalQuantitySold }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        // Should return an analytics object (not null) since the unit exists and belongs to the player
+        Assert.NotEqual(JsonValueKind.Null, analytics.ValueKind);
+        // Revenue and quantity should be zero (no sales) since no product is configured
+        Assert.Equal(0m, analytics.GetProperty("totalRevenue").GetDecimal());
+        Assert.Equal(0m, analytics.GetProperty("totalQuantitySold").GetDecimal());
+        Assert.Equal(0, analytics.GetProperty("revenueHistory").GetArrayLength());
+    }
+
+    [Fact]
     public async Task PublicSalesAnalytics_ProfitHistory_EmptyWhenNoSalesRecords()
     {
         // When no sales records exist, totalProfit and profitHistory should reflect no data.

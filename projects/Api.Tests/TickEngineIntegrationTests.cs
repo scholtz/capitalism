@@ -991,6 +991,184 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
     }
 
     [Fact]
+    public async Task PublicSalesPhase_ZeroInventory_GeneratesNoSalesRecord()
+    {
+        // Edge case: a PUBLIC_SALES unit with zero inventory must not generate any sales record.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(candidate => candidate.Slug == "wooden-chair");
+
+        var city = CreatePublicSalesTestCity("ZeroStock", 50_000);
+        db.Cities.Add(city);
+
+        var (companyId, buildingId, unitId) = AddPublicSalesSeller(
+            db,
+            city,
+            product,
+            "ZeroStock",
+            stockQuantity: 0m);   // ← zero inventory
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        // No sales record should be created — the phase must skip zero-inventory units.
+        var salesRecord = await db.PublicSalesRecords
+            .FirstOrDefaultAsync(r => r.BuildingUnitId == unitId);
+        Assert.Null(salesRecord);
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_HigherQuality_OutsellsLowerQualityAtSamePrice()
+    {
+        // A seller with higher product quality should outsell a competitor with identical
+        // price, location, and brand strength but lower quality because the quality demand
+        // factor directly influences competitiveness and the public-sell index.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(candidate => candidate.Slug == "wooden-chair");
+
+        var city = CreatePublicSalesTestCity("QualityBattle", 50_000);
+        db.Cities.Add(city);
+
+        var (_, _, highQualityUnitId) = AddPublicSalesSeller(
+            db,
+            city,
+            product,
+            "HighQuality",
+            stockQuantity: 60m,
+            quality: 0.95m,     // premium quality
+            priceMultiplier: 1m,
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        var (_, _, lowQualityUnitId) = AddPublicSalesSeller(
+            db,
+            city,
+            product,
+            "LowQuality",
+            stockQuantity: 60m,
+            quality: 0.15m,     // minimum quality threshold
+            priceMultiplier: 1m,
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var highQualitySold = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == highQualityUnitId)
+            .SumAsync(r => r.QuantitySold);
+        var lowQualitySold = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == lowQualityUnitId)
+            .SumAsync(r => r.QuantitySold);
+
+        Assert.True(
+            highQualitySold > lowQualitySold,
+            $"High-quality seller (quality=0.95) should outsell low-quality seller (quality=0.15) at equal price and location. High={highQualitySold}, Low={lowQualitySold}.");
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_Saturation_DoubledStockDoesNotDoubleRevenue()
+    {
+        // Validates the ROADMAP requirement that oversupply does not automatically
+        // translate into higher revenue. When one seller has twice the stock of another
+        // in the same city (same product, same price, same quality), the saturation factor
+        // should reduce per-unit demand so revenue does not scale linearly with stock.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(candidate => candidate.Slug == "wooden-chair");
+
+        var normalCity = CreatePublicSalesTestCity("NormalStock", 10_000);
+        var doubledCity = CreatePublicSalesTestCity("DoubledStock", 10_000);
+        db.Cities.AddRange(normalCity, doubledCity);
+
+        var (_, _, normalUnitId) = AddPublicSalesSeller(
+            db, normalCity, product, "Normal",
+            stockQuantity: 50m, quality: 0.9m, priceMultiplier: 1m);
+
+        var (_, _, doubledUnitId) = AddPublicSalesSeller(
+            db, doubledCity, product, "Doubled",
+            stockQuantity: 100m, quality: 0.9m, priceMultiplier: 1m);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var normalRecord = await db.PublicSalesRecords
+            .FirstAsync(r => r.BuildingUnitId == normalUnitId);
+        var doubledRecord = await db.PublicSalesRecords
+            .FirstAsync(r => r.BuildingUnitId == doubledUnitId);
+
+        // Revenue with doubled stock should be less than 2× the normal revenue, because
+        // the saturation factor penalises oversupply and demand is capped by population.
+        Assert.True(
+            doubledRecord.Revenue < 2m * normalRecord.Revenue,
+            $"Doubling stock should not double revenue under market saturation. Normal revenue={normalRecord.Revenue:F2}, doubled revenue={doubledRecord.Revenue:F2}.");
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_QualityAndBrand_BothFactorsContributeToMarketShare()
+    {
+        // Verifies that when one seller has both higher quality AND higher brand awareness
+        // than a plain competitor, the advantage compounds: the premium seller captures a
+        // disproportionately larger share of city demand (not just marginally more).
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(candidate => candidate.Slug == "wooden-chair");
+
+        var city = CreatePublicSalesTestCity("PremiumCity", 80_000);
+        db.Cities.Add(city);
+
+        var (_, _, premiumUnitId) = AddPublicSalesSeller(
+            db, city, product, "Premium",
+            stockQuantity: 80m,
+            quality: 0.95m,
+            priceMultiplier: 1m,
+            populationIndex: 1m,
+            brandAwareness: 0.9m);   // high brand
+
+        var (_, _, plainUnitId) = AddPublicSalesSeller(
+            db, city, product, "Plain",
+            stockQuantity: 80m,
+            quality: 0.15m,
+            priceMultiplier: 1m,
+            populationIndex: 1m,
+            brandAwareness: 0m);     // no brand
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var premiumSold = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == premiumUnitId)
+            .SumAsync(r => r.QuantitySold);
+        var plainSold = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == plainUnitId)
+            .SumAsync(r => r.QuantitySold);
+
+        Assert.True(
+            premiumSold > plainSold,
+            $"Premium seller (quality=0.95, brand=0.9) should outsell plain seller (quality=0.15, brand=0). Premium={premiumSold}, Plain={plainSold}.");
+
+        // The premium seller should win at least 60% of the combined sales volume
+        // given the large quality+brand advantage.
+        var totalSold = premiumSold + plainSold;
+        if (totalSold > 0)
+        {
+            var premiumShare = premiumSold / totalSold;
+            Assert.True(
+                premiumShare >= 0.6m,
+                $"Premium seller with quality=0.95 and brand=0.9 should capture ≥60% of combined sales. Share={premiumShare:P1}.");
+        }
+    }
+
+    [Fact]
     public async Task PurchasingPhase_PurchaseUnit_OnlyBuysB2BInventoryThatExistedAtTickStart()
     {
         Guid factoryId;

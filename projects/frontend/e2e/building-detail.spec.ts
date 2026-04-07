@@ -7900,6 +7900,121 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(panel).toBeVisible()
     await expect(panel.getByText('Revenue per Tick')).toBeVisible()
   })
+
+  test('shows load-failed message when analytics API returns null', async ({ page }) => {
+    // Edge case: publicSalesAnalytics query returns null (e.g., server error or unit
+    // not found). The panel must show "Could not load market data." rather than a blank area.
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    // Explicitly set null analytics so the mock returns null for this unit
+    // (don't add to state.publicSalesAnalytics — missing key returns null from mock)
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // When analytics is null the panel should show the fallback load-failed message
+    await expect(panel.locator('.config-help', { hasText: 'Could not load market data' })).toBeVisible()
+
+    // Charts and metrics should NOT be shown
+    await expect(panel.locator('.mi-summary-grid')).toBeHidden()
+    await expect(panel.locator('.mi-bar-chart')).toBeHidden()
+  })
+
+  test('extreme price shown in demand drivers as NEGATIVE PRICE driver', async ({ page }) => {
+    // Validates that when a unit is configured with a very high price (well above market),
+    // the demand drivers panel highlights this as a NEGATIVE price factor so the player
+    // understands why sales are poor.
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Overpriced Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 0,
+      totalQuantitySold: 0,
+      averagePricePerUnit: 0,
+      currentSalesCapacity: 120,
+      dataFromTick: 0,
+      dataToTick: 0,
+      demandSignal: 'WEAK',
+      actionHint: 'Your price is far above the market baseline. Try lowering it to attract buyers.',
+      recentUtilization: 0,
+      revenueHistory: [],
+      priceHistory: [],
+      marketShare: [],
+      elasticityIndex: -1.5,
+      unmetDemandShare: 0.95,
+      populationIndex: 1.0,
+      inventoryQuality: 0.85,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [
+        {
+          factor: 'PRICE',
+          impact: 'NEGATIVE',
+          score: 0.05,
+          description: 'Price is significantly above the market baseline — reducing demand noticeably.',
+        },
+        {
+          factor: 'QUALITY',
+          impact: 'POSITIVE',
+          score: 0.85,
+          description: 'High product quality (85%) increases buyer willingness to purchase.',
+        },
+      ],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Demand drivers section must be visible
+    const driversSection = panel.locator('[aria-label="Demand Drivers"]')
+    await expect(driversSection).toBeVisible()
+
+    // NEGATIVE PRICE driver must be shown, indicating to the player that price is the problem
+    const negativeDriver = driversSection.locator('.mi-driver-negative', { hasText: 'Price' })
+    await expect(negativeDriver.first()).toBeVisible()
+
+    // Action hint should direct the player to lower price
+    await expect(panel.locator('.mi-action-hint', { hasText: 'lower' })).toBeVisible()
+  })
 })
 
 test.describe('Mine building edit mode', () => {
