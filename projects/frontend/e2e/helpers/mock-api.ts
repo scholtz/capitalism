@@ -483,6 +483,10 @@ export type MockState = {
   procurementPreviews: Record<string, object | null>
   /** Mock sourcing candidates response keyed by unit ID. If null/missing, returns default candidates. */
   sourcingCandidates: Record<string, object[] | null>
+  /** Mock unit upgrade info response keyed by unit ID. If null/missing, returns a default upgradable Manufacturing/level-1 response. */
+  unitUpgradeInfoOverrides: Record<string, object | null>
+  /** If set to a unit ID, scheduleUnitUpgrade will return INSUFFICIENT_FUNDS for that unit. */
+  upgradeInsufficientFundsUnitId: string | null
 }
 
 const mockStateByPage = new WeakMap<Page, MockState>()
@@ -1259,6 +1263,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     myLoans: [],
     procurementPreviews: {},
     sourcingCandidates: {},
+    unitUpgradeInfoOverrides: {},
+    upgradeInsufficientFundsUnitId: null,
     ...initial,
   }
 
@@ -4165,6 +4171,70 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
               discardedItemCount: 1,
               totalDiscardedValue: 100,
               discardedEntries: [{ itemName: 'Wood', quantity: 10, sourcingCostLost: 100 }],
+            },
+          },
+        }),
+      })
+    }
+
+    // unitUpgradeInfo query
+    if (query.includes('unitUpgradeInfo') && !query.includes('scheduleUnitUpgrade')) {
+      const unitId: string = body.variables?.unitId ?? ''
+      const override = state.unitUpgradeInfoOverrides[unitId]
+      if (override === null) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: { unitUpgradeInfo: null } }),
+        })
+      }
+      const defaultInfo = {
+        unitId,
+        unitType: 'MANUFACTURING',
+        currentLevel: 1,
+        nextLevel: 2,
+        isMaxLevel: false,
+        isUpgradable: true,
+        upgradeCost: 8000,
+        upgradeTicks: 10,
+        currentStat: 1.0,
+        nextStat: 2.0,
+        statLabel: 'Batches/tick',
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { unitUpgradeInfo: override ?? defaultInfo } }),
+      })
+    }
+
+    // scheduleUnitUpgrade mutation
+    if (query.includes('scheduleUnitUpgrade') || query.includes('ScheduleUnitUpgrade') || query.includes('SUU')) {
+      if (!state.currentUserId) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Not authenticated', extensions: { code: 'AUTH_NOT_AUTHORIZED' } }] }),
+        })
+      }
+      const unitId: string = body.variables?.input?.unitId ?? ''
+      if (state.upgradeInsufficientFundsUnitId === unitId) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Insufficient funds.', extensions: { code: 'INSUFFICIENT_FUNDS' } }] }),
+        })
+      }
+      const gameState = state.gameState
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            scheduleUnitUpgrade: {
+              id: crypto.randomUUID(),
+              appliesAtTick: gameState.currentTick + 10,
+              totalTicksRequired: 10,
             },
           },
         }),

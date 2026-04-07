@@ -9790,3 +9790,268 @@ test.describe('Sourcing Comparison Panel', () => {
     }
   })
 })
+
+test.describe('Unit upgrade panel', () => {
+  function makeUpgradeBuilding(playerId: string, unitType = 'MANUFACTURING') {
+    return {
+      id: 'building-uu-1',
+      companyId: 'company-uu',
+      cityId: 'city-ba',
+      type: 'FACTORY',
+      name: 'Upgrade Factory',
+      latitude: 48.15,
+      longitude: 17.11,
+      level: 1,
+      powerConsumption: 2,
+      isForSale: false,
+      builtAtUtc: '2026-01-01T00:00:00Z',
+      pendingConfiguration: null,
+      units: [
+        {
+          id: 'unit-uu-1',
+          buildingId: 'building-uu-1',
+          unitType,
+          gridX: 0,
+          gridY: 0,
+          level: 1,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: false,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+      ],
+    }
+  }
+
+  test('shows upgrade panel with cost and duration for an upgradable unit', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-uu',
+      playerId: player.id,
+      name: 'Upgrade Co',
+      cash: 50000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makeUpgradeBuilding(player.id)],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-uu-1')
+    await expect(page.getByRole('heading', { name: 'Upgrade Factory' })).toBeVisible()
+
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    const upgradePanel = page.locator('.unit-upgrade-panel')
+    await expect(upgradePanel).toBeVisible()
+
+    // Should show current and next level
+    await expect(upgradePanel.getByText('Level 1')).toBeVisible()
+    await expect(upgradePanel.locator('.next-level')).toBeVisible()
+
+    // Should show cost (mocked: $8,000)
+    await expect(upgradePanel.locator('.unit-upgrade-cost')).toBeVisible()
+
+    // Should show duration
+    await expect(upgradePanel.locator('.unit-upgrade-duration')).toBeVisible()
+
+    // Should show confirm button
+    await expect(upgradePanel.getByRole('button', { name: 'Upgrade Now' })).toBeVisible()
+  })
+
+  test('upgrade confirm button schedules upgrade and shows building reload', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-uu',
+      playerId: player.id,
+      name: 'Upgrade Co',
+      cash: 50000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makeUpgradeBuilding(player.id)],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-uu-1')
+    await expect(page.getByRole('heading', { name: 'Upgrade Factory' })).toBeVisible()
+
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    const upgradePanel = page.locator('.unit-upgrade-panel')
+    await expect(upgradePanel).toBeVisible()
+    await expect(upgradePanel.getByRole('button', { name: 'Upgrade Now' })).toBeVisible()
+
+    // After scheduling, panel should re-render (button becomes disabled while processing)
+    await upgradePanel.getByRole('button', { name: 'Upgrade Now' }).click()
+
+    // Panel should still be visible after upgrade (not collapsed)
+    await expect(upgradePanel).toBeVisible()
+  })
+
+  test('shows insufficient-funds error when upgrade cannot be afforded', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-uu',
+      playerId: player.id,
+      name: 'Broke Co',
+      cash: 1,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makeUpgradeBuilding(player.id)],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.upgradeInsufficientFundsUnitId = 'unit-uu-1'
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-uu-1')
+    await expect(page.getByRole('heading', { name: 'Upgrade Factory' })).toBeVisible()
+
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    const upgradePanel = page.locator('.unit-upgrade-panel')
+    await expect(upgradePanel).toBeVisible()
+
+    await upgradePanel.getByRole('button', { name: 'Upgrade Now' }).click()
+
+    // Error message should appear
+    await expect(upgradePanel.locator('.form-error')).toContainText('Not enough cash')
+  })
+
+  test('shows max-level state for a fully upgraded unit', async ({ page }) => {
+    const player = makePlayer()
+    const building = makeUpgradeBuilding(player.id)
+    building.units[0].level = 4
+    player.companies.push({
+      id: 'company-uu',
+      playerId: player.id,
+      name: 'Max Level Co',
+      cash: 50000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [building],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Override upgrade info to return max level
+    state.unitUpgradeInfoOverrides['unit-uu-1'] = {
+      unitId: 'unit-uu-1',
+      unitType: 'MANUFACTURING',
+      currentLevel: 4,
+      nextLevel: 4,
+      isMaxLevel: true,
+      isUpgradable: true,
+      upgradeCost: 0,
+      upgradeTicks: 0,
+      currentStat: 4.0,
+      nextStat: 4.0,
+      statLabel: 'Batches/tick',
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-uu-1')
+    await expect(page.getByRole('heading', { name: 'Upgrade Factory' })).toBeVisible()
+
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    const upgradePanel = page.locator('.unit-upgrade-panel')
+    await expect(upgradePanel).toBeVisible()
+
+    await expect(upgradePanel.locator('.unit-upgrade-max-level')).toBeVisible()
+    await expect(upgradePanel).toContainText('Max Level')
+    // Upgrade button should NOT be visible
+    await expect(upgradePanel.getByRole('button', { name: 'Upgrade Now' })).toBeHidden()
+  })
+
+  test('shows in-progress indicator when a pending upgrade plan exists for the unit', async ({ page }) => {
+    const player = makePlayer()
+    const building = makeUpgradeBuilding(player.id)
+    // Set a pending configuration with an upgrade for unit at (0,0)
+    building.pendingConfiguration = {
+      id: 'plan-uu-1',
+      buildingId: 'building-uu-1',
+      submittedAtTick: 40,
+      appliesAtTick: 50,
+      totalTicksRequired: 10,
+      units: [
+        {
+          id: 'plan-unit-uu-1',
+          buildingConfigurationPlanId: 'plan-uu-1',
+          unitType: 'MANUFACTURING',
+          gridX: 0,
+          gridY: 0,
+          level: 2,
+          isChanged: true,
+          ticksRequired: 10,
+          startedAtTick: 40,
+          appliesAtTick: 50,
+          isReverting: false,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: false,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+      ],
+      removals: [],
+    }
+    player.companies.push({
+      id: 'company-uu',
+      playerId: player.id,
+      name: 'Upgrading Co',
+      cash: 50000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [building],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-uu-1')
+    await expect(page.getByRole('heading', { name: 'Upgrade Factory' })).toBeVisible()
+
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    const upgradePanel = page.locator('.unit-upgrade-panel')
+    await expect(upgradePanel).toBeVisible()
+
+    await expect(upgradePanel.locator('.unit-upgrade-in-progress')).toBeVisible()
+    await expect(upgradePanel).toContainText('Upgrade in Progress')
+  })
+})

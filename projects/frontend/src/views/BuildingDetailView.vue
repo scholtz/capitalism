@@ -22,7 +22,7 @@ import {
 import { annotateExchangeOffers, selectOptimalOffer, sortExchangeOffers, detectLogisticsTrap, type AnnotatedExchangeOffer, type ExchangeSortBy } from '@/lib/globalExchange'
 import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedResourceDescription, getLocalizedResourceName } from '@/lib/catalogPresentation'
 import { useTickRefresh } from '@/composables/useTickRefresh'
-import { gqlRequest } from '@/lib/graphql'
+import { gqlRequest, GraphQLError } from '@/lib/graphql'
 import { deepEqual } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 import { useGameStateStore } from '@/stores/gameState'
@@ -2776,12 +2776,13 @@ async function submitUnitUpgrade(unitId: string) {
     // Refresh upgrade info cache so the panel transitions to pending state
     await fetchUpgradeInfo(unitId)
   } catch (err: unknown) {
+    const code = err instanceof GraphQLError ? err.code : undefined
     const raw = err instanceof Error ? err.message : String(err)
-    if (raw.includes('INSUFFICIENT_FUNDS')) {
+    if (code === 'INSUFFICIENT_FUNDS' || raw.includes('INSUFFICIENT_FUNDS')) {
       unitUpgradeError.value = t('buildingDetail.unitUpgrade.errorInsufficientFunds')
-    } else if (raw.includes('MAX_LEVEL_REACHED')) {
+    } else if (code === 'MAX_LEVEL_REACHED' || raw.includes('MAX_LEVEL_REACHED')) {
       unitUpgradeError.value = t('buildingDetail.unitUpgrade.errorMaxLevel')
-    } else if (raw.includes('PENDING_CONFIGURATION_EXISTS')) {
+    } else if (code === 'PENDING_CONFIGURATION_EXISTS' || raw.includes('PENDING_CONFIGURATION_EXISTS')) {
       unitUpgradeError.value = t('buildingDetail.unitUpgrade.errorPendingPlan')
     } else {
       unitUpgradeError.value = t('buildingDetail.unitUpgrade.errorGeneric')
