@@ -2840,7 +2840,7 @@ test.describe('Building detail upgrades', () => {
     await expect(page.locator('.loading')).toHaveCount(0)
     await expect(page.locator('.sidebar')).toBeVisible()
     await expect(getGridCell(plannedSection, 0, 0)).toHaveClass(/selected/)
-    await expect(searchInput).toHaveValue('wood')
+    await expect(page.locator('.sidebar .purchase-selection-summary')).toContainText('Wood')
   })
 })
 
@@ -6724,9 +6724,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(panel.getByText('Recommended Action')).toBeVisible()
     await expect(panel.getByText(/higher price/i)).toBeVisible()
 
-    // Revenue chart should be visible with bars
+    // Revenue chart should be visible with rendered bar data
     await expect(panel.getByText('Revenue per Tick')).toBeVisible()
-    await expect(panel.locator('.mi-bar-revenue').first()).toBeVisible()
+    await expect(panel.locator('.mi-bar-revenue')).not.toHaveCount(0)
+    await expect(panel.locator('.mi-bar-revenue').first()).toHaveAttribute('title', /T\d+:/)
 
     // Market share section should show the company
     await expect(panel.getByText('Market Share (latest tick)')).toBeVisible()
@@ -7092,10 +7093,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
     const panel = page.locator('[aria-label="Market Intelligence"]')
     await expect(panel).toBeVisible()
 
-    // Price chart should be visible
+    // Price chart should be visible with rendered bar data
     await expect(panel.getByText('Realized Price per Tick')).toBeVisible()
-    // Price bars should be rendered for each tick
-    await expect(panel.locator('.mi-bar-price').first()).toBeVisible()
+    await expect(panel.locator('.mi-bar-price')).not.toHaveCount(0)
+    await expect(panel.locator('.mi-bar-price').first()).toHaveAttribute('title', /T\d+:/)
   })
 
   test('shows MODERATE demand signal with monitor hint', async ({ page }) => {
@@ -8559,7 +8560,7 @@ test.describe('Procurement mode configuration', () => {
     await expect(citySelect).toBeVisible()
   })
 
-  test('switching to LOCAL mode shows vendor lock field', async ({ page }) => {
+  test('switching to LOCAL mode shows own-company vendor option in the selector', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({
       id: 'company-proc-local',
@@ -8597,8 +8598,8 @@ test.describe('Procurement mode configuration', () => {
     // Purchase selector button remains the single entry point for product/vendor selection
     await expect(page.getByRole('button', { name: /product and vendor/i })).toBeVisible()
     const dialog = await openPurchaseSelector(page)
-    await expect(dialog.getByText('Vendor link')).toBeVisible()
-    await expect(dialog.getByText('Your own company')).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'Vendor link' })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: /Your own company/ })).toBeVisible()
   })
 
   test('sales shop purchase selector can lock sourcing to your own company and persists it on save', async ({ page }) => {

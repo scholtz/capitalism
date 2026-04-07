@@ -427,6 +427,8 @@ Root-cause of a CI failure (March 2026, PR #82 / power grid — second attempt):
 7. **Always run the targeted spec before `report_progress` with `CI=true`:** `CI=true npx playwright test --project=chromium e2e/<spec>.ts`. Only then run the full suite. Running without `CI=true` uses dev server which may behave differently from the production build used in CI.
 8. **When you replace an existing UI workflow (for example inline selector to full-page dialog, or removing a field like `Lock to Vendor`), update every existing Playwright assertion that references the old UI in the same session.** Do not leave legacy expectations in the suite.
 9. **Add a regression test for the new workflow itself, not just the old test rewritten.** Example: if purchase configuration moves to a full-page selector, add a test that opens the selector, chooses the item/vendor, saves, and verifies the persisted state.
+10. **Do not assert on dialog fields after the dialog is closed.** If the user clicks `Done` in a full-page selector, assert against the persisted summary/state in the sidebar instead of a removed search input or closed overlay element.
+11. **For mini-chart UIs, assert rendered data presence rather than per-bar visibility heuristics.** Prefer checking that the chart label is visible and that bars exist (count/title/style), because narrow bar divs inside compact charts may be reported as `hidden` by Playwright even when the chart rendered correctly.
 
 ## Minimal-change PR quality — prove the gap, don't just fix the symptom
 
