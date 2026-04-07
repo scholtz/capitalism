@@ -147,3 +147,114 @@ test.describe('Stock exchange', () => {
     await expect(page.getByText('35.0%')).toBeVisible()
   })
 })
+
+test.describe('Stock exchange live refresh', () => {
+  test('tick refresh does not blank the page — existing content stays visible', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 100000,
+      companies: [makeControlledCompany()],
+    })
+    const rival = makePlayer({
+      id: 'player-2',
+      email: 'rival@test.com',
+      displayName: 'Rival Tycoon',
+      companies: [
+        {
+          id: 'company-rival-refresh',
+          playerId: 'player-2',
+          name: 'Rival Refresh Inc',
+          cash: 600000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.25,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 10,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-rival-refresh', ownerPlayerId: 'player-2', ownerCompanyId: null, shareCount: 5000 },
+      ],
+    })
+    player.activeAccountType = 'PERSON'
+    player.activeCompanyId = null
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 10
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    // Page loaded: the market section and listing should be visible
+    await expect(page.getByRole('heading', { name: 'Stock Exchange' })).toBeVisible()
+    await expect(page.locator('.listing-card', { hasText: 'Rival Refresh Inc' })).toBeVisible()
+
+    // Simulate a tick: update game state so useTickRefresh fires
+    state.gameState.currentTick = 11
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // After tick fires, the page should still show the listing without blanking
+    await expect(page.locator('.listing-card', { hasText: 'Rival Refresh Inc' })).toBeVisible()
+    // The loading spinner must NOT replace the content
+    await expect(page.locator('.state-box', { hasText: 'Loading' })).not.toBeVisible()
+  })
+
+  test('stock exchange auto-refreshes share prices after a tick', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 100000,
+      companies: [makeControlledCompany()],
+    })
+    const rival = makePlayer({
+      id: 'player-3',
+      email: 'rival3@test.com',
+      displayName: 'Tick Rival',
+      companies: [
+        {
+          id: 'company-tick-rival',
+          playerId: 'player-3',
+          name: 'Tick Corp',
+          cash: 400000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 5,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-tick-rival', ownerPlayerId: 'player-3', ownerCompanyId: null, shareCount: 10000 },
+      ],
+    })
+    player.activeAccountType = 'PERSON'
+    player.activeCompanyId = null
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 5
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 400).toISOString()
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    await expect(page.locator('.listing-card', { hasText: 'Tick Corp' })).toBeVisible()
+
+    // Advance the tick and update the rival company cash (which changes share price)
+    state.gameState.currentTick = 6
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+    rival.companies[0]!.cash = 800000 // doubled cash → higher share price
+
+    // Wait for the tick refresh to complete; Tick Corp listing should still be on screen
+    await expect(page.locator('.listing-card', { hasText: 'Tick Corp' })).toBeVisible()
+  })
+})

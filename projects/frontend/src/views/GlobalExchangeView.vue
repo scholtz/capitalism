@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
 import { useTickRefresh } from '@/composables/useTickRefresh'
@@ -32,6 +32,7 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const gameStateStore = useGameStateStore()
 const route = useRoute()
+const router = useRouter()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -156,7 +157,9 @@ onMounted(async () => {
   }
 })
 
-watch(selectedCityId, async () => {
+watch(selectedCityId, async (cityId) => {
+  // Persist selected city in the URL so page reload restores the same city
+  void router.replace({ query: { ...route.query, city: cityId ?? undefined } })
   await loadOffers()
 })
 

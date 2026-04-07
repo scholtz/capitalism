@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { gqlRequest } from '@/lib/graphql'
 import { useAuthStore } from '@/stores/auth'
+import { useTickRefresh } from '@/composables/useTickRefresh'
+import { deepEqual } from '@/lib/utils'
 import type { PersonAccount, ShareTradeResult, StockExchangeListing } from '@/types'
 
 type ControlledCompanyAccount = {
@@ -195,8 +197,10 @@ function updateQuantity(companyId: string, value: number) {
   quantityByCompany.value[companyId] = Math.max(Math.floor(Number.isFinite(value) ? value : 0), 1)
 }
 
-async function loadData() {
-  loading.value = true
+async function loadData(isRefresh = false) {
+  if (!isRefresh) {
+    loading.value = true
+  }
   error.value = null
 
   try {
@@ -215,12 +219,19 @@ async function loadData() {
     }
 
     const listingData = await listingDataPromise
-    personAccount.value = resolvedPersonAccount
-    listings.value = listingData.stockExchangeListings
+
+    if (!deepEqual(personAccount.value, resolvedPersonAccount)) {
+      personAccount.value = resolvedPersonAccount
+    }
+    if (!deepEqual(listings.value, listingData.stockExchangeListings)) {
+      listings.value = listingData.stockExchangeListings
+    }
 
     setDefaultQuantities()
   } catch (reason: unknown) {
-    error.value = reason instanceof Error ? reason.message : t('stockExchange.loadFailed')
+    if (!isRefresh) {
+      error.value = reason instanceof Error ? reason.message : t('stockExchange.loadFailed')
+    }
   } finally {
     loading.value = false
   }
@@ -233,7 +244,7 @@ async function switchToPersonAccount() {
 
   try {
     await auth.switchAccountContext('PERSON')
-    await loadData()
+    await loadData(true)
     actionMessage.value = t('stockExchange.switchSuccess', {
       account: auth.player?.displayName ?? t('stockExchange.personAccount'),
     })
@@ -256,7 +267,7 @@ async function switchToCompanyAccount(companyId: string) {
 
   try {
     await auth.switchAccountContext('COMPANY', companyId)
-    await loadData()
+    await loadData(true)
     actionMessage.value = t('stockExchange.switchSuccess', { account: companyName })
   } catch (reason: unknown) {
     actionError.value = reason instanceof Error ? reason.message : t('stockExchange.actionFailed')
@@ -299,7 +310,7 @@ async function executeTrade(kind: 'buy' | 'sell', companyId: string) {
       })
     }
 
-    await Promise.all([loadData(), auth.fetchMe()])
+    await Promise.all([loadData(true), auth.fetchMe()])
   } catch (reason: unknown) {
     actionError.value = reason instanceof Error ? reason.message : t('stockExchange.actionFailed')
   } finally {
@@ -336,6 +347,10 @@ function formatDateTime(value: string): string {
 onMounted(() => {
   void loadData()
 })
+
+useTickRefresh(() => {
+  void loadData(true)
+})
 </script>
 
 <template>
@@ -355,7 +370,7 @@ onMounted(() => {
 
       <div v-else-if="error" class="state-box state-error" role="alert">
         <p>{{ error }}</p>
-        <button class="btn btn-secondary" @click="loadData">{{ t('common.tryAgain') }}</button>
+        <button class="btn btn-secondary" @click="() => void loadData()">{{ t('common.tryAgain') }}</button>
       </div>
 
       <template v-else>

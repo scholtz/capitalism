@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
 import { useTickRefresh } from '@/composables/useTickRefresh'
@@ -9,6 +10,8 @@ import type { PlayerRanking, CompanyRanking } from '@/types'
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 
 const rankings = ref<PlayerRanking[]>([])
 const companyRankings = ref<CompanyRanking[]>([])
@@ -17,7 +20,14 @@ const companyLoading = ref(false)
 const playerError = ref<string | null>(null)
 const companyError = ref<string | null>(null)
 const companyRankingsLoaded = ref(false)
-const activeTab = ref<'players' | 'companies'>('players')
+
+function getInitialTab(): 'players' | 'companies' {
+  const queryTab = route.query.tab
+  if (queryTab === 'companies') return 'companies'
+  return 'players'
+}
+
+const activeTab = ref<'players' | 'companies'>(getInitialTab())
 
 const PLAYER_RANKINGS_QUERY = `
   {
@@ -106,6 +116,8 @@ useTickRefresh(() => {
 watch(
   activeTab,
   (tab: 'players' | 'companies') => {
+    // Persist the active tab in the URL so back/forward navigation and page reloads restore context
+    void router.replace({ query: { ...route.query, tab: tab === 'players' ? undefined : tab } })
     if (tab === 'companies' && !companyRankingsLoaded.value && !companyLoading.value) {
       void fetchCompanyRankings()
     }

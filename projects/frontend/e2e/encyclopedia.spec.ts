@@ -825,7 +825,7 @@ test.describe('Encyclopedia resource detail — exchange cross-links', () => {
 
     await page.locator('.btn-exchange-link').click()
 
-    await expect(page).toHaveURL('/exchange')
+    await expect(page).toHaveURL(/\/exchange/)
     await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
   })
 

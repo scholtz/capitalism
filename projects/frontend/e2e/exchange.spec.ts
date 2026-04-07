@@ -268,7 +268,7 @@ test.describe('Global Exchange — navigation', () => {
   test('/exchange route is directly accessible and loads the exchange page', async ({ page }) => {
     setupMockApi(page)
     await page.goto('/exchange')
-    await expect(page).toHaveURL('/exchange')
+    await expect(page).toHaveURL(/\/exchange/)
     await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
   })
 })
@@ -382,7 +382,7 @@ test.describe('Global Exchange — authenticated player discovery', () => {
     }, `token-${player.id}`)
     // Post-onboarding player navigates directly to exchange
     await page.goto('/exchange')
-    await expect(page).toHaveURL('/exchange')
+    await expect(page).toHaveURL(/\/exchange/)
     await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
 
     // Exchange must load resources for sourcing decisions
@@ -411,7 +411,7 @@ test.describe('Global Exchange — authenticated player discovery', () => {
     setupMockApi(page)
     await page.goto('/exchange')
     // Exchange is public — no auth redirect expected
-    await expect(page).toHaveURL('/exchange')
+    await expect(page).toHaveURL(/\/exchange/)
     await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
     await expect(page.locator('.exchange-loading')).toHaveCount(0)
     await expect(page.locator('.resource-row').first()).toBeVisible()
@@ -553,7 +553,7 @@ test.describe('Global Exchange — post-onboarding context', () => {
 
     // Navigate directly to exchange after onboarding
     await page.goto('/exchange')
-    await expect(page).toHaveURL('/exchange')
+    await expect(page).toHaveURL(/\/exchange/)
     await expect(page.getByRole('heading', { name: 'Global Exchange' })).toBeVisible()
 
     // Exchange must load resources for sourcing decisions
@@ -873,5 +873,41 @@ test.describe('Global Exchange — deep-link query params from purchase unit', (
     // Falls back to the first city (Bratislava)
     const bratislavaCityTab = page.locator('.city-tab', { hasText: 'Bratislava' })
     await expect(bratislavaCityTab).toHaveClass(/active/)
+  })
+})
+
+test.describe('Global Exchange — city URL persistence', () => {
+  test('clicking a city tab updates the URL with the ?city= param', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Click the Prague city tab
+    await page.locator('.city-tab', { hasText: 'Prague' }).click()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // URL should now include ?city=city-pr so reloading restores the same city
+    await expect(page).toHaveURL(/[?&]city=city-pr/)
+  })
+
+  test('page reload after city selection restores the selected city', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+
+    await page.goto('/exchange')
+    await page.locator('.city-tab', { hasText: 'Vienna' }).click()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+    await expect(page).toHaveURL(/city=city-vi/)
+
+    await page.reload()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Vienna tab should still be active after reload
+    const viennaTab = page.locator('.city-tab', { hasText: 'Vienna' })
+    await expect(viennaTab).toHaveClass(/active/)
   })
 })

@@ -212,3 +212,80 @@ test.describe('Leaderboard navigation', () => {
     await expect(page).toHaveURL(/\/leaderboard/)
   })
 })
+
+test.describe('Leaderboard tab URL persistence', () => {
+  test('clicking the companies tab adds ?tab=companies to the URL', async ({ page }) => {
+    const player = makePlayer({ displayName: 'UrlPlayer' })
+    player.companies.push({
+      id: 'comp-url',
+      playerId: player.id,
+      name: 'URL Corp',
+      cash: 100000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+    setupMockApi(page, { players: [player] })
+    await page.goto('/leaderboard')
+    await page.getByRole('tab', { name: 'Richest Companies' }).click()
+    await expect(page).toHaveURL(/\/leaderboard\?tab=companies/)
+  })
+
+  test('switching back to players tab removes ?tab from URL', async ({ page }) => {
+    const player = makePlayer({ displayName: 'BackPlayer' })
+    player.companies.push({
+      id: 'comp-back',
+      playerId: player.id,
+      name: 'Back Corp',
+      cash: 200000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+    setupMockApi(page, { players: [player] })
+    await page.goto('/leaderboard?tab=companies')
+    await page.getByRole('tab', { name: 'Richest Players' }).click()
+    // After switching to players tab, the tab query param is removed
+    await expect(page).toHaveURL(/\/leaderboard($|\?)/)
+    await expect(page).not.toHaveURL(/tab=companies/)
+    await expect(page.getByRole('tab', { name: 'Richest Players' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  test('navigating to /leaderboard?tab=companies opens companies tab directly', async ({ page }) => {
+    const player1 = makePlayer({ id: 'player-url-1', displayName: 'UrlAlice' })
+    player1.companies.push({
+      id: 'comp-url-1',
+      playerId: 'player-url-1',
+      name: 'UrlAlice Holdings',
+      cash: 800000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+    setupMockApi(page, { players: [player1] })
+    await page.goto('/leaderboard?tab=companies')
+
+    await expect(page.getByRole('tab', { name: 'Richest Companies' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: 'Richest Players' })).toHaveAttribute('aria-selected', 'false')
+    await expect(page.getByText('UrlAlice Holdings')).toBeVisible()
+  })
+
+  test('page reload restores the previously active companies tab', async ({ page }) => {
+    const player = makePlayer({ displayName: 'ReloadPlayer' })
+    player.companies.push({
+      id: 'comp-reload',
+      playerId: player.id,
+      name: 'Reload Industries',
+      cash: 300000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+    setupMockApi(page, { players: [player] })
+    await page.goto('/leaderboard')
+
+    await page.getByRole('tab', { name: 'Richest Companies' }).click()
+    await expect(page).toHaveURL(/tab=companies/)
+
+    // Reload the page – companies tab should still be active
+    await page.reload()
+    await expect(page.getByRole('tab', { name: 'Richest Companies' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByText('Reload Industries')).toBeVisible()
+  })
+})
