@@ -2783,6 +2783,8 @@ public sealed class Mutation
         };
 
         // Snapshot all active units; only the target unit gets a level bump and a timer.
+        // DistinctBy is defensive deduplication per coding guidelines; AsSplitQuery() above prevents
+        // Cartesian explosion, but we deduplicate by position as a safety net.
         var allActiveUnits = unit.Building.Units.DistinctBy(u => (u.GridX, u.GridY)).ToList();
         foreach (var activeUnit in allActiveUnits)
         {

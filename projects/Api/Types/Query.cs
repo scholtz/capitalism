@@ -2618,6 +2618,7 @@ public sealed class Query
 
         var isUpgradable = Engine.GameConstants.IsUpgradableUnitType(unit.UnitType);
         var isMaxLevel = unit.Level >= Engine.GameConstants.MaxUnitLevel;
+        var currentStat = Engine.GameConstants.GetUnitStat(unit.UnitType, unit.Level);
 
         return new UnitUpgradeInfo
         {
@@ -2633,9 +2634,9 @@ public sealed class Query
             UpgradeTicks = isUpgradable && !isMaxLevel
                 ? Engine.GameConstants.UnitUpgradeTicks(unit.Level)
                 : 0,
-            CurrentStat = Engine.GameConstants.GetUnitStat(unit.UnitType, unit.Level),
+            CurrentStat = currentStat,
             NextStat = isMaxLevel
-                ? Engine.GameConstants.GetUnitStat(unit.UnitType, unit.Level)
+                ? currentStat  // same as CurrentStat at max level
                 : Engine.GameConstants.GetUnitStat(unit.UnitType, unit.Level + 1),
             StatLabel = Engine.GameConstants.GetUnitStatLabel(unit.UnitType),
         };

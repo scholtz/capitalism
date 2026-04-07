@@ -2062,6 +2062,8 @@ const selectedCellPendingUpgrade = computed<{
 } | null>(() => {
   if (!selectedCell.value || !building.value?.pendingConfiguration) return null
   const plan = building.value.pendingConfiguration
+  // Prefer the authoritative tick from the game-state store; fall back to the
+  // local `currentTick` ref which is set from the same source during loadBuilding().
   const tick = gameStateStore.gameState?.currentTick ?? currentTick.value
   const planUnit = plan.units.find(
     (u) =>
@@ -4855,7 +4857,7 @@ watch(
                   <button
                     class="btn btn-primary btn-sm unit-upgrade-confirm-btn"
                     :disabled="schedulingUpgrade"
-                    @click="submitUnitUpgrade(getUnitAtFrom(activeUnits, selectedCell!.x, selectedCell!.y)!.id)"
+                    @click="submitUnitUpgrade(selectedCellUpgradeInfo!.unitId)"
                   >
                     {{ schedulingUpgrade
                       ? t('buildingDetail.unitUpgrade.confirmingButton')

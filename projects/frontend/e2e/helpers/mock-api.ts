@@ -4177,8 +4177,12 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
-    // unitUpgradeInfo query
-    if (query.includes('unitUpgradeInfo') && !query.includes('scheduleUnitUpgrade')) {
+    // unitUpgradeInfo query — check precisely to avoid false substring matches
+    if (
+      (query.includes('unitUpgradeInfo') || query.includes('UUI')) &&
+      !query.includes('scheduleUnitUpgrade') &&
+      !query.includes('ScheduleUnitUpgrade')
+    ) {
       const unitId: string = body.variables?.unitId ?? ''
       const override = state.unitUpgradeInfoOverrides[unitId]
       if (override === null) {
