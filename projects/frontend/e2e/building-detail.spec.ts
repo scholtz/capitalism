@@ -7700,6 +7700,206 @@ test.describe('Public Sales Market Intelligence panel', () => {
     // Demand Drivers section should NOT be rendered when list is empty
     await expect(panel.locator('[aria-label="Demand Drivers"]')).toBeHidden()
   })
+
+  test('market intelligence panel does not blank during tick refresh — charts stay visible', async ({ page }) => {
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Use a 1-second tick interval so the tick refresh fires quickly
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 800,
+      totalQuantitySold: 50,
+      averagePricePerUnit: 16,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong.',
+      recentUtilization: 0.7,
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 80, quantitySold: 5 })),
+      priceHistory: [],
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.2,
+      inventoryQuality: 0.8,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    // Click the PUBLIC_SALES unit to open the market intelligence panel
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Revenue chart should be visible before tick
+    await expect(panel.getByText('Revenue per Tick')).toBeVisible()
+    await expect(panel.locator('.mi-bar-revenue')).not.toHaveCount(0)
+
+    // Simulate a tick advancing: update the analytics data and advance tick
+    analytics.dataToTick = 11
+    analytics.revenueHistory.push({ tick: 11, revenue: 85, quantitySold: 5 })
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+    state.gameState.currentTick += 1
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // After tick fires, the Market Intelligence panel must still be visible — no blank flash
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('Revenue per Tick')).toBeVisible()
+    // Loading indicator must NOT appear in the panel during background refresh
+    await expect(panel.locator('.config-help', { hasText: 'Loading' })).toBeHidden()
+  })
+
+  test('navigating to building URL with ?unit=x,y pre-selects PUBLIC_SALES unit and shows market intelligence', async ({ page }) => {
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 600,
+      totalQuantitySold: 40,
+      averagePricePerUnit: 15,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 8,
+      demandSignal: 'MODERATE',
+      actionHint: 'Sales are healthy.',
+      recentUtilization: 0.6,
+      revenueHistory: Array.from({ length: 8 }, (_, i) => ({ tick: i + 1, revenue: 75, quantitySold: 5 })),
+      priceHistory: [],
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.2,
+      unmetDemandShare: 0,
+      populationIndex: 1.0,
+      inventoryQuality: 0.75,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    // Navigate directly with the ?unit=1,0 query param (PUBLIC_SALES unit is at gridX=1, gridY=0)
+    await page.goto('/building/building-shop-mi?unit=1,0')
+
+    // URL should contain the unit query param
+    await expect(page).toHaveURL(/\/building\/building-shop-mi\?unit=1(?:,|%2C)0$/)
+
+    // Unit detail sidebar should be open with Market Intelligence panel visible
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Revenue chart should be shown immediately from the URL-restored selection
+    await expect(panel.getByText('Revenue per Tick')).toBeVisible()
+    await expect(panel.locator('.mi-bar-revenue')).not.toHaveCount(0)
+
+    // Demand signal should be MODERATE
+    await expect(panel.locator('.mi-demand-badge')).toContainText('Moderate')
+  })
+
+  test('market intelligence panel updates analytics after page reload preserving unit selection', async ({ page }) => {
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 450,
+      totalQuantitySold: 30,
+      averagePricePerUnit: 15,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 6,
+      demandSignal: 'STRONG',
+      actionHint: 'Good performance.',
+      recentUtilization: 0.65,
+      revenueHistory: Array.from({ length: 6 }, (_, i) => ({ tick: i + 1, revenue: 75, quantitySold: 5 })),
+      priceHistory: [],
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -0.8,
+      unmetDemandShare: 0,
+      populationIndex: 1.1,
+      inventoryQuality: 0.9,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    // Click the PUBLIC_SALES unit
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // URL should encode the selected unit
+    await expect(page).toHaveURL(/\/building\/building-shop-mi\?unit=1(?:,|%2C)0$/)
+
+    // Update analytics with new tick data before reload
+    analytics.dataToTick = 7
+    analytics.revenueHistory.push({ tick: 7, revenue: 90, quantitySold: 6 })
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+    state.gameState.currentTick = 7
+
+    // Reload the page — unit selection must be restored from URL
+    await page.reload()
+
+    // After reload: URL param still present and panel still visible
+    await expect(page).toHaveURL(/\/building\/building-shop-mi\?unit=1(?:,|%2C)0$/)
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('Revenue per Tick')).toBeVisible()
+  })
 })
 
 test.describe('Mine building edit mode', () => {

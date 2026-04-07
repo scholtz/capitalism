@@ -2591,14 +2591,16 @@ async function loadCityMediaHouses() {
   }
 }
 
-async function loadPublicSalesAnalytics(unitId: string | null) {
+async function loadPublicSalesAnalytics(unitId: string | null, isRefresh = false) {
   if (!unitId || !auth.token) {
     publicSalesAnalytics.value = null
     publicSalesAnalyticsLoading.value = false
     return
   }
 
-  publicSalesAnalyticsLoading.value = true
+  if (!isRefresh || publicSalesAnalytics.value == null) {
+    publicSalesAnalyticsLoading.value = true
+  }
   try {
     const data = await gqlRequest<{ publicSalesAnalytics: PublicSalesAnalytics | null }>(
       `query PublicSalesAnalytics($unitId: UUID!) {
@@ -3099,7 +3101,7 @@ useTickRefresh(async () => {
   // Refresh analytics for the selected PUBLIC_SALES unit on tick change
   const unitId = getResolvedLiveUnitId(selectedPublicSalesUnit.value)
   if (unitId) {
-    void loadPublicSalesAnalytics(unitId)
+    void loadPublicSalesAnalytics(unitId, true)
   }
   if (getResolvedLiveUnitId(selectedPurchaseUnit.value)) {
     void loadProcurementPreview(true)
