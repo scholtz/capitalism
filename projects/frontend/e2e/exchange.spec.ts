@@ -1054,10 +1054,16 @@ test.describe('Global Exchange — Products marketplace tab', () => {
     await page.getByRole('tab', { name: 'Products' }).click()
     await expect(page.locator('.exchange-loading')).toHaveCount(0)
 
-    // Above base should show red badge
-    await expect(page.locator('.price-above-base').first()).toBeVisible()
-    // Below base should show green badge
-    await expect(page.locator('.price-below-base').first()).toBeVisible()
+    // Each listing row should show the correct price-vs-base badge
+    const chairRow = page.locator('.product-row').filter({ hasText: 'Wooden Chair' })
+
+    // Premium Furniture row (above base at $55 vs base $45) should have red badge
+    const premiumRow = chairRow.locator('.listing-row').filter({ hasText: 'Premium Furniture' })
+    await expect(premiumRow.locator('.price-above-base')).toBeVisible()
+
+    // Discount Furniture row (below base at $40 vs base $45) should have green badge
+    const discountRow = chairRow.locator('.listing-row').filter({ hasText: 'Discount Furniture' })
+    await expect(discountRow.locator('.price-below-base')).toBeVisible()
   })
 
   test('Products tab industry filter narrows results', async ({ page }) => {

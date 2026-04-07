@@ -690,7 +690,10 @@ public sealed class Query
         if (productTypeId.HasValue)
             ordersQuery = ordersQuery.Where(o => o.ProductTypeId == productTypeId.Value);
 
-        var orders = await ordersQuery.OrderBy(o => o.PricePerUnit).ToListAsync();
+        var orders = await ordersQuery
+            .OrderBy(o => o.ProductTypeId)
+            .ThenBy(o => o.PricePerUnit)
+            .ToListAsync();
 
         var cityIds = orders.Select(o => o.ExchangeBuilding.CityId).Distinct().ToList();
         var cities = await db.Cities

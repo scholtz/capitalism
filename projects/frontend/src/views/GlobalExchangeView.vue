@@ -224,7 +224,12 @@ async function loadProductListings(isRefresh = false) {
 }
 
 async function refreshAll() {
-  await Promise.all([loadOffers(true), loadProductListings(true)])
+  // Only refresh the data for the currently visible tab to avoid unnecessary requests
+  if (marketMode.value === 'resources') {
+    await loadOffers(true)
+  } else {
+    await loadProductListings(true)
+  }
 }
 
 onMounted(async () => {
@@ -305,10 +310,6 @@ const productRows = computed<ProductRow[]>(() => {
 
   return filtered.map((product) => {
     const listings = allProductListings.value.filter((l) => l.productTypeId === product.id)
-    const bestListing = listings.reduce<GlobalExchangeProductListing | null>((best, listing) => {
-      if (!best) return listing
-      return listing.pricePerUnit < best.pricePerUnit ? listing : best
-    }, null)
     return {
       productId: product.id,
       productName: product.name,
@@ -317,7 +318,7 @@ const productRows = computed<ProductRow[]>(() => {
       unitSymbol: product.unitSymbol,
       basePrice: product.basePrice,
       listings,
-      bestPrice: bestListing?.pricePerUnit ?? 0,
+      bestPrice: listings.length > 0 ? Math.min(...listings.map((l) => l.pricePerUnit)) : 0,
     }
   })
 })
