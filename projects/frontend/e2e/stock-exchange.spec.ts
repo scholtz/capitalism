@@ -202,7 +202,7 @@ test.describe('Stock exchange live refresh', () => {
     // After tick fires, the page should still show the listing without blanking
     await expect(page.locator('.listing-card', { hasText: 'Rival Refresh Inc' })).toBeVisible()
     // The loading spinner must NOT replace the content
-    await expect(page.locator('.state-box', { hasText: 'Loading' })).not.toBeVisible()
+    await expect(page.locator('.state-box', { hasText: 'Loading' })).toBeHidden()
   })
 
   test('stock exchange auto-refreshes share prices after a tick', async ({ page }) => {
