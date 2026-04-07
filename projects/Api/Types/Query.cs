@@ -1897,15 +1897,16 @@ public sealed class Query
         if (inventory is not null)
             inventoryQuality = inventory.Quality;
 
+        Data.Entities.ProductType? productTypeForContext = null;
         if (productTypeIdForElasticity.HasValue)
         {
-            var productTypeForBrand = await db.ProductTypes.FindAsync(productTypeIdForElasticity.Value);
-            if (productTypeForBrand is not null)
+            productTypeForContext = await db.ProductTypes.FindAsync(productTypeIdForElasticity.Value);
+            if (productTypeForContext is not null)
             {
                 var brand = await db.Brands
                     .Where(b => b.CompanyId == building.CompanyId
                                 && (b.Scope == "PRODUCT" && b.ProductTypeId == productTypeIdForElasticity.Value
-                                    || b.Scope == "CATEGORY" && b.IndustryCategory == productTypeForBrand.Industry
+                                    || b.Scope == "CATEGORY" && b.IndustryCategory == productTypeForContext.Industry
                                     || b.Scope == "COMPANY"))
                     .OrderByDescending(b => b.Awareness)
                     .FirstOrDefaultAsync();
@@ -1913,6 +1914,37 @@ public sealed class Query
                     brandAwareness = brand.Awareness;
             }
         }
+
+        // ── Profit history ──────────────────────────────────────────────────────
+        // Gross profit per tick = revenue − (quantitySold × product base price).
+        // This shows how much above cost the player earns; null when base price is unknown.
+        decimal? totalProfit = null;
+        List<ProfitTickSnapshot>? profitHistory = null;
+        if (productTypeForContext is not null)
+        {
+            var basePrice = productTypeForContext.BasePrice;
+            profitHistory = records
+                .OrderBy(r => r.Tick)
+                .Select(r =>
+                {
+                    var cost = r.QuantitySold * basePrice;
+                    var profit = r.Revenue - cost;
+                    return new ProfitTickSnapshot
+                    {
+                        Tick = r.Tick,
+                        Profit = profit,
+                        GrossMarginPct = r.Revenue > 0 ? Math.Round(profit / r.Revenue * 100m, 2) : null,
+                    };
+                })
+                .ToList();
+            totalProfit = profitHistory.Sum(p => p.Profit);
+        }
+
+        // ── Demand drivers ──────────────────────────────────────────────────────
+        // Compute structured demand driver explanations from current unit state so
+        // players can understand why sales are strong or weak.
+        var demandDrivers = ComputeDemandDrivers(
+            unit, productTypeForContext, inventoryQuality, brandAwareness, populationIndex);
 
         return new PublicSalesAnalytics
         {
@@ -1937,7 +1969,135 @@ public sealed class Query
             PopulationIndex = populationIndex,
             InventoryQuality = inventoryQuality,
             BrandAwareness = brandAwareness,
+            TotalProfit = totalProfit,
+            ProfitHistory = profitHistory,
+            DemandDrivers = demandDrivers,
         };
+    }
+
+    /// <summary>
+    /// Computes structured demand driver entries for a PUBLIC_SALES unit from its current state.
+    /// Each entry describes one economic factor and whether it helps or hurts demand.
+    /// </summary>
+    private static List<DemandDriverEntry> ComputeDemandDrivers(
+        Data.Entities.BuildingUnit unit,
+        Data.Entities.ProductType? productType,
+        decimal? inventoryQuality,
+        decimal? brandAwareness,
+        decimal? populationIndex)
+    {
+        var drivers = new List<DemandDriverEntry>();
+
+        // PRICE driver – based on price vs base price ratio.
+        if (productType is not null)
+        {
+            var price = unit.MinPrice ?? productType.BasePrice;
+            if (price <= 0m) price = productType.BasePrice;
+            var priceIndex = productType.BasePrice > 0m
+                ? PublicSalesPricingModel.ComputePriceIndex(productType.BasePrice, price, productType.PriceElasticity)
+                : 1m;
+            // priceIndex 1.0 = neutral; <1.0 = price drag; >1.0 = price boost (discounting).
+            var priceScore = Math.Clamp(priceIndex, 0m, 1m);
+            string priceImpact;
+            string priceDesc;
+            if (priceIndex >= 0.9m)
+            {
+                priceImpact = "POSITIVE";
+                priceDesc = price < productType.BasePrice
+                    ? "Priced below market baseline — attracts price-sensitive buyers."
+                    : "Price is competitive versus the market baseline.";
+            }
+            else if (priceIndex >= 0.6m)
+            {
+                priceImpact = "NEUTRAL";
+                priceDesc = "Price is moderately above the market baseline — some buyers may look elsewhere.";
+            }
+            else
+            {
+                priceImpact = "NEGATIVE";
+                priceDesc = "Price is significantly above the market baseline — reducing demand noticeably.";
+            }
+            drivers.Add(new DemandDriverEntry { Factor = "PRICE", Impact = priceImpact, Score = priceScore, Description = priceDesc });
+        }
+
+        // QUALITY driver – inventory quality directly scales buyer demand.
+        if (inventoryQuality.HasValue)
+        {
+            var q = Math.Clamp(inventoryQuality.Value, 0m, 1m);
+            string qImpact;
+            string qDesc;
+            if (q >= 0.7m)
+            {
+                qImpact = "POSITIVE";
+                qDesc = $"High product quality ({q * 100m:F0}%) increases buyer willingness to purchase.";
+            }
+            else if (q >= 0.4m)
+            {
+                qImpact = "NEUTRAL";
+                qDesc = $"Average product quality ({q * 100m:F0}%) — improving quality would lift demand.";
+            }
+            else
+            {
+                qImpact = "NEGATIVE";
+                qDesc = $"Low product quality ({q * 100m:F0}%) is reducing demand. Improve your supply chain.";
+            }
+            drivers.Add(new DemandDriverEntry { Factor = "QUALITY", Impact = qImpact, Score = q, Description = qDesc });
+        }
+
+        // BRAND driver – brand awareness multiplies demand.
+        {
+            var awareness = brandAwareness ?? 0m;
+            var brandScore = Math.Clamp(awareness, 0m, 1m);
+            string brandImpact;
+            string brandDesc;
+            if (awareness >= 0.5m)
+            {
+                brandImpact = "POSITIVE";
+                brandDesc = $"Strong brand awareness ({awareness * 100m:F0}%) is boosting demand.";
+            }
+            else if (awareness >= 0.15m)
+            {
+                brandImpact = "NEUTRAL";
+                brandDesc = $"Moderate brand awareness ({awareness * 100m:F0}%). Invest in marketing to improve reach.";
+            }
+            else
+            {
+                brandImpact = "NEGATIVE";
+                brandDesc = brandAwareness.HasValue
+                    ? $"Low brand awareness ({awareness * 100m:F0}%). Customers don't know your product yet."
+                    : "No brand set. Creating a brand would increase visibility and demand.";
+            }
+            drivers.Add(new DemandDriverEntry { Factor = "BRAND", Impact = brandImpact, Score = brandScore, Description = brandDesc });
+        }
+
+        // LOCATION driver – lot population index (foot traffic) scales demand.
+        if (populationIndex.HasValue)
+        {
+            var pi = populationIndex.Value;
+            var locScore = Math.Clamp(pi / 2m, 0m, 1m); // normalise: 2.0× = full score
+            string locImpact;
+            string locDesc;
+            if (pi >= 1.3m)
+            {
+                locImpact = "POSITIVE";
+                locDesc = $"High-traffic location (×{pi:F2}) — more foot traffic means more potential buyers.";
+            }
+            else if (pi >= 0.8m)
+            {
+                locImpact = "NEUTRAL";
+                locDesc = $"Average location traffic (×{pi:F2}). A busier lot would increase reach.";
+            }
+            else
+            {
+                locImpact = "NEGATIVE";
+                locDesc = $"Low-traffic location (×{pi:F2}) is limiting your customer reach.";
+            }
+            drivers.Add(new DemandDriverEntry { Factor = "LOCATION", Impact = locImpact, Score = locScore, Description = locDesc });
+        }
+
+        // Order: most impactful first — NEGATIVE first, then POSITIVE.
+        return [.. drivers.OrderBy(d => d.Impact == "NEGATIVE" ? 0 : d.Impact == "NEUTRAL" ? 1 : 2)
+                          .ThenByDescending(d => d.Score)];
     }
 
     /// <summary>

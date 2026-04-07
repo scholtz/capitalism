@@ -143,6 +143,45 @@ public sealed class PublicSalesAnalytics
     public decimal? InventoryQuality { get; set; }
     /// <summary>Brand awareness of the selling company for this product (0.0–1.0). Null if no brand set.</summary>
     public decimal? BrandAwareness { get; set; }
+    /// <summary>
+    /// Total gross profit across the analytics window (TotalRevenue - QuantitySold × BasePrice).
+    /// Positive when selling above the product base price. Null when base price is unavailable.
+    /// </summary>
+    public decimal? TotalProfit { get; set; }
+    /// <summary>Per-tick gross profit history, ordered by tick ascending. Null when base price is unavailable.</summary>
+    public List<ProfitTickSnapshot>? ProfitHistory { get; set; }
+    /// <summary>
+    /// Ordered list of demand drivers (positive and negative) explaining the current sales outcome.
+    /// Each entry carries a factor name, impact direction, score, and player-facing description.
+    /// </summary>
+    public List<DemandDriverEntry> DemandDrivers { get; set; } = [];
+}
+
+public sealed class ProfitTickSnapshot
+{
+    public long Tick { get; set; }
+    /// <summary>Gross profit for the tick (revenue − quantity × basePrice).</summary>
+    public decimal Profit { get; set; }
+    /// <summary>Gross margin percentage (0–100+). Null when basePrice is zero.</summary>
+    public decimal? GrossMarginPct { get; set; }
+}
+
+/// <summary>
+/// Explains a single demand-influencing factor for a public sales unit.
+/// Factors: PRICE | QUALITY | BRAND | LOCATION | SATURATION | COMPETITION
+/// Impact:  POSITIVE | NEUTRAL | NEGATIVE
+/// Score:   0.0 – 1.0 (strength of the factor, regardless of direction).
+/// </summary>
+public sealed class DemandDriverEntry
+{
+    /// <summary>Factor identifier: PRICE | QUALITY | BRAND | LOCATION | SATURATION | COMPETITION</summary>
+    public string Factor { get; set; } = string.Empty;
+    /// <summary>POSITIVE | NEUTRAL | NEGATIVE</summary>
+    public string Impact { get; set; } = string.Empty;
+    /// <summary>Strength of the factor (0.0–1.0).</summary>
+    public decimal Score { get; set; }
+    /// <summary>Short player-facing description of this driver.</summary>
+    public string Description { get; set; } = string.Empty;
 }
 
 public sealed class SalesTickSnapshot

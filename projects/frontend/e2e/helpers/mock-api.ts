@@ -392,6 +392,9 @@ export type MockPublicSalesAnalytics = {
   populationIndex: number | null
   inventoryQuality: number | null
   brandAwareness: number | null
+  totalProfit: number | null
+  profitHistory: Array<{ tick: number; profit: number; grossMarginPct: number | null }> | null
+  demandDrivers: Array<{ factor: string; impact: string; score: number; description: string }>
 }
 
 export type MockBuildingFinancialTimeline = {

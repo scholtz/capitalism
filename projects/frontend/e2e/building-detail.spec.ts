@@ -6693,6 +6693,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: 1.2,
       inventoryQuality: 0.8,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6777,6 +6780,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: null,
       inventoryQuality: null,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6837,6 +6843,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: 1.2,
       inventoryQuality: 0.8,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6890,6 +6899,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: 1.2,
       inventoryQuality: 0.8,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -6944,6 +6956,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: 1.2,
       inventoryQuality: 0.8,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -7078,6 +7093,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: 1.2,
       inventoryQuality: 0.8,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -7132,6 +7150,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: 1.2,
       inventoryQuality: 0.8,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -7189,6 +7210,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: 1.2,
       inventoryQuality: 0.8,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -7257,6 +7281,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: 1.0,
       inventoryQuality: 0.5,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -7311,6 +7338,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: 1.1,
       inventoryQuality: 0.75,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -7377,6 +7407,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: 1.0,
       inventoryQuality: 0.7,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -7438,6 +7471,9 @@ test.describe('Public Sales Market Intelligence panel', () => {
       populationIndex: 0.95,
       inventoryQuality: 0.65,
       brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
     }
     state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
 
@@ -7464,6 +7500,205 @@ test.describe('Public Sales Market Intelligence panel', () => {
     // The directional impact hint for lowering should appear
     await expect(pricePanel.locator('.mi-price-impact-lower')).toBeVisible()
     await expect(pricePanel.locator('.mi-price-impact-lower')).toContainText('0.9')
+  })
+
+  test('shows gross profit metric and profit chart when profitHistory is provided', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const profitHistory = Array.from({ length: 5 }, (_, i) => ({
+      tick: i + 1,
+      profit: 30 + i * 5,
+      grossMarginPct: 33.3,
+    }))
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 750,
+      totalQuantitySold: 50,
+      averagePricePerUnit: chairProduct.basePrice * 1.5,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 5,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong.',
+      recentUtilization: 0.8,
+      revenueHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, revenue: 150, quantitySold: 10 })),
+      priceHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice * 1.5 })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.2,
+      inventoryQuality: 0.8,
+      brandAwareness: null,
+      totalProfit: 175,
+      profitHistory,
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Gross Profit metric should be visible
+    await expect(panel.getByText('Gross Profit', { exact: true })).toBeVisible()
+
+    // Profit chart label should be visible
+    await expect(panel.getByText('Gross Profit per Tick', { exact: true })).toBeVisible()
+
+    // Profit bars should be rendered
+    const profitBars = panel.locator('.mi-bar-profit-positive')
+    await expect(profitBars).not.toHaveCount(0)
+    await expect(profitBars.first()).toHaveAttribute('title', /T\d+:/)
+  })
+
+  test('shows demand drivers when provided', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 900,
+      totalQuantitySold: 60,
+      averagePricePerUnit: chairProduct.basePrice,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 5,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong.',
+      recentUtilization: 0.85,
+      revenueHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, revenue: 180, quantitySold: 12 })),
+      priceHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.2,
+      inventoryQuality: 0.8,
+      brandAwareness: 0.6,
+      totalProfit: 350,
+      profitHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, profit: 70, grossMarginPct: 38.9 })),
+      demandDrivers: [
+        { factor: 'PRICE', impact: 'POSITIVE', score: 0.9, description: 'Price is competitive versus the market baseline.' },
+        { factor: 'QUALITY', impact: 'POSITIVE', score: 0.8, description: 'High product quality (80%) increases buyer willingness to purchase.' },
+        { factor: 'BRAND', impact: 'NEGATIVE', score: 0.1, description: 'Low brand awareness (10%). Customers do not know your product yet.' },
+      ],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Demand Drivers section should be present
+    const driversSection = panel.locator('[aria-label="Demand Drivers"]')
+    await expect(driversSection).toBeVisible()
+    await expect(driversSection.getByText('Demand Drivers')).toBeVisible()
+
+    // Each driver should be rendered with its factor label
+    await expect(driversSection.locator('.mi-driver-factor', { hasText: 'Price' }).first()).toBeVisible()
+    await expect(driversSection.locator('.mi-driver-factor', { hasText: 'Quality' }).first()).toBeVisible()
+    await expect(driversSection.locator('.mi-driver-factor', { hasText: 'Brand' }).first()).toBeVisible()
+
+    // NEGATIVE driver should have negative styling
+    const negativeDriver = driversSection.locator('.mi-driver-negative')
+    await expect(negativeDriver).toBeVisible()
+    await expect(negativeDriver).toContainText('Brand')
+
+    // POSITIVE driver description should mention quality
+    const positiveDrivers = driversSection.locator('.mi-driver-positive')
+    await expect(positiveDrivers.first()).toBeVisible()
+  })
+
+  test('does not show demand drivers section when demandDrivers is empty', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 300,
+      totalQuantitySold: 20,
+      averagePricePerUnit: chairProduct.basePrice,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 5,
+      demandSignal: 'MODERATE',
+      actionHint: 'Sales are healthy.',
+      recentUtilization: 0.5,
+      revenueHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, revenue: 60, quantitySold: 4 })),
+      priceHistory: [],
+      marketShare: [],
+      elasticityIndex: null,
+      unmetDemandShare: null,
+      populationIndex: null,
+      inventoryQuality: null,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Demand Drivers section should NOT be rendered when list is empty
+    await expect(panel.locator('[aria-label="Demand Drivers"]')).toBeHidden()
   })
 })
 

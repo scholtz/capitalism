@@ -705,6 +705,12 @@ export interface PublicSalesAnalytics {
   inventoryQuality: number | null
   /** Brand awareness for this product (0–1). */
   brandAwareness: number | null
+  /** Total gross profit (revenue − quantity × basePrice). Null when base price unavailable. */
+  totalProfit: number | null
+  /** Per-tick gross profit history, ordered by tick ascending. Null when base price unavailable. */
+  profitHistory: ProfitTickSnapshot[] | null
+  /** Structured demand driver explanations: price, quality, brand, location factors. */
+  demandDrivers: DemandDriverEntry[]
 }
 
 export interface SalesTickSnapshot {
@@ -716,6 +722,26 @@ export interface SalesTickSnapshot {
 export interface PriceTickSnapshot {
   tick: number
   pricePerUnit: number
+}
+
+export interface ProfitTickSnapshot {
+  tick: number
+  /** Gross profit for the tick (revenue − quantity × basePrice). */
+  profit: number
+  /** Gross margin percentage (0–100+). Null when basePrice is zero. */
+  grossMarginPct: number | null
+}
+
+/** Explains one demand-influencing factor for a public sales unit. */
+export interface DemandDriverEntry {
+  /** PRICE | QUALITY | BRAND | LOCATION | SATURATION | COMPETITION */
+  factor: string
+  /** POSITIVE | NEUTRAL | NEGATIVE */
+  impact: string
+  /** Strength of the factor (0.0–1.0). */
+  score: number
+  /** Short player-facing description. */
+  description: string
 }
 
 export interface MarketShareEntry {

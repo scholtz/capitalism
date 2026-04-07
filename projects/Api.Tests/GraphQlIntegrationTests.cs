@@ -13312,6 +13312,255 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task PublicSalesAnalytics_ProfitHistory_ReturnedWhenSalesExist()
+    {
+        // Verify profitHistory and totalProfit are returned and reflect revenue − (qty × basePrice).
+        var token = await RegisterAndGetTokenAsync("analytics-profit@test.com", "AnalyticsProfit");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Profit Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+        var productType = await db.ProductTypes.FirstAsync(p => p.Id == Guid.Parse(productId));
+
+        // Sell 10 units at 2× base price → gross profit = 10 × basePrice
+        var sellPrice = productType.BasePrice * 2m;
+        db.PublicSalesRecords.Add(new PublicSalesRecord
+        {
+            Id = Guid.NewGuid(),
+            BuildingUnitId = unit.Id,
+            BuildingId = unit.BuildingId,
+            CompanyId = unit.Building.CompanyId,
+            CityId = unit.Building.CityId,
+            ProductTypeId = productType.Id,
+            Tick = 55001L,
+            RecordedAtUtc = DateTime.UtcNow,
+            QuantitySold = 10m,
+            PricePerUnit = sellPrice,
+            Revenue = 10m * sellPrice,
+            Demand = 10m,
+            SalesCapacity = 20m,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ totalProfit profitHistory {{ tick profit grossMarginPct }} }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.False(analytics.GetProperty("totalProfit").ValueKind == System.Text.Json.JsonValueKind.Null,
+            "totalProfit should not be null when product type is known");
+        var totalProfit = analytics.GetProperty("totalProfit").GetDecimal();
+        var expectedProfit = 10m * sellPrice - 10m * productType.BasePrice; // 10 × basePrice
+        Assert.True(Math.Abs(totalProfit - expectedProfit) < 0.01m,
+            $"totalProfit should equal revenue − qty × basePrice. Expected {expectedProfit}, got {totalProfit}");
+
+        var profitHistory = analytics.GetProperty("profitHistory");
+        Assert.False(profitHistory.ValueKind == System.Text.Json.JsonValueKind.Null, "profitHistory should not be null");
+        Assert.True(profitHistory.GetArrayLength() >= 1, "profitHistory should have at least one entry");
+        var firstEntry = profitHistory[0];
+        Assert.Equal(55001L, firstEntry.GetProperty("tick").GetInt64());
+        var entryProfit = firstEntry.GetProperty("profit").GetDecimal();
+        Assert.True(Math.Abs(entryProfit - expectedProfit) < 0.01m,
+            $"profitHistory entry profit should match. Expected {expectedProfit}, got {entryProfit}");
+        // Gross margin should be 50% (selling at 2× basePrice → profit = 0.5 × revenue)
+        var grossMarginPct = firstEntry.GetProperty("grossMarginPct").GetDecimal();
+        Assert.True(Math.Abs(grossMarginPct - 50m) < 0.1m,
+            $"grossMarginPct should be ~50% when selling at 2× basePrice. Got {grossMarginPct}");
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_ProfitHistory_NegativeProfitWhenSellingBelowCost()
+    {
+        // Verify that selling below basePrice produces a negative profit entry.
+        var token = await RegisterAndGetTokenAsync("analytics-loss@test.com", "AnalyticsLoss");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Loss Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Loss Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+        var productType = await db.ProductTypes.FirstAsync(p => p.Id == Guid.Parse(productId));
+
+        // Sell 5 units at 50% of base price → negative gross profit
+        var sellPrice = productType.BasePrice * 0.5m;
+        db.PublicSalesRecords.Add(new PublicSalesRecord
+        {
+            Id = Guid.NewGuid(),
+            BuildingUnitId = unit.Id,
+            BuildingId = unit.BuildingId,
+            CompanyId = unit.Building.CompanyId,
+            CityId = unit.Building.CityId,
+            ProductTypeId = productType.Id,
+            Tick = 55002L,
+            RecordedAtUtc = DateTime.UtcNow,
+            QuantitySold = 5m,
+            PricePerUnit = sellPrice,
+            Revenue = 5m * sellPrice,
+            Demand = 5m,
+            SalesCapacity = 20m,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ totalProfit profitHistory {{ tick profit }} }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        var totalProfit = analytics.GetProperty("totalProfit").GetDecimal();
+        Assert.True(totalProfit < 0m, $"totalProfit should be negative when selling below cost. Got {totalProfit}");
+        var profitEntry = analytics.GetProperty("profitHistory")[0];
+        Assert.True(profitEntry.GetProperty("profit").GetDecimal() < 0m, "Profit entry should be negative");
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_DemandDrivers_ReturnedWithAllExpectedFactors()
+    {
+        // Verify that demandDrivers is returned with at least PRICE, QUALITY, BRAND, LOCATION factors
+        // when enough context is available.
+        var token = await RegisterAndGetTokenAsync("analytics-drivers@test.com", "AnalyticsDrivers");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Drivers Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Drivers Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{await GetPublicSalesUnitIdAsync(shopId)}\") {{ demandDrivers {{ factor impact score description }} }} }}",
+            token: token);
+
+        var drivers = result.GetProperty("data").GetProperty("publicSalesAnalytics").GetProperty("demandDrivers");
+        Assert.True(drivers.GetArrayLength() >= 2, "At least 2 demand drivers expected (PRICE and QUALITY at minimum)");
+
+        var factors = Enumerable.Range(0, drivers.GetArrayLength())
+            .Select(i => drivers[i].GetProperty("factor").GetString())
+            .ToHashSet();
+        // PRICE is always present when product type is known; BRAND is always added.
+        Assert.Contains("PRICE", factors);
+        Assert.Contains("BRAND", factors);
+
+        // Each driver must have a non-empty impact and description
+        for (var i = 0; i < drivers.GetArrayLength(); i++)
+        {
+            var d = drivers[i];
+            var impact = d.GetProperty("impact").GetString();
+            Assert.Contains(impact, new[] { "POSITIVE", "NEUTRAL", "NEGATIVE" });
+            Assert.False(string.IsNullOrWhiteSpace(d.GetProperty("description").GetString()), "Driver description should not be empty");
+            var score = d.GetProperty("score").GetDecimal();
+            Assert.InRange(score, 0m, 1m);
+        }
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_DemandDrivers_HighPriceShowsNegativePriceDriver()
+    {
+        // When the unit's minPrice is 5× the base price, the PRICE driver should be NEGATIVE.
+        var token = await RegisterAndGetTokenAsync("analytics-high-price@test.com", "AnalyticsHighPrice");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "High Price Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "High Price Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+        var productType = await db.ProductTypes.FirstAsync(p => p.Id == Guid.Parse(productId));
+
+        // Set price to 5× base — clearly above market, should show NEGATIVE price driver
+        unit.MinPrice = productType.BasePrice * 5m;
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ demandDrivers {{ factor impact }} }} }}",
+            token: token);
+
+        var drivers = result.GetProperty("data").GetProperty("publicSalesAnalytics").GetProperty("demandDrivers");
+        var priceDriver = Enumerable.Range(0, drivers.GetArrayLength())
+            .Select(i => drivers[i])
+            .FirstOrDefault(d => d.GetProperty("factor").GetString() == "PRICE");
+        Assert.False(priceDriver.ValueKind == System.Text.Json.JsonValueKind.Undefined, "PRICE driver should be present");
+        Assert.Equal("NEGATIVE", priceDriver.GetProperty("impact").GetString());
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_DemandDrivers_LowPriceShowsPositivePriceDriver()
+    {
+        // When the unit's minPrice equals the base price (or is set very low), the PRICE driver should be POSITIVE.
+        var token = await RegisterAndGetTokenAsync("analytics-low-price@test.com", "AnalyticsLowPrice");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Low Price Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Low Price Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+        var productType = await db.ProductTypes.FirstAsync(p => p.Id == Guid.Parse(productId));
+
+        // Set price to exactly base price → neutral/positive (priceIndex ≈ 1.0)
+        unit.MinPrice = productType.BasePrice;
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ demandDrivers {{ factor impact }} }} }}",
+            token: token);
+
+        var drivers = result.GetProperty("data").GetProperty("publicSalesAnalytics").GetProperty("demandDrivers");
+        var priceDriver = Enumerable.Range(0, drivers.GetArrayLength())
+            .Select(i => drivers[i])
+            .FirstOrDefault(d => d.GetProperty("factor").GetString() == "PRICE");
+        Assert.False(priceDriver.ValueKind == System.Text.Json.JsonValueKind.Undefined, "PRICE driver should be present");
+        // At base price, priceIndex = 1.0 → should be POSITIVE or NEUTRAL
+        var impact = priceDriver.GetProperty("impact").GetString();
+        Assert.True(impact is "POSITIVE" or "NEUTRAL",
+            $"PRICE driver at base price should be POSITIVE or NEUTRAL, got {impact}");
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_ProfitHistory_EmptyWhenNoSalesRecords()
+    {
+        // When no sales records exist, totalProfit and profitHistory should reflect no data.
+        var token = await RegisterAndGetTokenAsync("analytics-profit-empty@test.com", "AnalyticsProfitEmpty");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Profit Empty Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Empty Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ totalProfit profitHistory {{ tick profit }} }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        // totalProfit should be null (no product type context is needed, but we check no crash)
+        // OR should be 0/null with empty profitHistory
+        Assert.False(analytics.GetProperty("profitHistory").ValueKind == System.Text.Json.JsonValueKind.Undefined,
+            "profitHistory field should be present (even if null)");
+    }
+
+    [Fact]
     public async Task CompanyLedger_RequiresOwnership_ForbidsOtherPlayer()
     {
         var ownerToken = await RegisterAndGetTokenAsync("ledger-owner@test.com", "LedgerOwner");

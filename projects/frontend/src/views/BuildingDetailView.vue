@@ -601,6 +601,8 @@ const miMaxRevenue = computed(() => publicSalesAnalytics.value?.revenueHistory.r
 const miMaxQuantitySold = computed(() => publicSalesAnalytics.value?.revenueHistory.reduce((m, s) => Math.max(m, s.quantitySold), 0) ?? 0)
 /** Max price per unit across all price history ticks – used to normalise the price bar chart heights. */
 const miMaxPricePerUnit = computed(() => publicSalesAnalytics.value?.priceHistory.reduce((m, s) => Math.max(m, s.pricePerUnit), 0) ?? 0)
+/** Max absolute profit value across profit history – used to normalise the profit bar chart heights. */
+const miMaxAbsProfit = computed(() => publicSalesAnalytics.value?.profitHistory?.reduce((m, p) => Math.max(m, Math.abs(p.profit)), 0) ?? 0)
 // Current configured min price for the selected PUBLIC_SALES unit (0 if not set)
 const currentPublicSalesMinPrice = computed(() => (typeof selectedPublicSalesUnit.value?.minPrice === 'number' ? selectedPublicSalesUnit.value.minPrice : 0))
 
@@ -2619,9 +2621,12 @@ async function loadPublicSalesAnalytics(unitId: string | null) {
           populationIndex
           inventoryQuality
           brandAwareness
+          totalProfit
           revenueHistory { tick revenue quantitySold }
           priceHistory { tick pricePerUnit }
+          profitHistory { tick profit grossMarginPct }
           marketShare { label companyId share isUnmet }
+          demandDrivers { factor impact score description }
         }
       }`,
       { unitId },
@@ -5001,6 +5006,16 @@ watch(
                       <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.totalRevenue') }}</span>
                       <strong class="mi-metric-value">{{ formatCurrency(publicSalesAnalytics.totalRevenue) }}</strong>
                     </div>
+                    <div class="mi-metric" v-if="publicSalesAnalytics.totalProfit !== null">
+                      <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.totalProfit') }}</span>
+                      <strong
+                        class="mi-metric-value"
+                        :class="{
+                          'building-profit-positive-text': publicSalesAnalytics.totalProfit >= 0,
+                          'building-profit-negative-text': publicSalesAnalytics.totalProfit < 0,
+                        }"
+                      >{{ formatCurrency(publicSalesAnalytics.totalProfit) }}</strong>
+                    </div>
                     <div class="mi-metric">
                       <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.totalSold') }}</span>
                       <strong class="mi-metric-value">{{ formatUnitQuantity(publicSalesAnalytics.totalQuantitySold) }}</strong>
@@ -5072,6 +5087,23 @@ watch(
                         ></div>
                       </div>
                     </div>
+
+                    <!-- Profit history chart -->
+                    <div v-if="publicSalesAnalytics.profitHistory && publicSalesAnalytics.profitHistory.length > 0" class="mi-chart-section">
+                      <span class="mi-chart-label">{{ t('buildingDetail.marketIntelligence.profitChart') }}</span>
+                      <div class="mi-bar-chart mi-bar-chart-profit" role="img" :aria-label="t('buildingDetail.marketIntelligence.profitChart')">
+                        <div
+                          v-for="snap in publicSalesAnalytics.profitHistory.slice(-30)"
+                          :key="snap.tick"
+                          class="mi-bar"
+                          :class="snap.profit >= 0 ? 'mi-bar-profit-positive' : 'mi-bar-profit-negative'"
+                          :style="{
+                            height: `${Math.max(2, miMaxAbsProfit > 0 ? (Math.abs(snap.profit) / miMaxAbsProfit) * 100 : 0).toFixed(1)}%`,
+                          }"
+                          :title="`T${snap.tick}: ${formatCurrency(snap.profit)}${snap.grossMarginPct !== null ? ` (${snap.grossMarginPct.toFixed(1)}% margin)` : ''}`"
+                        ></div>
+                      </div>
+                    </div>
                   </template>
 
                   <!-- Market share -->
@@ -5092,6 +5124,27 @@ watch(
                           <div class="mi-share-bar" :class="{ 'mi-share-bar-unmet': entry.isUnmet }" :style="{ width: `${(entry.share * 100).toFixed(1)}%` }"></div>
                         </div>
                         <span class="mi-share-pct">{{ (entry.share * 100).toFixed(1) }}%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Demand Drivers -->
+                  <div v-if="publicSalesAnalytics.demandDrivers.length > 0" class="mi-demand-drivers" aria-label="Demand Drivers">
+                    <span class="mi-chart-label">{{ t('buildingDetail.marketIntelligence.demandDrivers.title') }}</span>
+                    <div class="mi-driver-list">
+                      <div
+                        v-for="driver in publicSalesAnalytics.demandDrivers"
+                        :key="driver.factor"
+                        class="mi-driver-entry"
+                        :class="`mi-driver-${driver.impact.toLowerCase()}`"
+                      >
+                        <span class="mi-driver-icon">
+                          {{ driver.impact === 'POSITIVE' ? '↑' : driver.impact === 'NEGATIVE' ? '↓' : '→' }}
+                        </span>
+                        <div class="mi-driver-content">
+                          <strong class="mi-driver-factor">{{ t(`buildingDetail.marketIntelligence.demandDrivers.factor_${driver.factor}`) }}</strong>
+                          <span class="mi-driver-desc">{{ driver.description }}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -7655,6 +7708,93 @@ watch(
 
 .mi-quality-low {
   color: #d97706;
+}
+
+/* ─── Profit chart bars ─── */
+.mi-bar-profit-positive {
+  background: #16a34a;
+}
+
+.mi-bar-profit-negative {
+  background: #dc2626;
+  align-self: flex-end;
+}
+
+/* ─── Demand Drivers ─── */
+.mi-demand-drivers {
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.mi-driver-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.mi-driver-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--color-border);
+  font-size: 0.8rem;
+}
+
+.mi-driver-positive {
+  border-left: 3px solid #16a34a;
+  background: #f0fdf4;
+}
+
+.mi-driver-neutral {
+  border-left: 3px solid #94a3b8;
+  background: #f8fafc;
+}
+
+.mi-driver-negative {
+  border-left: 3px solid #dc2626;
+  background: #fef2f2;
+}
+
+.mi-driver-icon {
+  font-weight: 700;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+}
+
+.mi-driver-positive .mi-driver-icon {
+  color: #16a34a;
+}
+
+.mi-driver-neutral .mi-driver-icon {
+  color: #64748b;
+}
+
+.mi-driver-negative .mi-driver-icon {
+  color: #dc2626;
+}
+
+.mi-driver-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.mi-driver-factor {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text);
+}
+
+.mi-driver-desc {
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.3;
 }
 
 @media (max-width: 640px) {
