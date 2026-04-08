@@ -17,7 +17,10 @@ const { gameState } = storeToRefs(gameStateStore)
 const rankings = ref<PlayerRanking[]>([])
 const loading = ref(true)
 
-async function loadHomeData() {
+async function loadHomeData(isRefresh = false) {
+  if (!isRefresh) {
+    loading.value = true
+  }
   try {
     const [rankData, stateData] = await Promise.all([
       gqlRequest<{ rankings: PlayerRanking[] }>('{ rankings { playerId displayName totalWealth cashTotal buildingValue inventoryValue companyCount } }'),
@@ -34,7 +37,9 @@ async function loadHomeData() {
   } catch {
     // Silently fail on home page
   } finally {
-    loading.value = false
+    if (!isRefresh) {
+      loading.value = false
+    }
   }
 }
 
@@ -47,7 +52,7 @@ onMounted(async () => {
   await loadHomeData()
 })
 
-useTickRefresh(loadHomeData)
+useTickRefresh(() => loadHomeData(true))
 </script>
 
 <template>

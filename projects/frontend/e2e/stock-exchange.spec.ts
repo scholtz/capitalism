@@ -149,8 +149,7 @@ test.describe('Stock exchange', () => {
 })
 
 test.describe('Stock exchange live refresh', () => {
-  test('tick refresh does not blank the page — existing content stays visible', async ({ page }) => {
-    const player = makePlayer({
+  test('tick refresh does not blank the page — existing content stays visible', async ({ page }) => {    const player = makePlayer({
       personalCash: 100000,
       companies: [makeControlledCompany()],
     })
@@ -256,5 +255,65 @@ test.describe('Stock exchange live refresh', () => {
 
     // Wait for the tick refresh to complete; Tick Corp listing should still be on screen
     await expect(page.locator('.listing-card', { hasText: 'Tick Corp' })).toBeVisible()
+  })
+
+  test('share quantity input is preserved after a background tick refresh', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 200000,
+      companies: [makeControlledCompany()],
+    })
+    const rival = makePlayer({
+      id: 'player-qty',
+      email: 'qty@test.com',
+      displayName: 'Qty Owner',
+      companies: [
+        {
+          id: 'company-qty-rival',
+          playerId: 'player-qty',
+          name: 'Qty Corp',
+          cash: 300000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.15,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-qty-rival', ownerPlayerId: 'player-qty', ownerCompanyId: null, shareCount: 10000 },
+      ],
+    })
+    player.activeAccountType = 'PERSON'
+    player.activeCompanyId = null
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 8
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    await expect(page.locator('.listing-card', { hasText: 'Qty Corp' })).toBeVisible()
+
+    // User fills in a quantity they intend to buy
+    const qtyInput = page.locator('.listing-card', { hasText: 'Qty Corp' }).getByLabel('Share quantity Qty Corp')
+    await qtyInput.fill('250')
+    await expect(qtyInput).toHaveValue('250')
+
+    // Simulate a tick advancing while the user has typed a quantity
+    state.gameState.currentTick = 9
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // The listing must still be visible and the typed quantity must be unchanged
+    await expect(page.locator('.listing-card', { hasText: 'Qty Corp' })).toBeVisible()
+    await expect(qtyInput).toHaveValue('250')
+    // No loading spinner must have blanked the page
+    await expect(page.locator('.state-box', { hasText: 'Loading' })).toBeHidden()
   })
 })

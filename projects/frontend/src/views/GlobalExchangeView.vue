@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useGameStateStore } from '@/stores/gameState'
+import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { deepEqual } from '@/lib/utils'
 import type { GlobalExchangeOffer, GlobalExchangeProductListing, ResourceType, ProductType } from '@/types'
 
@@ -46,6 +47,7 @@ const auth = useAuthStore()
 const gameStateStore = useGameStateStore()
 const route = useRoute()
 const router = useRouter()
+const { saveScrollPosition, restoreScrollPosition } = useScrollPreservation()
 
 const loading = ref(true)
 const productListingsLoading = ref(false)
@@ -257,7 +259,11 @@ watch(marketMode, (mode) => {
   void router.replace({ query: { ...route.query, mode: mode === 'resources' ? undefined : mode } })
 })
 
-useTickRefresh(refreshAll)
+useTickRefresh(async () => {
+  const scrollPos = saveScrollPosition()
+  await refreshAll()
+  await restoreScrollPosition(scrollPos)
+})
 
 const currentTick = computed(() => gameStateStore.gameState?.currentTick ?? null)
 

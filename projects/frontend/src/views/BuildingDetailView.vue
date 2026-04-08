@@ -3152,6 +3152,11 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
     }
 
     if (!preserveDraft) {
+      // Normal (non-edit) load: sync the draft editor with the latest server state so
+      // the layout editor always shows up-to-date data when the player opens it.
+      // When preserveDraft is true (called from useTickRefresh while isEditing is true),
+      // these lines are skipped so the player's in-progress draft is never silently
+      // discarded by a background tick refresh.  See also: UX convention in copilot-instructions.
       const sourceUnits = pendingConfiguration.value?.units ?? building.value.units
       setDraftUnitsFrom(sourceUnits)
       setEditBaselineFrom(sourceUnits)

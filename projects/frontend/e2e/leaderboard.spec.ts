@@ -380,4 +380,48 @@ test.describe('Leaderboard tick-refresh stability', () => {
     // No loading spinner must appear over the existing companies list
     await expect(page.locator('.state-box', { hasText: 'loading' })).toBeHidden()
   })
+
+  test('multiple entries remain visible and content does not jump during a tick refresh', async ({
+    page,
+  }) => {
+    // Create enough players to fill the leaderboard
+    const players = Array.from({ length: 5 }, (_, i) =>
+      makePlayer({
+        id: `player-scroll-${i}`,
+        email: `scroll${i}@test.com`,
+        displayName: `Scroll Player ${i + 1}`,
+        companies: [
+          {
+            id: `comp-scroll-${i}`,
+            playerId: `player-scroll-${i}`,
+            name: `Scroll Corp ${i + 1}`,
+            cash: (5 - i) * 100000,
+            foundedAtUtc: '2026-01-01T00:00:00Z',
+            buildings: [],
+          },
+        ],
+      }),
+    )
+
+    const state = setupMockApi(page, { players })
+    state.gameState.currentTick = 50
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await page.goto('/leaderboard')
+    // All 5 entries should be visible
+    for (let i = 0; i < 5; i++) {
+      await expect(page.getByText(`Scroll Player ${i + 1}`)).toBeVisible()
+    }
+
+    // Simulate tick advance — wealth order remains the same so deepEqual skips DOM update
+    state.gameState.currentTick = 51
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // All entries must remain visible after background refresh — no content jump
+    for (let i = 0; i < 5; i++) {
+      await expect(page.getByText(`Scroll Player ${i + 1}`)).toBeVisible()
+    }
+    await expect(page.locator('.state-box', { hasText: 'loading' })).toBeHidden()
+  })
 })

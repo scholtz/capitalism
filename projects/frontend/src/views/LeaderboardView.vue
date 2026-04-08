@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useGameStateStore } from '@/stores/gameState'
+import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { deepEqual } from '@/lib/utils'
 import type { PlayerRanking, CompanyRanking } from '@/types'
 
@@ -14,6 +15,7 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const gameStateStore = useGameStateStore()
+const { saveScrollPosition, restoreScrollPosition } = useScrollPreservation()
 
 const rankings = ref<PlayerRanking[]>([])
 const companyRankings = ref<CompanyRanking[]>([])
@@ -108,11 +110,15 @@ onMounted(async () => {
   await Promise.allSettled([fetchPlayerRankings(), fetchCompanyRankings()])
 })
 
-useTickRefresh(() => {
-  void fetchPlayerRankings(true)
-  if (companyRankingsLoaded.value || activeTab.value === 'companies') {
-    void fetchCompanyRankings(true)
-  }
+useTickRefresh(async () => {
+  const scrollPos = saveScrollPosition()
+  await Promise.allSettled([
+    fetchPlayerRankings(true),
+    companyRankingsLoaded.value || activeTab.value === 'companies'
+      ? fetchCompanyRankings(true)
+      : Promise.resolve(),
+  ])
+  await restoreScrollPosition(scrollPos)
 })
 
 watch(

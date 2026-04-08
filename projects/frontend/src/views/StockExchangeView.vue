@@ -5,6 +5,7 @@ import { gqlRequest } from '@/lib/graphql'
 import { useAuthStore } from '@/stores/auth'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useGameStateStore } from '@/stores/gameState'
+import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { deepEqual } from '@/lib/utils'
 import type { PersonAccount, ShareTradeResult, StockExchangeListing } from '@/types'
 
@@ -17,6 +18,7 @@ type ControlledCompanyAccount = {
 const { t, locale } = useI18n()
 const auth = useAuthStore()
 const gameStateStore = useGameStateStore()
+const { saveScrollPosition, restoreScrollPosition } = useScrollPreservation()
 auth.initFromStorage()
 
 const currentTick = computed(() => gameStateStore.gameState?.currentTick ?? null)
@@ -352,8 +354,10 @@ onMounted(() => {
   void loadData()
 })
 
-useTickRefresh(() => {
-  void loadData(true)
+useTickRefresh(async () => {
+  const scrollPos = saveScrollPosition()
+  await loadData(true)
+  await restoreScrollPosition(scrollPos)
 })
 </script>
 
