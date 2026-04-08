@@ -7502,6 +7502,261 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(pricePanel.locator('.mi-price-impact-lower')).toContainText('0.9')
   })
 
+  test('quick price update shows error message when backend returns unit-not-found error', async ({
+    page,
+  }) => {
+    const { player, chairProduct } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 600,
+      totalQuantitySold: 40,
+      averagePricePerUnit: chairProduct.basePrice * 1.5,
+      currentSalesCapacity: 100,
+      dataFromTick: 1,
+      dataToTick: 5,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong.',
+      recentUtilization: 0.8,
+      revenueHistory: Array.from({ length: 3 }, (_, i) => ({
+        tick: i + 1,
+        revenue: 200,
+        quantitySold: 13,
+      })),
+      priceHistory: Array.from({ length: 3 }, (_, i) => ({
+        tick: i + 1,
+        pricePerUnit: chairProduct.basePrice * 1.5,
+      })),
+      marketShare: [
+        { label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false },
+      ],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.0,
+      inventoryQuality: 0.7,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    const pricePanel = panel.locator('[aria-label="Quick Price Update"]')
+    await expect(pricePanel).toBeVisible()
+
+    // Simulate unit deletion from server state to trigger UNIT_NOT_FOUND
+    const shopBuilding = state.players
+      .flatMap((p) => p.companies.flatMap((c) => c.buildings))
+      .find((b) => b.id === 'building-shop-mi')
+    if (shopBuilding) {
+      shopBuilding.units = shopBuilding.units?.filter((u) => u.id !== 'unit-shop-mi-ps') ?? []
+    }
+
+    // Enter a valid price and submit — backend will return UNIT_NOT_FOUND
+    const priceInput = pricePanel.locator('#quick-price-input')
+    await priceInput.fill('20.00')
+    const applyBtn = pricePanel.getByRole('button', { name: 'Apply Price' })
+    await expect(applyBtn).toBeEnabled()
+    await applyBtn.click()
+
+    // Error message should be displayed in the price panel
+    await expect(pricePanel.locator('.mi-price-error')).toBeVisible()
+    await expect(pricePanel.locator('.mi-price-error')).toContainText(/not found|failed|error/i)
+
+    // Success message should NOT appear
+    await expect(pricePanel.locator('.mi-price-success')).not.toBeVisible()
+  })
+
+  test('quick price update preserves route, unit selection, and analytics panel after applying price', async ({
+    page,
+  }) => {
+    const { player, chairProduct } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 1200,
+      totalQuantitySold: 80,
+      averagePricePerUnit: chairProduct.basePrice * 1.5,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong.',
+      recentUtilization: 0.9,
+      revenueHistory: Array.from({ length: 5 }, (_, i) => ({
+        tick: i + 1,
+        revenue: 240,
+        quantitySold: 16,
+      })),
+      priceHistory: Array.from({ length: 5 }, (_, i) => ({
+        tick: i + 1,
+        pricePerUnit: chairProduct.basePrice * 1.5,
+      })),
+      marketShare: [
+        { label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false },
+      ],
+      elasticityIndex: -1.3,
+      unmetDemandShare: 0,
+      populationIndex: 1.1,
+      inventoryQuality: 0.8,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    const pricePanel = panel.locator('[aria-label="Quick Price Update"]')
+    await expect(pricePanel).toBeVisible()
+
+    // Apply a new price
+    const priceInput = pricePanel.locator('#quick-price-input')
+    await priceInput.fill('30.00')
+    const applyBtn = pricePanel.getByRole('button', { name: 'Apply Price' })
+    await applyBtn.click()
+
+    // Success message should appear
+    await expect(pricePanel.locator('.mi-price-success')).toBeVisible()
+
+    // Route should be preserved — still on the building detail page
+    await expect(page).toHaveURL(/\/building\/building-shop-mi/)
+
+    // The Market Intelligence panel should still be visible (no navigation away)
+    await expect(panel).toBeVisible()
+
+    // The Quick Price Update panel should still be visible
+    await expect(pricePanel).toBeVisible()
+
+    // The analytics demand signal should still be visible
+    await expect(panel.locator('.mi-demand-badge')).toBeVisible()
+    await expect(panel.locator('.mi-demand-badge')).toContainText('Strong')
+  })
+
+  test('quick price update apply button is disabled when price is zero or negative', async ({
+    page,
+  }) => {
+    const { player, chairProduct } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 450,
+      totalQuantitySold: 30,
+      averagePricePerUnit: chairProduct.basePrice * 1.5,
+      currentSalesCapacity: 80,
+      dataFromTick: 1,
+      dataToTick: 5,
+      demandSignal: 'MODERATE',
+      actionHint: 'Demand is moderate.',
+      recentUtilization: 0.5,
+      revenueHistory: Array.from({ length: 3 }, (_, i) => ({
+        tick: i + 1,
+        revenue: 150,
+        quantitySold: 10,
+      })),
+      priceHistory: Array.from({ length: 3 }, (_, i) => ({
+        tick: i + 1,
+        pricePerUnit: chairProduct.basePrice * 1.5,
+      })),
+      marketShare: [
+        { label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false },
+      ],
+      elasticityIndex: -0.8,
+      unmetDemandShare: 0,
+      populationIndex: 1.0,
+      inventoryQuality: 0.6,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    const pricePanel = panel.locator('[aria-label="Quick Price Update"]')
+    await expect(pricePanel).toBeVisible()
+
+    const applyBtn = pricePanel.getByRole('button', { name: 'Apply Price' })
+
+    // Button is initially enabled because quickPriceInput is pre-filled with the current minPrice
+    // Enter zero — button should become disabled
+    const priceInput = pricePanel.locator('#quick-price-input')
+    await priceInput.fill('0')
+    await expect(applyBtn).toBeDisabled()
+
+    // Enter negative value — button should remain disabled
+    await priceInput.fill('-5')
+    await expect(applyBtn).toBeDisabled()
+
+    // Enter a valid positive price — button should become enabled
+    await priceInput.fill('10.00')
+    await expect(applyBtn).toBeEnabled()
+  })
+
   test('shows gross profit metric and profit chart when profitHistory is provided', async ({ page }) => {
     const { player, chairProduct } = makeShopPlayer()
 

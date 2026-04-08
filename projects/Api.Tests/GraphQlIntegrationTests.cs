@@ -13560,6 +13560,90 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task UpdatePublicSalesPrice_SuccessiveUpdates_LastValueWins()
+    {
+        // Verify that calling the mutation multiple times keeps the final value.
+        var (token, unitId) = await SetupPublicSalesUnitAsync(
+            "upsp-successive@test.com", "Successive", "Successive Co");
+
+        foreach (var price in new[] { 10.00m, 25.50m, 9.99m })
+        {
+            var result = await ExecuteGraphQlAsync(
+                """
+                mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+                    updatePublicSalesPrice(input: $input) { id minPrice }
+                }
+                """,
+                new { input = new { unitId, newMinPrice = price } },
+                token);
+            Assert.False(result.TryGetProperty("errors", out _), $"Successive update to {price} should succeed.");
+            var returned = result.GetProperty("data").GetProperty("updatePublicSalesPrice").GetProperty("minPrice").GetDecimal();
+            Assert.True(Math.Abs(returned - price) < 0.001m, $"Expected {price} but got {returned}.");
+        }
+
+        // Confirm DB holds the last value (9.99).
+        {
+            await using var scope = _factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var unit = await db.BuildingUnits.FindAsync(unitId);
+            Assert.NotNull(unit);
+            Assert.True(Math.Abs(unit!.MinPrice!.Value - 9.99m) < 0.001m,
+                $"Expected final price 9.99 but got {unit.MinPrice}.");
+        }
+    }
+
+    [Fact]
+    public async Task UpdatePublicSalesPrice_DoesNotAlterOtherUnitFields()
+    {
+        // Verify that the mutation only changes MinPrice and leaves other fields intact.
+        var (token, unitId) = await SetupPublicSalesUnitAsync(
+            "upsp-fields@test.com", "FieldCheck", "FieldCheck Co");
+
+        // Read baseline unit state from DB.
+        Guid originalBuildingId;
+        string originalUnitType;
+        int originalGridX, originalGridY;
+        {
+            await using var scope = _factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var unit = await db.BuildingUnits.FindAsync(unitId);
+            Assert.NotNull(unit);
+            originalBuildingId = unit!.BuildingId;
+            originalUnitType = unit.UnitType.ToString();
+            originalGridX = unit.GridX;
+            originalGridY = unit.GridY;
+        }
+
+        // Update price.
+        const decimal newPrice = 77.77m;
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+                updatePublicSalesPrice(input: $input) { id minPrice unitType gridX gridY }
+            }
+            """,
+            new { input = new { unitId, newMinPrice = newPrice } },
+            token);
+        Assert.False(result.TryGetProperty("errors", out _), "Price update should succeed.");
+
+        var updatedUnit = result.GetProperty("data").GetProperty("updatePublicSalesPrice");
+        Assert.Equal("PUBLIC_SALES", updatedUnit.GetProperty("unitType").GetString());
+        Assert.Equal(originalGridX, updatedUnit.GetProperty("gridX").GetInt32());
+        Assert.Equal(originalGridY, updatedUnit.GetProperty("gridY").GetInt32());
+        Assert.True(Math.Abs(updatedUnit.GetProperty("minPrice").GetDecimal() - newPrice) < 0.001m);
+
+        // Confirm DB fields are unchanged except MinPrice.
+        {
+            await using var scope = _factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var unit = await db.BuildingUnits.FindAsync(unitId);
+            Assert.NotNull(unit);
+            Assert.Equal(originalBuildingId, unit!.BuildingId);
+            Assert.Equal(originalUnitType, unit.UnitType.ToString(), ignoreCase: true);
+        }
+    }
+
+    [Fact]
     public async Task FlushStorage_ClearsInventoryAndCreatesLedgerEntry()
     {
         // Arrange: create a player with a factory that has inventory in a storage unit.
