@@ -1332,8 +1332,8 @@ test.describe('Building detail upgrades', () => {
     await page
       .locator('.config-field')
       .filter({ has: page.getByText('Research Product') })
-      .locator('select')
-      .selectOption('prod-chair')
+      .locator('.picker-item-name', { hasText: 'Wooden Chair' })
+      .click()
 
     await getGridCell(plannedSection, 1, 0).click()
     await expect(page.getByText('Brand Scope')).toBeVisible()
@@ -1344,7 +1344,7 @@ test.describe('Building detail upgrades', () => {
       .selectOption('CATEGORY')
     const anchorProductField = page.locator('.config-field').filter({ has: page.getByText('Anchor Product', { exact: true }) })
     await expect(anchorProductField).toBeVisible()
-    await anchorProductField.locator('select').selectOption('prod-chair')
+    await anchorProductField.locator('.picker-item-name', { hasText: 'Wooden Chair' }).click()
     await expect(getGridCell(plannedSection, 1, 0)).toContainText('Wooden Chair')
   })
 
@@ -5357,13 +5357,13 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
     const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await publicSalesCell.click()
 
-    // PUBLIC_SALES uses a <select> dropdown for product type (label has no `for` attr, scope by config-field)
+    // PUBLIC_SALES uses ProductPicker for product type
     const productTypeField = page
       .locator('.config-field')
       .filter({ has: page.getByText('Product Type', { exact: true }) })
       .first()
-    await expect(productTypeField.locator('select')).toBeVisible()
-    await productTypeField.locator('select').selectOption({ label: 'Wooden Chair' })
+    await expect(productTypeField.locator('.picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
+    await productTypeField.locator('.picker-item-name', { hasText: 'Wooden Chair' }).click()
 
     // Set a negative min price in the number input
     const minPriceField = page
@@ -5414,8 +5414,8 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
       .locator('.config-field')
       .filter({ has: page.getByText('Product Type', { exact: true }) })
       .first()
-    await expect(productTypeField.locator('select')).toBeVisible()
-    await productTypeField.locator('select').selectOption({ label: 'Wooden Chair' })
+    await expect(productTypeField.locator('.picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
+    await productTypeField.locator('.picker-item-name', { hasText: 'Wooden Chair' }).click()
 
     // Set price to exactly 0
     const minPriceField = page

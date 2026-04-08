@@ -3121,6 +3121,27 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('rankedProductTypes')) {
+      const activePlayer = state.players.find((player) => player.id === state.currentUserId)
+      const hasActiveProSubscription = !!activePlayer?.proSubscriptionEndsAtUtc && new Date(activePlayer.proSubscriptionEndsAtUtc).getTime() > Date.now()
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            rankedProductTypes: state.productTypes.map((product) => ({
+              rankingReason: 'catalog',
+              rankingScore: 10,
+              productType: {
+                ...product,
+                isUnlockedForCurrentPlayer: product.isProOnly ? hasActiveProSubscription : true,
+              },
+            })),
+          },
+        }),
+      })
+    }
+
     if (query.includes('productTypes')) {
       const industry = body.variables?.industry
       const activePlayer = state.players.find((player) => player.id === state.currentUserId)
