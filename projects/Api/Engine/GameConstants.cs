@@ -66,6 +66,14 @@ public static class GameConstants
     /// <summary>Base demand per capita per product per tick.</summary>
     public const decimal BaseDemandPerCapita = 0.001m;
 
+    /// <summary>
+    /// Reference city salary used to normalise purchasing-power demand.
+    /// Cities with a <see cref="Api.Data.Entities.City.BaseSalaryPerManhour"/> equal to this
+    /// value produce a purchasing-power factor of 1.0 (no boost or penalty).
+    /// Higher-wage cities attract proportionally more consumer spending.
+    /// </summary>
+    public const decimal ReferenceSalaryPerManhour = 20m;
+
     /// <summary>Standard cost of electricity used by unit operations and manufacturing.</summary>
     public const decimal EnergyPricePerMwh = 55m;
 

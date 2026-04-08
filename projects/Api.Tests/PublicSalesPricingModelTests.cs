@@ -212,4 +212,67 @@ public sealed class PublicSalesPricingModelTests
             prev = index;
         }
     }
+
+    // ── ComputeSalaryPurchasingPowerFactor ──────────────────────────────────
+
+    [Fact]
+    public void ComputeSalaryPurchasingPowerFactor_ZeroSalary_ReturnsNeutral()
+    {
+        // A zero or unset salary must not penalise a city. Factor must be 1.0 (neutral).
+        var result = PublicSalesPricingModel.ComputeSalaryPurchasingPowerFactor(0m);
+        Assert.Equal(1m, result);
+    }
+
+    [Fact]
+    public void ComputeSalaryPurchasingPowerFactor_ReferenceSalary_Returns1()
+    {
+        // A city whose salary equals the reference salary must return exactly 1.0.
+        var result = PublicSalesPricingModel.ComputeSalaryPurchasingPowerFactor(GameConstants.ReferenceSalaryPerManhour);
+        Assert.Equal(1m, result);
+    }
+
+    [Fact]
+    public void ComputeSalaryPurchasingPowerFactor_HighSalary_ReturnsAbove1()
+    {
+        // A city with salary above the reference salary should boost demand (factor > 1.0).
+        var result = PublicSalesPricingModel.ComputeSalaryPurchasingPowerFactor(40m);
+        Assert.True(result > 1m, $"High-wage city should have factor > 1.0. Got {result}");
+    }
+
+    [Fact]
+    public void ComputeSalaryPurchasingPowerFactor_LowSalary_ReturnsBetweenHalfAndOne()
+    {
+        // A city with salary below the reference salary should penalise demand but not too much.
+        var result = PublicSalesPricingModel.ComputeSalaryPurchasingPowerFactor(10m);
+        Assert.True(result >= 0.5m && result < 1m,
+            $"Low-wage city factor should be between 0.5 and 1.0. Got {result}");
+    }
+
+    [Fact]
+    public void ComputeSalaryPurchasingPowerFactor_IsMonotonicallyIncreasing()
+    {
+        // Higher salary must always yield a higher or equal factor.
+        decimal[] salaries = [5m, 10m, 15m, 20m, 25m, 30m, 40m, 50m, 100m];
+        var prev = 0m;
+        foreach (var salary in salaries)
+        {
+            var factor = PublicSalesPricingModel.ComputeSalaryPurchasingPowerFactor(salary);
+            Assert.True(factor >= prev,
+                $"Factor should be non-decreasing as salary rises. At salary={salary} got {factor} < previous {prev}");
+            prev = factor;
+        }
+    }
+
+    [Fact]
+    public void ComputeSalaryPurchasingPowerFactor_IsClampedBetween05And2()
+    {
+        // Result must always be within [0.5, 2.0] for any positive salary.
+        decimal[] salaries = [0.01m, 1m, 5m, 10m, 20m, 30m, 40m, 50m, 100m, 1000m];
+        foreach (var salary in salaries)
+        {
+            var factor = PublicSalesPricingModel.ComputeSalaryPurchasingPowerFactor(salary);
+            Assert.True(factor >= 0.5m && factor <= 2.0m,
+                $"Factor must be in [0.5, 2.0] but got {factor} for salary={salary}");
+        }
+    }
 }

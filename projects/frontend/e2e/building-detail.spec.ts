@@ -7901,6 +7901,83 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(positiveDrivers.first()).toBeVisible()
   })
 
+  test('shows SALARY demand driver as POSITIVE in high-wage city', async ({ page }) => {
+    // A unit whose analytics include a SALARY demand driver with POSITIVE impact should
+    // render the factor label "Purchasing Power" and the driver row with positive styling.
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Vienna Shop',
+      cityName: 'Vienna',
+      totalRevenue: 800,
+      totalQuantitySold: 40,
+      averagePricePerUnit: 20,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 5,
+      demandSignal: 'STRONG',
+      actionHint: 'Sales are strong.',
+      recentUtilization: 0.75,
+      revenueHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, revenue: 160, quantitySold: 8 })),
+      priceHistory: [],
+      marketShare: [],
+      elasticityIndex: null,
+      unmetDemandShare: null,
+      populationIndex: 1.1,
+      inventoryQuality: 0.7,
+      brandAwareness: 0.3,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [
+        {
+          factor: 'SALARY',
+          impact: 'POSITIVE',
+          score: 0.8,
+          description: 'Residents here have above-average purchasing power (salary ×2.00), boosting baseline demand.',
+        },
+        {
+          factor: 'PRICE',
+          impact: 'POSITIVE',
+          score: 0.95,
+          description: 'Price is competitive versus the market baseline.',
+        },
+      ],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    const driversSection = panel.locator('[aria-label="Demand Drivers"]')
+    await expect(driversSection).toBeVisible()
+
+    // The SALARY driver should render with the i18n label "Purchasing Power"
+    await expect(driversSection.locator('.mi-driver-factor', { hasText: 'Purchasing Power' }).first()).toBeVisible()
+
+    // SALARY driver should have positive styling
+    const positiveDriver = driversSection.locator('.mi-driver-positive').filter({ hasText: 'Purchasing Power' })
+    await expect(positiveDriver).toBeVisible()
+  })
+
   test('does not show demand drivers section when demandDrivers is empty', async ({ page }) => {
     const { player, chairProduct } = makeShopPlayer()
 

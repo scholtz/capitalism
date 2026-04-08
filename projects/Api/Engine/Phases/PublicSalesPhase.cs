@@ -147,7 +147,10 @@ public sealed class PublicSalesPhase : ITickPhase
             var city = firstOffer.City;
 
             // City-level base demand for this product (population-driven, no location bias).
-            var cityBaseDemand = city.Population * GameConstants.BaseDemandPerCapita;
+            // Salary purchasing power scales demand: residents in higher-wage cities
+            // can afford to buy more, boosting the effective per-capita demand.
+            var salaryFactor = PublicSalesPricingModel.ComputeSalaryPurchasingPowerFactor(city.BaseSalaryPerManhour);
+            var cityBaseDemand = city.Population * GameConstants.BaseDemandPerCapita * salaryFactor;
             if (cityBaseDemand <= 0m)
                 continue;
 

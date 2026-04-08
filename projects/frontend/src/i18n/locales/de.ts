@@ -944,6 +944,7 @@ export default {
         factor_LOCATION: 'Standort',
         factor_SATURATION: 'Marktsättigung',
         factor_COMPETITION: 'Wettbewerb',
+        factor_SALARY: 'Kaufkraft',
       },
       priceUpdateFailed: 'Preisaktualisierung fehlgeschlagen. Bitte versuchen Sie es erneut.',
       priceUpdate: {

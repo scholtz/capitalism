@@ -942,6 +942,7 @@ export default {
         factor_LOCATION: 'Location',
         factor_SATURATION: 'Market Saturation',
         factor_COMPETITION: 'Competition',
+        factor_SALARY: 'Purchasing Power',
       },
       priceUpdateFailed: 'Failed to update price. Please try again.',
       priceUpdate: {

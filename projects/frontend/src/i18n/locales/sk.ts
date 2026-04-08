@@ -939,6 +939,7 @@ export default {
         factor_LOCATION: 'Poloha',
         factor_SATURATION: 'Nasýtenosť trhu',
         factor_COMPETITION: 'Konkurencia',
+        factor_SALARY: 'Kúpna sila',
       },
       priceUpdateFailed: 'Nepodarilo sa aktualizovať cenu. Skúste to znova.',
       priceUpdate: {

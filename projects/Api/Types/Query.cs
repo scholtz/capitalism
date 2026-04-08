@@ -2126,7 +2126,7 @@ public sealed class Query
         // players can understand why sales are strong or weak.
         var demandDrivers = ComputeDemandDrivers(
             unit, productTypeForAnalytics, inventoryQuality, brandAwareness, populationIndex,
-            marketShare, unmetDemandShare);
+            marketShare, unmetDemandShare, city?.BaseSalaryPerManhour);
 
         return new PublicSalesAnalytics
         {
@@ -2168,7 +2168,8 @@ public sealed class Query
         decimal? brandAwareness,
         decimal? populationIndex,
         List<MarketShareEntry> marketShare,
-        decimal? unmetDemandShare)
+        decimal? unmetDemandShare,
+        decimal? baseSalaryPerManhour = null)
     {
         var drivers = new List<DemandDriverEntry>();
 
@@ -2277,6 +2278,34 @@ public sealed class Query
                 locDesc = $"Low-traffic location (×{pi:F2}) is limiting your customer reach.";
             }
             drivers.Add(new DemandDriverEntry { Factor = "LOCATION", Impact = locImpact, Score = locScore, Description = locDesc });
+        }
+
+        // SALARY driver – city purchasing power based on average wages.
+        // Higher-wage cities generate more consumer demand per capita.
+        // This is informational: players cannot change their city's salary,
+        // but it explains why the same product sells better in Vienna than Bratislava.
+        if (baseSalaryPerManhour.HasValue && baseSalaryPerManhour.Value > 0m)
+        {
+            var salaryFactor = PublicSalesPricingModel.ComputeSalaryPurchasingPowerFactor(baseSalaryPerManhour.Value);
+            var salaryScore = Math.Clamp((salaryFactor - 0.5m) / 1.5m, 0m, 1m); // map [0.5,2.0] → [0,1]
+            string salaryImpact;
+            string salaryDesc;
+            if (salaryFactor >= 1.2m)
+            {
+                salaryImpact = "POSITIVE";
+                salaryDesc = $"Residents here have above-average purchasing power (salary ×{salaryFactor:F2}), boosting baseline demand.";
+            }
+            else if (salaryFactor >= 0.85m)
+            {
+                salaryImpact = "NEUTRAL";
+                salaryDesc = $"City salary is near the market average (×{salaryFactor:F2}). Demand is not materially affected by purchasing power.";
+            }
+            else
+            {
+                salaryImpact = "NEGATIVE";
+                salaryDesc = $"Residents here have below-average purchasing power (salary ×{salaryFactor:F2}), which limits baseline demand for your product.";
+            }
+            drivers.Add(new DemandDriverEntry { Factor = "SALARY", Impact = salaryImpact, Score = salaryScore, Description = salaryDesc });
         }
 
         // SATURATION driver — shows whether the city market is under-supplied (scarcity) or over-supplied.

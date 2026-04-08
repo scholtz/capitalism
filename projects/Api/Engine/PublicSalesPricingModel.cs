@@ -64,4 +64,21 @@ public static class PublicSalesPricingModel
         var elasticity = NormalizePriceElasticity(priceElasticity);
         return decimal.Round(-(0.5m + (elasticity * 1.5m)), 2, MidpointRounding.AwayFromZero);
     }
+
+    /// <summary>
+    /// Returns a purchasing-power multiplier based on the city's average base salary.
+    /// A salary equal to <see cref="GameConstants.ReferenceSalaryPerManhour"/> produces 1.0.
+    /// Higher-wage cities yield up to 2.0; lower-wage cities yield a minimum of 0.5.
+    /// A zero or unset salary returns 1.0 (neutral, used by test cities and legacy data).
+    /// </summary>
+    public static decimal ComputeSalaryPurchasingPowerFactor(decimal baseSalaryPerManhour)
+    {
+        if (baseSalaryPerManhour <= 0m)
+            return 1m;
+
+        return Math.Clamp(
+            baseSalaryPerManhour / GameConstants.ReferenceSalaryPerManhour,
+            0.5m,
+            2.0m);
+    }
 }

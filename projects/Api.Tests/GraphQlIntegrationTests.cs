@@ -14501,6 +14501,46 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task PublicSalesAnalytics_DemandDrivers_HighWageCityShowsPositiveSalaryDriver()
+    {
+        // In a high-wage city (BaseSalaryPerManhour > reference), the SALARY demand driver
+        // should be POSITIVE and present in the analytics response.
+        var token = await RegisterAndGetTokenAsync("analytics-salary-high@test.com", "SalaryHigh");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "High Wage Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Salary High Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding")
+            .GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        // Override the city's salary to well above the reference (40 > 20) so factor = 2.0.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FindAsync(Guid.Parse(cityId));
+        Assert.NotNull(city);
+        city.BaseSalaryPerManhour = 40m;
+        await db.SaveChangesAsync();
+
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ demandDrivers {{ factor impact score description }} }} }}",
+            token: token);
+
+        var drivers = result.GetProperty("data").GetProperty("publicSalesAnalytics").GetProperty("demandDrivers");
+        var salaryDriver = Enumerable.Range(0, drivers.GetArrayLength())
+            .Select(i => drivers[i])
+            .FirstOrDefault(d => d.GetProperty("factor").GetString() == "SALARY");
+
+        Assert.False(salaryDriver.ValueKind == JsonValueKind.Undefined,
+            "SALARY driver must be present when city has a positive BaseSalaryPerManhour.");
+        Assert.Equal("POSITIVE", salaryDriver.GetProperty("impact").GetString());
+        var salaryScore = salaryDriver.GetProperty("score").GetDecimal();
+        Assert.InRange(salaryScore, 0m, 1m);
+        Assert.False(string.IsNullOrWhiteSpace(salaryDriver.GetProperty("description").GetString()),
+            "SALARY driver description must not be empty.");
+    }
+
+    [Fact]
     public async Task CompanyLedger_RequiresOwnership_ForbidsOtherPlayer()
     {
         var ownerToken = await RegisterAndGetTokenAsync("ledger-owner@test.com", "LedgerOwner");
