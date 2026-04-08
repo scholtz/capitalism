@@ -470,6 +470,19 @@ export default {
     proLockedTitle: 'Existing Pro products detected',
   },
 
+  productPicker: {
+    ariaLabel: 'Product selection',
+    searchPlaceholder: 'Search products…',
+    loading: 'Loading products…',
+    noResults: 'No products match your search.',
+    noneLabel: '— None —',
+    sectionConnected: 'Connected to this building',
+    sectionUsedByCompany: 'Used by your company',
+    sectionCatalog: 'All products',
+    reasonConnected: 'Connected',
+    reasonUsedByCompany: 'Used by company',
+  },
+
   buildings: {
     title: 'Buy Building',
     selectType: 'Select Building Type',

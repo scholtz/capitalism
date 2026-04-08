@@ -469,6 +469,19 @@ export default {
     discoveryUnlocked: 'Ihr aktiver Pro-Zugang schaltet den gesamten erweiterten Produktkatalog frei.',
     proLockedTitle: 'Vorhandene Pro-Produkte erkannt',
   },
+  productPicker: {
+    ariaLabel: 'Produktauswahl',
+    searchPlaceholder: 'Produkte suchen…',
+    loading: 'Produkte werden geladen…',
+    noResults: 'Keine Produkte entsprechen Ihrer Suche.',
+    noneLabel: '— Keines —',
+    sectionConnected: 'Mit diesem Gebäude verbunden',
+    sectionUsedByCompany: 'Von Ihrem Unternehmen genutzt',
+    sectionCatalog: 'Alle Produkte',
+    reasonConnected: 'Verbunden',
+    reasonUsedByCompany: 'Vom Unternehmen genutzt',
+  },
+
   buildings: {
     title: 'Geb\u00e4ude kaufen',
     selectType: 'Geb\u00e4udetyp w\u00e4hlen',

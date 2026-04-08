@@ -19521,6 +19521,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
 
     #endregion
 
+    #region UnitUpgrade
 
     [Fact]
     public async Task ScheduleUnitUpgrade_Success_CreatesPlanAndDeductsCash()
@@ -19976,6 +19977,9 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
 
     #region RankedProductTypes
 
+    private static async Task<Guid> GetProductGuidBySlugAsync(AppDbContext db, string slug)
+        => await db.ProductTypes.Where(p => p.Slug == slug).Select(p => p.Id).FirstAsync();
+
     [Fact]
     public async Task RankedProductTypes_PublicSalesContext_ConnectedProductRankedFirst()
     {
@@ -19989,7 +19993,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
 
         var player = await db.Players.FirstAsync(p => p.Email == email);
         var city = await db.Cities.FirstAsync();
-        var woodenChairId = await GetProductIdBySlugAsync(isolatedClient, "wooden-chair");
+        var woodenChairId = await GetProductGuidBySlugAsync(db, "wooden-chair");
 
         var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "RptPsCo", Cash = 100_000m };
         db.Companies.Add(company);
@@ -20008,6 +20012,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         await db.SaveChangesAsync();
 
         var query = """
+            query RankedProducts($buildingId: UUID!, $unitType: String!) {
               rankedProductTypes(buildingId: $buildingId, unitType: $unitType) {
                 rankingReason rankingScore productType { id slug }
               }
@@ -20037,7 +20042,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
 
         var player = await db.Players.FirstAsync(p => p.Email == email);
         var city = await db.Cities.FirstAsync();
-        var breadId = await GetProductIdBySlugAsync(isolatedClient, "bread");
+        var breadId = await GetProductGuidBySlugAsync(db, "bread");
 
         var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "RptPqCo", Cash = 100_000m };
         db.Companies.Add(company);
@@ -20063,6 +20068,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         await db.SaveChangesAsync();
 
         var query = """
+            query RankedProducts($buildingId: UUID!, $unitType: String!) {
               rankedProductTypes(buildingId: $buildingId, unitType: $unitType) {
                 rankingReason rankingScore productType { id slug }
               }
@@ -20092,7 +20098,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
 
         var player = await db.Players.FirstAsync(p => p.Email == email);
         var city = await db.Cities.FirstAsync();
-        var basicMedicineId = await GetProductIdBySlugAsync(isolatedClient, "basic-medicine");
+        var basicMedicineId = await GetProductGuidBySlugAsync(db, "basic-medicine");
 
         var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "RptBqCo", Cash = 100_000m };
         db.Companies.Add(company);
@@ -20118,6 +20124,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         await db.SaveChangesAsync();
 
         var query = """
+            query RankedProducts($buildingId: UUID!, $unitType: String!) {
               rankedProductTypes(buildingId: $buildingId, unitType: $unitType) {
                 rankingReason rankingScore productType { slug }
               }
@@ -20157,6 +20164,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         await db.SaveChangesAsync();
 
         var query = """
+            query RankedProducts($buildingId: UUID!, $unitType: String!) {
               rankedProductTypes(buildingId: $buildingId, unitType: $unitType) {
                 rankingReason rankingScore productType { slug }
               }
@@ -20178,6 +20186,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     public async Task RankedProductTypes_Unauthenticated_ReturnsError()
     {
         var query = """
+            query RankedProducts($buildingId: UUID!, $unitType: String!) {
               rankedProductTypes(buildingId: $buildingId, unitType: $unitType) {
                 rankingReason productType { slug }
               }
@@ -20213,6 +20222,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         await db.SaveChangesAsync();
 
         var query = """
+            query RankedProducts($buildingId: UUID!, $unitType: String!) {
               rankedProductTypes(buildingId: $buildingId, unitType: $unitType) {
                 rankingScore productType { name }
               }
@@ -20224,6 +20234,7 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         var items = result.GetProperty("data").GetProperty("rankedProductTypes")
             .EnumerateArray().ToList();
         var catalogItems = items.Where(i => i.GetProperty("rankingScore").GetInt32() == 10).ToList();
+        var names = catalogItems.Select(i => i.GetProperty("productType").GetProperty("name").GetString()!).ToList();
         var sortedNames = names.OrderBy(n => n).ToList();
         Assert.Equal(sortedNames, names);
     }

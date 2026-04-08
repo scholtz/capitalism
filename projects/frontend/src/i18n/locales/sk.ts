@@ -467,6 +467,19 @@ export default {
     discoveryUnlocked: 'Vaše aktívne Pro odomyká celý pokročilý produktový katalóg.',
     proLockedTitle: 'Zistené existujúce Pro produkty',
   },
+  productPicker: {
+    ariaLabel: 'Výber produktu',
+    searchPlaceholder: 'Hľadať produkty…',
+    loading: 'Načítavam produkty…',
+    noResults: 'Žiadne produkty nezodpovedajú vášmu hľadaniu.',
+    noneLabel: '— Žiadny —',
+    sectionConnected: 'Prepojené s touto budovou',
+    sectionUsedByCompany: 'Používané vašou spoločnosťou',
+    sectionCatalog: 'Všetky produkty',
+    reasonConnected: 'Prepojené',
+    reasonUsedByCompany: 'Používané spoločnosťou',
+  },
+
   buildings: {
     title: 'K\u00fapi\u0165 budovu',
     selectType: 'Vyberte typ budovy',

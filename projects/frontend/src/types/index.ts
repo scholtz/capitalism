@@ -418,6 +418,12 @@ export interface OnboardingResult {
   startupPackOffer: StartupPackOffer | null
 }
 
+export interface RankedProductResult {
+  productType: ProductType
+  rankingReason: 'connected' | 'used_by_company' | 'catalog'
+  rankingScore: number
+}
+
 export interface OnboardingStartResult {
   company: Company
   factory: Building

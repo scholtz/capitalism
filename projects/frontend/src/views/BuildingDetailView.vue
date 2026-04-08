@@ -28,6 +28,7 @@ import { deepEqual } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 import { useGameStateStore } from '@/stores/gameState'
 import { getUnitResourceHistoryItemKey, type UnitResourceHistoryItemOption } from '@/lib/unitResourceHistory'
+import ProductPicker from '@/components/buildings/ProductPicker.vue'
 import type {
   Building,
   BuildingConfigurationPlanRemoval,
@@ -45,6 +46,7 @@ import type {
   ProcurementPreview,
   ProductType,
   PublicSalesAnalytics,
+  RankedProductResult,
   ResearchBrandState,
   ResourceType,
   CityMediaHouseInfo,
@@ -148,6 +150,8 @@ const draftUnits = ref<EditableGridUnit[]>([])
 const editBaselineUnits = ref<EditableGridUnit[]>([])
 const resourceTypes = ref<ResourceType[]>([])
 const productTypes = ref<ProductType[]>([])
+const rankedProducts = ref<RankedProductResult[]>([])
+const rankedProductsLoading = ref(false)
 const cities = ref<City[]>([])
 const unitInventorySummaries = ref<BuildingUnitInventorySummary[]>([])
 const unitInventories = ref<BuildingUnitInventory[]>([])
@@ -3188,6 +3192,38 @@ onMounted(async () => {
   await loadBuilding()
 })
 
+async function fetchRankedProducts(unitType: string) {
+  if (!buildingId.value) return
+  rankedProductsLoading.value = true
+  try {
+    const data = await gqlRequest<{ rankedProductTypes: RankedProductResult[] }>(
+      `query RankedProducts($buildingId: UUID!, $unitType: String!) {
+        rankedProductTypes(buildingId: $buildingId, unitType: $unitType) {
+          rankingReason
+          rankingScore
+          productType {
+            id name slug industry imageUrl basePrice baseCraftTicks outputQuantity
+            energyConsumptionMwh basicLaborHours unitName unitSymbol isProOnly
+            isUnlockedForCurrentPlayer description
+            recipes { quantity resourceType { id name slug unitName unitSymbol } inputProductType { id name slug unitName unitSymbol } }
+          }
+        }
+      }`,
+      { buildingId: buildingId.value, unitType },
+    )
+    rankedProducts.value = data.rankedProductTypes ?? []
+  } catch {
+    // Fall back to flat productTypes list if the ranked query fails
+    rankedProducts.value = productTypes.value.map((pt) => ({
+      productType: pt,
+      rankingReason: 'catalog' as const,
+      rankingScore: 10,
+    }))
+  } finally {
+    rankedProductsLoading.value = false
+  }
+}
+
 useTickRefresh(async () => {
   if (!auth.isAuthenticated || !building.value) {
     return
@@ -3236,6 +3272,23 @@ watch(
       showPurchaseSelector.value = false
     }
   },
+)
+
+// Fetch ranked products when entering a product-selection unit in edit mode
+watch(
+  () => {
+    if (!isEditing.value || !selectedCell.value) return null
+    const unit = getDraftUnitAt(selectedCell.value.x, selectedCell.value.y)
+    if (!unit) return null
+    const type = unit.unitType
+    if (type === 'PUBLIC_SALES' || type === 'PRODUCT_QUALITY' || type === 'BRAND_QUALITY') return type
+    return null
+  },
+  (unitType) => {
+    if (unitType) void fetchRankedProducts(unitType)
+    else rankedProducts.value = []
+  },
+  { immediate: false },
 )
 
 watch(
@@ -4353,16 +4406,14 @@ watch(
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'PUBLIC_SALES'">
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.productType') }}</label>
-                    <select
-                      class="form-input"
-                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''"
-                      @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)"
-                    >
-                      <option value="">{{ t('buildingDetail.config.none') }}</option>
-                      <option v-for="pt in productTypes" :key="pt.id" :value="pt.id" :disabled="isProductLocked(pt)">
-                        {{ getProductOptionLabel(pt) }}
-                      </option>
-                    </select>
+                    <ProductPicker
+                      :model-value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? null"
+                      :ranked-products="rankedProducts"
+                      :loading="rankedProductsLoading"
+                      :allow-none="true"
+                      none-label-key="buildingDetail.config.none"
+                      @update:model-value="updateSelectedUnitConfig('productTypeId', $event)"
+                    />
                   </div>
                   <p class="config-help">{{ t('buildingDetail.proAccessHint') }}</p>
                   <div class="config-field">
@@ -4434,16 +4485,14 @@ watch(
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'PRODUCT_QUALITY'">
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.researchProduct') }}</label>
-                    <select
-                      class="form-input"
-                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''"
-                      @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)"
-                    >
-                      <option value="">{{ t('buildingDetail.config.none') }}</option>
-                      <option v-for="pt in productTypes" :key="pt.id" :value="pt.id" :disabled="isProductLocked(pt)">
-                        {{ getProductOptionLabel(pt) }}
-                      </option>
-                    </select>
+                    <ProductPicker
+                      :model-value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? null"
+                      :ranked-products="rankedProducts"
+                      :loading="rankedProductsLoading"
+                      :allow-none="true"
+                      none-label-key="buildingDetail.config.none"
+                      @update:model-value="updateSelectedUnitConfig('productTypeId', $event)"
+                    />
                   </div>
                   <p class="config-help">{{ t('buildingDetail.config.researchProductHelp') }}</p>
                   <p class="config-help">{{ t('buildingDetail.proAccessHint') }}</p>
@@ -4465,16 +4514,14 @@ watch(
                   </div>
                   <div v-if="['PRODUCT', 'CATEGORY'].includes(getDraftUnitAt(selectedCell.x, selectedCell.y)!.brandScope ?? '')" class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.researchAnchorProduct') }}</label>
-                    <select
-                      class="form-input"
-                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''"
-                      @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)"
-                    >
-                      <option value="">{{ t('buildingDetail.config.none') }}</option>
-                      <option v-for="pt in productTypes" :key="pt.id" :value="pt.id" :disabled="isProductLocked(pt)">
-                        {{ getProductOptionLabel(pt) }}
-                      </option>
-                    </select>
+                    <ProductPicker
+                      :model-value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? null"
+                      :ranked-products="rankedProducts"
+                      :loading="rankedProductsLoading"
+                      :allow-none="true"
+                      none-label-key="buildingDetail.config.none"
+                      @update:model-value="updateSelectedUnitConfig('productTypeId', $event)"
+                    />
                   </div>
                   <p class="config-help">{{ t('buildingDetail.config.researchBrandHelp') }}</p>
                   <p class="config-help" v-if="['PRODUCT', 'CATEGORY'].includes(getDraftUnitAt(selectedCell.x, selectedCell.y)!.brandScope ?? '')">
