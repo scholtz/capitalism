@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { gqlRequest } from '@/lib/graphql'
 import { useAuthStore } from '@/stores/auth'
 import { useTickRefresh } from '@/composables/useTickRefresh'
+import { useGameStateStore } from '@/stores/gameState'
 import { deepEqual } from '@/lib/utils'
 import type { PersonAccount, ShareTradeResult, StockExchangeListing } from '@/types'
 
@@ -15,7 +16,10 @@ type ControlledCompanyAccount = {
 
 const { t, locale } = useI18n()
 const auth = useAuthStore()
+const gameStateStore = useGameStateStore()
 auth.initFromStorage()
+
+const currentTick = computed(() => gameStateStore.gameState?.currentTick ?? null)
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -360,6 +364,12 @@ useTickRefresh(() => {
         <p class="stocks-eyebrow">{{ t('stockExchange.eyebrow') }}</p>
         <h1 class="stocks-title">{{ t('stockExchange.title') }}</h1>
         <p class="stocks-subtitle">{{ t('stockExchange.subtitle') }}</p>
+        <div class="stocks-hero-meta">
+          <span class="stocks-tick-chip" :title="t('stockExchange.tickHint')">
+            <span class="stocks-tick-label">{{ t('stockExchange.tick') }}</span>
+            <span class="stocks-tick-value">{{ currentTick !== null ? currentTick : '—' }}</span>
+          </span>
+        </div>
       </div>
     </section>
 
@@ -638,6 +648,41 @@ useTickRefresh(() => {
   margin: 0.75rem 0 0;
   max-width: 60rem;
   color: var(--color-text-secondary);
+}
+
+.stocks-hero-meta {
+  display: flex;
+  margin-top: 1rem;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.stocks-tick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  cursor: default;
+  user-select: none;
+}
+
+.stocks-tick-label {
+  font-weight: 600;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+}
+
+.stocks-tick-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--color-text-primary);
 }
 
 .stocks-body {

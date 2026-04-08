@@ -352,6 +352,8 @@ export default {
     inventoryTooltip: 'Lagerwert',
     howItWorksTitle: 'Wie wird das Verm\u00f6gen berechnet?',
     howItWorksBody: 'Das Gesamtverm\u00f6gen setzt sich aus drei Komponenten zusammen: Bargeld, Geb\u00e4udewerte und Lagerbestand.',
+    tick: 'Tick',
+    tickHint: 'Rankings werden jeden Spieltick aktualisiert. Der angezeigte Tick ist der aktuellste Daten-Snapshot.',
   },
   globalExchange: {
     eyebrow: 'Stadtmärkte',
@@ -1337,6 +1339,8 @@ export default {
     buySuccess: '{shares} Aktien von {company} gekauft.',
     sellSuccess: '{shares} Aktien von {company} verkauft.',
     switchSuccess: 'Aktives Konto wurde auf {account} umgestellt.',
+    tick: 'Tick',
+    tickHint: 'Aktienkurse und Angebote werden jeden Spieltick aktualisiert. Der angezeigte Tick ist der aktuellste Daten-Snapshot.',
   },
   powerGrid: {
     title: 'Städtisches Stromnetz',

@@ -350,6 +350,8 @@ export default {
     inventoryTooltip: 'Inventory stock value',
     howItWorksTitle: 'How is wealth calculated?',
     howItWorksBody: 'Total wealth combines three components. Build more factories to increase asset value, keep your supply chains running to grow inventory, and reinvest profits to climb the ranks.',
+    tick: 'Tick',
+    tickHint: 'Rankings update every game tick. The displayed tick is the latest data snapshot.',
   },
   globalExchange: {
     eyebrow: 'City Markets',
@@ -1338,6 +1340,8 @@ export default {
     buySuccess: 'Bought {shares} shares in {company}.',
     sellSuccess: 'Sold {shares} shares in {company}.',
     switchSuccess: 'Active account switched to {account}.',
+    tick: 'Tick',
+    tickHint: 'Share prices and listings update every game tick. The displayed tick is the latest data snapshot.',
   },
   powerGrid: {
     title: 'City Power Grid',

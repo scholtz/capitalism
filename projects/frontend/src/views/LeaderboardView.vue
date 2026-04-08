@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
 import { useTickRefresh } from '@/composables/useTickRefresh'
+import { useGameStateStore } from '@/stores/gameState'
 import { deepEqual } from '@/lib/utils'
 import type { PlayerRanking, CompanyRanking } from '@/types'
 
@@ -12,6 +13,7 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
+const gameStateStore = useGameStateStore()
 
 const rankings = ref<PlayerRanking[]>([])
 const companyRankings = ref<CompanyRanking[]>([])
@@ -150,6 +152,7 @@ function rankBadge(index: number): string {
 }
 
 const currentPlayerId = computed(() => auth.player?.id ?? null)
+const currentTick = computed(() => gameStateStore.gameState?.currentTick ?? null)
 </script>
 
 <template>
@@ -159,6 +162,12 @@ const currentPlayerId = computed(() => auth.player?.id ?? null)
         <p class="leaderboard-eyebrow">{{ t('leaderboard.eyebrow') }}</p>
         <h1 class="leaderboard-title">{{ t('leaderboard.title') }}</h1>
         <p class="leaderboard-subtitle">{{ t('leaderboard.subtitle') }}</p>
+        <div class="leaderboard-hero-meta">
+          <span class="leaderboard-tick-chip" :title="t('leaderboard.tickHint')">
+            <span class="leaderboard-tick-label">{{ t('leaderboard.tick') }}</span>
+            <span class="leaderboard-tick-value">{{ currentTick !== null ? currentTick : '—' }}</span>
+          </span>
+        </div>
       </div>
     </div>
 
@@ -358,6 +367,42 @@ const currentPlayerId = computed(() => auth.player?.id ?? null)
   color: var(--color-text-secondary);
   max-width: 540px;
   margin: 0 auto;
+}
+
+.leaderboard-hero-meta {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.leaderboard-tick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  cursor: default;
+  user-select: none;
+}
+
+.leaderboard-tick-label {
+  font-weight: 600;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+}
+
+.leaderboard-tick-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--color-text-primary);
 }
 
 .leaderboard-content {

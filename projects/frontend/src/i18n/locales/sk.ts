@@ -350,6 +350,8 @@ export default {
     inventoryTooltip: 'Hodnota z\u00e1sob',
     howItWorksTitle: 'Ako sa po\u010d\u00edta bohatstvo?',
     howItWorksBody: 'Celkov\u00e9 bohatstvo kombinuje tri zlo\u017eky: hotovos\u0165, hodnotu budov a hodnotu z\u00e1sob.',
+    tick: 'Tik',
+    tickHint: 'Rebr\u00ed\u010dek sa aktualizuje ka\u017ed\u00fd hern\u00fd tik. Zobrazen\u00fd tik je posledný d\u00e1tov\u00fd snapshot.',
   },
   globalExchange: {
     eyebrow: 'Mestské trhy',
@@ -1330,6 +1332,8 @@ export default {
     buySuccess: 'Nakúpili ste {shares} akcií vo firme {company}.',
     sellSuccess: 'Predali ste {shares} akcií vo firme {company}.',
     switchSuccess: 'Aktívny účet bol prepnutý na {account}.',
+    tick: 'Tik',
+    tickHint: 'Ceny akcií a ponuky sa aktualizujú každý herný tik. Zobrazený tik je posledný dátový snapshot.',
   },
   powerGrid: {
     title: 'Mestská elektrosieť',
