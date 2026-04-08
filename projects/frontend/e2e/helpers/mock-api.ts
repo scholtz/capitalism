@@ -3507,7 +3507,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
-    if (query.includes('rankings')) {
+    if (query.includes('rankings') && !query.includes('companyRankings')) {
       const rankings = state.players
         .filter((p) => p.role !== 'ADMIN')
         .map((p) => {

@@ -687,3 +687,28 @@ Root-cause of a CI failure (April 2026, PR #233 public-sales analytics):
 3. **After applying `AsSplitQuery()`, the query is split into separate round-trips per Include path.** This avoids the Cartesian product and guarantees navigation collections are populated correctly.
 4. **CI ordering vs local ordering is not deterministic.** If tests share a database (via `IClassFixture`), any test that creates an entity with pending child collections (e.g., `BuildingConfigurationPlan`) but does NOT apply/delete it leaves state that can corrupt subsequent tests. Both the query fix (`AsSplitQuery`) AND the test isolation matter.
 5. **When CI fails with "An item with the same key has already been added" in a `ToDictionary` on a navigation collection, immediately suspect a Cartesian explosion in an EF Core Include chain.** Add `AsSplitQuery()` and re-run; do not try to work around with `DistinctBy` as that would hide the underlying data corruption.
+
+## Tick-refresh flicker prevention — always verify selectors against actual i18n labels before pushing E2E tests
+
+Root-cause of a CI failure (April 2026, PR #261 flicker prevention):
+- A new E2E test asserted `getByRole('button', { name: 'Save' })` after entering building edit mode.
+- The actual button text is **"Store Upgrade"** (`t('buildingDetail.storeConfiguration')`), not "Save".
+- The test passed lint and `npm run build` locally (since these don't execute Playwright), but failed in CI on every retry.
+
+**Rules to prevent recurrence:**
+1. **Always cross-check every `getByRole('button', { name: '...' })` against the actual i18n keys in `src/i18n/locales/en.ts` before writing the assertion.** Do not guess button labels; look them up.
+2. **When verifying "edit mode is active", prefer the always-visible indicator.** For BuildingDetailView's planning section: the `getByRole('button', { name: 'Cancel Editing' })` and `getByRole('heading', { name: 'Planned Upgrade' })` are always visible when `isEditing = true`, whereas "Store Upgrade" is disabled when there are no draft changes (though still visible).
+3. **Run `CI=true npx playwright test --project=chromium e2e/<spec>.ts` with the production build** to catch selector mismatches before `report_progress`. Running without `CI=true` uses the dev server which may behave differently.
+
+## Mock-API `rankings` vs `companyRankings` substring collision
+
+Root-cause of a latent mock bug (April 2026, PR #261):
+- The mock-api `rankings` handler used `query.includes('rankings')` which also matched `companyRankings` queries because `'companyRankings'.includes('rankings') === true`.
+- This caused all `companyRankings` GraphQL requests to be handled by the `rankings` handler which returned `{ data: { rankings: [...] } }` — the company rankings tab silently received wrong data.
+- The existing company-rankings E2E test appeared to pass because a second `page.route()` with higher priority intercepted the request before the mock-api handler.
+
+**Rules to prevent recurrence:**
+1. **Whenever a query name contains another query name as a substring, the longer name MUST be excluded from the shorter check:** `query.includes('rankings') && !query.includes('companyRankings')`.
+2. **Follow the same guard pattern as `isStandaloneMeQuery`** (already documented above for `me`/`gameServers`). Apply it to any pair where one query name contains another as a substring.
+3. **After adding a new GraphQL query handler to mock-api, check whether the query name is a substring of any other query name** already in the mock. If so, add the exclusion guard immediately.
+4. **Known pairs requiring exclusion guards:** `rankings` must exclude `companyRankings`; `me` must exclude `gameServers`, `mySubscription`, `prolongSubscription`; `rank` must exclude `rankings`; `company` must exclude `companyRankings`.

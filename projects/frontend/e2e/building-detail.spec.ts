@@ -11012,17 +11012,20 @@ test.describe('Building detail tick-refresh stability', () => {
     await page.goto('/building/building-draft-stable')
     await expect(page.getByRole('heading', { name: 'Draft Stable Factory' })).toBeVisible()
 
-    // Enter edit mode — this opens the draft layout editor
+    // Enter edit mode — this opens the draft layout editor (shows "Planned Upgrade" section)
     await page.getByRole('button', { name: 'Edit Building' }).click()
-    // The "Save" button must be visible indicating we are in edit mode
-    await expect(page.getByRole('button', { name: 'Save' })).toBeVisible()
+    // "Cancel Editing" is always visible when isEditing = true, regardless of whether draft has changes
+    await expect(page.getByRole('button', { name: 'Cancel Editing' })).toBeVisible()
+    // The planned-upgrade section heading confirms edit mode is active
+    await expect(page.getByRole('heading', { name: 'Planned Upgrade' })).toBeVisible()
 
     // Simulate a tick advancing while we have unsaved draft edits
     state.gameState.currentTick = 31
     state.gameState.lastTickAtUtc = new Date().toISOString()
 
-    // Edit mode must still be active — the Save button must remain visible
-    await expect(page.getByRole('button', { name: 'Save' })).toBeVisible()
+    // Edit mode must still be active — preserveDraft: true prevents tick refresh from resetting isEditing
+    await expect(page.getByRole('button', { name: 'Cancel Editing' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Planned Upgrade' })).toBeVisible()
     // No loading spinner must have appeared
     await expect(page.locator('.loading', { hasText: 'Loading' })).toBeHidden()
   })
