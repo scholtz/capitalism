@@ -3195,8 +3195,12 @@ useTickRefresh(async () => {
 
   // Save scroll position before data update so the player's reading context is preserved
   const scrollPos = saveScrollPosition()
-  await loadBuilding({ preserveDraft: isEditing.value })
-  await restoreScrollPosition(scrollPos)
+  try {
+    await loadBuilding({ preserveDraft: isEditing.value })
+  } finally {
+    // Always restore scroll so the player's position is preserved regardless of errors
+    await restoreScrollPosition(scrollPos)
+  }
 
   // Refresh analytics for the selected PUBLIC_SALES unit on tick change
   const unitId = getResolvedLiveUnitId(selectedPublicSalesUnit.value)

@@ -20,7 +20,13 @@ export function useScrollPreservation() {
 
   async function restoreScrollPosition(position: { x: number; y: number }): Promise<void> {
     await nextTick()
-    window.scrollTo({ left: position.x, top: position.y, behavior: 'instant' })
+    // Use ScrollToOptions with 'instant' behavior where supported; fall back to
+    // the two-argument form for browsers that only support the legacy signature.
+    try {
+      window.scrollTo({ left: position.x, top: position.y, behavior: 'instant' })
+    } catch {
+      window.scrollTo(position.x, position.y)
+    }
   }
 
   return { saveScrollPosition, restoreScrollPosition }

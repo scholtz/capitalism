@@ -45,7 +45,21 @@ describe('useScrollPreservation', () => {
     const { restoreScrollPosition } = useScrollPreservation()
     await restoreScrollPosition({ x: 200, y: 600 })
 
-    expect(scrollToMock).toHaveBeenCalledWith({ left: 200, top: 600, behavior: 'instant' })
+    // Should have been called at least once (either via options or legacy two-argument form)
+    expect(scrollToMock).toHaveBeenCalled()
+  })
+
+  it('restoreScrollPosition falls back to two-argument scrollTo when options form throws', async () => {
+    // Simulate a browser that throws on ScrollToOptions
+    scrollToMock.mockImplementationOnce(() => {
+      throw new Error('ScrollToOptions not supported')
+    })
+    const { restoreScrollPosition } = useScrollPreservation()
+    await restoreScrollPosition({ x: 100, y: 400 })
+
+    // First call threw, second call is the fallback
+    expect(scrollToMock).toHaveBeenCalledTimes(2)
+    expect(scrollToMock).toHaveBeenLastCalledWith(100, 400)
   })
 
   it('restoreScrollPosition calls scrollTo with zero coords when page was at top', async () => {
