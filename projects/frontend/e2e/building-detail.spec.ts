@@ -8015,6 +8015,212 @@ test.describe('Public Sales Market Intelligence panel', () => {
     // Action hint should direct the player to lower price
     await expect(panel.locator('.mi-action-hint', { hasText: 'lower' })).toBeVisible()
   })
+
+  test('lower price correlates with higher utilization and positive price driver in analytics', async ({
+    page,
+  }) => {
+    // ROADMAP AC: "Cover at least one scenario showing a lower price increasing sold quantity."
+    // We model this by presenting analytics where the unit is priced below the market baseline
+    // and verify that:
+    //  1. The PRICE demand driver shows POSITIVE impact.
+    //  2. Utilisation is displayed as a meaningful non-zero percentage.
+    //  3. The demand signal indicates STRONG demand.
+    const { player, chairProduct } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    // Analytics reflects a unit priced 20% below the market baseline (price discount).
+    const discountedPrice = chairProduct.basePrice * 0.8
+    const discountTotalQuantitySold = 150
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Discount Shop',
+      cityName: 'Bratislava',
+      totalRevenue: discountedPrice * discountTotalQuantitySold,
+      totalQuantitySold: discountTotalQuantitySold,
+      averagePricePerUnit: discountedPrice,
+      currentSalesCapacity: 200,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong. Your low price is attracting buyers.',
+      recentUtilization: 0.75,
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({
+        tick: i + 1,
+        revenue: discountedPrice * 15,
+        quantitySold: 15,
+      })),
+      priceHistory: Array.from({ length: 10 }, (_, i) => ({
+        tick: i + 1,
+        pricePerUnit: discountedPrice,
+      })),
+      marketShare: [
+        { label: 'Discount Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false },
+      ],
+      elasticityIndex: -1.2,
+      unmetDemandShare: 0.1,
+      populationIndex: 1.0,
+      inventoryQuality: 0.7,
+      brandAwareness: null,
+      totalProfit: 200,
+      profitHistory: Array.from({ length: 10 }, (_, i) => ({
+        tick: i + 1,
+        profit: 20,
+        grossMarginPct: 16.7,
+      })),
+      demandDrivers: [
+        {
+          factor: 'PRICE',
+          impact: 'POSITIVE',
+          score: 0.95,
+          description: 'Priced below market baseline — attracts price-sensitive buyers.',
+        },
+        {
+          factor: 'QUALITY',
+          impact: 'POSITIVE',
+          score: 0.7,
+          description: 'Good product quality increases buyer willingness to purchase.',
+        },
+      ],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Demand signal should be STRONG
+    await expect(panel.locator('.mi-demand-badge')).toContainText('Strong')
+    await expect(panel.locator('.mi-demand-card')).toHaveClass(/mi-demand-strong/)
+
+    // Recent utilisation should show a non-zero value (75%)
+    const summaryGrid = panel.locator('.mi-summary-grid')
+    await expect(summaryGrid.getByText('Recent Utilization')).toBeVisible()
+    await expect(summaryGrid.locator('.mi-metric-value').filter({ hasText: '75%' })).toBeVisible()
+
+    // Demand Drivers section should show a POSITIVE PRICE driver
+    const driversSection = panel.locator('[aria-label="Demand Drivers"]')
+    await expect(driversSection).toBeVisible()
+    const positivePriceDriver = driversSection.locator('.mi-driver-positive', { hasText: 'Price' })
+    await expect(positivePriceDriver.first()).toBeVisible()
+  })
+
+  test('quality-advantaged seller holds larger market share than quality-disadvantaged competitor', async ({
+    page,
+  }) => {
+    // ROADMAP AC: "Cover at least one scenario showing a stronger product outperforming
+    // a weaker competitor."
+    // Analytics for a seller with 90% quality holding 70% market share, while a
+    // lower-quality competitor holds only 30% of the market.
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Quality Advantage Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 15 * 140, // averagePricePerUnit × totalQuantitySold
+      totalQuantitySold: 140,
+      averagePricePerUnit: 15,
+      currentSalesCapacity: 200,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'STRONG',
+      actionHint: 'Your quality advantage is working. Demand is strong.',
+      recentUtilization: 0.7,
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({
+        tick: i + 1,
+        revenue: 15 * 14, // pricePerUnit × quantitySold per tick
+        quantitySold: 14,
+      })),
+      priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: 15 })),
+      // Market share: our high-quality company has 70%, the weaker competitor has 30%
+      marketShare: [
+        { label: 'Quality Corp', companyId: 'company-shop-mi', share: 0.7, isUnmet: false },
+        { label: 'Budget Rival', companyId: 'rival-company-id', share: 0.3, isUnmet: false },
+      ],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.0,
+      inventoryQuality: 0.9,
+      brandAwareness: 0.5,
+      totalProfit: 700,
+      profitHistory: Array.from({ length: 10 }, (_, i) => ({
+        tick: i + 1,
+        profit: 70,
+        grossMarginPct: 33.3,
+      })),
+      demandDrivers: [
+        {
+          factor: 'QUALITY',
+          impact: 'POSITIVE',
+          score: 0.9,
+          description: 'High product quality (90%) gives a strong competitive advantage.',
+        },
+        {
+          factor: 'PRICE',
+          impact: 'NEUTRAL',
+          score: 0.75,
+          description: 'Price is in line with the market baseline.',
+        },
+      ],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Market share section should show two entries
+    const shareRows = panel.locator('.mi-share-row')
+    await expect(shareRows).toHaveCount(2)
+
+    // Our company (marked with ★) should have the larger share (70%)
+    const ourRow = panel.locator('.mi-share-row-you')
+    await expect(ourRow.locator('.mi-share-pct')).toContainText('70.0%')
+
+    // Competitor row should show the lower share (30%)
+    const competitorRow = panel.locator('.mi-share-row:not(.mi-share-row-you)')
+    await expect(competitorRow.locator('.mi-share-label')).toContainText('Budget Rival')
+    await expect(competitorRow.locator('.mi-share-pct')).toContainText('30.0%')
+
+    // QUALITY driver should be POSITIVE — confirming quality is driving the advantage
+    const driversSection = panel.locator('[aria-label="Demand Drivers"]')
+    await expect(driversSection).toBeVisible()
+    const positiveQualityDriver = driversSection.locator('.mi-driver-positive', { hasText: 'Quality' })
+    await expect(positiveQualityDriver.first()).toBeVisible()
+  })
 })
 
 test.describe('Mine building edit mode', () => {

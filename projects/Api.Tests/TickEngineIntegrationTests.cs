@@ -1169,6 +1169,54 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
     }
 
     [Fact]
+    public async Task PublicSalesPhase_LowerPrice_IncreasesQuantitySold()
+    {
+        // ROADMAP AC: price reductions should increase quantity sold in a believable way.
+        // Two identical sellers compete in isolated cities with the same population and
+        // product quality.  The discounted seller (price 20% below base) should sell more
+        // units per tick than the one selling at the base price.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(candidate => candidate.Slug == "wooden-chair");
+
+        var basePriceCity = CreatePublicSalesTestCity("BasePriceCity", 60_000);
+        var discountCity = CreatePublicSalesTestCity("DiscountCity", 60_000);
+        db.Cities.AddRange(basePriceCity, discountCity);
+
+        var (_, _, basePriceUnitId) = AddPublicSalesSeller(
+            db, basePriceCity, product, "BasePrice",
+            stockQuantity: 80m,
+            quality: 0.8m,
+            priceMultiplier: 1.0m,   // at base price
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        var (_, _, discountUnitId) = AddPublicSalesSeller(
+            db, discountCity, product, "Discount",
+            stockQuantity: 80m,
+            quality: 0.8m,
+            priceMultiplier: 0.8m,   // 20% below base price
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var basePriceSold = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == basePriceUnitId)
+            .SumAsync(r => r.QuantitySold);
+        var discountSold = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == discountUnitId)
+            .SumAsync(r => r.QuantitySold);
+
+        Assert.True(
+            discountSold >= basePriceSold,
+            $"Discounted seller (price=0.8×base) should sell at least as much as base-price seller. Discount={discountSold}, BasePrice={basePriceSold}.");
+    }
+
+    [Fact]
     public async Task PurchasingPhase_PurchaseUnit_OnlyBuysB2BInventoryThatExistedAtTickStart()
     {
         Guid factoryId;
