@@ -149,7 +149,8 @@ test.describe('Stock exchange', () => {
 })
 
 test.describe('Stock exchange live refresh', () => {
-  test('tick refresh does not blank the page — existing content stays visible', async ({ page }) => {    const player = makePlayer({
+  test('tick refresh does not blank the page — existing content stays visible', async ({ page }) => {
+    const player = makePlayer({
       personalCash: 100000,
       companies: [makeControlledCompany()],
     })
