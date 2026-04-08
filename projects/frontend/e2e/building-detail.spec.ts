@@ -8221,6 +8221,172 @@ test.describe('Public Sales Market Intelligence panel', () => {
     const positiveQualityDriver = driversSection.locator('.mi-driver-positive', { hasText: 'Quality' })
     await expect(positiveQualityDriver.first()).toBeVisible()
   })
+
+  test('supply-constrained market shows POSITIVE SATURATION driver and scarcity description', async ({
+    page,
+  }) => {
+    // When unmet demand is high (demand >> supply), the SATURATION driver should be POSITIVE
+    // so players know they could capture more sales by stocking more inventory.
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Scarcity Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 5 * 45,
+      totalQuantitySold: 5,
+      averagePricePerUnit: 45,
+      currentSalesCapacity: 200,
+      dataFromTick: 1,
+      dataToTick: 1,
+      demandSignal: 'SUPPLY_CONSTRAINED',
+      actionHint: 'You are selling out fast — increase stock to capture more revenue.',
+      recentUtilization: 0.95,
+      revenueHistory: [{ tick: 1, revenue: 5 * 45, quantitySold: 5 }],
+      priceHistory: [{ tick: 1, pricePerUnit: 45 }],
+      marketShare: [{ label: 'My Shop', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -0.5,
+      unmetDemandShare: 0.95,
+      populationIndex: 1.0,
+      inventoryQuality: 0.7,
+      brandAwareness: 0.5,
+      totalProfit: 225,
+      profitHistory: [{ tick: 1, profit: 225, grossMarginPct: 100 }],
+      demandDrivers: [
+        {
+          factor: 'SATURATION',
+          impact: 'POSITIVE',
+          score: 0.95,
+          description: 'Demand exceeds supply — 95% of city demand is unmet. Increasing your stock would capture more sales.',
+        },
+        {
+          factor: 'PRICE',
+          impact: 'NEUTRAL',
+          score: 0.75,
+          description: 'Price is at the market baseline.',
+        },
+      ],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Demand signal should show SUPPLY_CONSTRAINED
+    const demandCard = panel.locator('.mi-demand-supply-constrained')
+    await expect(demandCard).toBeVisible()
+    await expect(demandCard.locator('.mi-demand-badge')).toContainText('Supply Constrained')
+
+    // SATURATION driver should be visible and POSITIVE
+    const driversSection = panel.locator('[aria-label="Demand Drivers"]')
+    await expect(driversSection).toBeVisible()
+    const saturationDriver = driversSection.locator('.mi-driver-positive', { hasText: 'Saturation' })
+    await expect(saturationDriver.first()).toBeVisible()
+  })
+
+  test('competitive market with small own share shows NEGATIVE COMPETITION driver', async ({
+    page,
+  }) => {
+    // When the player holds a small market share against several rivals, the COMPETITION
+    // driver should be NEGATIVE so the player knows to improve price or quality.
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Weak Competitor Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 10 * 45,
+      totalQuantitySold: 10,
+      averagePricePerUnit: 45,
+      currentSalesCapacity: 200,
+      dataFromTick: 1,
+      dataToTick: 1,
+      demandSignal: 'WEAK',
+      actionHint: 'Strong competition is limiting your sales. Improve price or quality to gain market share.',
+      recentUtilization: 0.1,
+      revenueHistory: [{ tick: 1, revenue: 10 * 45, quantitySold: 10 }],
+      priceHistory: [{ tick: 1, pricePerUnit: 45 }],
+      marketShare: [
+        { label: 'My Shop', companyId: 'company-shop-mi', share: 0.1, isUnmet: false },
+        { label: 'Rival A', companyId: 'rival-a-id', share: 0.45, isUnmet: false },
+        { label: 'Rival B', companyId: 'rival-b-id', share: 0.45, isUnmet: false },
+      ],
+      elasticityIndex: -0.8,
+      unmetDemandShare: 0,
+      populationIndex: 1.0,
+      inventoryQuality: 0.5,
+      brandAwareness: 0.2,
+      totalProfit: 50,
+      profitHistory: [{ tick: 1, profit: 50, grossMarginPct: 11 }],
+      demandDrivers: [
+        {
+          factor: 'COMPETITION',
+          impact: 'NEGATIVE',
+          score: 0.1,
+          description:
+            'Strong competition: 2 rivals hold most of this market and your 10% share is low. Improve price competitiveness, quality, or brand to win more demand.',
+        },
+        {
+          factor: 'PRICE',
+          impact: 'NEUTRAL',
+          score: 0.75,
+          description: 'Price is at the market baseline.',
+        },
+      ],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Market share: 3 rows, our share is smallest (10%)
+    const shareRows = panel.locator('.mi-share-row')
+    await expect(shareRows).toHaveCount(3)
+    const ourRow = panel.locator('.mi-share-row-you')
+    await expect(ourRow.locator('.mi-share-pct')).toContainText('10.0%')
+
+    // COMPETITION driver should be NEGATIVE
+    const driversSection = panel.locator('[aria-label="Demand Drivers"]')
+    await expect(driversSection).toBeVisible()
+    const competitionDriver = driversSection.locator('.mi-driver-negative', { hasText: 'Competition' })
+    await expect(competitionDriver.first()).toBeVisible()
+  })
 })
 
 test.describe('Mine building edit mode', () => {

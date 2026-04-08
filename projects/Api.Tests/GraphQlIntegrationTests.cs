@@ -14139,6 +14139,284 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task PublicSalesAnalytics_SaturationDriver_HighUnmetDemandShowsPositive()
+    {
+        // After a tick where demand >> sold (supply-constrained), the SATURATION driver
+        // must be POSITIVE because there is unmet demand the player could capture.
+        var token = await RegisterAndGetTokenAsync("saturation-positive@test.com", "SaturationPos");
+        var productId = await GetStarterProductIdAsync();
+
+        // Set up a unit with real PublicSalesRecords that show high demand vs low sold.
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Scarcity Co");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Scarcity Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+        var productType = await db.ProductTypes.FindAsync(unit.ProductTypeId);
+
+        // Directly insert records showing supply-constrained behaviour (demand >> quantitySold).
+        db.PublicSalesRecords.Add(new PublicSalesRecord
+        {
+            Id = Guid.NewGuid(),
+            BuildingUnitId = unit.Id,
+            BuildingId = unit.BuildingId,
+            CompanyId = unit.Building.CompanyId,
+            CityId = unit.Building.CityId,
+            ProductTypeId = unit.ProductTypeId,
+             Tick = 81001L, // unique tick — avoids cross-test city-level contamination
+            RecordedAtUtc = DateTime.UtcNow,
+            QuantitySold = 5m,
+            // Demand is much higher than what was sold → scarcity
+            Demand = 100m,
+            PricePerUnit = productType?.BasePrice ?? 45m,
+            Revenue = 5m * (productType?.BasePrice ?? 45m),
+            SalesCapacity = 200m,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ unmetDemandShare demandDrivers {{ factor impact }} }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        var drivers = analytics.GetProperty("demandDrivers");
+
+        var satDriver = Enumerable.Range(0, drivers.GetArrayLength())
+            .Select(i => drivers[i])
+            .FirstOrDefault(d => d.GetProperty("factor").GetString() == "SATURATION");
+
+        Assert.False(satDriver.ValueKind == JsonValueKind.Undefined, "SATURATION driver must be present when unmet demand data is available");
+        Assert.Equal("POSITIVE", satDriver.GetProperty("impact").GetString());
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_SaturationDriver_LowUnmetDemandShowsNegative()
+    {
+        // When nearly all demand is already met by sellers, the SATURATION driver must be
+        // NEGATIVE because the market is saturated and hard to grow.
+        var token = await RegisterAndGetTokenAsync("saturation-negative@test.com", "SaturationNeg");
+        var productId = await GetStarterProductIdAsync();
+
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Saturated Co");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Saturated Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+        var productType = await db.ProductTypes.FindAsync(unit.ProductTypeId);
+
+        // Insert records showing fully-satisfied demand (demand == quantitySold → unmet ≈ 0).
+        db.PublicSalesRecords.Add(new PublicSalesRecord
+        {
+            Id = Guid.NewGuid(),
+            BuildingUnitId = unit.Id,
+            BuildingId = unit.BuildingId,
+            CompanyId = unit.Building.CompanyId,
+            CityId = unit.Building.CityId,
+            ProductTypeId = unit.ProductTypeId,
+             Tick = 82001L, // unique tick
+            RecordedAtUtc = DateTime.UtcNow,
+            QuantitySold = 50m,
+            Demand = 50m,   // demand == sold → unmet = 0
+            PricePerUnit = productType?.BasePrice ?? 45m,
+            Revenue = 50m * (productType?.BasePrice ?? 45m),
+            SalesCapacity = 200m,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ unmetDemandShare demandDrivers {{ factor impact }} }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        var drivers = analytics.GetProperty("demandDrivers");
+
+        var satDriver = Enumerable.Range(0, drivers.GetArrayLength())
+            .Select(i => drivers[i])
+            .FirstOrDefault(d => d.GetProperty("factor").GetString() == "SATURATION");
+
+        Assert.False(satDriver.ValueKind == JsonValueKind.Undefined, "SATURATION driver must be present when unmet demand data is available");
+        Assert.Equal("NEGATIVE", satDriver.GetProperty("impact").GetString());
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_CompetitionDriver_MonopolyShowsPositive()
+    {
+        // When a player is the only seller, the COMPETITION driver should be POSITIVE.
+        var token = await RegisterAndGetTokenAsync("competition-monopoly@test.com", "CompetitionMonopoly");
+        var productId = await GetStarterProductIdAsync();
+
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Monopoly Co");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Monopoly Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+        var productType = await db.ProductTypes.FindAsync(unit.ProductTypeId);
+
+        // Single seller record — no competition.
+        db.PublicSalesRecords.Add(new PublicSalesRecord
+        {
+            Id = Guid.NewGuid(),
+            BuildingUnitId = unit.Id,
+            BuildingId = unit.BuildingId,
+            CompanyId = unit.Building.CompanyId,
+            CityId = unit.Building.CityId,
+            ProductTypeId = unit.ProductTypeId,
+             Tick = 83001L, // unique tick
+            RecordedAtUtc = DateTime.UtcNow,
+            QuantitySold = 20m,
+            Demand = 25m,
+            PricePerUnit = productType?.BasePrice ?? 45m,
+            Revenue = 20m * (productType?.BasePrice ?? 45m),
+            SalesCapacity = 200m,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ demandDrivers {{ factor impact description }} }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        var drivers = analytics.GetProperty("demandDrivers");
+
+        var compDriver = Enumerable.Range(0, drivers.GetArrayLength())
+            .Select(i => drivers[i])
+            .FirstOrDefault(d => d.GetProperty("factor").GetString() == "COMPETITION");
+
+        Assert.False(compDriver.ValueKind == JsonValueKind.Undefined, "COMPETITION driver must be present after sales data exists");
+        Assert.Equal("POSITIVE", compDriver.GetProperty("impact").GetString());
+        Assert.Contains("only seller", compDriver.GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_CompetitionDriver_HighRivalCountShowsNegative()
+    {
+        // When a player holds a small market share against several rivals, the COMPETITION
+        // driver should be NEGATIVE to signal that price/quality improvement is needed.
+        var token = await RegisterAndGetTokenAsync("competition-weak@test.com", "CompetitionWeak");
+        var productId = await GetStarterProductIdAsync();
+
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Small Share Co");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Weak Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(shopId) && u.UnitType == "PUBLIC_SALES");
+        var productType = await db.ProductTypes.FindAsync(unit.ProductTypeId);
+        var basePrice = productType?.BasePrice ?? 45m;
+        var cityGuid = unit.Building.CityId;
+
+        // Create rival companies with full Player + Company entities.
+        var rival1Player = new Api.Data.Entities.Player { Id = Guid.NewGuid(), Email = $"r1-{Guid.NewGuid():N}@t.com", DisplayName = "R1", PasswordHash = "h", Role = Api.Data.Entities.PlayerRole.Player };
+        var rival2Player = new Api.Data.Entities.Player { Id = Guid.NewGuid(), Email = $"r2-{Guid.NewGuid():N}@t.com", DisplayName = "R2", PasswordHash = "h", Role = Api.Data.Entities.PlayerRole.Player };
+        db.Players.AddRange(rival1Player, rival2Player);
+        await db.SaveChangesAsync();
+
+        var rival1Company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), Name = "Rival A", Cash = 0m, PlayerId = rival1Player.Id };
+        var rival2Company = new Api.Data.Entities.Company { Id = Guid.NewGuid(), Name = "Rival B", Cash = 0m, PlayerId = rival2Player.Id };
+        db.Companies.AddRange(rival1Company, rival2Company);
+        await db.SaveChangesAsync();
+
+        // Create minimal Buildings and BuildingUnits for rivals (required by FK constraints).
+        var rival1Building = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = rival1Company.Id, CityId = cityGuid, Type = "SALES_SHOP", Name = "Rival A Shop", Latitude = 0, Longitude = 0, Level = 1 };
+        var rival2Building = new Api.Data.Entities.Building { Id = Guid.NewGuid(), CompanyId = rival2Company.Id, CityId = cityGuid, Type = "SALES_SHOP", Name = "Rival B Shop", Latitude = 0, Longitude = 0, Level = 1 };
+        db.Buildings.AddRange(rival1Building, rival2Building);
+        await db.SaveChangesAsync();
+
+        var rival1Unit = new Api.Data.Entities.BuildingUnit { Id = Guid.NewGuid(), BuildingId = rival1Building.Id, UnitType = "PUBLIC_SALES", GridX = 0, GridY = 0, Level = 1 };
+        var rival2Unit = new Api.Data.Entities.BuildingUnit { Id = Guid.NewGuid(), BuildingId = rival2Building.Id, UnitType = "PUBLIC_SALES", GridX = 0, GridY = 0, Level = 1 };
+        db.BuildingUnits.AddRange(rival1Unit, rival2Unit);
+        await db.SaveChangesAsync();
+
+        // Insert sales records: our company sells 10%; rivals each sell 45%.
+        db.PublicSalesRecords.AddRange(
+            new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(),
+                BuildingUnitId = unit.Id,
+                BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId,
+                CityId = cityGuid,
+                ProductTypeId = unit.ProductTypeId,
+                Tick = 84001L, // unique tick — all 3 competitor records at same tick
+                RecordedAtUtc = DateTime.UtcNow,
+                QuantitySold = 10m,
+                Demand = 100m,
+                PricePerUnit = basePrice,
+                Revenue = 10m * basePrice,
+                SalesCapacity = 200m,
+            },
+            new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(),
+                BuildingUnitId = rival1Unit.Id,
+                BuildingId = rival1Building.Id,
+                CompanyId = rival1Company.Id,
+                CityId = cityGuid,
+                ProductTypeId = unit.ProductTypeId,
+                Tick = 84001L,
+                RecordedAtUtc = DateTime.UtcNow,
+                QuantitySold = 45m,
+                Demand = 100m,
+                PricePerUnit = basePrice,
+                Revenue = 45m * basePrice,
+                SalesCapacity = 200m,
+            },
+            new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(),
+                BuildingUnitId = rival2Unit.Id,
+                BuildingId = rival2Building.Id,
+                CompanyId = rival2Company.Id,
+                CityId = cityGuid,
+                ProductTypeId = unit.ProductTypeId,
+                Tick = 84001L,
+                RecordedAtUtc = DateTime.UtcNow,
+                QuantitySold = 45m,
+                Demand = 100m,
+                PricePerUnit = basePrice,
+                Revenue = 45m * basePrice,
+                SalesCapacity = 200m,
+            });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ demandDrivers {{ factor impact score }} }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        var drivers = analytics.GetProperty("demandDrivers");
+
+        var compDriver = Enumerable.Range(0, drivers.GetArrayLength())
+            .Select(i => drivers[i])
+            .FirstOrDefault(d => d.GetProperty("factor").GetString() == "COMPETITION");
+
+        Assert.False(compDriver.ValueKind == JsonValueKind.Undefined, "COMPETITION driver must be present when market share data exists");
+        Assert.Equal("NEGATIVE", compDriver.GetProperty("impact").GetString());
+        // Score reflects own market share (~10%/100 = 0.1)
+        Assert.True(compDriver.GetProperty("score").GetDecimal() < 0.20m,
+            "Score should be low (≈ own market share fraction)");
+    }
+
+    [Fact]
     public async Task CompanyLedger_RequiresOwnership_ForbidsOtherPlayer()
     {
         var ownerToken = await RegisterAndGetTokenAsync("ledger-owner@test.com", "LedgerOwner");

@@ -2009,7 +2009,8 @@ public sealed class Query
         // Compute structured demand driver explanations from current unit state so
         // players can understand why sales are strong or weak.
         var demandDrivers = ComputeDemandDrivers(
-            unit, productTypeForAnalytics, inventoryQuality, brandAwareness, populationIndex);
+            unit, productTypeForAnalytics, inventoryQuality, brandAwareness, populationIndex,
+            marketShare, unmetDemandShare);
 
         return new PublicSalesAnalytics
         {
@@ -2049,7 +2050,9 @@ public sealed class Query
         Data.Entities.ProductType? productType,
         decimal? inventoryQuality,
         decimal? brandAwareness,
-        decimal? populationIndex)
+        decimal? populationIndex,
+        List<MarketShareEntry> marketShare,
+        decimal? unmetDemandShare)
     {
         var drivers = new List<DemandDriverEntry>();
 
@@ -2158,6 +2161,82 @@ public sealed class Query
                 locDesc = $"Low-traffic location (×{pi:F2}) is limiting your customer reach.";
             }
             drivers.Add(new DemandDriverEntry { Factor = "LOCATION", Impact = locImpact, Score = locScore, Description = locDesc });
+        }
+
+        // SATURATION driver — shows whether the city market is under-supplied (scarcity) or over-supplied.
+        // Scarcity is good for sellers (demand exceeds supply); saturation limits how much more you can sell.
+        if (unmetDemandShare.HasValue)
+        {
+            var unmet = Math.Clamp(unmetDemandShare.Value, 0m, 1m);
+            string satImpact;
+            string satDesc;
+            decimal satScore;
+
+            if (unmet >= 0.30m)
+            {
+                // Supply-constrained market: meaningful unmet demand → seller-favourable.
+                satImpact = "POSITIVE";
+                satScore = unmet;
+                satDesc = $"Demand exceeds supply — {(unmet * 100m):F0}% of city demand is unmet. Increasing your stock would capture more sales.";
+            }
+            else if (unmet >= 0.05m)
+            {
+                // Healthy balance: small residual unmet demand.
+                satImpact = "NEUTRAL";
+                satScore = 0.5m;
+                satDesc = $"Supply and demand are roughly balanced ({(unmet * 100m):F0}% unmet demand). Monitor stock levels to stay competitive.";
+            }
+            else
+            {
+                // Saturated: virtually all demand is already met by sellers in this city.
+                satImpact = "NEGATIVE";
+                satScore = 0.3m;
+                satDesc = "The market is saturated — supply meets or exceeds demand. Competing on price or quality is more important than increasing volume.";
+            }
+
+            drivers.Add(new DemandDriverEntry { Factor = "SATURATION", Impact = satImpact, Score = satScore, Description = satDesc });
+        }
+
+        // COMPETITION driver — shows how many rival sellers exist and what share the player holds.
+        // A monopoly or dominant share is positive; a crowded market with a small share is negative.
+        {
+            var activeSellers = marketShare.Where(e => !e.IsUnmet).ToList();
+            if (activeSellers.Count > 0)
+            {
+                var sellerCount = activeSellers.Count;
+                var ownShare = activeSellers
+                    .FirstOrDefault(e => e.CompanyId == unit.Building.CompanyId)?.Share ?? 0m;
+                var compScore = Math.Clamp(ownShare, 0m, 1m);
+
+                string compImpact;
+                string compDesc;
+
+                if (sellerCount <= 1)
+                {
+                    compImpact = "POSITIVE";
+                    compDesc = "You are the only seller of this product in this city — no direct competition.";
+                }
+                else if (ownShare >= 0.50m)
+                {
+                    var rivals = sellerCount - 1;
+                    compImpact = "POSITIVE";
+                    compDesc = $"You hold a dominant share ({ownShare * 100m:F0}%) against {rivals} competitor{(rivals > 1 ? "s" : "")}. Your offer is winning on price, quality, or brand.";
+                }
+                else if (ownShare >= 0.25m)
+                {
+                    var rivals = sellerCount - 1;
+                    compImpact = "NEUTRAL";
+                    compDesc = $"Competing with {rivals} other seller{(rivals > 1 ? "s" : "")} — you hold {ownShare * 100m:F0}% of the market. Improve quality or price to gain share.";
+                }
+                else
+                {
+                    var rivals = sellerCount - 1;
+                    compImpact = "NEGATIVE";
+                    compDesc = $"Strong competition: {rivals} rival{(rivals > 1 ? "s" : "")} hold most of this market and your {ownShare * 100m:F0}% share is low. Improve price competitiveness, quality, or brand to win more demand.";
+                }
+
+                drivers.Add(new DemandDriverEntry { Factor = "COMPETITION", Impact = compImpact, Score = compScore, Description = compDesc });
+            }
         }
 
         // Order: most impactful first — NEGATIVE first, then NEUTRAL, then POSITIVE.
