@@ -289,3 +289,72 @@ test.describe('Leaderboard tab URL persistence', () => {
     await expect(page.getByText('Reload Industries')).toBeVisible()
   })
 })
+
+test.describe('Leaderboard tick-refresh stability', () => {
+  test('background tick refresh does not blank the players tab or show a loading spinner', async ({
+    page,
+  }) => {
+    const player1 = makePlayer({ id: 'player-tick-1', displayName: 'Tick Alice' })
+    player1.companies.push({
+      id: 'comp-tick-1',
+      playerId: 'player-tick-1',
+      name: 'Tick Alice Corp',
+      cash: 1000000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+
+    const state = setupMockApi(page, { players: [player1] })
+    state.gameState.currentTick = 10
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await page.goto('/leaderboard')
+    await expect(page.getByText('Tick Alice')).toBeVisible()
+
+    // Simulate tick advance — store will pick this up on next poll
+    state.gameState.currentTick = 11
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Rankings content must remain visible — no full-page loading flash
+    await expect(page.getByText('Tick Alice')).toBeVisible()
+    await expect(page.locator('.state-box', { hasText: 'loading' })).toBeHidden()
+  })
+
+  test('active companies tab is preserved after a background tick refresh', async ({ page }) => {
+    const player1 = makePlayer({ id: 'player-tab-1', displayName: 'TabAlice' })
+    player1.companies.push({
+      id: 'comp-tab-1',
+      playerId: 'player-tab-1',
+      name: 'Tab Alice Holdings',
+      cash: 900000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+
+    const state = setupMockApi(page, { players: [player1] })
+    state.gameState.currentTick = 5
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 400).toISOString()
+
+    await page.goto('/leaderboard?tab=companies')
+    await expect(page.getByRole('tab', { name: 'Richest Companies' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    await expect(page.getByText('Tab Alice Holdings')).toBeVisible()
+
+    // Simulate tick advance
+    state.gameState.currentTick = 6
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Companies tab must remain active and content still visible after refresh
+    await expect(page.getByRole('tab', { name: 'Richest Companies' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    await expect(page.getByText('Tab Alice Holdings')).toBeVisible()
+    // No loading spinner must appear over the existing companies list
+    await expect(page.locator('.state-box', { hasText: 'loading' })).toBeHidden()
+  })
+})

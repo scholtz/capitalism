@@ -10170,3 +10170,155 @@ test.describe('Unit upgrade panel', () => {
     await expect(upgradePanel).toContainText('Upgrade in Progress')
   })
 })
+
+test.describe('Building detail tick-refresh stability', () => {
+  test('background tick refresh does not show a loading spinner or reset the building view', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-tick-stable',
+      playerId: player.id,
+      name: 'Stable Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-tick-stable',
+          companyId: 'company-tick-stable',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Stable Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-stable-1',
+              buildingId: 'building-tick-stable',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              maxPrice: 100,
+              purchaseSource: 'EXCHANGE',
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 10
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-tick-stable')
+    await expect(page.getByRole('heading', { name: 'Stable Factory' })).toBeVisible()
+
+    // Simulate a tick advancing
+    state.gameState.currentTick = 11
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // The building heading must remain visible — no full-page loading spinner
+    await expect(page.getByRole('heading', { name: 'Stable Factory' })).toBeVisible()
+    await expect(page.locator('.loading', { hasText: 'Loading' })).toBeHidden()
+  })
+
+  test('selected unit sidebar stays open after a background tick refresh', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-unit-stable',
+      playerId: player.id,
+      name: 'Unit Stable Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-unit-stable',
+          companyId: 'company-unit-stable',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Unit Stable Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-stable-sel',
+              buildingId: 'building-unit-stable',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              maxPrice: 100,
+              purchaseSource: 'EXCHANGE',
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 20
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-unit-stable')
+    await expect(page.getByRole('heading', { name: 'Unit Stable Factory' })).toBeVisible()
+
+    // Select the unit to open the sidebar
+    const activeSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(activeSection, 0, 0).click()
+    await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
+    await expect(page).toHaveURL(/\/building\/building-unit-stable\?unit=0(?:,|%2C)0$/)
+
+    // Simulate a tick advancing
+    state.gameState.currentTick = 21
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Unit Details sidebar must remain visible — context must not be lost
+    await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
+    await expect(page).toHaveURL(/\/building\/building-unit-stable\?unit=0(?:,|%2C)0$/)
+    // Main loading spinner must not appear
+    await expect(page.locator('.loading', { hasText: 'Loading' })).toBeHidden()
+  })
+})

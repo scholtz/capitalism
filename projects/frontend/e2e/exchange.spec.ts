@@ -1248,3 +1248,100 @@ test.describe('Global Exchange — Products marketplace tab', () => {
     await expect(page.locator('.product-industry-badge', { hasText: 'Healthcare' })).toBeVisible()
   })
 })
+
+// ── Tick-refresh stability ─────────────────────────────────────────────────────
+
+test.describe('Global Exchange — tick-refresh stability', () => {
+  test('background tick refresh does not blank the resource rows or show a loading spinner', async ({
+    page,
+  }) => {
+    const state = setupMockApi(page)
+    state.gameState.currentTick = 10
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // At least one resource row must be visible before the tick fires
+    await expect(page.locator('.resource-row').first()).toBeVisible()
+
+    // Simulate tick advance — gameStateStore will pick this up on its next poll
+    state.gameState.currentTick = 11
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Content must remain visible — no full-screen loading flash
+    await expect(page.locator('.resource-row').first()).toBeVisible()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+  })
+
+  test('selected city is preserved across a background tick refresh', async ({ page }) => {
+    const state = setupMockApi(page)
+    state.gameState.currentTick = 10
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    // Start with Prague pre-selected via URL
+    await page.goto('/exchange?city=city-pr')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Prague tab must be active
+    await expect(page.getByRole('tab', { name: /Prague/ })).toHaveClass(/active/)
+
+    // Simulate tick advance
+    state.gameState.currentTick = 11
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Prague tab must remain active and offers must still be visible
+    await expect(page.getByRole('tab', { name: /Prague/ })).toHaveClass(/active/)
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+    await expect(page.locator('.resource-row').first()).toBeVisible()
+  })
+
+  test('search filter is preserved across a background tick refresh', async ({ page }) => {
+    const state = setupMockApi(page)
+    state.gameState.currentTick = 15
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Apply a search filter for Wood
+    const searchInput = page.locator('.search-input')
+    await searchInput.fill('Wood')
+    await expect(page.locator('.resource-row').first()).toBeVisible()
+
+    // Simulate tick advance
+    state.gameState.currentTick = 16
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Search text must still be present and Wood row still visible
+    await expect(searchInput).toHaveValue('Wood')
+    await expect(page.locator('.resource-row[data-slug="wood"]')).toBeVisible()
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+  })
+
+  test('market mode tab (Products) is preserved across a background tick refresh', async ({
+    page,
+  }) => {
+    const state = setupMockApi(page)
+    state.gameState.currentTick = 20
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await page.goto('/exchange?mode=products')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Products tab must be active (set via URL param on mount)
+    await expect(page.getByRole('tab', { name: 'Products' })).toHaveClass(/active/)
+
+    // Simulate tick advance
+    state.gameState.currentTick = 21
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Products tab must remain active after refresh
+    await expect(page.getByRole('tab', { name: 'Products' })).toHaveClass(/active/)
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+  })
+})
