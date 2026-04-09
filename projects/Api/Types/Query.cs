@@ -2217,9 +2217,6 @@ public sealed class Query
         var recent = revenueHistory.TakeLast(5).ToList();
         var prior  = revenueHistory.SkipLast(5).TakeLast(5).ToList();
 
-        // Defensive guard: both windows must be exactly 5 ticks.
-        if (prior.Count != 5 || recent.Count != 5) return "NO_DATA";
-
         var recentAvg = recent.Average(s => s.Revenue);
         var priorAvg  = prior.Average(s => s.Revenue);
 
