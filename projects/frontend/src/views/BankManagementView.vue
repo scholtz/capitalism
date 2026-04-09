@@ -3,6 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { gqlRequest } from '@/lib/graphql'
+import { useTickRefresh } from '@/composables/useTickRefresh'
+import { useScrollPreservation } from '@/composables/useScrollPreservation'
+import { deepEqual } from '@/lib/utils'
 import type { LoanOfferSummary, LoanSummary } from '@/types'
 import {
   formatLoanDuration,
@@ -14,6 +17,7 @@ import {
 
 const { t } = useI18n()
 const route = useRoute()
+const { saveScrollPosition, restoreScrollPosition } = useScrollPreservation()
 
 const bankBuildingId = computed(() => route.params.buildingId as string)
 
@@ -115,20 +119,28 @@ const DEACTIVATE_OFFER_MUTATION = `
   }
 `
 
-async function loadData() {
-  loading.value = true
+async function loadData(isRefresh = false) {
+  if (!isRefresh) {
+    loading.value = true
+  }
   error.value = null
   try {
     const offersResult = await gqlRequest<{ myLoanOffers: LoanOfferSummary[] }>(MY_LOAN_OFFERS_QUERY)
-    myOffers.value = (offersResult.myLoanOffers ?? []).filter(
+    const filtered = (offersResult.myLoanOffers ?? []).filter(
       (o) => !bankBuildingId.value || o.bankBuildingId === bankBuildingId.value,
     )
+    if (!deepEqual(myOffers.value, filtered)) {
+      myOffers.value = filtered
+    }
 
     if (bankBuildingId.value) {
       const loansResult = await gqlRequest<{ bankLoans: LoanSummary[] }>(BANK_LOANS_QUERY, {
         bankBuildingId: bankBuildingId.value,
       })
-      issuedLoans.value = loansResult.bankLoans ?? []
+      const loans = loansResult.bankLoans ?? []
+      if (!deepEqual(issuedLoans.value, loans)) {
+        issuedLoans.value = loans
+      }
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
@@ -138,6 +150,12 @@ async function loadData() {
 }
 
 onMounted(loadData)
+
+useTickRefresh(async () => {
+  const scrollPos = saveScrollPosition()
+  await loadData(true)
+  await restoreScrollPosition(scrollPos)
+})
 
 const overdueLoans = computed(() => issuedLoans.value.filter((l) => l.status !== 'ACTIVE' && l.status !== 'REPAID'))
 
@@ -204,7 +222,7 @@ async function toggleOfferActive(offer: LoanOfferSummary) {
 
     <div v-else-if="error" class="error-state">
       <p class="error-message">{{ error }}</p>
-      <button class="btn btn-secondary" @click="loadData">{{ t('common.retry') }}</button>
+      <button class="btn btn-secondary" @click="() => loadData()">{{ t('common.retry') }}</button>
     </div>
 
     <template v-else>

@@ -465,3 +465,127 @@ test.describe('Loan offer display details', () => {
     await expect(page.getByText('Vienna')).toBeVisible()
   })
 })
+
+test.describe('Loan Marketplace — tick-refresh stability', () => {
+  test('background tick refresh does not show a loading spinner or blank the offers list', async ({
+    page,
+  }) => {
+    const offer = makeLoanOffer({ lenderCompanyName: 'Tick Bank', annualInterestRatePercent: 8 })
+    const state = setupMockApi(page, { loanOffers: [offer] })
+    state.gameState.currentTick = 10
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await page.goto('/loans')
+    await expect(page.getByText('Tick Bank')).toBeVisible()
+
+    // Simulate tick advancing
+    state.gameState.currentTick = 11
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Offer must remain visible without a loading spinner blanking the page
+    await expect(page.getByText('Tick Bank')).toBeVisible()
+    await expect(page.locator('.loading-state')).toBeHidden()
+  })
+
+  test('active loan list is preserved after a background tick refresh', async ({ page }) => {
+    const player = makePlayer({ onboardingCompletedAtUtc: '2026-01-01T00:00:00Z' })
+    const activeLoan = makeActiveLoan({
+      id: 'loan-refresh-1',
+      borrowerCompanyName: 'Refresh Borrower Corp',
+      lenderCompanyName: 'Tick Lender',
+    })
+
+    const state = setupMockApi(page, { players: [player], myLoans: [activeLoan] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 20
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 400).toISOString()
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/loans')
+    await expect(page.getByText('Tick Lender')).toBeVisible()
+
+    // Simulate tick advancing
+    state.gameState.currentTick = 21
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Loan entry must remain visible — context must not be lost
+    await expect(page.getByText('Tick Lender')).toBeVisible()
+    await expect(page.locator('.loading-state')).toBeHidden()
+  })
+})
+
+test.describe('Bank Management — tick-refresh stability', () => {
+  test('background tick refresh does not show a loading spinner or blank the bank management view', async ({
+    page,
+  }) => {
+    const player = makePlayer({ onboardingCompletedAtUtc: '2026-01-01T00:00:00Z' })
+    const offer = makeLoanOffer({
+      id: 'offer-bank-refresh',
+      lenderCompanyName: 'Refresh Lender Corp',
+      annualInterestRatePercent: 10,
+    })
+
+    const state = setupMockApi(page, { players: [player], loanOffers: [offer] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 5
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 300).toISOString()
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/bank/bank-building-1')
+    await expect(page.getByRole('heading', { name: 'Configure Bank' })).toBeVisible()
+
+    // Simulate tick advancing
+    state.gameState.currentTick = 6
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Bank management heading must remain visible without a loading spinner
+    await expect(page.getByRole('heading', { name: 'Configure Bank' })).toBeVisible()
+    await expect(page.locator('.loading-state')).toBeHidden()
+  })
+
+  test('issued loans remain visible after a background tick refresh', async ({ page }) => {
+    const player = makePlayer({ onboardingCompletedAtUtc: '2026-01-01T00:00:00Z' })
+    const issuedLoan = makeActiveLoan({
+      id: 'loan-bank-refresh',
+      borrowerCompanyName: 'Borrower Co',
+      lenderCompanyName: 'My Bank',
+      bankBuildingId: 'bank-building-1',
+    })
+
+    const state = setupMockApi(page, { players: [player], myLoans: [issuedLoan] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 15
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 400).toISOString()
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/bank/bank-building-1')
+    await expect(page.getByText('Borrower Co')).toBeVisible()
+
+    // Simulate tick advancing
+    state.gameState.currentTick = 16
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Issued loan must remain visible after background refresh
+    await expect(page.getByText('Borrower Co')).toBeVisible()
+    await expect(page.locator('.loading-state')).toBeHidden()
+  })
+})

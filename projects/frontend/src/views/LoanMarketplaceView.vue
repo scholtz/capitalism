@@ -3,12 +3,16 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest } from '@/lib/graphql'
+import { useTickRefresh } from '@/composables/useTickRefresh'
+import { useScrollPreservation } from '@/composables/useScrollPreservation'
+import { deepEqual } from '@/lib/utils'
 import { getActiveCompany } from '@/lib/accountContext'
 import type { LoanOfferSummary, LoanSummary, Company } from '@/types'
 import { formatLoanDuration, computeTotalRepayment, computePaymentAmount, computeTotalPayments, loanStatusClass, formatCurrency, formatPercent } from '@/lib/loanHelpers'
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const { saveScrollPosition, restoreScrollPosition } = useScrollPreservation()
 const loading = ref(true)
 const error = ref<string | null>(null)
 const offers = ref<LoanOfferSummary[]>([])
@@ -101,8 +105,10 @@ const ACCEPT_LOAN_MUTATION = `
   }
 `
 
-async function loadData() {
-  loading.value = true
+async function loadData(isRefresh = false) {
+  if (!isRefresh) {
+    loading.value = true
+  }
   error.value = null
   try {
     if (auth.isAuthenticated && !auth.player) {
@@ -110,11 +116,17 @@ async function loadData() {
     }
 
     const offersResult = await gqlRequest<{ loanOffers: LoanOfferSummary[] }>(LOAN_OFFERS_QUERY)
-    offers.value = offersResult.loanOffers ?? []
+    const newOffers = offersResult.loanOffers ?? []
+    if (!deepEqual(offers.value, newOffers)) {
+      offers.value = newOffers
+    }
 
     if (auth.isAuthenticated) {
       const [loansResult, companiesResult] = await Promise.all([gqlRequest<{ myLoans: LoanSummary[] }>(MY_LOANS_QUERY), gqlRequest<{ me: { companies: Company[] } }>(MY_COMPANIES_QUERY)])
-      myLoans.value = loansResult.myLoans ?? []
+      const newLoans = loansResult.myLoans ?? []
+      if (!deepEqual(myLoans.value, newLoans)) {
+        myLoans.value = newLoans
+      }
       myCompanies.value = companiesResult.me?.companies ?? []
     }
   } catch (err) {
@@ -125,6 +137,12 @@ async function loadData() {
 }
 
 onMounted(loadData)
+
+useTickRefresh(async () => {
+  const scrollPos = saveScrollPosition()
+  await loadData(true)
+  await restoreScrollPosition(scrollPos)
+})
 
 const activeLoans = computed(() => myLoans.value.filter((l) => l.status === 'ACTIVE' || l.status === 'OVERDUE'))
 const activeCompany = computed(() => getActiveCompany(auth.player, myCompanies.value))
@@ -207,7 +225,7 @@ async function confirmAcceptLoan() {
 
     <div v-else-if="error" class="error-state">
       <p class="error-message">{{ error }}</p>
-      <button class="btn btn-secondary" @click="loadData">{{ t('common.retry') }}</button>
+      <button class="btn btn-secondary" @click="() => loadData()">{{ t('common.retry') }}</button>
     </div>
 
     <template v-else>
