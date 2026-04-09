@@ -544,6 +544,229 @@ test.describe('Building detail upgrades', () => {
     await expect(page.getByText('Your Property')).toBeVisible()
   })
 
+  test('shows empty state message when building has no financial activity', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-empty-fin',
+      playerId: player.id,
+      name: 'Empty Finance Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-empty-fin',
+          companyId: 'company-empty-fin',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Empty Finance Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // No buildingFinancialTimelines entry — the mock will return an all-zero timeline
+    state.buildingFinancialTimelines['building-empty-fin'] = {
+      buildingId: 'building-empty-fin',
+      buildingName: 'Empty Finance Factory',
+      dataFromTick: 1,
+      dataToTick: 5,
+      totalSales: 0,
+      totalCosts: 0,
+      totalProfit: 0,
+      timeline: [
+        { tick: 1, sales: 0, costs: 0, profit: 0 },
+        { tick: 2, sales: 0, costs: 0, profit: 0 },
+        { tick: 3, sales: 0, costs: 0, profit: 0 },
+        { tick: 4, sales: 0, costs: 0, profit: 0 },
+        { tick: 5, sales: 0, costs: 0, profit: 0 },
+      ],
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-empty-fin')
+    await expect(page.getByRole('heading', { name: 'Building Overview' })).toBeVisible()
+
+    const overview = page.locator('.building-overview-detail')
+    const finCard = overview.locator('.building-financial-card')
+    // All three summary metrics show $0
+    const summaryGrid = finCard.locator('.mi-summary-grid')
+    await expect(summaryGrid.locator('.mi-metric').nth(0)).toContainText('$0')
+    await expect(summaryGrid.locator('.mi-metric').nth(1)).toContainText('$0')
+    await expect(summaryGrid.locator('.mi-metric').nth(2)).toContainText('$0')
+    // Empty state message replaces chart
+    await expect(finCard.locator('.mi-empty-state')).toBeVisible()
+    // No SVG chart should be rendered
+    const chartSvg = finCard.locator('.building-financial-chart')
+    await expect(chartSvg).toHaveCount(0)
+  })
+
+  test('shows negative profit with negative styling in financial dashboard', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-neg-profit',
+      playerId: player.id,
+      name: 'Loss Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-neg-profit',
+          companyId: 'company-neg-profit',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Loss Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.buildingFinancialTimelines['building-neg-profit'] = {
+      buildingId: 'building-neg-profit',
+      buildingName: 'Loss Factory',
+      dataFromTick: 10,
+      dataToTick: 12,
+      totalSales: 30,
+      totalCosts: 90,
+      totalProfit: -60,
+      timeline: [
+        { tick: 10, sales: 10, costs: 30, profit: -20 },
+        { tick: 11, sales: 10, costs: 30, profit: -20 },
+        { tick: 12, sales: 10, costs: 30, profit: -20 },
+      ],
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-neg-profit')
+    await expect(page.getByRole('heading', { name: 'Building Overview' })).toBeVisible()
+
+    const overview = page.locator('.building-overview-detail')
+    const finCard = overview.locator('.building-financial-card')
+    const summaryGrid = finCard.locator('.mi-summary-grid')
+    // Verify loss amounts are shown in the summary grid (scoped to avoid chart detail stats)
+    await expect(summaryGrid.locator('.mi-metric').nth(0)).toContainText('$30')
+    await expect(summaryGrid.locator('.mi-metric').nth(1)).toContainText('$90')
+    await expect(summaryGrid.locator('.mi-metric').nth(2)).toContainText('$-60')
+    // The profit value must carry the negative text styling class
+    const profitMetric = summaryGrid.locator('.mi-metric').nth(2)
+    await expect(profitMetric.locator('.building-profit-negative-text')).toBeVisible()
+    // Chart must still render because there IS activity
+    const chartCard = overview.locator('.building-financial-chart-card')
+    await expect(chartCard.getByRole('img', { name: 'Building financial history' })).toBeVisible()
+  })
+
+  test('financial dashboard chart and summary stay visible during tick refresh', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-fin-refresh',
+      playerId: player.id,
+      name: 'Refresh Finance Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-fin-refresh',
+          companyId: 'company-fin-refresh',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Refresh Finance Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 50
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+    state.buildingFinancialTimelines['building-fin-refresh'] = {
+      buildingId: 'building-fin-refresh',
+      buildingName: 'Refresh Finance Factory',
+      dataFromTick: 49,
+      dataToTick: 50,
+      totalSales: 400,
+      totalCosts: 150,
+      totalProfit: 250,
+      timeline: [
+        { tick: 49, sales: 200, costs: 75, profit: 125 },
+        { tick: 50, sales: 200, costs: 75, profit: 125 },
+      ],
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-fin-refresh')
+    await expect(page.getByRole('heading', { name: 'Building Overview' })).toBeVisible()
+
+    const overview = page.locator('.building-overview-detail')
+    // Financial summary and chart must be visible before tick refresh
+    await expect(overview.getByText('$400')).toBeVisible()
+    const chartCard = overview.locator('.building-financial-chart-card')
+    await expect(chartCard.getByRole('img', { name: 'Building financial history' })).toBeVisible()
+
+    // Simulate tick advancing
+    state.gameState.currentTick = 51
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+    state.buildingFinancialTimelines['building-fin-refresh'] = {
+      buildingId: 'building-fin-refresh',
+      buildingName: 'Refresh Finance Factory',
+      dataFromTick: 49,
+      dataToTick: 51,
+      totalSales: 600,
+      totalCosts: 225,
+      totalProfit: 375,
+      timeline: [
+        { tick: 49, sales: 200, costs: 75, profit: 125 },
+        { tick: 50, sales: 200, costs: 75, profit: 125 },
+        { tick: 51, sales: 200, costs: 75, profit: 125 },
+      ],
+    }
+
+    // Building heading and chart must remain visible — no full-page reset
+    await expect(page.getByRole('heading', { name: 'Refresh Finance Factory' })).toBeVisible()
+    await expect(chartCard.getByRole('img', { name: 'Building financial history' })).toBeVisible()
+    await expect(page.locator('.loading', { hasText: 'Loading' })).toBeHidden()
+  })
+
   test('shows read-only unit details when clicking active grid cells', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({

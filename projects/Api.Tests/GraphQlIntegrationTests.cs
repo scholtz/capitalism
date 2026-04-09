@@ -17856,6 +17856,285 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     }
 
     [Fact]
+    public async Task BuildingFinancialTimeline_NoActivity_ReturnsEmptyTimelineWithZeroTotals()
+    {
+        // Building with no ledger entries must still return a valid timeline (all zeros, no snapshots with values)
+        var (token, buildingId) = await SeedOperationalStatusTestAsync("bft-no-activity",
+            (db, bid, _, _) =>
+            {
+                // No ledger entries seeded — building has no economic activity
+                var gameState = db.GameStates.First();
+                gameState.CurrentTick = 10;
+            });
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingFinancialTimeline($buildingId: UUID!) {
+              buildingFinancialTimeline(buildingId: $buildingId) {
+                buildingId
+                dataFromTick
+                dataToTick
+                totalSales
+                totalCosts
+                totalProfit
+                timeline {
+                  tick
+                  sales
+                  costs
+                  profit
+                }
+              }
+            }
+            """,
+            new { buildingId },
+            token);
+
+        var timeline = result.GetProperty("data").GetProperty("buildingFinancialTimeline");
+        Assert.Equal(buildingId.ToString(), timeline.GetProperty("buildingId").GetString());
+        Assert.Equal(0m, timeline.GetProperty("totalSales").GetDecimal());
+        Assert.Equal(0m, timeline.GetProperty("totalCosts").GetDecimal());
+        Assert.Equal(0m, timeline.GetProperty("totalProfit").GetDecimal());
+
+        var snapshots = timeline.GetProperty("timeline").EnumerateArray().ToList();
+        // All snapshots should have zero values
+        Assert.All(snapshots, snapshot =>
+        {
+            Assert.Equal(0m, snapshot.GetProperty("sales").GetDecimal());
+            Assert.Equal(0m, snapshot.GetProperty("costs").GetDecimal());
+            Assert.Equal(0m, snapshot.GetProperty("profit").GetDecimal());
+        });
+    }
+
+    [Fact]
+    public async Task BuildingFinancialTimeline_CostsOnlyNegativeProfit_ReturnsCostOnlyNegativeProfit()
+    {
+        // Building with only cost entries (no revenue) must show negative profit periods
+        var (token, buildingId) = await SeedOperationalStatusTestAsync("bft-costs-only",
+            (db, bid, companyId, _) =>
+            {
+                var unitId = Guid.NewGuid();
+                var gameState = db.GameStates.First();
+                gameState.CurrentTick = 5;
+
+                db.BuildingUnits.Add(new BuildingUnit
+                {
+                    Id = unitId,
+                    BuildingId = bid,
+                    UnitType = UnitType.Purchase,
+                    GridX = 0,
+                    GridY = 0,
+                    Level = 1,
+                });
+
+                db.LedgerEntries.AddRange(
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        BuildingUnitId = unitId,
+                        Category = LedgerCategory.PurchasingCost,
+                        Description = "Raw material purchase",
+                        Amount = -40m,
+                        RecordedAtTick = 4,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        BuildingUnitId = unitId,
+                        Category = LedgerCategory.LaborCost,
+                        Description = "Worker wages",
+                        Amount = -15m,
+                        RecordedAtTick = 5,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    });
+            });
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingFinancialTimeline($buildingId: UUID!, $limit: Int) {
+              buildingFinancialTimeline(buildingId: $buildingId, limit: $limit) {
+                totalSales
+                totalCosts
+                totalProfit
+                timeline {
+                  tick
+                  sales
+                  costs
+                  profit
+                }
+              }
+            }
+            """,
+            new { buildingId, limit = 2 },
+            token);
+
+        var timeline = result.GetProperty("data").GetProperty("buildingFinancialTimeline");
+        Assert.Equal(0m, timeline.GetProperty("totalSales").GetDecimal());
+        Assert.Equal(55m, timeline.GetProperty("totalCosts").GetDecimal());
+        Assert.Equal(-55m, timeline.GetProperty("totalProfit").GetDecimal());
+
+        var snapshots = timeline.GetProperty("timeline").EnumerateArray().ToList();
+
+        var snapshotsByTick = snapshots.ToDictionary(
+            s => s.GetProperty("tick").GetInt64(),
+            s => s);
+
+        Assert.Equal(0m, snapshotsByTick[4].GetProperty("sales").GetDecimal());
+        Assert.Equal(40m, snapshotsByTick[4].GetProperty("costs").GetDecimal());
+        Assert.Equal(-40m, snapshotsByTick[4].GetProperty("profit").GetDecimal());
+
+        Assert.Equal(0m, snapshotsByTick[5].GetProperty("sales").GetDecimal());
+        Assert.Equal(15m, snapshotsByTick[5].GetProperty("costs").GetDecimal());
+        Assert.Equal(-15m, snapshotsByTick[5].GetProperty("profit").GetDecimal());
+    }
+
+    [Fact]
+    public async Task BuildingFinancialTimeline_NotOwnedBuilding_ReturnsError()
+    {
+        // Player trying to access another player's building financial timeline must get an error
+        var otherPlayerToken = await RegisterAndGetTokenAsync(
+            $"bft-other-{Guid.NewGuid():N}@test.com",
+            "bft-other");
+
+        var (_, buildingId) = await SeedOperationalStatusTestAsync("bft-owner",
+            (db, bid, companyId, _) =>
+            {
+                var unitId = Guid.NewGuid();
+                var gameState = db.GameStates.First();
+                gameState.CurrentTick = 5;
+
+                db.BuildingUnits.Add(new BuildingUnit
+                {
+                    Id = unitId,
+                    BuildingId = bid,
+                    UnitType = UnitType.PublicSales,
+                    GridX = 0,
+                    GridY = 0,
+                    Level = 1,
+                });
+
+                db.LedgerEntries.Add(new LedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyId = companyId,
+                    BuildingId = bid,
+                    BuildingUnitId = unitId,
+                    Category = LedgerCategory.Revenue,
+                    Description = "Owner revenue",
+                    Amount = 100m,
+                    RecordedAtTick = 5,
+                    RecordedAtUtc = DateTime.UtcNow,
+                });
+            });
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingFinancialTimeline($buildingId: UUID!) {
+              buildingFinancialTimeline(buildingId: $buildingId) {
+                buildingId
+                totalSales
+              }
+            }
+            """,
+            new { buildingId },
+            otherPlayerToken);
+
+        var errors = result.GetProperty("errors");
+        Assert.True(errors.GetArrayLength() > 0,
+            "Accessing another player's building financial timeline must return an error.");
+        var code = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("BUILDING_NOT_FOUND", code);
+    }
+
+    [Fact]
+    public async Task BuildingFinancialTimeline_MixedRevenueAndCost_CapitalEventsExcluded()
+    {
+        // Property purchase and construction costs must NOT appear in operating performance
+        var (token, buildingId) = await SeedOperationalStatusTestAsync("bft-capital-excl",
+            (db, bid, companyId, _) =>
+            {
+                var salesUnitId = Guid.NewGuid();
+                var gameState = db.GameStates.First();
+                gameState.CurrentTick = 3;
+
+                db.BuildingUnits.Add(new BuildingUnit
+                {
+                    Id = salesUnitId,
+                    BuildingId = bid,
+                    UnitType = UnitType.PublicSales,
+                    GridX = 0,
+                    GridY = 0,
+                    Level = 1,
+                });
+
+                db.LedgerEntries.AddRange(
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        BuildingUnitId = salesUnitId,
+                        Category = LedgerCategory.Revenue,
+                        Description = "Sale",
+                        Amount = 200m,
+                        RecordedAtTick = 3,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        Category = LedgerCategory.PropertyPurchase,
+                        Description = "Land purchase — must be excluded from operating timeline",
+                        Amount = -50000m,
+                        RecordedAtTick = 3,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    },
+                    new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = companyId,
+                        BuildingId = bid,
+                        Category = LedgerCategory.ConstructionCost,
+                        Description = "Building construction — must be excluded",
+                        Amount = -10000m,
+                        RecordedAtTick = 3,
+                        RecordedAtUtc = DateTime.UtcNow,
+                    });
+            });
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingFinancialTimeline($buildingId: UUID!, $limit: Int) {
+              buildingFinancialTimeline(buildingId: $buildingId, limit: $limit) {
+                totalSales
+                totalCosts
+                totalProfit
+                timeline {
+                  tick
+                  sales
+                  costs
+                  profit
+                }
+              }
+            }
+            """,
+            new { buildingId, limit = 1 },
+            token);
+
+        var timeline = result.GetProperty("data").GetProperty("buildingFinancialTimeline");
+        // Capital events must not inflate the cost or profit figures
+        Assert.Equal(200m, timeline.GetProperty("totalSales").GetDecimal());
+        Assert.Equal(0m, timeline.GetProperty("totalCosts").GetDecimal());
+        Assert.Equal(200m, timeline.GetProperty("totalProfit").GetDecimal());
+    }
+
+    [Fact]
     public async Task BuildingUnitOperationalStatuses_PurchaseUnit_ReturnsNextTickCosts()
     {
         // Arrange: seed a factory in Bratislava with a configured purchase unit.
