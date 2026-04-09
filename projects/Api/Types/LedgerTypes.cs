@@ -215,3 +215,62 @@ public sealed class MarketShareEntry
     /// <summary>True when this entry represents unserved/unmet market demand, not an actual seller.</summary>
     public bool IsUnmet { get; set; }
 }
+
+/// <summary>
+/// Product-level analytics for a MANUFACTURING unit.
+/// Shows cost history, production quantity, and estimated economics per tick.
+/// </summary>
+public sealed class UnitProductAnalytics
+{
+    public Guid BuildingUnitId { get; set; }
+    /// <summary>The unit type (e.g. MANUFACTURING).</summary>
+    public string UnitType { get; set; } = string.Empty;
+    /// <summary>Product type being produced. Null when no product is configured.</summary>
+    public Guid? ProductTypeId { get; set; }
+    /// <summary>Display name of the product being produced. Null when no product data is available.</summary>
+    public string? ProductName { get; set; }
+    /// <summary>First tick in the analytics window (oldest data).</summary>
+    public long DataFromTick { get; set; }
+    /// <summary>Last tick in the analytics window (most recent data).</summary>
+    public long DataToTick { get; set; }
+    /// <summary>Total labor + energy cost over the analytics window.</summary>
+    public decimal TotalCost { get; set; }
+    /// <summary>Total units produced over the analytics window.</summary>
+    public decimal TotalQuantityProduced { get; set; }
+    /// <summary>
+    /// Estimated total revenue = TotalQuantityProduced × product.BasePrice.
+    /// Null when base price is unavailable.
+    /// </summary>
+    public decimal? EstimatedRevenue { get; set; }
+    /// <summary>
+    /// Estimated total profit = EstimatedRevenue − TotalCost.
+    /// Null when base price is unavailable.
+    /// </summary>
+    public decimal? EstimatedProfit { get; set; }
+    /// <summary>Per-tick snapshots ordered by tick ascending.</summary>
+    public List<UnitProductTickSnapshot> Snapshots { get; set; } = [];
+}
+
+/// <summary>Per-tick cost and production snapshot for a MANUFACTURING unit.</summary>
+public sealed class UnitProductTickSnapshot
+{
+    public long Tick { get; set; }
+    /// <summary>Labor cost charged to the company for this unit on this tick.</summary>
+    public decimal LaborCost { get; set; }
+    /// <summary>Energy cost charged to the company for this unit on this tick.</summary>
+    public decimal EnergyCost { get; set; }
+    /// <summary>Total operating cost (labor + energy) for this tick.</summary>
+    public decimal TotalCost { get; set; }
+    /// <summary>Quantity of the product produced on this tick.</summary>
+    public decimal QuantityProduced { get; set; }
+    /// <summary>
+    /// Estimated revenue = QuantityProduced × product.BasePrice.
+    /// Null when base price is unavailable.
+    /// </summary>
+    public decimal? EstimatedRevenue { get; set; }
+    /// <summary>
+    /// Estimated profit = EstimatedRevenue − TotalCost.
+    /// Null when base price is unavailable.
+    /// </summary>
+    public decimal? EstimatedProfit { get; set; }
+}

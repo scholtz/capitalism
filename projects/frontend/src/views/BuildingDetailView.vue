@@ -51,6 +51,7 @@ import type {
   ResourceType,
   CityMediaHouseInfo,
   SourcingCandidate,
+  UnitProductAnalytics,
 } from '@/types'
 import type { HorizontalLinkState, VerticalLinkState } from '@/lib/linkHelpers'
 
@@ -252,6 +253,9 @@ const selectedDraftMediaHouse = computed(() => {
 // Public Sales market intelligence analytics
 const publicSalesAnalytics = ref<PublicSalesAnalytics | null>(null)
 const publicSalesAnalyticsLoading = ref(false)
+// Manufacturing unit product analytics
+const unitProductAnalytics = ref<UnitProductAnalytics | null>(null)
+const unitProductAnalyticsLoading = ref(false)
 // Quick price update (instant, no tick delay)
 const quickPriceInput = ref<number | null>(null)
 const quickPriceSaving = ref(false)
@@ -585,6 +589,7 @@ const selectedDisplayUnit = computed<GridUnit | undefined>(() => {
 })
 const selectedPurchaseUnit = computed(() => (selectedDisplayUnit.value?.unitType === 'PURCHASE' ? selectedDisplayUnit.value : undefined))
 const selectedPublicSalesUnit = computed(() => (!isEditing.value && selectedDisplayUnit.value?.unitType === 'PUBLIC_SALES' ? selectedDisplayUnit.value : undefined))
+const selectedManufacturingUnit = computed(() => (!isEditing.value && selectedDisplayUnit.value?.unitType === 'MANUFACTURING' ? selectedDisplayUnit.value : undefined))
 const selectedDraftPurchaseUnit = computed(() => (isEditing.value && selectedDisplayUnit.value?.unitType === 'PURCHASE' ? (selectedDisplayUnit.value as EditableGridUnit) : undefined))
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
@@ -617,6 +622,12 @@ const miMaxQuantitySold = computed(() => publicSalesAnalytics.value?.revenueHist
 const miMaxPricePerUnit = computed(() => publicSalesAnalytics.value?.priceHistory.reduce((m, s) => Math.max(m, s.pricePerUnit), 0) ?? 0)
 /** Max absolute profit value across profit history – used to normalise the profit bar chart heights. */
 const miMaxAbsProfit = computed(() => publicSalesAnalytics.value?.profitHistory?.reduce((m, p) => Math.max(m, Math.abs(p.profit)), 0) ?? 0)
+/** Max absolute estimated profit for manufacturing unit analytics chart normalisation. */
+const upaMaxAbsProfit = computed(() => unitProductAnalytics.value?.snapshots.reduce((m, s) => Math.max(m, Math.abs(s.estimatedProfit ?? 0)), 0) ?? 0)
+/** Max total cost for manufacturing unit analytics chart normalisation. */
+const upaMaxCost = computed(() => unitProductAnalytics.value?.snapshots.reduce((m, s) => Math.max(m, s.totalCost), 0) ?? 0)
+/** Max estimated revenue for manufacturing unit analytics chart normalisation. */
+const upaMaxEstRevenue = computed(() => unitProductAnalytics.value?.snapshots.reduce((m, s) => Math.max(m, s.estimatedRevenue ?? 0), 0) ?? 0)
 // Current configured min price for the selected PUBLIC_SALES unit (0 if not set)
 const currentPublicSalesMinPrice = computed(() => (typeof selectedPublicSalesUnit.value?.minPrice === 'number' ? selectedPublicSalesUnit.value.minPrice : 0))
 
@@ -2692,6 +2703,43 @@ async function loadPublicSalesAnalytics(unitId: string | null, isRefresh = false
   }
 }
 
+async function loadUnitProductAnalytics(unitId: string | null, isRefresh = false) {
+  if (!unitId || !auth.token) {
+    unitProductAnalytics.value = null
+    unitProductAnalyticsLoading.value = false
+    return
+  }
+
+  if (!isRefresh || unitProductAnalytics.value == null) {
+    unitProductAnalyticsLoading.value = true
+  }
+  try {
+    const data = await gqlRequest<{ unitProductAnalytics: UnitProductAnalytics | null }>(
+      `query UnitProductAnalytics($unitId: UUID!) {
+        unitProductAnalytics(unitId: $unitId) {
+          buildingUnitId
+          unitType
+          productTypeId
+          productName
+          dataFromTick
+          dataToTick
+          totalCost
+          totalQuantityProduced
+          estimatedRevenue
+          estimatedProfit
+          snapshots { tick laborCost energyCost totalCost quantityProduced estimatedRevenue estimatedProfit }
+        }
+      }`,
+      { unitId },
+    )
+    unitProductAnalytics.value = data.unitProductAnalytics ?? null
+  } catch {
+    unitProductAnalytics.value = null
+  } finally {
+    unitProductAnalyticsLoading.value = false
+  }
+}
+
 async function submitQuickPriceUpdate() {
   const unit = selectedPublicSalesUnit.value
   const price = quickPriceInput.value
@@ -3251,6 +3299,11 @@ useTickRefresh(async () => {
   if (unitId) {
     void loadPublicSalesAnalytics(unitId, true)
   }
+  // Refresh unit product analytics for the selected MANUFACTURING unit on tick change
+  const mfgUnitId = getResolvedLiveUnitId(selectedManufacturingUnit.value)
+  if (mfgUnitId) {
+    void loadUnitProductAnalytics(mfgUnitId, true)
+  }
   if (getResolvedLiveUnitId(selectedPurchaseUnit.value)) {
     void loadProcurementPreview(true)
     void loadSourcingCandidates(true)
@@ -3356,6 +3409,14 @@ watch(
   () => getResolvedLiveUnitId(selectedPublicSalesUnit.value),
   (unitId) => {
     void loadPublicSalesAnalytics(unitId)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => getResolvedLiveUnitId(selectedManufacturingUnit.value),
+  (unitId) => {
+    void loadUnitProductAnalytics(unitId ?? null)
   },
   { immediate: true },
 )
@@ -5528,6 +5589,118 @@ watch(
                 </template>
 
                 <p v-else class="config-help">{{ t('buildingDetail.marketIntelligence.loadFailed') }}</p>
+              </div>
+
+              <!-- Manufacturing Unit Product Analytics Panel -->
+              <div
+                v-if="selectedManufacturingUnit && (selectedManufacturingUnit.productTypeId || unitProductAnalytics)"
+                class="unit-insight-card unit-product-analytics-panel"
+                aria-label="Product Performance Analytics"
+              >
+                <h5>{{ t('buildingDetail.unitProductAnalytics.title') }}</h5>
+
+                <!-- Product identity + data window row -->
+                <div class="mi-context-row">
+                  <span v-if="unitProductAnalytics?.productName" class="mi-product-chip" aria-label="Currently producing product">
+                    {{ unitProductAnalytics.productName }}
+                  </span>
+                  <span v-else-if="selectedManufacturingUnit.productTypeId" class="mi-product-chip">
+                    {{ t('buildingDetail.unitProductAnalytics.productConfigured') }}
+                  </span>
+                  <span v-if="unitProductAnalytics && unitProductAnalytics.dataFromTick > 0" class="mi-tick-window">
+                    T{{ unitProductAnalytics.dataFromTick }}–T{{ unitProductAnalytics.dataToTick }}
+                  </span>
+                </div>
+
+                <p v-if="unitProductAnalyticsLoading" class="config-help">{{ t('buildingDetail.unitProductAnalytics.loading') }}</p>
+
+                <template v-else-if="unitProductAnalytics && unitProductAnalytics.snapshots.length > 0">
+                  <!-- Summary metrics -->
+                  <div class="mi-summary-grid">
+                    <div class="mi-metric">
+                      <span class="mi-metric-label">{{ t('buildingDetail.unitProductAnalytics.totalProduced') }}</span>
+                      <strong class="mi-metric-value">{{ formatUnitQuantity(unitProductAnalytics.totalQuantityProduced) }}</strong>
+                    </div>
+                    <div class="mi-metric">
+                      <span class="mi-metric-label">{{ t('buildingDetail.unitProductAnalytics.totalCost') }}</span>
+                      <strong class="mi-metric-value building-profit-negative-text">{{ formatCurrency(unitProductAnalytics.totalCost) }}</strong>
+                    </div>
+                    <div v-if="unitProductAnalytics.estimatedRevenue !== null" class="mi-metric">
+                      <span class="mi-metric-label">{{ t('buildingDetail.unitProductAnalytics.estimatedRevenue') }}</span>
+                      <strong class="mi-metric-value">{{ formatCurrency(unitProductAnalytics.estimatedRevenue) }}</strong>
+                    </div>
+                    <div v-if="unitProductAnalytics.estimatedProfit !== null" class="mi-metric">
+                      <span class="mi-metric-label">{{ t('buildingDetail.unitProductAnalytics.estimatedProfit') }}</span>
+                      <strong
+                        class="mi-metric-value"
+                        :class="{
+                          'building-profit-positive-text': unitProductAnalytics.estimatedProfit >= 0,
+                          'building-profit-negative-text': unitProductAnalytics.estimatedProfit < 0,
+                        }"
+                      >{{ formatCurrency(unitProductAnalytics.estimatedProfit) }}</strong>
+                    </div>
+                  </div>
+
+                  <!-- Cost history chart -->
+                  <div v-if="unitProductAnalytics.snapshots.length > 0" class="mi-chart-section">
+                    <span class="mi-chart-label">{{ t('buildingDetail.unitProductAnalytics.costChart') }}</span>
+                    <div class="mi-bar-chart mi-bar-chart-cost" role="img" :aria-label="t('buildingDetail.unitProductAnalytics.costChart')">
+                      <div
+                        v-for="snap in unitProductAnalytics.snapshots"
+                        :key="snap.tick"
+                        class="mi-bar mi-bar-cost"
+                        :style="{
+                          height: `${Math.max(2, upaMaxCost > 0 ? (snap.totalCost / upaMaxCost) * 100 : 0).toFixed(1)}%`,
+                        }"
+                        :title="`T${snap.tick}: ${formatCurrency(snap.totalCost)} (${t('buildingDetail.unitProductAnalytics.labor')}: ${formatCurrency(snap.laborCost)}, ${t('buildingDetail.unitProductAnalytics.energy')}: ${formatCurrency(snap.energyCost)})`"
+                      ></div>
+                    </div>
+                  </div>
+
+                  <!-- Estimated revenue chart -->
+                  <div v-if="unitProductAnalytics.snapshots.some((s) => s.estimatedRevenue !== null && s.estimatedRevenue > 0)" class="mi-chart-section">
+                    <span class="mi-chart-label">{{ t('buildingDetail.unitProductAnalytics.estimatedRevenueChart') }}</span>
+                    <div class="mi-bar-chart mi-bar-chart-revenue" role="img" :aria-label="t('buildingDetail.unitProductAnalytics.estimatedRevenueChart')">
+                      <div
+                        v-for="snap in unitProductAnalytics.snapshots"
+                        :key="snap.tick"
+                        class="mi-bar mi-bar-revenue"
+                        :style="{
+                          height: `${Math.max(2, upaMaxEstRevenue > 0 ? ((snap.estimatedRevenue ?? 0) / upaMaxEstRevenue) * 100 : 0).toFixed(1)}%`,
+                        }"
+                        :title="`T${snap.tick}: ${formatCurrency(snap.estimatedRevenue ?? 0)}`"
+                      ></div>
+                    </div>
+                  </div>
+
+                  <!-- Estimated profit chart -->
+                  <div v-if="unitProductAnalytics.snapshots.some((s) => s.estimatedProfit !== null)" class="mi-chart-section">
+                    <span class="mi-chart-label">{{ t('buildingDetail.unitProductAnalytics.estimatedProfitChart') }}</span>
+                    <div class="mi-bar-chart mi-bar-chart-profit" role="img" :aria-label="t('buildingDetail.unitProductAnalytics.estimatedProfitChart')">
+                      <div
+                        v-for="snap in unitProductAnalytics.snapshots"
+                        :key="snap.tick"
+                        class="mi-bar"
+                        :class="(snap.estimatedProfit ?? 0) >= 0 ? 'mi-bar-profit-positive' : 'mi-bar-profit-negative'"
+                        :style="{
+                          height: `${Math.max(2, upaMaxAbsProfit > 0 ? (Math.abs(snap.estimatedProfit ?? 0) / upaMaxAbsProfit) * 100 : 0).toFixed(1)}%`,
+                        }"
+                        :title="`T${snap.tick}: ${formatCurrency(snap.estimatedProfit ?? 0)}`"
+                      ></div>
+                    </div>
+                  </div>
+
+                  <!-- Profitability note -->
+                  <p class="config-help mi-hint">{{ t('buildingDetail.unitProductAnalytics.profitNote') }}</p>
+                </template>
+
+                <template v-else-if="unitProductAnalytics && unitProductAnalytics.snapshots.length === 0">
+                  <p class="config-help">{{ t('buildingDetail.unitProductAnalytics.noData') }}</p>
+                </template>
+
+                <template v-else-if="!unitProductAnalytics && !unitProductAnalyticsLoading">
+                  <p class="config-help">{{ t('buildingDetail.unitProductAnalytics.noProduct') }}</p>
+                </template>
               </div>
 
               <!-- Recent Activity feed for all unit types -->
@@ -7751,6 +7924,10 @@ watch(
   margin-top: 1.25rem;
 }
 
+.unit-product-analytics-panel {
+  margin-top: 1.25rem;
+}
+
 /* Product context row: chip + tick window label */
 .mi-context-row {
   display: flex;
@@ -8025,6 +8202,63 @@ watch(
 
 .mi-quality-low {
   color: #d97706;
+}
+
+/* ─── Bar chart layout ─── */
+.mi-chart-section {
+  margin-bottom: 0.9rem;
+}
+
+.mi-chart-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.3rem;
+}
+
+.mi-bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 60px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  overflow: hidden;
+}
+
+.mi-bar {
+  flex: 1;
+  min-width: 1px;
+  border-radius: 2px 2px 0 0;
+  background: var(--color-primary, #3b82f6);
+  transition: height 0.2s ease;
+}
+
+.mi-bar-revenue {
+  background: #3b82f6;
+}
+
+.mi-bar-quantity {
+  background: #8b5cf6;
+}
+
+.mi-bar-price {
+  background: #f59e0b;
+}
+
+.mi-bar-cost {
+  background: #ef4444;
+}
+
+.mi-hint {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  margin-top: 0.4rem;
 }
 
 /* ─── Profit chart bars ─── */

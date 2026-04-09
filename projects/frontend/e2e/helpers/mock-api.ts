@@ -418,6 +418,28 @@ export type MockPublicSalesAnalytics = {
   demandDrivers: Array<{ factor: string; impact: string; score: number; description: string }>
 }
 
+export type MockUnitProductAnalytics = {
+  buildingUnitId: string
+  unitType: string
+  productTypeId?: string | null
+  productName?: string | null
+  dataFromTick: number
+  dataToTick: number
+  totalCost: number
+  totalQuantityProduced: number
+  estimatedRevenue: number | null
+  estimatedProfit: number | null
+  snapshots: Array<{
+    tick: number
+    laborCost: number
+    energyCost: number
+    totalCost: number
+    quantityProduced: number
+    estimatedRevenue: number | null
+    estimatedProfit: number | null
+  }>
+}
+
 export type MockBuildingFinancialTimeline = {
   buildingId: string
   buildingName: string
@@ -494,6 +516,8 @@ export type MockState = {
   publicSalesRecords: MockPublicSalesRecord[]
   /** Public sales analytics by unit ID */
   publicSalesAnalytics: Record<string, MockPublicSalesAnalytics>
+  /** Unit product analytics by unit ID (for MANUFACTURING units) */
+  unitProductAnalytics: Record<string, MockUnitProductAnalytics>
   /** Building financial history keyed by building ID */
   buildingFinancialTimelines: Record<string, MockBuildingFinancialTimeline>
   /** Loan offers available in the marketplace */
@@ -1281,6 +1305,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     researchBrands: {},
     publicSalesRecords: [],
     publicSalesAnalytics: {},
+    unitProductAnalytics: {},
     buildingFinancialTimelines: {},
     loanOffers: [],
     myLoans: [],
@@ -3871,6 +3896,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       !q.includes('ledgerDrillDown') &&
       !q.includes('companyBrands') &&
       !q.includes('publicSalesAnalytics') &&
+      !q.includes('unitProductAnalytics') &&
       // Loan queries: field names like bankBuildingName, lenderCompanyName, cityName, paymentAmount contain 'me'
       !q.includes('loanOffers') &&
       !q.includes('myLoans') &&
@@ -3996,6 +4022,16 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { publicSalesAnalytics: analytics } }),
+      })
+    }
+
+    if (query.includes('unitProductAnalytics') || query.includes('UnitProductAnalytics')) {
+      const unitId: string = body.variables?.unitId ?? ''
+      const analytics = state.unitProductAnalytics[unitId] ?? null
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { unitProductAnalytics: analytics } }),
       })
     }
 

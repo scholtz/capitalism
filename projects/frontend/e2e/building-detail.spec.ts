@@ -11801,3 +11801,285 @@ test.describe('Building detail tick-refresh stability', () => {
     await expect(page).toHaveURL(/\/building\/building-deeplink\?unit=0(?:,|%2C)0$/)
   })
 })
+
+// ── Manufacturing Unit Product Analytics Panel ─────────────────────────────────
+
+test.describe('Manufacturing unit product analytics panel', () => {
+  function makeFactoryWithMfgUnit() {
+    const player = makePlayer()
+    const products = makeChairProduct()
+    player.companies.push({
+      id: 'company-upa',
+      playerId: player.id,
+      name: 'UPA Corp',
+      cash: 500_000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-upa',
+          companyId: 'company-upa',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'UPA Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'unit-upa-purchase',
+              buildingId: 'building-upa',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+              purchaseSource: 'EXCHANGE',
+            } satisfies MockBuildingUnit,
+            {
+              id: 'unit-upa-mfg',
+              buildingId: 'building-upa',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              productTypeId: products.id,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+    return { player, products }
+  }
+
+  test('shows analytics panel with summary and charts when manufacturing unit has production history', async ({
+    page,
+  }) => {
+    const { player, products } = makeFactoryWithMfgUnit()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    // Seed unit product analytics for the manufacturing unit
+    state.unitProductAnalytics['unit-upa-mfg'] = {
+      buildingUnitId: 'unit-upa-mfg',
+      unitType: 'MANUFACTURING',
+      productTypeId: products.id,
+      productName: products.name,
+      dataFromTick: 1,
+      dataToTick: 5,
+      totalCost: 75,
+      totalQuantityProduced: 15,
+      estimatedRevenue: 675,
+      estimatedProfit: 600,
+      snapshots: Array.from({ length: 5 }, (_, i) => ({
+        tick: i + 1,
+        laborCost: 10,
+        energyCost: 5,
+        totalCost: 15,
+        quantityProduced: 3,
+        estimatedRevenue: 135,
+        estimatedProfit: 120,
+      })),
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto('/building/building-upa')
+
+    // Click the manufacturing unit cell (grid position 1,0)
+    const gridSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    await gridSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+    await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
+
+    // The product analytics panel should be visible
+    const analyticsPanel = page.locator('[aria-label="Product Performance Analytics"]')
+    await expect(analyticsPanel).toBeVisible()
+    await expect(analyticsPanel.getByRole('heading', { name: 'Product Performance' })).toBeVisible()
+
+    // Product chip should show the product name
+    await expect(analyticsPanel.locator('.mi-product-chip').first()).toContainText(products.name)
+
+    // Summary metrics should be visible
+    await expect(analyticsPanel.locator('.mi-metric').filter({ hasText: 'Total Produced' })).toBeVisible()
+    await expect(analyticsPanel.locator('.mi-metric').filter({ hasText: 'Total Cost' })).toBeVisible()
+    await expect(analyticsPanel.locator('.mi-metric').filter({ hasText: 'Est. Revenue' })).toBeVisible()
+    await expect(analyticsPanel.locator('.mi-metric').filter({ hasText: 'Est. Profit' })).toBeVisible()
+
+    // Cost chart bars should be present
+    await expect(analyticsPanel.locator('.mi-bar-cost')).not.toHaveCount(0)
+
+    // Revenue and profit chart bars should be present
+    await expect(analyticsPanel.locator('.mi-bar-revenue')).not.toHaveCount(0)
+    await expect(analyticsPanel.locator('.mi-bar-profit-positive')).not.toHaveCount(0)
+
+    // Profitability note should be visible
+    await expect(analyticsPanel.locator('.mi-hint')).toBeVisible()
+  })
+
+  test('shows noData message when snapshots are empty', async ({ page }) => {
+    const { player, products } = makeFactoryWithMfgUnit()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    // Seed unit product analytics with no snapshots
+    state.unitProductAnalytics['unit-upa-mfg'] = {
+      buildingUnitId: 'unit-upa-mfg',
+      unitType: 'MANUFACTURING',
+      productTypeId: products.id,
+      productName: products.name,
+      dataFromTick: 0,
+      dataToTick: 0,
+      totalCost: 0,
+      totalQuantityProduced: 0,
+      estimatedRevenue: 0,
+      estimatedProfit: 0,
+      snapshots: [],
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto('/building/building-upa')
+
+    const gridSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    await gridSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+    await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
+
+    const analyticsPanel = page.locator('[aria-label="Product Performance Analytics"]')
+    await expect(analyticsPanel).toBeVisible()
+
+    // No-data message should be visible
+    await expect(analyticsPanel).toContainText('No production activity recorded yet')
+  })
+
+  test('clearly distinguishes negative profit with mi-bar-profit-negative bars', async ({ page }) => {
+    const { player, products } = makeFactoryWithMfgUnit()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    // Seed analytics with negative profit snapshots
+    state.unitProductAnalytics['unit-upa-mfg'] = {
+      buildingUnitId: 'unit-upa-mfg',
+      unitType: 'MANUFACTURING',
+      productTypeId: products.id,
+      productName: products.name,
+      dataFromTick: 1,
+      dataToTick: 3,
+      totalCost: 9997,
+      totalQuantityProduced: 1,
+      estimatedRevenue: 3,
+      estimatedProfit: -9994,
+      snapshots: [
+        { tick: 1, laborCost: 9999, energyCost: 0, totalCost: 9999, quantityProduced: 1, estimatedRevenue: 3, estimatedProfit: -9996 },
+        { tick: 2, laborCost: 0, energyCost: 0, totalCost: 0, quantityProduced: 0, estimatedRevenue: 0, estimatedProfit: 0 },
+        { tick: 3, laborCost: 5, energyCost: 0, totalCost: 5, quantityProduced: 1, estimatedRevenue: 3, estimatedProfit: -2 },
+      ],
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto('/building/building-upa')
+
+    const gridSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    await gridSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+    await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
+
+    const analyticsPanel = page.locator('[aria-label="Product Performance Analytics"]')
+    await expect(analyticsPanel).toBeVisible()
+
+    // Negative profit bars should be present
+    await expect(analyticsPanel.locator('.mi-bar-profit-negative')).not.toHaveCount(0)
+
+    // The summary Est. Profit should show negative value with negative styling
+    const profitMetric = analyticsPanel.locator('.mi-metric').filter({ hasText: 'Est. Profit' })
+    await expect(profitMetric.locator('.building-profit-negative-text')).toBeVisible()
+  })
+
+  test('analytics panel remains stable across tick refresh without context loss', async ({
+    page,
+  }) => {
+    const { player, products } = makeFactoryWithMfgUnit()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 10
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    state.unitProductAnalytics['unit-upa-mfg'] = {
+      buildingUnitId: 'unit-upa-mfg',
+      unitType: 'MANUFACTURING',
+      productTypeId: products.id,
+      productName: products.name,
+      dataFromTick: 1,
+      dataToTick: 10,
+      totalCost: 150,
+      totalQuantityProduced: 30,
+      estimatedRevenue: 1350,
+      estimatedProfit: 1200,
+      snapshots: Array.from({ length: 10 }, (_, i) => ({
+        tick: i + 1,
+        laborCost: 10,
+        energyCost: 5,
+        totalCost: 15,
+        quantityProduced: 3,
+        estimatedRevenue: 135,
+        estimatedProfit: 120,
+      })),
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto('/building/building-upa')
+
+    const gridSection = page.locator('.grid-section').filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) }).first()
+    await gridSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+    await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
+
+    const analyticsPanel = page.locator('[aria-label="Product Performance Analytics"]')
+    await expect(analyticsPanel).toBeVisible()
+
+    // Simulate a tick advancing by updating the mock state
+    state.gameState.currentTick = 11
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // After tick refresh, the panel should still be visible and correctly populated
+    await expect(analyticsPanel).toBeVisible()
+    await expect(analyticsPanel.getByRole('heading', { name: 'Product Performance' })).toBeVisible()
+    await expect(analyticsPanel.locator('.mi-product-chip').first()).toContainText(products.name)
+    // Cost chart bars should still be present
+    await expect(analyticsPanel.locator('.mi-bar-cost')).not.toHaveCount(0)
+
+    // The heading 'Unit Details' should still be visible (no context loss)
+    await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
+  })
+})

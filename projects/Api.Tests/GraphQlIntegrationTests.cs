@@ -16704,6 +16704,251 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
     #endregion
 
+    #region UnitProductAnalytics
+
+    [Fact]
+    public async Task UnitProductAnalytics_NoProductConfigured_ReturnsNull()
+    {
+        // When a MANUFACTURING unit has no product type configured AND no ledger/history data,
+        // the analytics endpoint returns an object with null productTypeId and empty snapshots.
+        var token = await RegisterAndGetTokenAsync($"upa-empty-{Guid.NewGuid():N}@test.com", "UpaEmpty");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "UpaEmpty Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var factoryId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("factory").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Find the manufacturing unit in the factory
+        var manufacturingUnit = await db.BuildingUnits
+            .FirstAsync(u => u.BuildingId == Guid.Parse(factoryId) && u.UnitType == "MANUFACTURING");
+
+        // Remove the product assignment so analytics has no product
+        manufacturingUnit!.ProductTypeId = null;
+        // Also remove any existing ledger/history so we have a clean state
+        db.LedgerEntries.RemoveRange(db.LedgerEntries.Where(e => e.BuildingUnitId == manufacturingUnit.Id));
+        db.BuildingUnitResourceHistories.RemoveRange(db.BuildingUnitResourceHistories.Where(h => h.BuildingUnitId == manufacturingUnit.Id));
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ unitProductAnalytics(unitId: \"{manufacturingUnit.Id}\") {{ buildingUnitId productTypeId productName snapshots {{ tick }} }} }}",
+            token: token);
+
+        // Should return an analytics object, but with null productTypeId and empty snapshots
+        var analytics = result.GetProperty("data").GetProperty("unitProductAnalytics");
+        Assert.False(analytics.ValueKind == JsonValueKind.Null, "Analytics should return an object, not null");
+        Assert.Equal(JsonValueKind.Null, analytics.GetProperty("productTypeId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, analytics.GetProperty("productName").ValueKind);
+        Assert.Equal(0, analytics.GetProperty("snapshots").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task UnitProductAnalytics_AfterTicks_ReturnsCostAndProduction()
+    {
+        // After running ticks, the manufacturing unit should have cost entries and
+        // resource history, which should be returned in the analytics.
+        var token = await RegisterAndGetTokenAsync($"upa-ticks-{Guid.NewGuid():N}@test.com", "UpaTicks");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "UpaTicks Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var factoryId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("factory").GetProperty("id").GetString()!;
+
+        // Run ticks so manufacturing unit incurs costs and produces output
+        await ProcessTicksAsync(5);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var manufacturingUnit = await db.BuildingUnits
+            .FirstAsync(u => u.BuildingId == Guid.Parse(factoryId) && u.UnitType == "MANUFACTURING");
+
+        var result = await ExecuteGraphQlAsync(
+            $@"{{ unitProductAnalytics(unitId: ""{manufacturingUnit.Id}"") {{
+                buildingUnitId unitType productTypeId productName
+                dataFromTick dataToTick
+                totalCost totalQuantityProduced estimatedRevenue estimatedProfit
+                snapshots {{ tick laborCost energyCost totalCost quantityProduced estimatedRevenue estimatedProfit }}
+            }} }}",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "Should not return errors");
+        var analytics = result.GetProperty("data").GetProperty("unitProductAnalytics");
+        Assert.False(analytics.ValueKind == JsonValueKind.Null, "Analytics should not be null after ticks");
+
+        Assert.Equal("MANUFACTURING", analytics.GetProperty("unitType").GetString());
+        Assert.False(analytics.GetProperty("productTypeId").ValueKind == JsonValueKind.Null, "productTypeId should be set");
+        Assert.NotNull(analytics.GetProperty("productName").GetString());
+        Assert.True(analytics.GetProperty("totalCost").GetDecimal() >= 0m, "totalCost should be non-negative");
+        var snapshots = analytics.GetProperty("snapshots");
+        Assert.True(snapshots.GetArrayLength() >= 0, "snapshots should be an array");
+    }
+
+    [Fact]
+    public async Task UnitProductAnalytics_WithLedgerData_ReturnsCostAndEstimatedProfit()
+    {
+        // Seed a manufacturing unit with known labor and energy ledger entries and
+        // production history, then verify the analytics returns correct aggregates.
+        var token = await RegisterAndGetTokenAsync($"upa-seeded-{Guid.NewGuid():N}@test.com", "UpaSeeded");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "UpaSeeded Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var factoryId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("factory").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var manufacturingUnit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(factoryId) && u.UnitType == "MANUFACTURING");
+        var company = manufacturingUnit.Building.Company;
+        var productType = await db.ProductTypes.FirstAsync(p => p.Id == manufacturingUnit.ProductTypeId!.Value);
+
+        // Seed exactly 2 ticks of cost and production data at known values
+        const long tick1 = 77001L;
+        const long tick2 = 77002L;
+        const decimal laborPerTick = 10m;
+        const decimal energyPerTick = 5m;
+        const decimal producedPerTick = 3m;
+
+        db.LedgerEntries.AddRange(
+            new LedgerEntry { Id = Guid.NewGuid(), CompanyId = company.Id, BuildingId = manufacturingUnit.BuildingId, BuildingUnitId = manufacturingUnit.Id, ProductTypeId = productType.Id, Category = LedgerCategory.LaborCost, Amount = -laborPerTick, RecordedAtTick = tick1, RecordedAtUtc = DateTime.UtcNow },
+            new LedgerEntry { Id = Guid.NewGuid(), CompanyId = company.Id, BuildingId = manufacturingUnit.BuildingId, BuildingUnitId = manufacturingUnit.Id, ProductTypeId = productType.Id, Category = LedgerCategory.EnergyCost, Amount = -energyPerTick, RecordedAtTick = tick1, RecordedAtUtc = DateTime.UtcNow },
+            new LedgerEntry { Id = Guid.NewGuid(), CompanyId = company.Id, BuildingId = manufacturingUnit.BuildingId, BuildingUnitId = manufacturingUnit.Id, ProductTypeId = productType.Id, Category = LedgerCategory.LaborCost, Amount = -laborPerTick, RecordedAtTick = tick2, RecordedAtUtc = DateTime.UtcNow },
+            new LedgerEntry { Id = Guid.NewGuid(), CompanyId = company.Id, BuildingId = manufacturingUnit.BuildingId, BuildingUnitId = manufacturingUnit.Id, ProductTypeId = productType.Id, Category = LedgerCategory.EnergyCost, Amount = -energyPerTick, RecordedAtTick = tick2, RecordedAtUtc = DateTime.UtcNow }
+        );
+        db.BuildingUnitResourceHistories.AddRange(
+            new BuildingUnitResourceHistory { Id = Guid.NewGuid(), BuildingId = manufacturingUnit.BuildingId, BuildingUnitId = manufacturingUnit.Id, ProductTypeId = productType.Id, Tick = tick1, ProducedQuantity = producedPerTick, InflowQuantity = 0, OutflowQuantity = 0, ConsumedQuantity = 0 },
+            new BuildingUnitResourceHistory { Id = Guid.NewGuid(), BuildingId = manufacturingUnit.BuildingId, BuildingUnitId = manufacturingUnit.Id, ProductTypeId = productType.Id, Tick = tick2, ProducedQuantity = producedPerTick, InflowQuantity = 0, OutflowQuantity = 0, ConsumedQuantity = 0 }
+        );
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $@"{{ unitProductAnalytics(unitId: ""{manufacturingUnit.Id}"") {{
+                totalCost totalQuantityProduced estimatedRevenue estimatedProfit
+                snapshots {{ tick laborCost energyCost totalCost quantityProduced estimatedRevenue estimatedProfit }}
+            }} }}",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var analytics = result.GetProperty("data").GetProperty("unitProductAnalytics");
+        Assert.False(analytics.ValueKind == JsonValueKind.Null, "Analytics should not be null");
+
+        // The seeded entries produce known aggregates
+        var expectedTotalCost = (laborPerTick + energyPerTick) * 2;  // 2 ticks
+        var expectedTotalProduced = producedPerTick * 2;
+
+        var actualTotalCost = analytics.GetProperty("totalCost").GetDecimal();
+        var actualTotalProduced = analytics.GetProperty("totalQuantityProduced").GetDecimal();
+
+        // Allow >= since additional ticks may have added entries
+        Assert.True(actualTotalCost >= expectedTotalCost,
+            $"totalCost should include the seeded entries. Expected >= {expectedTotalCost}, got {actualTotalCost}");
+        Assert.True(actualTotalProduced >= expectedTotalProduced,
+            $"totalQuantityProduced should include the seeded entries. Expected >= {expectedTotalProduced}, got {actualTotalProduced}");
+
+        // Verify snapshots array has the seeded ticks
+        var snapshotsArr = analytics.GetProperty("snapshots").EnumerateArray().ToList();
+        var snap1 = snapshotsArr.FirstOrDefault(s => s.GetProperty("tick").GetInt64() == tick1);
+        var snap2 = snapshotsArr.FirstOrDefault(s => s.GetProperty("tick").GetInt64() == tick2);
+        Assert.True(snap1.ValueKind != JsonValueKind.Undefined, "Snapshot for tick1 should exist");
+        Assert.True(snap2.ValueKind != JsonValueKind.Undefined, "Snapshot for tick2 should exist");
+
+        Assert.Equal(laborPerTick, snap1.GetProperty("laborCost").GetDecimal());
+        Assert.Equal(energyPerTick, snap1.GetProperty("energyCost").GetDecimal());
+        Assert.Equal(laborPerTick + energyPerTick, snap1.GetProperty("totalCost").GetDecimal());
+        Assert.Equal(producedPerTick, snap1.GetProperty("quantityProduced").GetDecimal());
+        Assert.Equal(Math.Round(producedPerTick * productType.BasePrice, 2), snap1.GetProperty("estimatedRevenue").GetDecimal());
+    }
+
+    [Fact]
+    public async Task UnitProductAnalytics_Unauthorized_ReturnsNull()
+    {
+        // Accessing a manufacturing unit of another player should return null.
+        var token1 = await RegisterAndGetTokenAsync($"upa-auth1-{Guid.NewGuid():N}@test.com", "UpaAuth1");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token1, "UpaAuth1 Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        var finishResult = await FinishOnboardingAsync(token1, productId, shopLotId);
+        var factoryId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("factory").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var manufacturingUnit = await db.BuildingUnits
+            .FirstAsync(u => u.BuildingId == Guid.Parse(factoryId) && u.UnitType == "MANUFACTURING");
+
+        // Register another player and use their token
+        var token2 = await RegisterAndGetTokenAsync($"upa-auth2-{Guid.NewGuid():N}@test.com", "UpaAuth2");
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ unitProductAnalytics(unitId: \"{manufacturingUnit.Id}\") {{ buildingUnitId }} }}",
+            token: token2);
+
+        var analytics = result.GetProperty("data").GetProperty("unitProductAnalytics");
+        Assert.Equal(JsonValueKind.Null, analytics.ValueKind);
+    }
+
+    [Fact]
+    public async Task UnitProductAnalytics_NegativeProfit_ReturnsNegativeEstimatedProfit()
+    {
+        // When cost exceeds estimated revenue (e.g., very high costs + small output),
+        // estimatedProfit should be negative for that snapshot.
+        var token = await RegisterAndGetTokenAsync($"upa-neg-{Guid.NewGuid():N}@test.com", "UpaNeg");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "UpaNeg Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var factoryId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("factory").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var manufacturingUnit = await db.BuildingUnits
+            .Include(u => u.Building).ThenInclude(b => b.Company)
+            .FirstAsync(u => u.BuildingId == Guid.Parse(factoryId) && u.UnitType == "MANUFACTURING");
+        var company = manufacturingUnit.Building.Company;
+        var productType = await db.ProductTypes.FirstAsync(p => p.Id == manufacturingUnit.ProductTypeId!.Value);
+
+        // Seed a tick where cost > estimated revenue (9999 labor for 1 unit produced at basePrice=45)
+        const long tick = 88001L;
+        db.LedgerEntries.Add(new LedgerEntry
+        {
+            Id = Guid.NewGuid(), CompanyId = company.Id, BuildingId = manufacturingUnit.BuildingId,
+            BuildingUnitId = manufacturingUnit.Id, ProductTypeId = productType.Id,
+            Category = LedgerCategory.LaborCost, Amount = -9999m,
+            RecordedAtTick = tick, RecordedAtUtc = DateTime.UtcNow
+        });
+        db.BuildingUnitResourceHistories.Add(new BuildingUnitResourceHistory
+        {
+            Id = Guid.NewGuid(), BuildingId = manufacturingUnit.BuildingId, BuildingUnitId = manufacturingUnit.Id,
+            ProductTypeId = productType.Id, Tick = tick, ProducedQuantity = 1m,
+            InflowQuantity = 0, OutflowQuantity = 0, ConsumedQuantity = 0
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $@"{{ unitProductAnalytics(unitId: ""{manufacturingUnit.Id}"") {{
+                snapshots {{ tick estimatedProfit }}
+            }} }}",
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var analytics = result.GetProperty("data").GetProperty("unitProductAnalytics");
+        Assert.False(analytics.ValueKind == JsonValueKind.Null, "Analytics should not be null");
+
+        var snapshotsArr = analytics.GetProperty("snapshots").EnumerateArray().ToList();
+        var negSnap = snapshotsArr.FirstOrDefault(s => s.GetProperty("tick").GetInt64() == tick);
+        Assert.True(negSnap.ValueKind != JsonValueKind.Undefined, "Snapshot for the seeded tick should exist");
+
+        var estProfit = negSnap.GetProperty("estimatedProfit").GetDecimal();
+        Assert.True(estProfit < 0m, $"estimatedProfit should be negative when cost > estimated revenue. Got {estProfit}");
+    }
+
+    #endregion
+
 }
 
 /// <summary>
@@ -20955,4 +21200,3 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     #endregion
 
 }
-

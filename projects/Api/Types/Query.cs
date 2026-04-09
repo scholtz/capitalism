@@ -2200,6 +2200,113 @@ public sealed class Query
     }
 
     /// <summary>
+    /// Returns product-level analytics for a MANUFACTURING unit.
+    /// Shows labor/energy cost history, production quantity, and estimated economics
+    /// (basePrice × produced) so players can evaluate manufacturing profitability.
+    /// </summary>
+    [Authorize]
+    public async Task<UnitProductAnalytics?> GetUnitProductAnalytics(
+        Guid unitId,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var unit = await db.BuildingUnits
+            .Include(u => u.Building)
+            .ThenInclude(b => b.Company)
+            .FirstOrDefaultAsync(u => u.Id == unitId);
+
+        if (unit is null || unit.Building.Company.PlayerId != userId) return null;
+
+        // Currently only supported for MANUFACTURING units
+        if (unit.UnitType != UnitType.Manufacturing) return null;
+
+        var productTypeId = unit.ProductTypeId;
+        string? productName = null;
+        decimal? basePrice = null;
+
+        if (productTypeId.HasValue)
+        {
+            var product = await db.ProductTypes.FindAsync(productTypeId.Value);
+            if (product is not null)
+            {
+                productName = product.Name;
+                basePrice = product.BasePrice;
+            }
+        }
+
+        // Load cost ledger entries for this unit (last 100 ticks, ordered descending then ascending)
+        var ledgerEntries = await db.LedgerEntries
+            .Where(e => e.BuildingUnitId == unitId
+                && (e.Category == LedgerCategory.LaborCost || e.Category == LedgerCategory.EnergyCost))
+            .OrderByDescending(e => e.RecordedAtTick)
+            .Take(100)
+            .ToListAsync();
+
+        // Load resource history for production quantities for this unit
+        var resourceHistory = await db.BuildingUnitResourceHistories
+            .Where(h => h.BuildingUnitId == unitId && h.ProducedQuantity > 0)
+            .OrderByDescending(h => h.Tick)
+            .Take(100)
+            .ToListAsync();
+
+        // Merge all ticks from both sources
+        var allTicks = ledgerEntries.Select(e => e.RecordedAtTick)
+            .Union(resourceHistory.Select(h => h.Tick))
+            .Distinct()
+            .OrderBy(t => t)
+            .ToList();
+
+        var snapshots = allTicks.Select(tick =>
+        {
+            var labor = ledgerEntries
+                .Where(e => e.RecordedAtTick == tick && e.Category == LedgerCategory.LaborCost)
+                .Sum(e => -e.Amount);
+            var energy = ledgerEntries
+                .Where(e => e.RecordedAtTick == tick && e.Category == LedgerCategory.EnergyCost)
+                .Sum(e => -e.Amount);
+            var produced = resourceHistory
+                .Where(h => h.Tick == tick)
+                .Sum(h => h.ProducedQuantity);
+            var totalCost = labor + energy;
+            decimal? estRevenue = basePrice.HasValue ? Math.Round(produced * basePrice.Value, 2) : null;
+            decimal? estProfit = estRevenue.HasValue ? Math.Round(estRevenue.Value - totalCost, 2) : null;
+
+            return new UnitProductTickSnapshot
+            {
+                Tick = tick,
+                LaborCost = Math.Round(labor, 2),
+                EnergyCost = Math.Round(energy, 2),
+                TotalCost = Math.Round(totalCost, 2),
+                QuantityProduced = produced,
+                EstimatedRevenue = estRevenue,
+                EstimatedProfit = estProfit,
+            };
+        }).ToList();
+
+        var totalCostSum = Math.Round(snapshots.Sum(s => s.TotalCost), 2);
+        var totalProduced = snapshots.Sum(s => s.QuantityProduced);
+        decimal? estRevSum = basePrice.HasValue ? Math.Round(totalProduced * basePrice.Value, 2) : null;
+        decimal? estProfitSum = estRevSum.HasValue ? Math.Round(estRevSum.Value - totalCostSum, 2) : null;
+
+        return new UnitProductAnalytics
+        {
+            BuildingUnitId = unit.Id,
+            UnitType = unit.UnitType,
+            ProductTypeId = productTypeId,
+            ProductName = productName,
+            DataFromTick = allTicks.Count > 0 ? allTicks.First() : 0,
+            DataToTick = allTicks.Count > 0 ? allTicks.Last() : 0,
+            TotalCost = totalCostSum,
+            TotalQuantityProduced = totalProduced,
+            EstimatedRevenue = estRevSum,
+            EstimatedProfit = estProfitSum,
+            Snapshots = snapshots,
+        };
+    }
+
+    /// <summary>
     /// Computes a revenue trend direction by comparing average revenue in the most-recent
     /// 5 ticks vs the prior 5 ticks. Returns UP, FLAT, or DOWN. Returns NO_DATA when there
     /// are fewer than 2 ticks of history (not enough to compute a meaningful comparison).

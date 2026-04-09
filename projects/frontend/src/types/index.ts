@@ -786,6 +786,63 @@ export interface MarketShareEntry {
   isUnmet: boolean
 }
 
+/** Per-tick cost and production snapshot for a MANUFACTURING unit. */
+export interface UnitProductTickSnapshot {
+  tick: number
+  /** Labor cost charged on this tick. */
+  laborCost: number
+  /** Energy cost charged on this tick. */
+  energyCost: number
+  /** Total operating cost (labor + energy) for this tick. */
+  totalCost: number
+  /** Quantity of the product produced on this tick. */
+  quantityProduced: number
+  /**
+   * Estimated revenue = quantityProduced × product.basePrice.
+   * Null when base price is unavailable.
+   */
+  estimatedRevenue: number | null
+  /**
+   * Estimated profit = estimatedRevenue − totalCost.
+   * Null when base price is unavailable.
+   */
+  estimatedProfit: number | null
+}
+
+/**
+ * Product-level analytics for a MANUFACTURING unit.
+ * Shows cost history, production quantity, and estimated economics per tick.
+ */
+export interface UnitProductAnalytics {
+  buildingUnitId: string
+  /** The unit type (e.g. MANUFACTURING). */
+  unitType: string
+  /** Product type ID being produced. Null when no product is configured. */
+  productTypeId: string | null
+  /** Display name of the product being produced. Null when no product data is available. */
+  productName: string | null
+  /** First tick in the analytics window (oldest data). */
+  dataFromTick: number
+  /** Last tick in the analytics window (most recent data). */
+  dataToTick: number
+  /** Total labor + energy cost over the analytics window. */
+  totalCost: number
+  /** Total units produced over the analytics window. */
+  totalQuantityProduced: number
+  /**
+   * Estimated total revenue = totalQuantityProduced × product.basePrice.
+   * Null when base price is unavailable.
+   */
+  estimatedRevenue: number | null
+  /**
+   * Estimated total profit = estimatedRevenue − totalCost.
+   * Null when base price is unavailable.
+   */
+  estimatedProfit: number | null
+  /** Per-tick snapshots ordered by tick ascending. */
+  snapshots: UnitProductTickSnapshot[]
+}
+
 /** Summary of a single power plant in the city power balance view. */
 export interface PowerPlantSummary {
   buildingId: string
