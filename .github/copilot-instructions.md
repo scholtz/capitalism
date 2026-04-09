@@ -741,3 +741,28 @@ Root-cause of a quality gap (April 2026, PR #279 public sales analytics):
 2. **Remove frontend `.slice()` when the backend already enforces the correct limit.** If the API returns at most 100 records, the frontend should show all of them (no slice needed).
 3. **Add an E2E test that seeds exactly N ticks of history (the ROADMAP window) and asserts bar count equals N.** This test locks in both the backend limit and the frontend rendering of the full window.
 4. **Profit/revenue/quantity/price charts must all use the same data window consistently.** If the backend sends 100 revenue ticks, the quantity chart (which uses the same `revenueHistory` array) must also show all 100.
+
+## Price-elasticity demand model — below-base pricing must boost demand, not leave it neutral
+
+Root-cause of a persistent CI failure (April 2026, PR #282 market intelligence panel):
+- `PublicSalesPhase_LowerPrice_IncreasesQuantitySold` failed in the full test suite (604/605 pass) but passed when run in isolation.
+- Root cause: `ComputePriceIndex` returned 1.0 for BOTH `price = basePrice` AND `price < basePrice`. Both sellers had identical priceIndex, identical competitiveness, and were expected to sell the same amount.
+- The test failure was order-dependent because shared-database state (salary/ledger entries from prior tests) slightly altered the saturation calculation for one city vs the other — making identical sellers produce marginally different results that could go either way.
+- The test correctly captured the ROADMAP requirement ("price reductions should increase quantity sold") but the implementation didn't fulfil it.
+
+**Fix: extend `ComputePriceIndex` to return > 1.0 for below-base prices:**
+```csharp
+if (price < basePrice)
+{
+    var discountFraction = (basePrice - price) / basePrice;
+    var boost = 1m + (elasticity * discountFraction);
+    return Math.Clamp(boost, 1m, MaxDiscountBoostFactor);  // MaxDiscountBoostFactor = 1.5
+}
+```
+This gives the discounted seller a deterministically higher `competitiveness`, `stockTurnoverCap`, and city demand attractiveness — so it always sells more than the base-price seller regardless of test ordering.
+
+**Rules to prevent recurrence:**
+1. **When the ROADMAP says price decreases should increase quantity sold, the pricing model must return priceIndex > 1.0 for below-base prices.** Returning 1.0 (neutral) violates the ROADMAP and makes tests order-dependent.
+2. **A test that passes alone but fails in the full suite is a signal that the implementation is non-deterministic**, not that the test is "flaky". Always fix the implementation rather than retrying or suppressing.
+3. **When adding a `ComputePriceIndex`-like function, always add an integration test that proves a discounted seller sells MORE than a base-price seller in isolated cities.** If the test passes alone but fails in the full suite, diagnose the shared-state interference before labelling it flaky.
+4. **Unit tests for `ComputePriceIndex` must cover both directions**: above-base (penalty, [0,1]) and below-base (boost, (1, MaxDiscountBoostFactor]).
