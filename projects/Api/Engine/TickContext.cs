@@ -38,7 +38,14 @@ public sealed class TickContext
     public List<ExchangeOrder> ActiveExchangeOrders { get; init; } = [];
     public Dictionary<Guid, decimal> TickStartRemainingQuantityByInventoryId { get; init; } = [];
 
-    // ── Pending mutations ──
+    /// <summary>
+    /// Total absolute LaborCost ledger amounts paid in each city over the past
+    /// <see cref="GameConstants.RecentSalaryWindowTicks"/> ticks.
+    /// Used by <see cref="Phases.PublicSalesPhase"/> to compute the dynamic
+    /// salary purchasing-power factor (ROADMAP: "game currency collected by
+    /// salaries in past 10 ticks").  Keyed by CityId.
+    /// </summary>
+    public Dictionary<Guid, decimal> RecentSalaryByCity { get; init; } = [];
 
     public List<Inventory> NewInventory { get; } = [];
     public List<BuildingUnitResourceHistory> NewUnitResourceHistories { get; } = [];

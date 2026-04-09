@@ -712,3 +712,18 @@ Root-cause of a latent mock bug (April 2026, PR #261):
 2. **Follow the same guard pattern as `isStandaloneMeQuery`** (already documented above for `me`/`gameServers`). Apply it to any pair where one query name contains another as a substring.
 3. **After adding a new GraphQL query handler to mock-api, check whether the query name is a substring of any other query name** already in the mock. If so, add the exclusion guard immediately.
 4. **Known pairs requiring exclusion guards:** `rankings` must exclude `companyRankings`; `me` must exclude `gameServers`, `mySubscription`, `prolongSubscription`; `rank` must exclude `rankings`; `company` must exclude `companyRankings`.
+
+## Dynamic salary demand signal — "game currency collected by salaries in past 10 ticks"
+
+Root-cause of a quality gap (April 2026, PR #263 salary-driven public sales):
+- The ROADMAP explicitly states: "Quantity sold to public changes every tick with... the game currency collected by salaries in past 10 ticks".
+- The first implementation used `BaseSalaryPerManhour` (a static city attribute) as a proxy, which is only a wage *level* indicator — it does not capture whether companies are actually paying wages in the city.
+- The ROADMAP requires the **actual LedgerEntry LaborCost amounts paid in the city over the past 10 ticks** as the dynamic signal. Static city wage is fine as a baseline, but it must be blended with the real-economy signal.
+
+**Rules to prevent recurrence:**
+1. **When the ROADMAP says "game currency collected from X" it always means actual LedgerEntry records**, not a static entity field. Translate "collected from salaries" → query `LedgerEntry.Category == LaborCost` grouped by city for the past N ticks.
+2. **Always implement static + dynamic blend:** static = city wage level factor (early-game safety net); dynamic = actual ledger spending (live economic activity). Blend: `0.5 × static + 0.5 × dynamic` when dynamic data exists; pure static when no ledger data yet (neutral baseline, no penalty).
+3. **Load the recent salary window in `TickProcessor.BuildContextAsync` as a pre-loaded dictionary** (`RecentSalaryByCity: Dictionary<Guid, decimal>`) — one query for all cities, never N+1. The window is `CurrentTick - GameConstants.RecentSalaryWindowTicks`.
+4. **Add `RecentSalaryWindowTicks` and `ExpectedSalaryParticipationRate` constants to `GameConstants`** so the normalisation formula is readable and centrally configured. The participation rate (0.001 = 0.1% of population) converts raw salary totals to a dimensionless [0.5, 2.0] factor relative to the reference wage.
+5. **Test the dynamic signal with a seeded-ledger integration test:** create two identical cities, seed LaborCost entries only in one, process one tick, assert the active city sells more units. This directly proves the ROADMAP requirement.
+6. **The demand driver panel (`ComputeDemandDrivers` / `GetPublicSalesAnalytics`)** must also reflect the blended factor and indicate whether the description is based on static wages alone or also includes recent spending activity.

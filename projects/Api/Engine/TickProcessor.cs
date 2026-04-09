@@ -122,6 +122,25 @@ public sealed class TickProcessor(
         var inventories = await db.Inventories.ToListAsync(ct);
         var exchangeOrders = await db.ExchangeOrders.Where(o => o.IsActive).ToListAsync(ct);
 
+        // Build a city-keyed map of total absolute salary paid in the past
+        // RecentSalaryWindowTicks ticks.  This implements the ROADMAP requirement
+        // "the game currency collected by salaries in past 10 ticks".
+        // Uses a single JOIN-free query: load only Id→CityId for buildings that
+        // have LaborCost entries in the window, then group in memory.
+        var salaryWindowStart = gameState.CurrentTick - GameConstants.RecentSalaryWindowTicks;
+        var buildingCityLookup = buildings.ToDictionary(b => b.Id, b => b.CityId);
+        var recentLaborEntries = await db.LedgerEntries
+            .Where(e => e.Category == LedgerCategory.LaborCost
+                && e.RecordedAtTick > salaryWindowStart
+                && e.BuildingId.HasValue)
+            .Select(e => new { e.BuildingId, e.Amount })
+            .ToListAsync(ct);
+
+        var recentSalaryByCity = recentLaborEntries
+            .Where(e => buildingCityLookup.ContainsKey(e.BuildingId!.Value))
+            .GroupBy(e => buildingCityLookup[e.BuildingId!.Value])
+            .ToDictionary(g => g.Key, g => g.Sum(e => Math.Abs(e.Amount)));
+
         return new TickContext
         {
             Db = db,
@@ -160,6 +179,7 @@ public sealed class TickProcessor(
                 .ToDictionary(g => g.Key, g => g.ToList()),
             ActiveExchangeOrders = exchangeOrders,
             TickStartRemainingQuantityByInventoryId = inventories.ToDictionary(i => i.Id, i => i.Quantity),
+            RecentSalaryByCity = recentSalaryByCity,
         };
     }
 }

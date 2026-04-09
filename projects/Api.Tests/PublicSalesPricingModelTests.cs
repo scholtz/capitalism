@@ -275,4 +275,126 @@ public sealed class PublicSalesPricingModelTests
                 $"Factor must be in [0.5, 2.0] but got {factor} for salary={salary}");
         }
     }
+
+    // ── ComputeRecentSalaryPurchasingPowerFactor ───────────────────────────
+
+    [Fact]
+    public void ComputeRecentSalaryPurchasingPowerFactor_ZeroSalary_ReturnsNeutral()
+    {
+        // When there is no salary data yet (early game), must return 1.0 (neutral).
+        var result = PublicSalesPricingModel.ComputeRecentSalaryPurchasingPowerFactor(0m, 475_000);
+        Assert.Equal(1.0m, result);
+    }
+
+    [Fact]
+    public void ComputeRecentSalaryPurchasingPowerFactor_ZeroPopulation_ReturnsNeutral()
+    {
+        // Division-by-zero guard: zero population → neutral.
+        var result = PublicSalesPricingModel.ComputeRecentSalaryPurchasingPowerFactor(5_000m, 0);
+        Assert.Equal(1.0m, result);
+    }
+
+    [Fact]
+    public void ComputeRecentSalaryPurchasingPowerFactor_AtReferenceLevel_ReturnsOne()
+    {
+        // reference = 475_000 * 0.001 * 20 * 10 = 95_000
+        var reference = 475_000m * GameConstants.ExpectedSalaryParticipationRate
+            * GameConstants.ReferenceSalaryPerManhour
+            * GameConstants.RecentSalaryWindowTicks;
+        var result = PublicSalesPricingModel.ComputeRecentSalaryPurchasingPowerFactor(reference, 475_000);
+        Assert.Equal(1.0m, result);
+    }
+
+    [Fact]
+    public void ComputeRecentSalaryPurchasingPowerFactor_HighSpending_AboveOne()
+    {
+        // A city with more salary activity than the reference baseline should produce > 1.0.
+        var reference = 475_000m * GameConstants.ExpectedSalaryParticipationRate
+            * GameConstants.ReferenceSalaryPerManhour
+            * GameConstants.RecentSalaryWindowTicks;
+        var result = PublicSalesPricingModel.ComputeRecentSalaryPurchasingPowerFactor(
+            reference * 2m, 475_000);
+        Assert.True(result > 1.0m, $"Expected > 1.0 but got {result}");
+    }
+
+    [Fact]
+    public void ComputeRecentSalaryPurchasingPowerFactor_LowSpending_BelowOne()
+    {
+        // A city with much less activity than the reference baseline should produce < 1.0.
+        var reference = 475_000m * GameConstants.ExpectedSalaryParticipationRate
+            * GameConstants.ReferenceSalaryPerManhour
+            * GameConstants.RecentSalaryWindowTicks;
+        var result = PublicSalesPricingModel.ComputeRecentSalaryPurchasingPowerFactor(
+            reference * 0.1m, 475_000);
+        Assert.True(result < 1.0m, $"Expected < 1.0 but got {result}");
+    }
+
+    [Fact]
+    public void ComputeRecentSalaryPurchasingPowerFactor_IsClampedBetween05And2()
+    {
+        decimal[] salaryAmounts = [0m, 1m, 100m, 10_000m, 1_000_000m, 100_000_000m];
+        foreach (var amount in salaryAmounts)
+        {
+            if (amount == 0m) continue; // zero returns neutral 1.0, tested separately
+            var factor = PublicSalesPricingModel.ComputeRecentSalaryPurchasingPowerFactor(amount, 475_000);
+            Assert.True(factor >= 0.5m && factor <= 2.0m,
+                $"Factor must be in [0.5, 2.0] but got {factor} for amount={amount}");
+        }
+    }
+
+    [Fact]
+    public void ComputeRecentSalaryPurchasingPowerFactor_IsMonotonicallyIncreasing()
+    {
+        decimal prev = 0.5m;
+        decimal[] amounts = [100m, 5_000m, 20_000m, 100_000m, 500_000m, 2_000_000m];
+        foreach (var amount in amounts)
+        {
+            var factor = PublicSalesPricingModel.ComputeRecentSalaryPurchasingPowerFactor(amount, 475_000);
+            Assert.True(factor >= prev, $"Factor should be non-decreasing: prev={prev}, current={factor} for amount={amount}");
+            prev = factor;
+        }
+    }
+
+    // ── ComputeBlendedSalaryFactor ─────────────────────────────────────────
+
+    [Fact]
+    public void ComputeBlendedSalaryFactor_NoRecentData_ReturnsPureStatic()
+    {
+        // When recentCitySalary = 0, the blended factor equals the static factor.
+        var expected = PublicSalesPricingModel.ComputeSalaryPurchasingPowerFactor(28m);
+        var result = PublicSalesPricingModel.ComputeBlendedSalaryFactor(28m, 0m, 1_900_000);
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void ComputeBlendedSalaryFactor_WithRecentData_IsAveragingBothSignals()
+    {
+        // With recent salary data, blended = 50% static + 50% dynamic.
+        var staticFactor = PublicSalesPricingModel.ComputeSalaryPurchasingPowerFactor(18m);
+        var reference = 475_000m * GameConstants.ExpectedSalaryParticipationRate
+            * GameConstants.ReferenceSalaryPerManhour
+            * GameConstants.RecentSalaryWindowTicks;
+        // Dynamic factor at exactly the reference → 1.0
+        var dynamicFactor = 1.0m;
+        var expected = Math.Clamp(0.5m * staticFactor + 0.5m * dynamicFactor, 0.5m, 2.0m);
+        var result = PublicSalesPricingModel.ComputeBlendedSalaryFactor(18m, reference, 475_000);
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void ComputeBlendedSalaryFactor_IsClampedBetween05And2()
+    {
+        // All combinations should stay in the valid range.
+        decimal[] wages = [0m, 5m, 20m, 40m];
+        decimal[] recentAmounts = [0m, 100m, 1_000_000m];
+        foreach (var wage in wages)
+        {
+            foreach (var recent in recentAmounts)
+            {
+                var factor = PublicSalesPricingModel.ComputeBlendedSalaryFactor(wage, recent, 475_000);
+                Assert.True(factor >= 0.5m && factor <= 2.0m,
+                    $"Blended factor out of range for wage={wage}, recent={recent}: {factor}");
+            }
+        }
+    }
 }

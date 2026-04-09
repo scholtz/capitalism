@@ -1890,6 +1890,106 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             $"Good offer should dominate the bad offer by at least 3×. Good={goodSold}, Bad={badSold}.");
     }
 
+    [Fact]
+    public async Task PublicSalesPhase_RecentSalarySpending_IncreasesConsumerDemand()
+    {
+        // ROADMAP: "game currency collected by salaries in past 10 ticks" must
+        // influence public sales demand.  A city with historical LaborCost ledger
+        // entries should produce more sales than an identical city with none.
+        //
+        // Setup:  two identical cities with the same population and static wages.
+        //         The "active" city has pre-seeded LaborCost entries representing
+        //         payroll activity from the previous 5 ticks.
+        //         The "dormant" city has no salary history at all.
+        //
+        // After one tick the active city must generate more public sales because the
+        // dynamic purchasing-power factor is > 1.0 (above the 0m → neutral baseline).
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        const int population = 50_000;
+        const decimal referenceWage = GameConstants.ReferenceSalaryPerManhour; // 20m
+
+        var activeCity = new City
+        {
+            Id = Guid.NewGuid(), Name = $"ActiveCity_{Guid.NewGuid():N}", CountryCode = "AC",
+            Population = population, AverageRentPerSqm = 12m,
+            Latitude = 48.2, Longitude = 17.2,
+            BaseSalaryPerManhour = referenceWage, // static factor = 1.0 (neutral)
+        };
+        var dormantCity = new City
+        {
+            Id = Guid.NewGuid(), Name = $"DormantCity_{Guid.NewGuid():N}", CountryCode = "DC",
+            Population = population, AverageRentPerSqm = 12m,
+            Latitude = 48.3, Longitude = 17.3,
+            BaseSalaryPerManhour = referenceWage, // static factor = 1.0 (neutral)
+        };
+        db.Cities.AddRange(activeCity, dormantCity);
+
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        var (activeCompanyId, activeBuildingId, activeUnitId) = AddPublicSalesSeller(
+            db, activeCity, product,
+            suffix: "Active",
+            stockQuantity: 500m,
+            quality: 0.7m,
+            priceMultiplier: 1m,
+            populationIndex: 1m);
+        var (_, _, dormantUnitId) = AddPublicSalesSeller(
+            db, dormantCity, product,
+            suffix: "Dormant",
+            stockQuantity: 500m,
+            quality: 0.7m,
+            priceMultiplier: 1m,
+            populationIndex: 1m);
+
+        await db.SaveChangesAsync();
+
+        // Retrieve the game state so we know the current tick for seeding the window.
+        var gameState = await db.GameStates.FirstAsync();
+        var currentTick = gameState.CurrentTick;
+
+        // Seed recent salary entries only for the active city (past 5 ticks).
+        // The amount is well above the per-city reference to ensure the dynamic factor
+        // is > 1.0 after blending: reference = population * 0.001 * 20 * 10 = 10_000.
+        // We seed 40_000 (4× reference) so dynamic factor ≈ 2.0 (capped), blended ≈ 1.5.
+        const decimal totalSalaryToSeed = 40_000m;
+        for (var i = 1; i <= 5; i++)
+        {
+            db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = activeCompanyId,
+                BuildingId = activeBuildingId,
+                Category = LedgerCategory.LaborCost,
+                Description = $"Seeded payroll tick {currentTick - i}",
+                Amount = -(totalSalaryToSeed / 5m),  // negative = expense
+                RecordedAtTick = currentTick - i,
+                RecordedAtUtc = DateTime.UtcNow,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var activeSold = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == activeUnitId)
+            .SumAsync(r => r.QuantitySold);
+        var dormantSold = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == dormantUnitId)
+            .SumAsync(r => r.QuantitySold);
+
+        // The active city's blended salary factor should be meaningfully above 1.0,
+        // which generates more city-level demand → more units sold.
+        Assert.True(activeSold > dormantSold,
+            $"City with recent salary activity should outsell dormant city. Active={activeSold}, Dormant={dormantSold}.");
+        // Blended factor for active city ≈ 1.5× dormant's 1.0; expect at least 10% uplift.
+        Assert.True(activeSold >= dormantSold * 1.1m,
+            $"Active city should sell at least 10%% more. Active={activeSold}, Dormant={dormantSold}.");
+    }
+
     #region Property Management (Rent & Occupancy)
 
     [Fact]

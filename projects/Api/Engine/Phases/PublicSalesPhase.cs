@@ -147,9 +147,14 @@ public sealed class PublicSalesPhase : ITickPhase
             var city = firstOffer.City;
 
             // City-level base demand for this product (population-driven, no location bias).
-            // Salary purchasing power scales demand: residents in higher-wage cities
-            // can afford to buy more, boosting the effective per-capita demand.
-            var salaryFactor = PublicSalesPricingModel.ComputeSalaryPurchasingPowerFactor(city.BaseSalaryPerManhour);
+            // Salary purchasing power uses a blended signal:
+            //   – static wage level (BaseSalaryPerManhour) — city baseline
+            //   – dynamic recent spending (actual LaborCost ledger sum for past 10 ticks)
+            // This directly implements the ROADMAP requirement:
+            // "game currency collected by salaries in past 10 ticks".
+            context.RecentSalaryByCity.TryGetValue(city.Id, out var recentSalary);
+            var salaryFactor = PublicSalesPricingModel.ComputeBlendedSalaryFactor(
+                city.BaseSalaryPerManhour, recentSalary, city.Population);
             var cityBaseDemand = city.Population * GameConstants.BaseDemandPerCapita * salaryFactor;
             if (cityBaseDemand <= 0m)
                 continue;

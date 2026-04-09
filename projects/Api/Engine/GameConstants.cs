@@ -74,6 +74,21 @@ public static class GameConstants
     /// </summary>
     public const decimal ReferenceSalaryPerManhour = 20m;
 
+    /// <summary>
+    /// Number of past ticks included in the "recent salary" window used to
+    /// compute dynamic purchasing-power demand (ROADMAP: "game currency
+    /// collected by salaries in past 10 ticks").
+    /// </summary>
+    public const int RecentSalaryWindowTicks = 10;
+
+    /// <summary>
+    /// Expected fraction of a city's population that generates LaborCost
+    /// ledger entries per tick through player-owned companies.  Used to
+    /// normalise the dynamic salary spending signal into a [0.5, 2.0]
+    /// purchasing-power factor.  0.001 = 0.1 % of population employed.
+    /// </summary>
+    public const decimal ExpectedSalaryParticipationRate = 0.001m;
+
     /// <summary>Standard cost of electricity used by unit operations and manufacturing.</summary>
     public const decimal EnergyPricePerMwh = 55m;
 
