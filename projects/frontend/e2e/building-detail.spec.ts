@@ -8974,9 +8974,10 @@ test.describe('Public Sales Market Intelligence panel', () => {
 
     // Profit chart should be visible
     await expect(panel.getByText('Gross Profit per Tick', { exact: true })).toBeVisible()
-    // Bars render inside the chart container — use the same bar-count pattern as the revenue chart tests
-    await expect(panel.locator('.mi-bar-profit-positive')).not.toHaveCount(0)
-    await expect(panel.locator('.mi-bar-profit-negative')).not.toHaveCount(0)
+    // Both positive and negative profit bars should exist with exact counts
+    // profitHistory fixture: ticks 1,9 negative; ticks 2-8,10 positive → 8 positive, 2 negative
+    await expect(panel.locator('.mi-bar-profit-positive')).toHaveCount(8)
+    await expect(panel.locator('.mi-bar-profit-negative')).toHaveCount(2)
 
     // Profit bar titles should include the profit amount
     const firstProfitBar = panel.locator('.mi-bar-profit-negative').first()

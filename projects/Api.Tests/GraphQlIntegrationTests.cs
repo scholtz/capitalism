@@ -16535,7 +16535,11 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         // The most recent tick should be BaseTick + 119 (the last seeded record)
         var maxTick = history.Max(h => h.GetProperty("tick").GetInt64());
         Assert.Equal(BaseTick + 119, maxTick);
+        // The oldest tick in the returned window should be BaseTick + 20 (120 seeded - 100 returned = 20 skipped)
+        var minTick = history.Min(h => h.GetProperty("tick").GetInt64());
+        Assert.Equal(BaseTick + 20, minTick);
         // dataFromTick and dataToTick should reflect the returned window
+        Assert.Equal(BaseTick + 20, analytics.GetProperty("dataFromTick").GetInt64());
         Assert.Equal(BaseTick + 119, analytics.GetProperty("dataToTick").GetInt64());
     }
 
