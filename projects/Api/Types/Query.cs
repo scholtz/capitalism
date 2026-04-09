@@ -2159,13 +2159,21 @@ public sealed class Query
         // whether the last few decisions improved or hurt performance.
         var trendDirection = ComputeTrendDirection(revenueHistory);
 
+        // Resolve the product type ID used for the analytics response.  Priority:
+        //   1. The product type loaded for analytics (based on unit or recent record)
+        //   2. The product type ID on the unit itself
+        //   3. The product type ID from the most-recent sales record
+        var resolvedProductTypeId = productTypeForAnalytics?.Id
+            ?? unit.ProductTypeId
+            ?? records.FirstOrDefault()?.ProductTypeId;
+
         return new PublicSalesAnalytics
         {
             BuildingUnitId = unit.Id,
             BuildingId = building.Id,
             BuildingName = building.Name,
             CityName = city?.Name ?? string.Empty,
-            ProductTypeId = productTypeForAnalytics?.Id ?? (unit.ProductTypeId ?? records.FirstOrDefault()?.ProductTypeId),
+            ProductTypeId = resolvedProductTypeId,
             ProductName = productTypeForAnalytics?.Name,
             TotalRevenue = totalRevenue,
             TotalQuantitySold = totalQuantity,
@@ -2201,8 +2209,6 @@ public sealed class Query
     {
         if (revenueHistory.Count < 2) return "NO_DATA";
 
-        const decimal FlatThresholdPct = 0.05m;  // ±5 % is treated as flat
-
         var recent = revenueHistory.TakeLast(5).ToList();
         var prior  = revenueHistory.SkipLast(5).TakeLast(5).ToList();
 
@@ -2215,7 +2221,9 @@ public sealed class Query
             return recentAvg > 0 ? "UP" : "FLAT";
 
         var change = (recentAvg - priorAvg) / priorAvg;
-        return change > FlatThresholdPct ? "UP" : change < -FlatThresholdPct ? "DOWN" : "FLAT";
+        return change > GameConstants.FlatTrendThresholdPct ? "UP"
+             : change < -GameConstants.FlatTrendThresholdPct ? "DOWN"
+             : "FLAT";
     }
 
     /// <summary>

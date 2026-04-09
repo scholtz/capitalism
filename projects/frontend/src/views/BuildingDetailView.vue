@@ -5243,7 +5243,7 @@ watch(
 
                 <!-- Product identity + data window row -->
                 <div class="mi-context-row">
-                  <span v-if="publicSalesAnalytics?.productName" class="mi-product-chip" aria-label="Product">
+                  <span v-if="publicSalesAnalytics?.productName" class="mi-product-chip" aria-label="Currently selling product">
                     {{ publicSalesAnalytics.productName }}
                   </span>
                   <span v-if="publicSalesAnalytics && publicSalesAnalytics.dataFromTick > 0" class="mi-tick-window">

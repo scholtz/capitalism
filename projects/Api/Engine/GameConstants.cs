@@ -168,6 +168,15 @@ public static class GameConstants
     /// </summary>
     public const decimal ConstrainedEfficiencyFactor = 0.5m;
 
+    // ── Analytics constants ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Revenue change threshold (as a fraction) used when computing trend direction
+    /// for public-sales analytics.  Changes within ±5 % of the prior 5-tick average
+    /// are classified as FLAT.  Changes above or below this band are UP or DOWN.
+    /// </summary>
+    public const decimal FlatTrendThresholdPct = 0.05m;
+
     // ── Unit upgrade constants ────────────────────────────────────────────────
 
     /// <summary>Maximum upgrade level for building units.</summary>
