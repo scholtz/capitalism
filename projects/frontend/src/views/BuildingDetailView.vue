@@ -2657,6 +2657,8 @@ async function loadPublicSalesAnalytics(unitId: string | null, isRefresh = false
           buildingId
           buildingName
           cityName
+          productTypeId
+          productName
           totalRevenue
           totalQuantitySold
           averagePricePerUnit
@@ -2672,6 +2674,7 @@ async function loadPublicSalesAnalytics(unitId: string | null, isRefresh = false
           inventoryQuality
           brandAwareness
           totalProfit
+          trendDirection
           revenueHistory { tick revenue quantitySold }
           priceHistory { tick pricePerUnit }
           profitHistory { tick profit grossMarginPct }
@@ -5237,7 +5240,16 @@ watch(
               </div>
               <div v-if="selectedPublicSalesUnit" class="unit-insight-card market-intelligence-panel" aria-label="Market Intelligence">
                 <h5>{{ t('buildingDetail.marketIntelligence.title') }}</h5>
-                <p class="config-help">{{ t('buildingDetail.marketIntelligence.subtitle') }}</p>
+
+                <!-- Product identity + data window row -->
+                <div class="mi-context-row">
+                  <span v-if="publicSalesAnalytics?.productName" class="mi-product-chip" aria-label="Product">
+                    {{ publicSalesAnalytics.productName }}
+                  </span>
+                  <span v-if="publicSalesAnalytics && publicSalesAnalytics.dataFromTick > 0" class="mi-tick-window">
+                    T{{ publicSalesAnalytics.dataFromTick }}–T{{ publicSalesAnalytics.dataToTick }}
+                  </span>
+                </div>
 
                 <p v-if="publicSalesAnalyticsLoading" class="config-help">{{ t('buildingDetail.marketIntelligence.loading') }}</p>
 
@@ -5273,6 +5285,29 @@ watch(
                     <div class="mi-metric" v-if="publicSalesAnalytics.revenueHistory.length > 0">
                       <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.recentUtilization') }}</span>
                       <strong class="mi-metric-value">{{ Math.round(publicSalesAnalytics.recentUtilization * 100) }}%</strong>
+                    </div>
+                    <!-- Trend direction (only shown when there are at least 2 ticks of history) -->
+                    <div
+                      v-if="publicSalesAnalytics.trendDirection && publicSalesAnalytics.trendDirection !== 'NO_DATA'"
+                      class="mi-metric"
+                    >
+                      <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.trend') }}</span>
+                      <strong
+                        class="mi-metric-value mi-trend"
+                        :class="{
+                          'mi-trend-up': publicSalesAnalytics.trendDirection === 'UP',
+                          'mi-trend-down': publicSalesAnalytics.trendDirection === 'DOWN',
+                          'mi-trend-flat': publicSalesAnalytics.trendDirection === 'FLAT',
+                        }"
+                      >
+                        {{
+                          publicSalesAnalytics.trendDirection === 'UP'
+                            ? t('buildingDetail.marketIntelligence.trendUp')
+                            : publicSalesAnalytics.trendDirection === 'DOWN'
+                              ? t('buildingDetail.marketIntelligence.trendDown')
+                              : t('buildingDetail.marketIntelligence.trendFlat')
+                        }}
+                      </strong>
                     </div>
                   </div>
 
@@ -7714,6 +7749,46 @@ watch(
 /* ── Market Intelligence panel ── */
 .market-intelligence-panel {
   margin-top: 1.25rem;
+}
+
+/* Product context row: chip + tick window label */
+.mi-context-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.mi-product-chip {
+  display: inline-block;
+  background: var(--color-primary-light, rgba(59, 130, 246, 0.12));
+  color: var(--color-primary, #3b82f6);
+  border: 1px solid var(--color-primary-light, rgba(59, 130, 246, 0.3));
+  border-radius: 999px;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.mi-tick-window {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Trend direction colours */
+.mi-trend-up {
+  color: #15803d;
+}
+
+.mi-trend-down {
+  color: #b91c1c;
+}
+
+.mi-trend-flat {
+  color: var(--color-text-secondary);
 }
 
 .mi-summary-grid {

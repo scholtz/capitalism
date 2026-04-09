@@ -707,6 +707,10 @@ export interface PublicSalesAnalytics {
   buildingId: string
   buildingName: string
   cityName: string
+  /** Product type ID being tracked. Null when no product configured or sold. */
+  productTypeId: string | null
+  /** Display name of the product being sold. Null when no product data available. */
+  productName: string | null
   totalRevenue: number
   totalQuantitySold: number
   averagePricePerUnit: number
@@ -716,6 +720,11 @@ export interface PublicSalesAnalytics {
   revenueHistory: SalesTickSnapshot[]
   marketShare: MarketShareEntry[]
   priceHistory: PriceTickSnapshot[]
+  /**
+   * Revenue trend vs prior 5-tick window.
+   * UP | FLAT | DOWN | NO_DATA
+   */
+  trendDirection: string
   /** NO_DATA | SUPPLY_CONSTRAINED | STRONG | MODERATE | WEAK */
   demandSignal: string
   actionHint: string

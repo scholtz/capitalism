@@ -393,6 +393,8 @@ export type MockPublicSalesAnalytics = {
   buildingId: string
   buildingName: string
   cityName: string
+  productTypeId?: string | null
+  productName?: string | null
   totalRevenue: number
   totalQuantitySold: number
   averagePricePerUnit: number
@@ -402,6 +404,7 @@ export type MockPublicSalesAnalytics = {
   demandSignal: string
   actionHint: string
   recentUtilization: number
+  trendDirection?: string
   revenueHistory: Array<{ tick: number; revenue: number; quantitySold: number }>
   priceHistory: Array<{ tick: number; pricePerUnit: number }>
   marketShare: Array<{ label: string; companyId: string | null; share: number; isUnmet: boolean }>

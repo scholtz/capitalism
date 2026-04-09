@@ -106,6 +106,10 @@ public sealed class PublicSalesAnalytics
     public Guid BuildingId { get; set; }
     public string BuildingName { get; set; } = string.Empty;
     public string CityName { get; set; } = string.Empty;
+    /// <summary>Product type ID being tracked by this unit. Null when no product has been configured or sold.</summary>
+    public Guid? ProductTypeId { get; set; }
+    /// <summary>Display name of the product being sold. Null when no product data is available.</summary>
+    public string? ProductName { get; set; }
     public decimal TotalRevenue { get; set; }
     public decimal TotalQuantitySold { get; set; }
     public decimal AveragePricePerUnit { get; set; }
@@ -115,6 +119,11 @@ public sealed class PublicSalesAnalytics
     public List<SalesTickSnapshot> RevenueHistory { get; set; } = [];
     public List<MarketShareEntry> MarketShare { get; set; } = [];
     public List<PriceTickSnapshot> PriceHistory { get; set; } = [];
+    /// <summary>
+    /// Revenue trend direction comparing the most-recent 5 ticks vs the prior 5 ticks.
+    /// Values: UP | FLAT | DOWN | NO_DATA (fewer than 2 ticks of history).
+    /// </summary>
+    public string TrendDirection { get; set; } = "NO_DATA";
     /// <summary>
     /// Demand/elasticity signal derived from recent sales data.
     /// Values: NO_DATA | SUPPLY_CONSTRAINED | STRONG | MODERATE | WEAK

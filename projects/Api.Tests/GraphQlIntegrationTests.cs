@@ -16309,6 +16309,189 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     #endregion
+    #region PublicSalesAnalytics – product identity and trend direction
+
+    [Fact]
+    public async Task PublicSalesAnalytics_ProductNameAndId_ReturnedAfterFinishOnboarding()
+    {
+        var token = await RegisterAndGetTokenAsync("pa-product-id@test.com", "PaProductId");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "ProductId Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "ProductId Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits.FindAsync(unitId);
+        var expectedProduct = unit?.ProductTypeId.HasValue == true
+            ? await db.ProductTypes.FindAsync(unit.ProductTypeId!.Value)
+            : null;
+        Assert.NotNull(expectedProduct);
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ productTypeId productName }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.Equal(expectedProduct.Id.ToString(), analytics.GetProperty("productTypeId").GetString(), ignoreCase: true);
+        Assert.Equal(expectedProduct.Name, analytics.GetProperty("productName").GetString());
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_TrendDirection_NoDataWhenNoSalesRecords()
+    {
+        var token = await RegisterAndGetTokenAsync("pa-trend-nodata@test.com", "PaTrendNoData");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Trend NoData Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Trend NoData Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ trendDirection }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.Equal("NO_DATA", analytics.GetProperty("trendDirection").GetString());
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_TrendDirection_UpWhenRecentRevenueHigher()
+    {
+        var token = await RegisterAndGetTokenAsync("pa-trend-up@test.com", "PaTrendUp");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Trend Up Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Trend Up Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits.Include(u => u.Building).ThenInclude(b => b.Company)
+                           .FirstAsync(u => u.Id == unitId);
+
+        const long BaseTick = 90_001L;
+        for (var i = 0; i < 5; i++)
+        {
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId, CityId = unit.Building.CityId,
+                ProductTypeId = unit.ProductTypeId, Tick = BaseTick + i,
+                RecordedAtUtc = DateTime.UtcNow, QuantitySold = 1m, Demand = 5m,
+                Revenue = 10m, PricePerUnit = 10m,
+            });
+        }
+        for (var i = 5; i < 10; i++)
+        {
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId, CityId = unit.Building.CityId,
+                ProductTypeId = unit.ProductTypeId, Tick = BaseTick + i,
+                RecordedAtUtc = DateTime.UtcNow, QuantitySold = 10m, Demand = 20m,
+                Revenue = 100m, PricePerUnit = 10m,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ trendDirection }} }}",
+            token: token);
+
+        Assert.Equal("UP", result.GetProperty("data").GetProperty("publicSalesAnalytics").GetProperty("trendDirection").GetString());
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_TrendDirection_DownWhenRecentRevenueLower()
+    {
+        var token = await RegisterAndGetTokenAsync("pa-trend-down@test.com", "PaTrendDown");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Trend Down Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Trend Down Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits.Include(u => u.Building).ThenInclude(b => b.Company)
+                           .FirstAsync(u => u.Id == unitId);
+
+        const long BaseTick = 91_001L;
+        for (var i = 0; i < 5; i++)
+        {
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId, CityId = unit.Building.CityId,
+                ProductTypeId = unit.ProductTypeId, Tick = BaseTick + i,
+                RecordedAtUtc = DateTime.UtcNow, QuantitySold = 10m, Demand = 20m,
+                Revenue = 100m, PricePerUnit = 10m,
+            });
+        }
+        for (var i = 5; i < 10; i++)
+        {
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId, CityId = unit.Building.CityId,
+                ProductTypeId = unit.ProductTypeId, Tick = BaseTick + i,
+                RecordedAtUtc = DateTime.UtcNow, QuantitySold = 1m, Demand = 5m,
+                Revenue = 10m, PricePerUnit = 10m,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ trendDirection }} }}",
+            token: token);
+
+        Assert.Equal("DOWN", result.GetProperty("data").GetProperty("publicSalesAnalytics").GetProperty("trendDirection").GetString());
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_TrendDirection_FlatWhenRevenueStable()
+    {
+        var token = await RegisterAndGetTokenAsync("pa-trend-flat@test.com", "PaTrendFlat");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Trend Flat Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Trend Flat Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits.Include(u => u.Building).ThenInclude(b => b.Company)
+                           .FirstAsync(u => u.Id == unitId);
+
+        const long BaseTick = 92_001L;
+        for (var i = 0; i < 10; i++)
+        {
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId, CityId = unit.Building.CityId,
+                ProductTypeId = unit.ProductTypeId, Tick = BaseTick + i,
+                RecordedAtUtc = DateTime.UtcNow, QuantitySold = 5m, Demand = 10m,
+                Revenue = 50m, PricePerUnit = 10m,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ trendDirection }} }}",
+            token: token);
+
+        Assert.Equal("FLAT", result.GetProperty("data").GetProperty("publicSalesAnalytics").GetProperty("trendDirection").GetString());
+    }
+
+    #endregion
 
 }
 
@@ -20282,3 +20465,4 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     #endregion
 
 }
+
