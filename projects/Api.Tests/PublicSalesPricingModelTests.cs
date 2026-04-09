@@ -88,11 +88,30 @@ public sealed class PublicSalesPricingModelTests
     }
 
     [Fact]
-    public void ComputePriceIndex_BelowBasePrice_Returns1()
+    public void ComputePriceIndex_BelowBasePrice_ReturnsBoostAboveOne()
     {
-        // Pricing below the base should never reduce the price index.
+        // Pricing below base gives a demand boost > 1.0 (ROADMAP: price reductions increase sales).
         var index = PublicSalesPricingModel.ComputePriceIndex(basePrice: 100m, price: 80m, priceElasticity: 0.5m);
-        Assert.Equal(1m, index);
+        Assert.True(index > 1m,
+            $"Below-base pricing should return a demand boost > 1.0. Got {index}");
+    }
+
+    [Fact]
+    public void ComputePriceIndex_BelowBasePrice_BoostProportionalToDiscountAndElasticity()
+    {
+        // 20% discount with elasticity 0.5 → boost = 1 + 0.5 × 0.2 = 1.10.
+        var index = PublicSalesPricingModel.ComputePriceIndex(basePrice: 100m, price: 80m, priceElasticity: 0.5m);
+        Assert.Equal(1.10m, index);
+    }
+
+    [Fact]
+    public void ComputePriceIndex_BelowBasePrice_HigherElasticity_HigherBoost()
+    {
+        // More elastic products benefit more from discounting.
+        var lessElasticBoost = PublicSalesPricingModel.ComputePriceIndex(basePrice: 100m, price: 80m, priceElasticity: 0.2m);
+        var moreElasticBoost = PublicSalesPricingModel.ComputePriceIndex(basePrice: 100m, price: 80m, priceElasticity: 0.8m);
+        Assert.True(moreElasticBoost > lessElasticBoost,
+            $"More elastic product should receive a higher discount boost. Less={lessElasticBoost}, More={moreElasticBoost}");
     }
 
     [Fact]
@@ -139,15 +158,22 @@ public sealed class PublicSalesPricingModelTests
     }
 
     [Fact]
-    public void ComputePriceIndex_ResultIsClamped_BetweenZeroAndOne()
+    public void ComputePriceIndex_ResultIsInExpectedRange()
     {
-        // Verify the result is always within [0, 1] for a range of inputs.
-        decimal[] prices = [0m, 50m, 100m, 150m, 200m, 500m, 1000m];
-        foreach (var price in prices)
+        // Prices above base are in [0, 1]; prices below base are in (1, MaxDiscountBoostFactor].
+        decimal[] aboveOrAtBase = [100m, 150m, 200m, 500m, 1000m];
+        foreach (var price in aboveOrAtBase)
         {
             var index = PublicSalesPricingModel.ComputePriceIndex(basePrice: 100m, price: price, priceElasticity: 0.5m);
             Assert.True(index >= 0m && index <= 1m,
-                $"Price index must be in [0, 1] but got {index} for price={price}");
+                $"Price index for at/above-base price must be in [0, 1] but got {index} for price={price}");
+        }
+        decimal[] belowBase = [0m, 50m, 80m];
+        foreach (var price in belowBase)
+        {
+            var index = PublicSalesPricingModel.ComputePriceIndex(basePrice: 100m, price: price, priceElasticity: 0.5m);
+            Assert.True(index >= 1m && index <= PublicSalesPricingModel.MaxDiscountBoostFactor,
+                $"Price index for below-base price must be in [1, {PublicSalesPricingModel.MaxDiscountBoostFactor}] but got {index} for price={price}");
         }
     }
 

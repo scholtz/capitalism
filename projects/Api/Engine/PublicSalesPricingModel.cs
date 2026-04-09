@@ -27,18 +27,45 @@ public static class PublicSalesPricingModel
     }
 
     /// <summary>
-    /// Computes a 0-1 price index used by the public-sales model.
-    /// At or below base price the index is 1.0. At the elasticity-driven max
-    /// markup threshold the index reaches 0.0.
+    /// Maximum demand-boost factor awarded when a product is priced below the
+    /// base price.  Selling at zero price with maximum elasticity gives at most
+    /// this multiplier.  Constant kept here so tests and the phase can both
+    /// reference the same cap.
+    /// </summary>
+    public const decimal MaxDiscountBoostFactor = 1.5m;
+
+    /// <summary>
+    /// Computes a price index used by the public-sales model.
+    /// <list type="bullet">
+    /// <item>At base price: returns exactly 1.0.</item>
+    /// <item>Below base price: returns a demand boost in <c>(1.0, MaxDiscountBoostFactor]</c>
+    /// proportional to the discount depth and product elasticity — fulfilling the
+    /// ROADMAP requirement that "price reductions should increase quantity sold".</item>
+    /// <item>Above base price: returns a penalty in <c>[0.0, 1.0)</c> that reaches
+    /// 0.0 at the elasticity-driven max markup threshold.</item>
+    /// </list>
     /// </summary>
     public static decimal ComputePriceIndex(decimal basePrice, decimal price, decimal priceElasticity)
     {
-        if (basePrice <= 0m || price <= basePrice)
-        {
+        if (basePrice <= 0m)
             return 1m;
-        }
 
         var elasticity = NormalizePriceElasticity(priceElasticity);
+
+        if (price < basePrice)
+        {
+            // Demand boost for below-market pricing.
+            // boost = 1 + elasticity × discountFraction, capped at MaxDiscountBoostFactor.
+            // Example: 20% discount with elasticity 0.35 → boost = 1 + 0.35 × 0.20 = 1.07.
+            var discountFraction = (basePrice - price) / basePrice;
+            var boost = 1m + (elasticity * discountFraction);
+            return Math.Clamp(boost, 1m, MaxDiscountBoostFactor);
+        }
+
+        if (price == basePrice)
+            return 1m;
+
+        // Above base price: penalty proportional to markup depth.
         var maxPriceRatio = ComputeMaxPriceRatio(elasticity);
         var priceRatio = price / basePrice;
         if (priceRatio >= maxPriceRatio)
