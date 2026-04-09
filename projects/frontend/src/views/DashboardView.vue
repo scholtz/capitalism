@@ -9,6 +9,7 @@ import { gqlRequest } from '@/lib/graphql'
 import { trackStartupPackEvent, emitStartupPackViewEvents } from '@/lib/startupPackAnalytics'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useTickCountdown } from '@/composables/useTickCountdown'
+import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { deepEqual } from '@/lib/utils'
 import { getActiveCompany } from '@/lib/accountContext'
 import PendingActionsTimeline from '@/components/dashboard/PendingActionsTimeline.vue'
@@ -43,6 +44,7 @@ const createCompanyError = ref<string | null>(null)
 const createCompanyMessage = ref<string | null>(null)
 
 const { tickCountdown, startTickCountdown, stopTickCountdown } = useTickCountdown(gameState)
+const { saveScrollPosition, restoreScrollPosition } = useScrollPreservation()
 
 const activeStartupPackOffer = computed(() => (auth.startupPackOffer && ['ELIGIBLE', 'SHOWN', 'DISMISSED'].includes(auth.startupPackOffer.status) ? auth.startupPackOffer : null))
 const claimedStartupPackOffer = computed(() => (auth.startupPackOffer?.status === 'CLAIMED' ? auth.startupPackOffer : null))
@@ -163,12 +165,14 @@ useTickRefresh(async () => {
     return
   }
 
+  const scrollPos = saveScrollPosition()
   await Promise.all([loadDashboardData(), loadPendingActions()])
   startTickCountdown()
   // Refresh ledger and unit statuses on tick but keep loading state quiet (non-critical).
   const companyIds = companies.value.map((c) => c.id)
   const buildingIds = companies.value.flatMap((c) => c.buildings.map((b) => b.id))
   await Promise.all([loadLedgers(companyIds, true), loadBuildingUnitStatuses(buildingIds)])
+  await restoreScrollPosition(scrollPos)
 })
 
 onUnmounted(stopTickCountdown)

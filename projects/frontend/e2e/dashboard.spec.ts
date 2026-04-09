@@ -1862,3 +1862,80 @@ test.describe('Dashboard — post-onboarding routing', () => {
     await expect(page.locator('.starter-guidance')).toContainText('Awaiting first sales')
   })
 })
+
+test.describe('Dashboard tick-refresh stability', () => {
+  test('background tick refresh does not show a loading spinner or reset the dashboard view', async ({
+    page,
+  }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-tick-stable',
+          playerId: 'player-1',
+          name: 'Stable Empire',
+          cash: 750000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 20
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.getByRole('heading', { name: 'Stable Empire' })).toBeVisible()
+
+    // Simulate a tick advancing
+    state.gameState.currentTick = 21
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // The company heading must remain visible — no full-page loading spinner during background refresh
+    await expect(page.getByRole('heading', { name: 'Stable Empire' })).toBeVisible()
+    await expect(page.locator('.loading', { hasText: 'Loading' })).toBeHidden()
+  })
+
+  test('company cards remain visible with stable content during multiple ticks', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-multi-tick',
+          playerId: 'player-1',
+          name: 'MultiTick Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 5
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.getByRole('heading', { name: 'MultiTick Corp' })).toBeVisible()
+
+    // Advance tick twice — company content must remain visible after each tick
+    state.gameState.currentTick = 6
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+    await expect(page.getByRole('heading', { name: 'MultiTick Corp' })).toBeVisible()
+
+    state.gameState.currentTick = 7
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+    await expect(page.getByRole('heading', { name: 'MultiTick Corp' })).toBeVisible()
+    // No loading state between ticks
+    await expect(page.locator('.loading', { hasText: 'Loading' })).toBeHidden()
+  })
+})

@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useTickRefresh } from '@/composables/useTickRefresh'
+import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { gqlRequest } from '@/lib/graphql'
 import { formatInGameTime } from '@/lib/gameTime'
 import type { CompanyLedgerSummary, LedgerEntryResult } from '@/types'
@@ -10,6 +11,7 @@ import type { CompanyLedgerSummary, LedgerEntryResult } from '@/types'
 const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const { saveScrollPosition, restoreScrollPosition } = useScrollPreservation()
 
 const companyId = computed(() => route.params.companyId as string)
 const ledger = ref<CompanyLedgerSummary | null>(null)
@@ -120,10 +122,12 @@ useTickRefresh(async () => {
     return
   }
 
+  const scrollPos = saveScrollPosition()
   await fetchLedger(true)
   if (drillCategory.value) {
     await loadDrillEntries(drillCategory.value, true)
   }
+  await restoreScrollPosition(scrollPos)
 })
 </script>
 

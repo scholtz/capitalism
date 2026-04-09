@@ -863,3 +863,154 @@ test.describe('Company Ledger', () => {
     await expect(factoryManageLink).toHaveAttribute('href', `/building/${buildingId1}`)
   })
 })
+
+test.describe('Ledger tick-refresh stability', () => {
+  test('background tick refresh does not show a loading spinner or reset the ledger view', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    const company = makeLedgerCompany(player.id)
+    player.companies = [company]
+    player.onboardingCompletedAtUtc = new Date().toISOString()
+
+    const state = setupMockApi(page, {
+      players: [player],
+      cities: makeDefaultCities(),
+      resourceTypes: makeDefaultResources(),
+      productTypes: makeDefaultProducts(),
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 15
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    const ledger: MockLedgerSummary = {
+      companyId: company.id,
+      companyName: company.name,
+      currentCash: 450000,
+      totalRevenue: 8000,
+      totalPurchasingCosts: 3000,
+      totalLaborCosts: 500,
+      totalEnergyCosts: 100,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 0,
+      totalOtherCosts: 0,
+      netIncome: 4400,
+      buildingValue: 100000,
+      inventoryValue: 0,
+      propertyValue: 80000,
+      propertyAppreciation: 0,
+      totalAssets: 550000,
+      totalPropertyPurchases: 100000,
+      cashFromOperations: 4400,
+      cashFromInvestments: -100000,
+      firstRecordedTick: 1,
+      lastRecordedTick: 15,
+      buildingSummaries: [],
+    }
+    state.ledgerData[company.id] = ledger
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto(`/ledger/${company.id}`)
+
+    // Initial data must be visible
+    await expect(page.locator('.ledger-title')).toContainText('Test Corp')
+    await expect(page.locator('.state-box')).toBeHidden()
+
+    // Simulate a tick advancing
+    state.gameState.currentTick = 16
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Ledger content must remain visible — no loading spinner during background refresh
+    await expect(page.locator('.ledger-title')).toContainText('Test Corp')
+    await expect(page.locator('.state-box')).toBeHidden()
+  })
+
+  test('drill-down selection is preserved after a background tick refresh', async ({ page }) => {
+    const player = makePlayer()
+    const company = makeLedgerCompany(player.id)
+    player.companies = [company]
+    player.onboardingCompletedAtUtc = new Date().toISOString()
+
+    const state = setupMockApi(page, {
+      players: [player],
+      cities: makeDefaultCities(),
+      resourceTypes: makeDefaultResources(),
+      productTypes: makeDefaultProducts(),
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.currentTick = 30
+    state.gameState.tickIntervalSeconds = 1
+    state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
+
+    const ledger: MockLedgerSummary = {
+      companyId: company.id,
+      companyName: company.name,
+      currentCash: 400000,
+      totalRevenue: 6000,
+      totalPurchasingCosts: 2000,
+      totalLaborCosts: 300,
+      totalEnergyCosts: 100,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 0,
+      totalOtherCosts: 0,
+      netIncome: 3600,
+      buildingValue: 100000,
+      inventoryValue: 0,
+      propertyValue: 80000,
+      propertyAppreciation: 0,
+      totalAssets: 500000,
+      totalPropertyPurchases: 100000,
+      cashFromOperations: 3600,
+      cashFromInvestments: -100000,
+      firstRecordedTick: 1,
+      lastRecordedTick: 30,
+      buildingSummaries: [],
+    }
+    state.ledgerData[company.id] = ledger
+
+    const drillEntry: MockLedgerEntry = {
+      id: 'entry-1',
+      category: 'REVENUE',
+      description: 'Product sale',
+      amount: 500,
+      recordedAtTick: 28,
+      buildingId: null,
+      buildingName: null,
+      buildingUnitId: null,
+      productTypeId: null,
+      productName: 'Wooden Chair',
+      resourceTypeId: null,
+      resourceName: null,
+    }
+    state.drillDownData[`${company.id}:REVENUE`] = [drillEntry]
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto(`/ledger/${company.id}`)
+    await expect(page.locator('.ledger-title')).toContainText('Test Corp')
+
+    // Expand the Revenue drill-down
+    const revenueRow = page.locator('.statement-row').filter({ hasText: /^Revenue/ }).first()
+    await revenueRow.getByRole('button').click()
+    await expect(page.getByText('Wooden Chair')).toBeVisible()
+
+    // Advance tick — drill-down must remain open after background refresh
+    state.gameState.currentTick = 31
+    state.gameState.lastTickAtUtc = new Date().toISOString()
+
+    // Drill-down content must still be visible after the tick refresh
+    await expect(page.getByText('Wooden Chair')).toBeVisible()
+    // No loading spinner must have appeared
+    await expect(page.locator('.state-box')).toBeHidden()
+  })
+})
