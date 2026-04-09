@@ -16491,6 +16491,61 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal("FLAT", result.GetProperty("data").GetProperty("publicSalesAnalytics").GetProperty("trendDirection").GetString());
     }
 
+    [Theory]
+    [InlineData(1,  "pa-trend-partial-1")]
+    [InlineData(2,  "pa-trend-partial-2")]
+    [InlineData(3,  "pa-trend-partial-3")]
+    [InlineData(4,  "pa-trend-partial-4")]
+    [InlineData(5,  "pa-trend-partial-5")]
+    [InlineData(6,  "pa-trend-partial-6")]
+    [InlineData(7,  "pa-trend-partial-7")]
+    [InlineData(8,  "pa-trend-partial-8")]
+    [InlineData(9,  "pa-trend-partial-9")]
+    public async Task PublicSalesAnalytics_TrendDirection_NoDataForHistoriesShorterThan10Ticks(int tickCount, string emailSuffix)
+    {
+        // Early-game protection: when a player has fewer than 10 ticks of history the
+        // 5-vs-5 comparison windows are not both full, so we must return NO_DATA rather
+        // than a misleading directional verdict.  This is especially important for 6-9
+        // ticks where the prior window would otherwise contain only 1-4 records.
+        var token = await RegisterAndGetTokenAsync($"{emailSuffix}@test.com", $"TrendPartial{tickCount}");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, $"Trend Partial {tickCount} Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", $"Partial Trend Zone {tickCount}");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits.Include(u => u.Building).ThenInclude(b => b.Company)
+                           .FirstAsync(u => u.Id == unitId);
+
+        // Use a unique tick base per test to avoid interference with shared DB state.
+        var baseTick = 93_000L + (tickCount * 100L);
+        for (var i = 0; i < tickCount; i++)
+        {
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId, CityId = unit.Building.CityId,
+                ProductTypeId = unit.ProductTypeId, Tick = baseTick + i,
+                RecordedAtUtc = DateTime.UtcNow, QuantitySold = 5m, Demand = 10m,
+                Revenue = 50m, PricePerUnit = 10m,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ trendDirection }} }}",
+            token: token);
+
+        var trendDirection = result.GetProperty("data").GetProperty("publicSalesAnalytics").GetProperty("trendDirection").GetString();
+        Assert.True(
+            trendDirection == "NO_DATA",
+            $"Expected NO_DATA for {tickCount}-tick history (need ≥10 for a fair 5-vs-5 comparison), but got {trendDirection}.");
+    }
+
+
     [Fact]
     public async Task PublicSalesAnalytics_RevenueHistory_ReturnsUpTo100Ticks()
     {

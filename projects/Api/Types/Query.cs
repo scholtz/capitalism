@@ -2207,12 +2207,18 @@ public sealed class Query
     /// </summary>
     private static string ComputeTrendDirection(List<SalesTickSnapshot> revenueHistory)
     {
-        if (revenueHistory.Count < 2) return "NO_DATA";
+        // Require two full equal windows (5 ticks each = 10 ticks minimum) so that the
+        // comparison is always fair.  Histories shorter than 10 ticks cannot produce a
+        // trustworthy directional verdict and are classified as NO_DATA.  This prevents
+        // the early-game period (6-9 ticks) from showing a misleading UP/DOWN/FLAT badge
+        // to players who are actively learning price elasticity and supply dynamics.
+        if (revenueHistory.Count < 10) return "NO_DATA";
 
         var recent = revenueHistory.TakeLast(5).ToList();
         var prior  = revenueHistory.SkipLast(5).TakeLast(5).ToList();
 
-        if (prior.Count == 0) return "NO_DATA";
+        // Defensive guard: both windows must be exactly 5 ticks.
+        if (prior.Count != 5 || recent.Count != 5) return "NO_DATA";
 
         var recentAvg = recent.Average(s => s.Revenue);
         var priorAvg  = prior.Average(s => s.Revenue);
