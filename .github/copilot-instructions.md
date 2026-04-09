@@ -766,3 +766,18 @@ This gives the discounted seller a deterministically higher `competitiveness`, `
 2. **A test that passes alone but fails in the full suite is a signal that the implementation is non-deterministic**, not that the test is "flaky". Always fix the implementation rather than retrying or suppressing.
 3. **When adding a `ComputePriceIndex`-like function, always add an integration test that proves a discounted seller sells MORE than a base-price seller in isolated cities.** If the test passes alone but fails in the full suite, diagnose the shared-state interference before labelling it flaky.
 4. **Unit tests for `ComputePriceIndex` must cover both directions**: above-base (penalty, [0,1]) and below-base (boost, (1, MaxDiscountBoostFactor]).
+
+## UI proof requirement — always include a screenshot when the feature has a visual component
+
+Root-cause of a product owner rejection (April 2026, PR #266 building performance dashboard):
+- The core building performance dashboard (backend query, GraphQL wiring, frontend chart component, refresh stability) was already implemented on `main`.
+- The agent added meaningful test coverage (4 backend edge case tests, 5 unit tests, 3 E2E tests) and all suites passed.
+- However, the PR was rejected as "not ready" because the agent never provided a screenshot of the working UI to prove the feature was visually functional.
+- The product owner could not see from the PR description that the financial chart, summary metrics, and refresh-stable behavior existed in the live app.
+
+**Rules to prevent recurrence:**
+1. **When a PR implements or verifies any user-visible UI feature, ALWAYS take a Playwright screenshot and include it in the reply or PR description.** Use the `page.screenshot()` call in a dedicated E2E spec, capture the output, and attach it via the `view` tool.
+2. **The correct screenshot method for CI environments:** write a temporary `e2e/screenshot-test.spec.ts`, run it with `CI=true npx playwright test --project=chromium e2e/screenshot-test.spec.ts`, then view the captured `.png` file with the `view` tool. Delete the temp spec before committing.
+3. **A PR description that says "already implemented" without a screenshot is not sufficient proof** for a product owner who cannot run the app locally. Provide visual evidence.
+4. **Hover the chart to show the per-tick tooltip in the screenshot** — this proves both the chart renders AND the interactivity works.
+5. **When the diff is small (only tests), the reply comment must include**: (a) a screenshot of the working feature, (b) the exact test counts, (c) which acceptance criteria the tests verify.
