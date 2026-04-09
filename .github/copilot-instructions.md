@@ -428,7 +428,7 @@ Root-cause of a CI failure (March 2026, PR #82 / power grid — second attempt):
 8. **When you replace an existing UI workflow (for example inline selector to full-page dialog, or removing a field like `Lock to Vendor`), update every existing Playwright assertion that references the old UI in the same session.** Do not leave legacy expectations in the suite.
 9. **Add a regression test for the new workflow itself, not just the old test rewritten.** Example: if purchase configuration moves to a full-page selector, add a test that opens the selector, chooses the item/vendor, saves, and verifies the persisted state.
 10. **Do not assert on dialog fields after the dialog is closed.** If the user clicks `Done` in a full-page selector, assert against the persisted summary/state in the sidebar instead of a removed search input or closed overlay element.
-11. **For mini-chart UIs, assert rendered data presence rather than per-bar visibility heuristics.** Prefer checking that the chart label is visible and that bars exist (count/title/style), because narrow bar divs inside compact charts may be reported as `hidden` by Playwright even when the chart rendered correctly.
+11. **For mini-chart UIs, assert rendered data presence rather than per-bar visibility heuristics.** Prefer checking that the chart label is visible and that bars exist (count/title/style), because narrow bar divs inside compact charts may be reported as `hidden` by Playwright even when the chart rendered correctly. This applies equally to the chart container element itself (e.g., `role="img"` div): if the container has no explicit min-height in CSS and all child bars render at pixel heights, Playwright's `toBeVisible()` on the container can fail even though the data renders. Use `not.toHaveCount(0)` on the bar elements instead of `toBeVisible()` on the container. Example: `await expect(panel.locator('.mi-bar-profit-positive')).not.toHaveCount(0)` is reliable; `await expect(panel.locator('[aria-label="Gross Profit per Tick"]')).toBeVisible()` is not.
 
 ## Minimal-change PR quality — prove the gap, don't just fix the symptom
 
@@ -727,3 +727,17 @@ Root-cause of a quality gap (April 2026, PR #263 salary-driven public sales):
 4. **Add `RecentSalaryWindowTicks` and `ExpectedSalaryParticipationRate` constants to `GameConstants`** so the normalisation formula is readable and centrally configured. The participation rate (0.001 = 0.1% of population) converts raw salary totals to a dimensionless [0.5, 2.0] factor relative to the reference wage.
 5. **Test the dynamic signal with a seeded-ledger integration test:** create two identical cities, seed LaborCost entries only in one, process one tick, assert the active city sells more units. This directly proves the ROADMAP requirement.
 6. **The demand driver panel (`ComputeDemandDrivers` / `GetPublicSalesAnalytics`)** must also reflect the blended factor and indicate whether the description is based on static wages alone or also includes recent spending activity.
+
+## ROADMAP chart history window — "last 100 ticks" means show all returned data
+
+Root-cause of a quality gap (April 2026, PR #279 public sales analytics):
+- The ROADMAP says the public sales unit should show "the chart showing revenue earned in each tick in last 100 ticks".
+- The backend correctly caps at 100 records via `.Take(100)`.
+- The frontend chart templates used `.slice(-30)` — showing only 30 of the 100 returned ticks.
+- This was a silent ROADMAP drift that no test caught because all fixture data had fewer than 30 ticks.
+
+**Rules to prevent recurrence:**
+1. **When the ROADMAP specifies a history window (e.g., "last 100 ticks"), verify both the backend limit AND the frontend slice.** The backend `.Take(N)` and the frontend `.slice(-M)` must be consistent with the ROADMAP window.
+2. **Remove frontend `.slice()` when the backend already enforces the correct limit.** If the API returns at most 100 records, the frontend should show all of them (no slice needed).
+3. **Add an E2E test that seeds exactly N ticks of history (the ROADMAP window) and asserts bar count equals N.** This test locks in both the backend limit and the frontend rendering of the full window.
+4. **Profit/revenue/quantity/price charts must all use the same data window consistently.** If the backend sends 100 revenue ticks, the quantity chart (which uses the same `revenueHistory` array) must also show all 100.

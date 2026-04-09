@@ -5322,7 +5322,7 @@ watch(
                       <span class="mi-chart-label">{{ t('buildingDetail.marketIntelligence.revenueChart') }}</span>
                       <div class="mi-bar-chart" role="img" :aria-label="t('buildingDetail.marketIntelligence.revenueChart')">
                         <div
-                          v-for="snap in publicSalesAnalytics.revenueHistory.slice(-30)"
+                          v-for="snap in publicSalesAnalytics.revenueHistory"
                           :key="snap.tick"
                           class="mi-bar mi-bar-revenue"
                           :style="{
@@ -5338,7 +5338,7 @@ watch(
                       <span class="mi-chart-label">{{ t('buildingDetail.marketIntelligence.quantityChart') }}</span>
                       <div class="mi-bar-chart" role="img" :aria-label="t('buildingDetail.marketIntelligence.quantityChart')">
                         <div
-                          v-for="snap in publicSalesAnalytics.revenueHistory.slice(-30)"
+                          v-for="snap in publicSalesAnalytics.revenueHistory"
                           :key="snap.tick"
                           class="mi-bar mi-bar-quantity"
                           :style="{
@@ -5354,7 +5354,7 @@ watch(
                       <span class="mi-chart-label">{{ t('buildingDetail.marketIntelligence.priceChart') }}</span>
                       <div class="mi-bar-chart mi-bar-chart-price" role="img" :aria-label="t('buildingDetail.marketIntelligence.priceChart')">
                         <div
-                          v-for="snap in publicSalesAnalytics.priceHistory.slice(-30)"
+                          v-for="snap in publicSalesAnalytics.priceHistory"
                           :key="snap.tick"
                           class="mi-bar mi-bar-price"
                           :style="{
@@ -5370,7 +5370,7 @@ watch(
                       <span class="mi-chart-label">{{ t('buildingDetail.marketIntelligence.profitChart') }}</span>
                       <div class="mi-bar-chart mi-bar-chart-profit" role="img" :aria-label="t('buildingDetail.marketIntelligence.profitChart')">
                         <div
-                          v-for="snap in publicSalesAnalytics.profitHistory.slice(-30)"
+                          v-for="snap in publicSalesAnalytics.profitHistory"
                           :key="snap.tick"
                           class="mi-bar"
                           :class="snap.profit >= 0 ? 'mi-bar-profit-positive' : 'mi-bar-profit-negative'"

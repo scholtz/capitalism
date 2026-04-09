@@ -8847,7 +8847,7 @@ test.describe('Public Sales Market Intelligence panel', () => {
   })
 
   test('hides trend indicator when trendDirection is NO_DATA', async ({ page }) => {
-    const { player, chairProduct } = makeShopPlayer()
+    const { player } = makeShopPlayer()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
     state.currentToken = `token-${player.id}`
@@ -8900,12 +8900,227 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(panel).toBeVisible()
 
     // Trend metric should not be visible when there is no data
-    await expect(panel.locator('.mi-trend-up')).not.toBeVisible()
-    await expect(panel.locator('.mi-trend-down')).not.toBeVisible()
-    await expect(panel.locator('.mi-trend-flat')).not.toBeVisible()
+    await expect(panel.locator('.mi-trend-up')).toBeHidden()
+    await expect(panel.locator('.mi-trend-down')).toBeHidden()
+    await expect(panel.locator('.mi-trend-flat')).toBeHidden()
 
     // Product chip should not be visible when no product is configured
-    await expect(panel.locator('.mi-product-chip')).not.toBeVisible()
+    await expect(panel.locator('.mi-product-chip')).toBeHidden()
+  })
+
+  test('shows profit chart with positive and negative profit bars', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      productTypeId: chairProduct.id,
+      productName: chairProduct.name,
+      totalRevenue: 1200,
+      totalQuantitySold: 80,
+      averagePricePerUnit: 15,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'MODERATE',
+      actionHint: 'Sales are healthy.',
+      recentUtilization: 0.65,
+      trendDirection: 'FLAT',
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 120, quantitySold: 8 })),
+      priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: 15 })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.0,
+      inventoryQuality: 0.75,
+      brandAwareness: null,
+      totalProfit: 350,
+      profitHistory: [
+        { tick: 1, profit: -30, grossMarginPct: -25 },
+        { tick: 2, profit: 20, grossMarginPct: 17 },
+        { tick: 3, profit: 50, grossMarginPct: 42 },
+        { tick: 4, profit: 45, grossMarginPct: 37 },
+        { tick: 5, profit: 55, grossMarginPct: 46 },
+        { tick: 6, profit: 60, grossMarginPct: 50 },
+        { tick: 7, profit: 52, grossMarginPct: 43 },
+        { tick: 8, profit: 48, grossMarginPct: 40 },
+        { tick: 9, profit: -5, grossMarginPct: -4 },
+        { tick: 10, profit: 55, grossMarginPct: 46 },
+      ],
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Profit chart should be visible
+    await expect(panel.getByText('Gross Profit per Tick', { exact: true })).toBeVisible()
+    // Bars render inside the chart container — use the same bar-count pattern as the revenue chart tests
+    await expect(panel.locator('.mi-bar-profit-positive')).not.toHaveCount(0)
+    await expect(panel.locator('.mi-bar-profit-negative')).not.toHaveCount(0)
+
+    // Profit bar titles should include the profit amount
+    const firstProfitBar = panel.locator('.mi-bar-profit-negative').first()
+    await expect(firstProfitBar).toHaveAttribute('title', /T1:/)
+
+    // Total profit should show in summary (green for positive total)
+    const summaryGrid = panel.locator('.mi-summary-grid')
+    const profitMetric = summaryGrid.locator('.mi-metric').filter({ has: page.getByText('Gross Profit', { exact: true }) })
+    await expect(profitMetric).toBeVisible()
+    await expect(profitMetric.locator('.building-profit-positive-text')).toBeVisible()
+  })
+
+  test('shows summary metrics: totalRevenue, totalQuantitySold, totalProfit negative', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      productTypeId: chairProduct.id,
+      productName: chairProduct.name,
+      totalRevenue: 500,
+      totalQuantitySold: 40,
+      averagePricePerUnit: 12.5,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 5,
+      demandSignal: 'WEAK',
+      actionHint: 'Sales are slow.',
+      recentUtilization: 0.33,
+      trendDirection: 'DOWN',
+      revenueHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, revenue: 100, quantitySold: 8 })),
+      priceHistory: [],
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: null,
+      unmetDemandShare: null,
+      populationIndex: null,
+      inventoryQuality: null,
+      brandAwareness: null,
+      totalProfit: -120,
+      profitHistory: Array.from({ length: 5 }, (_, i) => ({ tick: i + 1, profit: -24, grossMarginPct: -24 })),
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Summary grid should show all key metrics
+    const summaryGrid = panel.locator('.mi-summary-grid')
+    await expect(summaryGrid.getByText('Total Revenue', { exact: true })).toBeVisible()
+    await expect(summaryGrid.getByText('Units Sold', { exact: true })).toBeVisible()
+    await expect(summaryGrid.getByText('Gross Profit', { exact: true })).toBeVisible()
+
+    // Negative profit should show red styling
+    const profitMetric = summaryGrid.locator('.mi-metric').filter({ has: page.getByText('Gross Profit', { exact: true }) })
+    await expect(profitMetric.locator('.building-profit-negative-text')).toBeVisible()
+
+    // Trend DOWN indicator should be visible
+    await expect(panel.locator('.mi-trend-down')).toBeVisible()
+    await expect(panel.locator('.mi-trend-down')).toContainText('↓')
+  })
+
+  test('revenue and quantity charts show all 100 ticks when backend returns full history', async ({ page }) => {
+    const { player } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    // 100 ticks of history — the ROADMAP requires "last 100 ticks" to be shown
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      productTypeId: null,
+      productName: null,
+      totalRevenue: 10000,
+      totalQuantitySold: 1000,
+      averagePricePerUnit: 10,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 100,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong.',
+      recentUtilization: 0.85,
+      trendDirection: 'UP',
+      revenueHistory: Array.from({ length: 100 }, (_, i) => ({ tick: i + 1, revenue: 100, quantitySold: 10 })),
+      priceHistory: Array.from({ length: 100 }, (_, i) => ({ tick: i + 1, pricePerUnit: 10 })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: null,
+      unmetDemandShare: null,
+      populationIndex: null,
+      inventoryQuality: null,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // All 100 revenue bars should be present (not capped at 30)
+    await expect(panel.locator('.mi-bar-revenue')).toHaveCount(100)
+    // All 100 quantity bars should be present
+    await expect(panel.locator('.mi-bar-quantity')).toHaveCount(100)
+    // All 100 price bars should be present
+    await expect(panel.locator('.mi-bar-price')).toHaveCount(100)
+
+    // Tick window label should show T1–T100
+    await expect(panel.locator('.mi-tick-window')).toContainText('T1')
+    await expect(panel.locator('.mi-tick-window')).toContainText('T100')
   })
 })
 

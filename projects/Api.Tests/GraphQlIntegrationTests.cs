@@ -16491,6 +16491,158 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal("FLAT", result.GetProperty("data").GetProperty("publicSalesAnalytics").GetProperty("trendDirection").GetString());
     }
 
+    [Fact]
+    public async Task PublicSalesAnalytics_RevenueHistory_ReturnsUpTo100Ticks()
+    {
+        // The ROADMAP requires "chart showing revenue earned in each tick in last 100 ticks".
+        // Verify the backend returns up to 100 PublicSalesRecord entries when more than 100 exist.
+        var token = await RegisterAndGetTokenAsync("pa-history-100@test.com", "PaHistory100");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "History 100 Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "History Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits.Include(u => u.Building).ThenInclude(b => b.Company)
+                           .FirstAsync(u => u.Id == unitId);
+
+        // Seed 120 records — backend should cap at 100 most recent
+        const long BaseTick = 100_001L;
+        for (var i = 0; i < 120; i++)
+        {
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId, CityId = unit.Building.CityId,
+                ProductTypeId = unit.ProductTypeId, Tick = BaseTick + i,
+                RecordedAtUtc = DateTime.UtcNow, QuantitySold = 5m, Demand = 10m,
+                Revenue = 50m, PricePerUnit = 10m,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ dataFromTick dataToTick revenueHistory {{ tick revenue }} }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        var history = analytics.GetProperty("revenueHistory").EnumerateArray().ToList();
+        // Should return exactly 100 records, capped at the most recent
+        Assert.Equal(100, history.Count);
+        // The most recent tick should be BaseTick + 119 (the last seeded record)
+        var maxTick = history.Max(h => h.GetProperty("tick").GetInt64());
+        Assert.Equal(BaseTick + 119, maxTick);
+        // dataFromTick and dataToTick should reflect the returned window
+        Assert.Equal(BaseTick + 119, analytics.GetProperty("dataToTick").GetInt64());
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_NegativeProfit_ShowsCorrectProfitHistory()
+    {
+        // Verify that profit history returns negative values when revenue is below (quantitySold × basePrice).
+        // For wooden-chair: basePrice = 45. So pricePerUnit < 45 → negative profit per unit.
+        var token = await RegisterAndGetTokenAsync("pa-neg-profit@test.com", "PaNegProfit");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Neg Profit Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Neg Profit Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var unit = await db.BuildingUnits.Include(u => u.Building).ThenInclude(b => b.Company)
+                           .FirstAsync(u => u.Id == unitId);
+        // Wooden chair basePrice = 45.  Profit = revenue − quantitySold × 45.
+        const long BaseTick = 110_001L;
+        for (var i = 0; i < 5; i++)
+        {
+            // pricePerUnit = 10 < 45 → profit = 5 × 10 − 5 × 45 = 50 − 225 = −175
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId, CityId = unit.Building.CityId,
+                ProductTypeId = unit.ProductTypeId, Tick = BaseTick + i,
+                RecordedAtUtc = DateTime.UtcNow, QuantitySold = 5m, Demand = 10m,
+                Revenue = 50m, PricePerUnit = 10m, SalesCapacity = 20m,
+            });
+        }
+        for (var i = 5; i < 10; i++)
+        {
+            // pricePerUnit = 60 > 45 → profit = 10 × 60 − 10 × 45 = 600 − 450 = 150
+            db.PublicSalesRecords.Add(new PublicSalesRecord
+            {
+                Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = unit.BuildingId,
+                CompanyId = unit.Building.CompanyId, CityId = unit.Building.CityId,
+                ProductTypeId = unit.ProductTypeId, Tick = BaseTick + i,
+                RecordedAtUtc = DateTime.UtcNow, QuantitySold = 10m, Demand = 10m,
+                Revenue = 600m, PricePerUnit = 60m, SalesCapacity = 20m,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ totalProfit profitHistory {{ tick profit grossMarginPct }} }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        var totalProfit = analytics.GetProperty("totalProfit").GetDecimal();
+        // Total: 5 × (−175) + 5 × (150) = −875 + 750 = −125
+        Assert.Equal(-125m, totalProfit);
+
+        var profitHistory = analytics.GetProperty("profitHistory").EnumerateArray().ToList();
+        Assert.Equal(10, profitHistory.Count);
+
+        // First 5 ticks should have negative profit (pricePerUnit=10, basePrice=45)
+        var negativeProfits = profitHistory.Take(5).ToList();
+        foreach (var snap in negativeProfits)
+        {
+            Assert.True(snap.GetProperty("profit").GetDecimal() < 0,
+                $"Expected negative profit in early ticks but got {snap.GetProperty("profit").GetDecimal()}");
+        }
+
+        // Last 5 ticks should have positive profit (pricePerUnit=60, basePrice=45)
+        var positiveProfits = profitHistory.Skip(5).ToList();
+        foreach (var snap in positiveProfits)
+        {
+            Assert.True(snap.GetProperty("profit").GetDecimal() > 0,
+                $"Expected positive profit in later ticks but got {snap.GetProperty("profit").GetDecimal()}");
+        }
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_ZeroSales_ReturnsDeterministicEmptyState()
+    {
+        // Edge case: unit exists but no PublicSalesRecord rows — analytics must return deterministic zero state.
+        var token = await RegisterAndGetTokenAsync("pa-zero-sales@test.com", "PaZeroSales");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "Zero Sales Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Zero Sales Zone");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var shopId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("salesShop").GetProperty("id").GetString()!;
+        var unitId = await GetPublicSalesUnitIdAsync(shopId);
+
+        // Do NOT seed any PublicSalesRecords — query immediately after onboarding
+        var result = await ExecuteGraphQlAsync(
+            $"{{ publicSalesAnalytics(unitId: \"{unitId}\") {{ totalRevenue totalQuantitySold totalProfit dataFromTick dataToTick revenueHistory {{ tick }} profitHistory {{ tick }} trendDirection demandSignal }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.Equal(0m, analytics.GetProperty("totalRevenue").GetDecimal());
+        Assert.Equal(0m, analytics.GetProperty("totalQuantitySold").GetDecimal());
+        // totalProfit is 0 (not null) when product is known but no records exist
+        Assert.Equal(0m, analytics.GetProperty("totalProfit").GetDecimal());
+        Assert.Equal(0L, analytics.GetProperty("dataFromTick").GetInt64());
+        Assert.Equal(0L, analytics.GetProperty("dataToTick").GetInt64());
+        Assert.Equal(0, analytics.GetProperty("revenueHistory").GetArrayLength());
+        // profitHistory is empty array (not null) when product is known
+        Assert.Equal(0, analytics.GetProperty("profitHistory").GetArrayLength());
+        Assert.Equal("NO_DATA", analytics.GetProperty("trendDirection").GetString());
+    }
+
     #endregion
 
 }
