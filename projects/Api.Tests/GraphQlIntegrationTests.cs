@@ -16947,6 +16947,33 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.True(estProfit < 0m, $"estimatedProfit should be negative when cost > estimated revenue. Got {estProfit}");
     }
 
+    [Fact]
+    public async Task UnitProductAnalytics_NonManufacturingUnit_ReturnsNull()
+    {
+        // unitProductAnalytics currently only supports MANUFACTURING units.
+        // Requesting analytics for a PURCHASE or PUBLIC_SALES unit must return null.
+        var token = await RegisterAndGetTokenAsync($"upa-nonmfg-{Guid.NewGuid():N}@test.com", "UpaNonMfg");
+        var (_, _, cityId, _) = await StartOnboardingCompanyAsync(token, "UpaNonMfg Co");
+        var productId = await GetStarterProductIdAsync();
+        var shopLotId = await GetAvailableLotIdAsync(cityId, "SALES_SHOP");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        var factoryId = finishResult.GetProperty("data").GetProperty("finishOnboarding").GetProperty("factory").GetProperty("id").GetString()!;
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Use the PURCHASE unit from the starter factory — this is not a MANUFACTURING unit
+        var purchaseUnit = await db.BuildingUnits
+            .FirstAsync(u => u.BuildingId == Guid.Parse(factoryId) && u.UnitType == "PURCHASE");
+
+        var result = await ExecuteGraphQlAsync(
+            $"{{ unitProductAnalytics(unitId: \"{purchaseUnit.Id}\") {{ buildingUnitId }} }}",
+            token: token);
+
+        var analytics = result.GetProperty("data").GetProperty("unitProductAnalytics");
+        Assert.Equal(JsonValueKind.Null, analytics.ValueKind);
+    }
+
     #endregion
 
 }

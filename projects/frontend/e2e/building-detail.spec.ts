@@ -12083,3 +12083,157 @@ test.describe('Manufacturing unit product analytics panel', () => {
     await expect(page.getByRole('heading', { name: 'Unit Details' })).toBeVisible()
   })
 })
+
+test.describe('Sales shop building financial overview', () => {
+  function makeSalesShopPlayer(buildingId: string, companyId: string) {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: companyId,
+          playerId: 'player-1',
+          name: 'Retail Corp',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: buildingId,
+              companyId,
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Downtown Sales Shop',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [],
+            },
+          ],
+        },
+      ],
+    })
+    return player
+  }
+
+  test('shows profitability summary with sales, costs, and profit for a sales shop', async ({ page }) => {
+    const player = makeSalesShopPlayer('building-shop-fin', 'company-shop-fin')
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.buildingFinancialTimelines['building-shop-fin'] = {
+      buildingId: 'building-shop-fin',
+      buildingName: 'Downtown Sales Shop',
+      dataFromTick: 20,
+      dataToTick: 22,
+      totalSales: 900,
+      totalCosts: 400,
+      totalProfit: 500,
+      timeline: [
+        { tick: 20, sales: 300, costs: 130, profit: 170 },
+        { tick: 21, sales: 280, costs: 140, profit: 140 },
+        { tick: 22, sales: 320, costs: 130, profit: 190 },
+      ],
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-shop-fin')
+
+    await expect(page.getByRole('heading', { name: 'Building Overview' })).toBeVisible()
+    const overview = page.locator('.building-overview-detail')
+    const summaryGrid = overview.locator('.mi-summary-grid')
+    await expect(summaryGrid.locator('.mi-metric').nth(0)).toContainText('$900')
+    await expect(summaryGrid.locator('.mi-metric').nth(1)).toContainText('$400')
+    await expect(summaryGrid.locator('.mi-metric').nth(2)).toContainText('$500')
+    // The profit metric must carry positive styling
+    await expect(summaryGrid.locator('.building-profit-positive-text')).toBeVisible()
+    // Chart should render because there is activity
+    const chartCard = overview.locator('.building-financial-chart-card')
+    await expect(chartCard.getByRole('img', { name: 'Building financial history' })).toBeVisible()
+  })
+
+  test('shows negative profit with negative styling for a loss-making sales shop', async ({ page }) => {
+    const player = makeSalesShopPlayer('building-shop-loss', 'company-shop-loss')
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.buildingFinancialTimelines['building-shop-loss'] = {
+      buildingId: 'building-shop-loss',
+      buildingName: 'Downtown Sales Shop',
+      dataFromTick: 5,
+      dataToTick: 7,
+      totalSales: 60,
+      totalCosts: 180,
+      totalProfit: -120,
+      timeline: [
+        { tick: 5, sales: 20, costs: 60, profit: -40 },
+        { tick: 6, sales: 20, costs: 60, profit: -40 },
+        { tick: 7, sales: 20, costs: 60, profit: -40 },
+      ],
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-shop-loss')
+
+    await expect(page.getByRole('heading', { name: 'Building Overview' })).toBeVisible()
+    const overview = page.locator('.building-overview-detail')
+    const summaryGrid = overview.locator('.mi-summary-grid')
+    await expect(summaryGrid.locator('.mi-metric').nth(2)).toContainText('$-120')
+    // Profit must carry negative styling
+    await expect(summaryGrid.locator('.building-profit-negative-text')).toBeVisible()
+    // Chart should still render because there IS activity
+    const chartCard = overview.locator('.building-financial-chart-card')
+    await expect(chartCard.getByRole('img', { name: 'Building financial history' })).toBeVisible()
+  })
+
+  test('shows empty state for a sales shop with no financial activity', async ({ page }) => {
+    const player = makeSalesShopPlayer('building-shop-empty', 'company-shop-empty')
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.buildingFinancialTimelines['building-shop-empty'] = {
+      buildingId: 'building-shop-empty',
+      buildingName: 'Downtown Sales Shop',
+      dataFromTick: 1,
+      dataToTick: 3,
+      totalSales: 0,
+      totalCosts: 0,
+      totalProfit: 0,
+      timeline: [
+        { tick: 1, sales: 0, costs: 0, profit: 0 },
+        { tick: 2, sales: 0, costs: 0, profit: 0 },
+        { tick: 3, sales: 0, costs: 0, profit: 0 },
+      ],
+    }
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-shop-empty')
+
+    await expect(page.getByRole('heading', { name: 'Building Overview' })).toBeVisible()
+    const overview = page.locator('.building-overview-detail')
+    const finCard = overview.locator('.building-financial-card')
+    const summaryGrid = finCard.locator('.mi-summary-grid')
+    // All three summary metrics show $0
+    await expect(summaryGrid.locator('.mi-metric').nth(0)).toContainText('$0')
+    await expect(summaryGrid.locator('.mi-metric').nth(1)).toContainText('$0')
+    await expect(summaryGrid.locator('.mi-metric').nth(2)).toContainText('$0')
+    // Empty state message replaces chart
+    await expect(finCard.locator('.mi-empty-state')).toBeVisible()
+    // No SVG chart should be rendered
+    await expect(finCard.locator('.building-financial-chart')).toHaveCount(0)
+  })
+})
