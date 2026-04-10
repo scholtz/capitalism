@@ -1121,6 +1121,7 @@ public sealed class Mutation
         var sharePrice = sharePrices.GetValueOrDefault(targetCompany.Id);
         var askPrice = SharePriceCalculator.ComputeAskPrice(sharePrice);
         var totalValue = decimal.Round(askPrice * shareCount, 4, MidpointRounding.AwayFromZero);
+        var currentTick = await GetCurrentTickAsync(db);
 
         if (account.Company is null)
         {
@@ -1147,10 +1148,20 @@ public sealed class Mutation
             }
 
             account.Company.Cash -= totalValue;
+            AddCompanyLedgerEntry(
+                db,
+                account.Company,
+                LedgerCategory.StockPurchase,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Bought {shareCount:0.####} shares in {targetCompany.Name} @ {askPrice:0.00}"),
+                -totalValue,
+                currentTick);
 
             if (account.Company.Id == targetCompany.Id)
             {
                 targetCompany.TotalSharesIssued = Math.Max(0m, decimal.Round(targetCompany.TotalSharesIssued - shareCount, 4, MidpointRounding.AwayFromZero));
+                await RecordSharePriceHistoryAsync(db, targetCompany.Id, askPrice, currentTick);
                 await db.SaveChangesAsync();
 
                 return new ShareTradeResult
@@ -1179,6 +1190,7 @@ public sealed class Mutation
             account.Company?.Id);
         holding.ShareCount = decimal.Round(holding.ShareCount + shareCount, 4, MidpointRounding.AwayFromZero);
 
+        await RecordSharePriceHistoryAsync(db, targetCompany.Id, askPrice, currentTick);
         await db.SaveChangesAsync();
 
         return new ShareTradeResult
@@ -1251,6 +1263,7 @@ public sealed class Mutation
         var sharePrice = sharePrices.GetValueOrDefault(targetCompany.Id);
         var bidPrice = SharePriceCalculator.ComputeBidPrice(sharePrice);
         var totalValue = decimal.Round(bidPrice * shareCount, 4, MidpointRounding.AwayFromZero);
+        var currentTick = await GetCurrentTickAsync(db);
 
         holding.ShareCount = decimal.Round(holding.ShareCount - shareCount, 4, MidpointRounding.AwayFromZero);
         if (holding.ShareCount <= 0m)
@@ -1266,8 +1279,18 @@ public sealed class Mutation
         else
         {
             account.Company.Cash += totalValue;
+            AddCompanyLedgerEntry(
+                db,
+                account.Company,
+                LedgerCategory.StockSale,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Sold {shareCount:0.####} shares in {targetCompany.Name} @ {bidPrice:0.00}"),
+                totalValue,
+                currentTick);
         }
 
+        await RecordSharePriceHistoryAsync(db, targetCompany.Id, bidPrice, currentTick);
         await db.SaveChangesAsync();
 
         return new ShareTradeResult
@@ -1317,6 +1340,57 @@ public sealed class Mutation
         var baseEquityByCompany = SharePriceCalculator.ComputeBaseEquityByCompany(companies, buildings, lots, inventories);
         var sharePrices = SharePriceCalculator.ComputeQuotedSharePriceByCompany(companies, baseEquityByCompany, shareholdings);
         return (companies, shareholdings, sharePrices);
+    }
+
+    private static async Task<long> GetCurrentTickAsync(AppDbContext db)
+    {
+        return await db.GameStates
+            .Select(gameState => (long?)gameState.CurrentTick)
+            .FirstOrDefaultAsync() ?? 0L;
+    }
+
+    private static void AddCompanyLedgerEntry(
+        AppDbContext db,
+        Company company,
+        string category,
+        string description,
+        decimal amount,
+        long currentTick)
+    {
+        db.LedgerEntries.Add(new LedgerEntry
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            Category = category,
+            Description = description,
+            Amount = amount,
+            RecordedAtTick = currentTick,
+            RecordedAtUtc = DateTime.UtcNow,
+        });
+    }
+
+    private static async Task RecordSharePriceHistoryAsync(AppDbContext db, Guid companyId, decimal sharePrice, long currentTick)
+    {
+        var latestEntryForTick = await db.SharePriceHistoryEntries
+            .Where(entry => entry.CompanyId == companyId && entry.RecordedAtTick == currentTick)
+            .OrderByDescending(entry => entry.RecordedAtUtc)
+            .FirstOrDefaultAsync();
+
+        if (latestEntryForTick is null)
+        {
+            db.SharePriceHistoryEntries.Add(new SharePriceHistoryEntry
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = companyId,
+                SharePrice = sharePrice,
+                RecordedAtTick = currentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+            });
+            return;
+        }
+
+        latestEntryForTick.SharePrice = sharePrice;
+        latestEntryForTick.RecordedAtUtc = DateTime.UtcNow;
     }
 
     private static async Task<ActiveTradingAccount> ResolveRequestedTradingAccountAsync(

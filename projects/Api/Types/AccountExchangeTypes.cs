@@ -59,6 +59,14 @@ public sealed class StockExchangeListingResult
     public bool CanClaimControl { get; set; }
 }
 
+public sealed class StockExchangePriceHistoryPointResult
+{
+    public Guid CompanyId { get; set; }
+    public long Tick { get; set; }
+    public decimal Price { get; set; }
+    public DateTime RecordedAtUtc { get; set; }
+}
+
 public sealed class ShareTradeResult
 {
     public Guid CompanyId { get; set; }

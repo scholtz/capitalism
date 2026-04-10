@@ -29,7 +29,7 @@ const LEDGER_QUERY = `
       companyId companyName gameYear isCurrentGameYear currentCash
       totalRevenue totalPurchasingCosts totalLaborCosts totalEnergyCosts totalMarketingCosts totalTaxPaid totalOtherCosts taxableIncome estimatedIncomeTax netIncome
       propertyValue propertyAppreciation buildingValue inventoryValue totalAssets totalPropertyPurchases
-      cashFromOperations cashFromInvestments firstRecordedTick lastRecordedTick
+      totalStockPurchaseCashOut totalStockSaleCashIn cashFromOperations cashFromInvestments firstRecordedTick lastRecordedTick
       incomeTaxDueAtTick incomeTaxDueGameTimeUtc incomeTaxDueGameYear isIncomeTaxSettled
       history {
         gameYear isCurrentGameYear totalRevenue totalLaborCosts totalEnergyCosts netIncome totalTaxPaid taxableIncome estimatedIncomeTax firstRecordedTick lastRecordedTick
@@ -343,6 +343,30 @@ useTickRefresh(async () => {
             <div class="statement-row">
               <span class="row-label">{{ t('ledger.cashFromInvestments') }}</span>
               <span :class="amountClass(ledger.cashFromInvestments)">{{ formatAmount(ledger.cashFromInvestments) }}</span>
+            </div>
+            <div v-if="ledger.totalStockPurchaseCashOut > 0" class="statement-row">
+              <span class="row-label">{{ t('ledger.stockPurchases') }}</span>
+              <span class="amount-negative">{{ formatAmount(-ledger.totalStockPurchaseCashOut) }}</span>
+              <button
+                class="drill-btn"
+                :class="{ active: drillCategory === 'STOCK_PURCHASE' }"
+                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.stockPurchases')"
+                @click="toggleDrill('STOCK_PURCHASE')"
+              >
+                {{ drillCategory === 'STOCK_PURCHASE' ? '▲' : '▼' }}
+              </button>
+            </div>
+            <div v-if="ledger.totalStockSaleCashIn > 0" class="statement-row">
+              <span class="row-label">{{ t('ledger.stockSales') }}</span>
+              <span class="amount-positive">{{ formatAmount(ledger.totalStockSaleCashIn) }}</span>
+              <button
+                class="drill-btn"
+                :class="{ active: drillCategory === 'STOCK_SALE' }"
+                :aria-label="t('ledger.drillDown') + ': ' + t('ledger.stockSales')"
+                @click="toggleDrill('STOCK_SALE')"
+              >
+                {{ drillCategory === 'STOCK_SALE' ? '▲' : '▼' }}
+              </button>
             </div>
           </div>
         </div>

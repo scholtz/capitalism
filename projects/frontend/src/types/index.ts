@@ -484,6 +484,13 @@ export interface StockExchangeListing {
   canClaimControl: boolean
 }
 
+export interface StockExchangePriceHistoryPoint {
+  companyId: string
+  tick: number
+  price: number
+  recordedAtUtc: string
+}
+
 export interface ShareTradeResult {
   companyId: string
   companyName: string
@@ -614,6 +621,8 @@ export interface CompanyLedgerSummary {
   inventoryValue: number
   totalAssets: number
   totalPropertyPurchases: number
+  totalStockPurchaseCashOut: number
+  totalStockSaleCashIn: number
   cashFromOperations: number
   cashFromInvestments: number
   firstRecordedTick: number

@@ -26,6 +26,8 @@ public sealed class CompanyLedgerSummary
     public decimal InventoryValue { get; set; }
     public decimal TotalAssets { get; set; }
     public decimal TotalPropertyPurchases { get; set; }
+    public decimal TotalStockPurchaseCashOut { get; set; }
+    public decimal TotalStockSaleCashIn { get; set; }
     // Cash Flow
     public decimal CashFromOperations { get; set; }
     public decimal CashFromInvestments { get; set; }

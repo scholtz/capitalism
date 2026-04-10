@@ -73,6 +73,20 @@ public static class LedgerCalculator
             .Sum(entry => entry.Amount));
     }
 
+    public static decimal GetTotalStockPurchaseCashOut(IEnumerable<LedgerEntry> entries)
+    {
+        return Math.Abs(entries
+            .Where(entry => entry.Category == LedgerCategory.StockPurchase && entry.Amount < 0m)
+            .Sum(entry => entry.Amount));
+    }
+
+    public static decimal GetTotalStockSaleCashIn(IEnumerable<LedgerEntry> entries)
+    {
+        return entries
+            .Where(entry => entry.Category == LedgerCategory.StockSale && entry.Amount > 0m)
+            .Sum(entry => entry.Amount);
+    }
+
     public static decimal ComputeTaxableIncome(IEnumerable<LedgerEntry> entries)
     {
         var ledgerEntries = entries.ToList();

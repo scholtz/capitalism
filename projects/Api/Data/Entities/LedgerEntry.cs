@@ -52,4 +52,6 @@ public static class LedgerCategory
     public const string LoanInterestIncome = "LOAN_INTEREST_INCOME";
     public const string LoanPenalty = "LOAN_PENALTY";
     public const string DiscardedResources = "DISCARDED_RESOURCES";
+    public const string StockPurchase = "STOCK_PURCHASE";
+    public const string StockSale = "STOCK_SALE";
 }

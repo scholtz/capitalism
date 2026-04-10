@@ -70,6 +70,8 @@ export type MockLedgerSummary = {
   inventoryValue: number
   totalAssets: number
   totalPropertyPurchases: number
+  totalStockPurchaseCashOut?: number
+  totalStockSaleCashIn?: number
   cashFromOperations: number
   cashFromInvestments: number
   firstRecordedTick: number
@@ -135,6 +137,13 @@ export type MockShareholding = {
   ownerPlayerId: string | null
   ownerCompanyId: string | null
   shareCount: number
+}
+
+export type MockStockPriceHistoryPoint = {
+  companyId: string
+  tick: number
+  price: number
+  recordedAtUtc: string
 }
 
 export type MockBuilding = {
@@ -562,6 +571,7 @@ export type MockState = {
   currentUserId: string | null
   currentToken: string | null
   gameState: { currentTick: number; lastTickAtUtc: string; tickIntervalSeconds: number; taxCycleTicks: number; taxRate: number }
+  stockPriceHistory: Record<string, MockStockPriceHistoryPoint[]>
   ledgerData: Record<string, MockLedgerSummary>
   drillDownData: Record<string, MockLedgerEntry[]>
   /** Research brand states keyed by companyId for the companyBrands query. */
@@ -686,6 +696,114 @@ function getCombinedControlledOwnershipRatio(state: MockState, playerId: string,
   return Number((controlledShares / getCompanyTotalShares(company)).toFixed(4))
 }
 
+function appendMockStockPriceHistory(state: MockState, companyId: string, price: number) {
+  const existing = state.stockPriceHistory[companyId] ?? []
+  const point: MockStockPriceHistoryPoint = {
+    companyId,
+    tick: state.gameState.currentTick,
+    price,
+    recordedAtUtc: new Date().toISOString(),
+  }
+  state.stockPriceHistory[companyId] = [...existing.filter((candidate) => candidate.tick !== point.tick), point].sort((left, right) => left.tick - right.tick)
+}
+
+function ensureMockLedgerSummary(state: MockState, company: MockCompany): MockLedgerSummary {
+  const existing = state.ledgerData[company.id]
+  if (existing) {
+    return existing
+  }
+
+  const baseValues: Record<string, number> = {
+    MINE: 250000,
+    FACTORY: 200000,
+    SALES_SHOP: 150000,
+    RESEARCH_DEVELOPMENT: 300000,
+    APARTMENT: 400000,
+    COMMERCIAL: 350000,
+    MEDIA_HOUSE: 500000,
+    BANK: 600000,
+    EXCHANGE: 450000,
+    POWER_PLANT: 350000,
+  }
+  const buildingValue = company.buildings.reduce((sum, building) => sum + (baseValues[building.type] ?? 0) * building.level, 0)
+  const summary: MockLedgerSummary = {
+    companyId: company.id,
+    companyName: company.name,
+    gameYear: computeMockGameYear(state.gameState.currentTick),
+    isCurrentGameYear: true,
+    currentCash: company.cash,
+    totalRevenue: 0,
+    totalPurchasingCosts: 0,
+    totalLaborCosts: 0,
+    totalEnergyCosts: 0,
+    totalMarketingCosts: 0,
+    totalTaxPaid: 0,
+    totalOtherCosts: 0,
+    taxableIncome: 0,
+    estimatedIncomeTax: 0,
+    netIncome: 0,
+    propertyValue: 0,
+    propertyAppreciation: 0,
+    buildingValue,
+    inventoryValue: 0,
+    totalAssets: company.cash + buildingValue,
+    totalPropertyPurchases: 0,
+    totalStockPurchaseCashOut: 0,
+    totalStockSaleCashIn: 0,
+    cashFromOperations: 0,
+    cashFromInvestments: 0,
+    firstRecordedTick: 0,
+    lastRecordedTick: 0,
+    history: [],
+    buildingSummaries: [],
+  }
+  state.ledgerData[company.id] = summary
+  return summary
+}
+
+function recordMockCompanyStockLedgerEntry(
+  state: MockState,
+  company: MockCompany,
+  category: 'STOCK_PURCHASE' | 'STOCK_SALE',
+  description: string,
+  amount: number,
+) {
+  const summary = ensureMockLedgerSummary(state, company)
+  const currentTick = state.gameState.currentTick
+  const drillKey = `${company.id}:${category}`
+  const existing = state.drillDownData[drillKey] ?? []
+
+  state.drillDownData[drillKey] = [
+    {
+      id: `${category.toLowerCase()}-${existing.length + 1}-${currentTick}`,
+      category,
+      description,
+      amount,
+      recordedAtTick: currentTick,
+      buildingId: null,
+      buildingName: null,
+      buildingUnitId: null,
+      productTypeId: null,
+      productName: null,
+      resourceTypeId: null,
+      resourceName: null,
+    },
+    ...existing,
+  ]
+
+  if (category === 'STOCK_PURCHASE') {
+    summary.totalStockPurchaseCashOut = Number((summary.totalStockPurchaseCashOut + Math.abs(amount)).toFixed(2))
+  } else {
+    summary.totalStockSaleCashIn = Number((summary.totalStockSaleCashIn + amount).toFixed(2))
+  }
+
+  summary.currentCash = company.cash
+  summary.cashFromInvestments = Number((summary.totalStockSaleCashIn - summary.totalPropertyPurchases - summary.totalStockPurchaseCashOut).toFixed(2))
+  summary.totalAssets = Number((company.cash + summary.propertyValue + summary.buildingValue + summary.inventoryValue).toFixed(2))
+  summary.firstRecordedTick = summary.firstRecordedTick === 0 ? currentTick : Math.min(summary.firstRecordedTick, currentTick)
+  summary.lastRecordedTick = Math.max(summary.lastRecordedTick, currentTick)
+}
+
 function computeMockGameYear(currentTick: number) {
   return GAME_START_YEAR + Math.floor(Math.max(currentTick, 0) / TICKS_PER_YEAR)
 }
@@ -750,6 +868,8 @@ function buildMockLedgerSummaryPayload(summary: MockLedgerSummary, gameState: Mo
     ...summary,
     gameYear,
     isCurrentGameYear: summary.isCurrentGameYear ?? gameYear === currentGameYear,
+    totalStockPurchaseCashOut: summary.totalStockPurchaseCashOut ?? 0,
+    totalStockSaleCashIn: summary.totalStockSaleCashIn ?? 0,
     taxableIncome:
       summary.taxableIncome ??
       Math.max(summary.totalRevenue - summary.totalPurchasingCosts - summary.totalLaborCosts - summary.totalEnergyCosts - summary.totalMarketingCosts - summary.totalOtherCosts, 0),
@@ -1343,6 +1463,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     currentUserId: null,
     currentToken: null,
     gameState: { currentTick: 42, lastTickAtUtc: new Date(Date.now() - 30000).toISOString(), tickIntervalSeconds: 60, taxCycleTicks: 8760, taxRate: 15 },
+    stockPriceHistory: {},
     ledgerData: {},
     drillDownData: {},
     researchBrands: {},
@@ -2381,6 +2502,13 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         accountName = activeCompany.name
         accountCompanyId = activeCompany.id
         companyCash = activeCompany.cash
+        recordMockCompanyStockLedgerEntry(
+          state,
+          activeCompany,
+          'STOCK_PURCHASE',
+          `Bought ${shareCount} shares in ${company.name} @ ${pricePerShare.toFixed(2)}`,
+          -totalValue,
+        )
 
         if (activeCompany.id === company.id) {
           company.totalSharesIssued = Number(Math.max(getCompanyTotalShares(company) - shareCount, 0).toFixed(4))
@@ -2404,6 +2532,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         holding.shareCount = Number((holding.shareCount + shareCount).toFixed(4))
         ownedShareCount = holding.shareCount
       }
+
+      appendMockStockPriceHistory(state, company.id, pricePerShare)
 
       return route.fulfill({
         status: 200,
@@ -2473,6 +2603,13 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         accountCompanyId = activeCompany.id
         companyCash = activeCompany.cash
         ownedShareCount = holding.shareCount
+        recordMockCompanyStockLedgerEntry(
+          state,
+          activeCompany,
+          'STOCK_SALE',
+          `Sold ${shareCount} shares in ${company.name} @ ${pricePerShare.toFixed(2)}`,
+          totalValue,
+        )
       } else {
         const holding = getOrCreateShareholding(state, company.id, player.id, null)
         if (holding.shareCount < shareCount) {
@@ -2487,6 +2624,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         player.personalCash = Number((player.personalCash + totalValue).toFixed(2))
         ownedShareCount = holding.shareCount
       }
+
+      appendMockStockPriceHistory(state, company.id, pricePerShare)
 
       return route.fulfill({
         status: 200,
@@ -3645,6 +3784,29 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { stockExchangeListings: listings } }),
+      })
+    }
+
+    if (query.includes('stockExchangePriceHistory')) {
+      const companyId = body.variables?.companyId
+      const company = state.players.flatMap((candidate) => candidate.companies).find((candidate) => candidate.id === companyId)
+      const priceHistory =
+        (companyId ? state.stockPriceHistory[companyId] : null) ??
+        (company
+          ? [
+              {
+                companyId: company.id,
+                tick: state.gameState.currentTick,
+                price: computeMockSharePrice(company),
+                recordedAtUtc: new Date().toISOString(),
+              },
+            ]
+          : [])
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { stockExchangePriceHistory: priceHistory } }),
       })
     }
 

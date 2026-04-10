@@ -21,6 +21,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     /// <summary>Annual dividend settlement records.</summary>
     public DbSet<DividendPayment> DividendPayments => Set<DividendPayment>();
 
+    /// <summary>Quoted share-price history recorded for the stock exchange.</summary>
+    public DbSet<SharePriceHistoryEntry> SharePriceHistoryEntries => Set<SharePriceHistoryEntry>();
+
     /// <summary>Per-city salary settings selected by company owners.</summary>
     public DbSet<CompanyCitySalarySetting> CompanyCitySalarySettings => Set<CompanyCitySalarySetting>();
 
@@ -168,6 +171,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(payment => new { payment.CompanyId, payment.GameYear });
             e.HasIndex(payment => new { payment.RecipientPlayerId, payment.RecordedAtTick });
+        });
+
+        // SharePriceHistoryEntry
+        modelBuilder.Entity<SharePriceHistoryEntry>(e =>
+        {
+            e.HasKey(entry => entry.Id);
+            e.Property(entry => entry.SharePrice).HasPrecision(18, 4);
+            e.HasOne(entry => entry.Company)
+                .WithMany()
+                .HasForeignKey(entry => entry.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(entry => new { entry.CompanyId, entry.RecordedAtTick, entry.RecordedAtUtc });
         });
 
         // CompanyCitySalarySetting

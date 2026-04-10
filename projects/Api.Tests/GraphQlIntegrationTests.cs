@@ -5196,6 +5196,153 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         }
 
         [Fact]
+        public async Task BuyAndSellShares_WithCompanyAccount_RecordLedgerEntriesAndStockPriceHistory()
+        {
+                await ResetGameStateAsync();
+
+                var controllerToken = await RegisterAndGetTokenAsync($"history-controller-{Guid.NewGuid():N}@test.com", "History Controller");
+                var controllerPlayerId = await GetCurrentPlayerIdAsync(controllerToken);
+                var publicCompanyId = await SeedPublicCompanyAsync(controllerPlayerId, name: "History Target", cash: 350_000m);
+
+                var acquirerToken = await RegisterAndGetTokenAsync($"history-acquirer-{Guid.NewGuid():N}@test.com", "History Acquirer");
+                var createCompanyResult = await ExecuteGraphQlAsync(
+                        """
+                        mutation CreateCompany($input: CreateCompanyInput!) {
+                            createCompany(input: $input) { id }
+                        }
+                        """,
+                        new { input = new { name = "History Holdings" } },
+                        acquirerToken);
+
+                var acquirerCompanyId = Guid.Parse(createCompanyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!);
+
+                await using (var scope = _factory.Services.CreateAsyncScope())
+                {
+                        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                        var acquirerCompany = await db.Companies.FirstAsync(candidate => candidate.Id == acquirerCompanyId);
+                        acquirerCompany.Cash = 500_000m;
+                        await db.SaveChangesAsync();
+                }
+
+                await ExecuteGraphQlAsync(
+                        """
+                        mutation BuyShares($input: BuySharesInput!) {
+                            buyShares(input: $input) {
+                                shareCount
+                                companyCash
+                            }
+                        }
+                        """,
+                        new
+                        {
+                                input = new
+                                {
+                                        companyId = publicCompanyId,
+                                        shareCount = 120m,
+                                        tradeAccountType = "COMPANY",
+                                        tradeAccountCompanyId = acquirerCompanyId
+                                }
+                        },
+                        acquirerToken);
+
+                await ProcessTicksAsync(1);
+
+                await ExecuteGraphQlAsync(
+                        """
+                        mutation SellShares($input: SellSharesInput!) {
+                            sellShares(input: $input) {
+                                shareCount
+                                companyCash
+                            }
+                        }
+                        """,
+                        new
+                        {
+                                input = new
+                                {
+                                        companyId = publicCompanyId,
+                                        shareCount = 20m,
+                                        tradeAccountType = "COMPANY",
+                                        tradeAccountCompanyId = acquirerCompanyId
+                                }
+                        },
+                        acquirerToken);
+
+                var ledgerResult = await ExecuteGraphQlAsync(
+                        """
+                        query GetCompanyLedger($companyId: UUID!) {
+                            companyLedger(companyId: $companyId) {
+                                totalStockPurchaseCashOut
+                                totalStockSaleCashIn
+                                cashFromInvestments
+                            }
+                        }
+                        """,
+                        new { companyId = acquirerCompanyId },
+                        acquirerToken);
+
+                var ledger = ledgerResult.GetProperty("data").GetProperty("companyLedger");
+                var stockPurchaseCashOut = ledger.GetProperty("totalStockPurchaseCashOut").GetDecimal();
+                var stockSaleCashIn = ledger.GetProperty("totalStockSaleCashIn").GetDecimal();
+                Assert.True(stockPurchaseCashOut > 0m);
+                Assert.True(stockSaleCashIn > 0m);
+                Assert.Equal(stockSaleCashIn - stockPurchaseCashOut, ledger.GetProperty("cashFromInvestments").GetDecimal());
+
+                var purchaseDrillDown = await ExecuteGraphQlAsync(
+                        """
+                        query GetLedgerDrillDown($companyId: UUID!, $category: String!) {
+                            ledgerDrillDown(companyId: $companyId, category: $category) {
+                                category
+                                description
+                                amount
+                            }
+                        }
+                        """,
+                        new { companyId = acquirerCompanyId, category = LedgerCategory.StockPurchase },
+                        acquirerToken);
+
+                var purchaseEntries = purchaseDrillDown.GetProperty("data").GetProperty("ledgerDrillDown");
+                Assert.Single(purchaseEntries.EnumerateArray());
+                Assert.Contains("History Target", purchaseEntries[0].GetProperty("description").GetString());
+                Assert.True(purchaseEntries[0].GetProperty("amount").GetDecimal() < 0m);
+
+                var saleDrillDown = await ExecuteGraphQlAsync(
+                        """
+                        query GetLedgerDrillDown($companyId: UUID!, $category: String!) {
+                            ledgerDrillDown(companyId: $companyId, category: $category) {
+                                category
+                                description
+                                amount
+                            }
+                        }
+                        """,
+                        new { companyId = acquirerCompanyId, category = LedgerCategory.StockSale },
+                        acquirerToken);
+
+                var saleEntries = saleDrillDown.GetProperty("data").GetProperty("ledgerDrillDown");
+                Assert.Single(saleEntries.EnumerateArray());
+                Assert.Contains("History Target", saleEntries[0].GetProperty("description").GetString());
+                Assert.True(saleEntries[0].GetProperty("amount").GetDecimal() > 0m);
+
+                var historyResult = await ExecuteGraphQlAsync(
+                        """
+                        query GetStockExchangePriceHistory($companyId: UUID!) {
+                            stockExchangePriceHistory(companyId: $companyId) {
+                                tick
+                                price
+                            }
+                        }
+                        """,
+                        new { companyId = publicCompanyId });
+
+                var history = historyResult.GetProperty("data").GetProperty("stockExchangePriceHistory").EnumerateArray().ToList();
+                Assert.True(history.Count >= 2);
+                Assert.Contains(history, point => point.GetProperty("tick").GetInt64() == 0);
+                Assert.Contains(history, point => point.GetProperty("tick").GetInt64() == 1);
+                Assert.All(history, point => Assert.True(point.GetProperty("price").GetDecimal() > 0m));
+        }
+
+        [Fact]
         public async Task SwitchAccountContext_UsesControlledCompanyOwnershipToClaimControl()
         {
                 var targetOwnerToken = await RegisterAndGetTokenAsync($"target-owner-{Guid.NewGuid():N}@test.com", "Target Owner");

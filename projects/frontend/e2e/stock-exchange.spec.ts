@@ -627,6 +627,163 @@ test.describe('Stock exchange', () => {
     const hasMv = texts.some((t) => t.includes('$') && t.match(/\$/))
     expect(hasMv).toBeTruthy()
   })
+
+  test('market table paginates long company lists', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 100000,
+      companies: [makeControlledCompany()],
+    })
+
+    const rivals = Array.from({ length: 11 }, (_, index) => {
+      const label = String(index + 1).padStart(2, '0')
+      return makePlayer({
+        id: `player-page-${label}`,
+        email: `page-${label}@test.com`,
+        displayName: `Page Owner ${label}`,
+        companies: [
+          {
+            id: `company-page-${label}`,
+            playerId: `player-page-${label}`,
+            name: `Page Corp ${label}`,
+            cash: 400000 + index * 10000,
+            totalSharesIssued: 10000,
+            dividendPayoutRatio: 0.2,
+            foundedAtUtc: '2026-01-01T00:00:00Z',
+            foundedAtTick: 1,
+            buildings: [],
+          },
+        ],
+      })
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, ...rivals],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        ...rivals.map((rival) => ({
+          companyId: rival.companies[0]!.id,
+          ownerPlayerId: rival.id,
+          ownerCompanyId: null,
+          shareCount: 5000,
+        })),
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    await expect(page.locator('tr.listing-row')).toHaveCount(10)
+    await expect(page.locator('tr.listing-row', { hasText: 'Page Corp 01' })).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Next page' }).click()
+    await expect(page.locator('tr.listing-row')).toHaveCount(2)
+    await expect(page.locator('tr.listing-row', { hasText: 'Page Corp 01' })).toBeVisible()
+    await expect(page.getByText('Page 2 of 2')).toBeVisible()
+  })
+
+  test('trade panel shows stock price history for the selected company', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 150000,
+      companies: [makeControlledCompany()],
+    })
+    const rival = makePlayer({
+      id: 'player-history',
+      email: 'history@test.com',
+      displayName: 'History Owner',
+      companies: [
+        {
+          id: 'company-history',
+          playerId: 'player-history',
+          name: 'History Corp',
+          cash: 500000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-history', ownerPlayerId: 'player-history', ownerCompanyId: null, shareCount: 5000 },
+      ],
+    })
+    state.stockPriceHistory['company-history'] = [
+      { companyId: 'company-history', tick: 40, price: 92.5, recordedAtUtc: '2026-04-10T10:00:00Z' },
+      { companyId: 'company-history', tick: 41, price: 95.25, recordedAtUtc: '2026-04-10T10:01:00Z' },
+      { companyId: 'company-history', tick: 42, price: 97.5, recordedAtUtc: '2026-04-10T10:02:00Z' },
+    ]
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    await openTradePanel(page, 'History Corp')
+
+    const tradePanel = page.locator('.trade-panel')
+    await expect(tradePanel.getByRole('heading', { name: 'Price history' })).toBeVisible()
+    await expect(tradePanel.getByRole('table', { name: /History Corp Price history/ })).toBeVisible()
+    await expect(tradePanel.getByText('40', { exact: true })).toBeVisible()
+    await expect(tradePanel.getByText('$97.50', { exact: true })).toBeVisible()
+  })
+
+  test('company-account stock trades appear in the ledger overview', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 100000,
+      companies: [makeControlledCompany({ id: 'company-ledger', name: 'Ledger Holdings', cash: 450000 })],
+    })
+    const rival = makePlayer({
+      id: 'player-ledger',
+      email: 'ledger@test.com',
+      displayName: 'Ledger Owner',
+      companies: [
+        {
+          id: 'company-ledger-target',
+          playerId: 'player-ledger',
+          name: 'Ledger Target',
+          cash: 600000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-ledger', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-ledger-target', ownerPlayerId: 'player-ledger', ownerCompanyId: null, shareCount: 7000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    await openTradePanel(page, 'Ledger Target')
+    const tradePanel = page.locator('.trade-panel')
+    await tradePanel.getByLabel(/Trade with Ledger Target/).selectOption({ value: 'COMPANY:company-ledger' })
+    await tradePanel.getByLabel(/Share quantity Ledger Target/).fill('100')
+    await tradePanel.getByRole('button', { name: /Buy @ / }).click()
+    await expect(tradePanel.getByRole('status')).toContainText('Bought 100 shares in Ledger Target.')
+
+    await page.goto('/ledger/company-ledger')
+    await expect(page.getByRole('heading', { name: 'Ledger Holdings' })).toBeVisible()
+    await expect(page.getByText('Stock Purchases')).toBeVisible()
+    await page.getByRole('button', { name: 'Detail: Stock Purchases' }).click()
+    await expect(page.locator('.drill-table')).toContainText('Bought 100 shares in Ledger Target')
+  })
 })
 
 test.describe('Stock exchange live refresh', () => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { gqlRequest } from '@/lib/graphql'
 import { useAuthStore } from '@/stores/auth'
@@ -7,7 +7,12 @@ import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useGameStateStore } from '@/stores/gameState'
 import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { deepEqual } from '@/lib/utils'
-import type { PersonAccount, ShareTradeResult, StockExchangeListing } from '@/types'
+import type {
+  PersonAccount,
+  ShareTradeResult,
+  StockExchangeListing,
+  StockExchangePriceHistoryPoint,
+} from '@/types'
 
 type ControlledCompanyAccount = {
   id: string
@@ -35,6 +40,9 @@ const quantityByCompany = ref<Record<string, number>>({})
 const errorByCompany = ref<Record<string, string | null>>({})
 const successByCompany = ref<Record<string, string | null>>({})
 const expandedCompany = ref<string | null>(null)
+const priceHistoryByCompany = ref<Record<string, StockExchangePriceHistoryPoint[]>>({})
+const priceHistoryLoadingByCompany = ref<Record<string, boolean>>({})
+const priceHistoryErrorByCompany = ref<Record<string, string | null>>({})
 
 // Per-listing trade account selection: "PERSON" or "COMPANY:<id>"
 const tradeAccountByCompany = ref<Record<string, string>>({})
@@ -43,6 +51,8 @@ const tradeAccountByCompany = ref<Record<string, string>>({})
 const filterText = ref('')
 const sortField = ref<SortField>('marketValue')
 const sortDir = ref<SortDir>('desc')
+const currentPage = ref(1)
+const pageSize = 10
 
 const PERSON_ACCOUNT_QUERY = `
   query PersonAccount {
@@ -134,6 +144,17 @@ const SELL_MUTATION = `
   }
 `
 
+const PRICE_HISTORY_QUERY = `
+  query StockExchangePriceHistory($companyId: UUID!) {
+    stockExchangePriceHistory(companyId: $companyId) {
+      companyId
+      tick
+      price
+      recordedAtUtc
+    }
+  }
+`
+
 const controlledCompanies = computed<ControlledCompanyAccount[]>(() => {
   const directCompanies = (auth.player?.companies ?? []).map((company) => ({
     id: company.id,
@@ -189,6 +210,23 @@ const filteredAndSortedListings = computed(() => {
   })
 })
 
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredAndSortedListings.value.length / pageSize)))
+
+const paginatedListings = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return filteredAndSortedListings.value.slice(start, start + pageSize)
+})
+
+watch([filterText, sortField, sortDir], () => {
+  currentPage.value = 1
+})
+
+watch(totalPages, (value) => {
+  if (currentPage.value > value) {
+    currentPage.value = value
+  }
+})
+
 function toggleSort(field: SortField) {
   if (sortField.value === field) {
     sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
@@ -241,10 +279,30 @@ function resolveTradeAccount(companyId: string): { tradeAccountType: string; tra
   return { tradeAccountType: 'COMPANY', tradeAccountCompanyId: id }
 }
 
-function toggleTradePanel(companyId: string) {
+async function loadPriceHistory(companyId: string) {
+  priceHistoryLoadingByCompany.value[companyId] = true
+  priceHistoryErrorByCompany.value[companyId] = null
+
+  try {
+    const data = await gqlRequest<{ stockExchangePriceHistory: StockExchangePriceHistoryPoint[] }>(PRICE_HISTORY_QUERY, {
+      companyId,
+    })
+    priceHistoryByCompany.value[companyId] = data.stockExchangePriceHistory
+  } catch (reason: unknown) {
+    priceHistoryErrorByCompany.value[companyId] = reason instanceof Error ? reason.message : t('stockExchange.historyLoadFailed')
+  } finally {
+    priceHistoryLoadingByCompany.value[companyId] = false
+  }
+}
+
+async function toggleTradePanel(companyId: string) {
   expandedCompany.value = expandedCompany.value === companyId ? null : companyId
   errorByCompany.value[companyId] = null
   successByCompany.value[companyId] = null
+
+  if (expandedCompany.value === companyId && !priceHistoryByCompany.value[companyId]) {
+    await loadPriceHistory(companyId)
+  }
 }
 
 async function loadData(isRefresh = false) {
@@ -490,7 +548,7 @@ useTickRefresh(async () => {
                 </tr>
               </thead>
               <tbody>
-                <template v-for="listing in filteredAndSortedListings" :key="listing.companyId">
+                <template v-for="listing in paginatedListings" :key="listing.companyId">
                   <tr
                     class="listing-row"
                     :class="{ 'listing-row--expanded': expandedCompany === listing.companyId }"
@@ -519,11 +577,11 @@ useTickRefresh(async () => {
                     <td>
                       <div class="ownership-cell">
                         <span>{{ formatPercent(listing.combinedControlledOwnershipRatio) }}</span>
-                        <span
-                          v-if="listing.playerOwnedShares + listing.controlledCompanyOwnedShares > 0"
-                          class="owned-shares-hint"
-                        >
-                          ({{ formatShares(listing.playerOwnedShares + listing.controlledCompanyOwnedShares) }} {{ t('stockExchange.shares') }})
+                        <span class="owned-shares-hint">
+                          {{ t('stockExchange.personalShares', { shares: formatShares(listing.playerOwnedShares) }) }}
+                        </span>
+                        <span class="owned-shares-hint">
+                          {{ t('stockExchange.controlledCompanyShares', { shares: formatShares(listing.controlledCompanyOwnedShares) }) }}
                         </span>
                       </div>
                     </td>
@@ -583,35 +641,37 @@ useTickRefresh(async () => {
                             </select>
                           </label>
 
-                          <label class="trade-field">
-                            <span>{{ t('stockExchange.quantity') }}</span>
-                            <input
-                              :value="quantityByCompany[listing.companyId] ?? 100"
-                              type="number"
-                              min="1"
-                              step="1"
-                              class="trade-input"
-                              :aria-label="`${t('stockExchange.quantity')} ${listing.companyName}`"
-                              @input="updateQuantity(listing.companyId, Number(($event.target as HTMLInputElement).value))"
-                            />
-                          </label>
-                        </div>
+                          <div class="trade-order-row">
+                            <label class="trade-field trade-field--quantity">
+                              <span>{{ t('stockExchange.quantity') }}</span>
+                              <input
+                                :value="quantityByCompany[listing.companyId] ?? 100"
+                                type="number"
+                                min="1"
+                                step="1"
+                                class="trade-input"
+                                :aria-label="`${t('stockExchange.quantity')} ${listing.companyName}`"
+                                @input="updateQuantity(listing.companyId, Number(($event.target as HTMLInputElement).value))"
+                              />
+                            </label>
 
-                        <div class="trade-actions">
-                          <button
-                            class="btn btn-primary"
-                            :disabled="actionLoadingKey === `buy-${listing.companyId}`"
-                            @click="executeTrade('buy', listing.companyId)"
-                          >
-                            {{ t('stockExchange.buyAt', { price: formatCurrency(listing.askPrice) }) }}
-                          </button>
-                          <button
-                            class="btn btn-secondary"
-                            :disabled="actionLoadingKey === `sell-${listing.companyId}`"
-                            @click="executeTrade('sell', listing.companyId)"
-                          >
-                            {{ t('stockExchange.sellAt', { price: formatCurrency(listing.bidPrice) }) }}
-                          </button>
+                            <div class="trade-actions">
+                              <button
+                                class="btn btn-primary"
+                                :disabled="actionLoadingKey === `buy-${listing.companyId}`"
+                                @click="executeTrade('buy', listing.companyId)"
+                              >
+                                {{ t('stockExchange.buyAt', { price: formatCurrency(listing.askPrice) }) }}
+                              </button>
+                              <button
+                                class="btn btn-secondary"
+                                :disabled="actionLoadingKey === `sell-${listing.companyId}`"
+                                @click="executeTrade('sell', listing.companyId)"
+                              >
+                                {{ t('stockExchange.sellAt', { price: formatCurrency(listing.bidPrice) }) }}
+                              </button>
+                            </div>
+                          </div>
                         </div>
 
                         <p
@@ -624,12 +684,66 @@ useTickRefresh(async () => {
                           class="trade-feedback trade-feedback--error"
                           role="alert"
                         >{{ errorByCompany[listing.companyId] }}</p>
+
+                        <div class="history-panel">
+                          <div class="history-panel__header">
+                            <h3>{{ t('stockExchange.priceHistoryTitle') }}</h3>
+                            <span class="history-panel__hint">{{ t('stockExchange.priceHistoryHint') }}</span>
+                          </div>
+
+                          <p v-if="priceHistoryLoadingByCompany[listing.companyId]" class="history-panel__state">
+                            {{ t('common.loading') }}
+                          </p>
+                          <p
+                            v-else-if="priceHistoryErrorByCompany[listing.companyId]"
+                            class="history-panel__state history-panel__state--error"
+                          >
+                            {{ priceHistoryErrorByCompany[listing.companyId] }}
+                          </p>
+                          <p v-else-if="!priceHistoryByCompany[listing.companyId]?.length" class="history-panel__state">
+                            {{ t('stockExchange.priceHistoryEmpty') }}
+                          </p>
+                          <div v-else class="history-table-wrapper">
+                            <table class="history-table" :aria-label="`${listing.companyName} ${t('stockExchange.priceHistoryTitle')}`">
+                              <thead>
+                                <tr>
+                                  <th>{{ t('stockExchange.tick') }}</th>
+                                  <th>{{ t('stockExchange.sharePrice') }}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr
+                                  v-for="point in priceHistoryByCompany[listing.companyId]"
+                                  :key="`${listing.companyId}-${point.tick}-${point.recordedAtUtc}`"
+                                >
+                                  <td>{{ point.tick }}</td>
+                                  <td>{{ formatCurrency(point.price) }}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
                       </div>
                     </td>
                   </tr>
                 </template>
               </tbody>
             </table>
+            <div v-if="totalPages > 1" class="pagination-bar">
+              <button class="btn btn-secondary btn-sm" :disabled="currentPage === 1" @click="currentPage -= 1">
+                {{ t('stockExchange.prevPage') }}
+              </button>
+              <span class="pagination-bar__status">
+                {{ t('stockExchange.pageStatus', { page: currentPage, total: totalPages }) }}
+              </span>
+              <button
+                class="btn btn-secondary btn-sm"
+                :disabled="currentPage === totalPages"
+                @click="currentPage += 1"
+              >
+                {{ t('stockExchange.nextPage') }}
+              </button>
+            </div>
           </div>
         </section>
 
@@ -859,6 +973,20 @@ useTickRefresh(async () => {
   overflow-x: auto;
 }
 
+.pagination-bar {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pagination-bar__status {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -955,6 +1083,7 @@ useTickRefresh(async () => {
 .owned-shares-hint {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
+  white-space: normal;
 }
 
 .listing-chip {
@@ -1052,6 +1181,10 @@ useTickRefresh(async () => {
   gap: 0.35rem;
 }
 
+.trade-field--quantity {
+  min-width: 130px;
+}
+
 .trade-select,
 .trade-input {
   border: 1px solid var(--color-border);
@@ -1070,11 +1203,66 @@ useTickRefresh(async () => {
   width: 130px;
 }
 
+.trade-order-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
 .trade-actions {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.history-panel {
+  display: grid;
+  gap: 0.6rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.history-panel__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.history-panel__header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.history-panel__hint,
+.history-panel__state {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.history-panel__state--error {
+  color: var(--color-danger, #ef4444);
+}
+
+.history-table-wrapper {
+  overflow-x: auto;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.history-table th,
+.history-table td {
+  padding: 0.5rem 0.35rem;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  white-space: nowrap;
 }
 
 .trade-feedback {
@@ -1117,6 +1305,10 @@ useTickRefresh(async () => {
 
   .trade-price-context {
     gap: 1rem;
+  }
+
+  .pagination-bar {
+    justify-content: flex-start;
   }
 }
 </style>

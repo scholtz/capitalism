@@ -362,6 +362,78 @@ public sealed class Query
             .ToList();
     }
 
+    /// <summary>Returns recent quoted share-price history for a single company.</summary>
+    public async Task<List<StockExchangePriceHistoryPointResult>> GetStockExchangePriceHistory(
+        Guid companyId,
+        [Service] AppDbContext db)
+    {
+        var companies = await db.Companies
+            .AsNoTracking()
+            .OrderBy(company => company.Name)
+            .ToListAsync();
+        var targetCompany = companies.FirstOrDefault(company => company.Id == companyId);
+        if (targetCompany is null)
+        {
+            return [];
+        }
+
+        var buildings = await db.Buildings.AsNoTracking().ToListAsync();
+        var lots = await db.BuildingLots
+            .AsNoTracking()
+            .Where(lot => lot.OwnerCompanyId.HasValue)
+            .ToListAsync();
+        var inventories = await db.Inventories
+            .AsNoTracking()
+            .Include(inventory => inventory.ResourceType)
+            .Include(inventory => inventory.ProductType)
+            .ToListAsync();
+        var shareholdings = await db.Shareholdings.AsNoTracking().ToListAsync();
+        var sharePriceByCompany = BuildQuotedSharePriceLookup(companies, buildings, lots, inventories, shareholdings);
+        var currentTick = await db.GameStates
+            .AsNoTracking()
+            .Select(gameState => (long?)gameState.CurrentTick)
+            .FirstOrDefaultAsync() ?? 0L;
+
+        var priceHistory = await db.SharePriceHistoryEntries
+            .AsNoTracking()
+            .Where(entry => entry.CompanyId == companyId)
+            .OrderByDescending(entry => entry.RecordedAtTick)
+            .ThenByDescending(entry => entry.RecordedAtUtc)
+            .Take(100)
+            .ToListAsync();
+
+        var groupedHistory = priceHistory
+            .GroupBy(entry => entry.RecordedAtTick)
+            .Select(group => group.OrderByDescending(entry => entry.RecordedAtUtc).First())
+            .OrderBy(entry => entry.RecordedAtTick)
+            .Select(entry => new StockExchangePriceHistoryPointResult
+            {
+                CompanyId = entry.CompanyId,
+                Tick = entry.RecordedAtTick,
+                Price = entry.SharePrice,
+                RecordedAtUtc = entry.RecordedAtUtc,
+            })
+            .ToList();
+
+        var currentPrice = sharePriceByCompany.GetValueOrDefault(companyId);
+        if (groupedHistory.Count == 0 || groupedHistory[^1].Tick != currentTick)
+        {
+            groupedHistory.Add(new StockExchangePriceHistoryPointResult
+            {
+                CompanyId = companyId,
+                Tick = currentTick,
+                Price = currentPrice,
+                RecordedAtUtc = DateTime.UtcNow,
+            });
+        }
+
+        return groupedHistory
+            .OrderByDescending(point => point.Tick)
+            .Take(12)
+            .OrderBy(point => point.Tick)
+            .ToList();
+    }
+
     private static Dictionary<Guid, decimal> BuildQuotedSharePriceLookup(
         IReadOnlyCollection<Company> companies,
         IReadOnlyCollection<Building> buildings,
@@ -2055,6 +2127,8 @@ public sealed class Query
         var totalTaxPaid = LedgerCalculator.GetTotalTaxPaid(entries);
         var totalOtherCosts = LedgerCalculator.GetTotalOtherCosts(entries);
         var totalPropertyPurchases = LedgerCalculator.GetTotalPropertyPurchases(entries);
+        var totalStockPurchaseCashOut = LedgerCalculator.GetTotalStockPurchaseCashOut(entries);
+        var totalStockSaleCashIn = LedgerCalculator.GetTotalStockSaleCashIn(entries);
         var taxableIncome = LedgerCalculator.ComputeTaxableIncome(entries);
         var estimatedIncomeTax = selectedGameYear == currentGameYear
             ? GameTime.ComputeEstimatedIncomeTax(taxableIncome, gameState?.TaxRate ?? 0m)
@@ -2121,6 +2195,8 @@ public sealed class Query
             TaxableIncome = taxableIncome,
             EstimatedIncomeTax = estimatedIncomeTax,
             TotalPropertyPurchases = totalPropertyPurchases,
+            TotalStockPurchaseCashOut = totalStockPurchaseCashOut,
+            TotalStockSaleCashIn = totalStockSaleCashIn,
             NetIncome = totalRevenue - totalPurchasingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts - totalTaxPaid - totalOtherCosts,
             PropertyValue = propertyValue,
             PropertyAppreciation = propertyValue - totalPropertyPurchases,
@@ -2128,7 +2204,7 @@ public sealed class Query
             InventoryValue = inventoryValue,
             TotalAssets = company.Cash + propertyValue + buildingValue + inventoryValue,
             CashFromOperations = totalRevenue - totalPurchasingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts,
-            CashFromInvestments = -totalPropertyPurchases,
+            CashFromInvestments = totalStockSaleCashIn - totalPropertyPurchases - totalStockPurchaseCashOut,
             FirstRecordedTick = entries.Count > 0 ? entries.Min(e => e.RecordedAtTick) : 0,
             LastRecordedTick = entries.Count > 0 ? entries.Max(e => e.RecordedAtTick) : 0,
             BuildingSummaries = buildingSummaries,
