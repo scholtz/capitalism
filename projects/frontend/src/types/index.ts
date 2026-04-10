@@ -474,6 +474,7 @@ export interface StockExchangeListing {
   totalSharesIssued: number
   publicFloatShares: number
   sharePrice: number
+  marketValue: number
   bidPrice: number
   askPrice: number
   dividendPayoutRatio: number

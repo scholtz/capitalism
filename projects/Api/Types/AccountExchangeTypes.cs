@@ -49,6 +49,7 @@ public sealed class StockExchangeListingResult
     public decimal TotalSharesIssued { get; set; }
     public decimal PublicFloatShares { get; set; }
     public decimal SharePrice { get; set; }
+    public decimal MarketValue { get; set; }
     public decimal BidPrice { get; set; }
     public decimal AskPrice { get; set; }
     public decimal DividendPayoutRatio { get; set; }

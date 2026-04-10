@@ -177,6 +177,7 @@ public sealed class Query
                     TotalSharesIssued = company.TotalSharesIssued,
                     PublicFloatShares = SharePriceCalculator.ComputePublicFloat(company, shareholdings.Where(holding => holding.CompanyId == company.Id)),
                     SharePrice = sharePrice,
+                    MarketValue = decimal.Round(company.TotalSharesIssued * sharePrice, 2, MidpointRounding.AwayFromZero),
                     BidPrice = SharePriceCalculator.ComputeBidPrice(sharePrice),
                     AskPrice = SharePriceCalculator.ComputeAskPrice(sharePrice),
                     DividendPayoutRatio = company.DividendPayoutRatio,

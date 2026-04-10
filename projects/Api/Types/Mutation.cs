@@ -886,7 +886,9 @@ public sealed class Mutation
                     .SetCode("PLAYER_NOT_FOUND")
                     .Build());
 
-        var account = await ResolveActiveTradingAccountAsync(db, player);
+        var account = !string.IsNullOrEmpty(input.TradeAccountType)
+            ? await ResolveRequestedTradingAccountAsync(db, player, input.TradeAccountType, input.TradeAccountCompanyId)
+            : await ResolveActiveTradingAccountAsync(db, player);
         var (companies, shareholdings, sharePrices) = await LoadSharePricingSnapshotAsync(db);
         var targetCompany = companies.FirstOrDefault(company => company.Id == input.CompanyId)
             ?? throw new GraphQLException(
@@ -1010,7 +1012,9 @@ public sealed class Mutation
                     .SetCode("PLAYER_NOT_FOUND")
                     .Build());
 
-        var account = await ResolveActiveTradingAccountAsync(db, player);
+        var account = !string.IsNullOrEmpty(input.TradeAccountType)
+            ? await ResolveRequestedTradingAccountAsync(db, player, input.TradeAccountType, input.TradeAccountCompanyId)
+            : await ResolveActiveTradingAccountAsync(db, player);
         var (companies, shareholdings, sharePrices) = await LoadSharePricingSnapshotAsync(db);
         var targetCompany = companies.FirstOrDefault(company => company.Id == input.CompanyId)
             ?? throw new GraphQLException(
@@ -1103,6 +1107,25 @@ public sealed class Mutation
         var baseEquityByCompany = SharePriceCalculator.ComputeBaseEquityByCompany(companies, buildings, lots, inventories);
         var sharePrices = SharePriceCalculator.ComputeQuotedSharePriceByCompany(companies, baseEquityByCompany, shareholdings);
         return (companies, shareholdings, sharePrices);
+    }
+
+    private static async Task<ActiveTradingAccount> ResolveRequestedTradingAccountAsync(
+        AppDbContext db,
+        Player player,
+        string accountType,
+        Guid? companyId)
+    {
+        if (string.Equals(accountType, AccountContextType.Company, StringComparison.Ordinal) && companyId.HasValue)
+        {
+            var company = await db.Companies.FirstOrDefaultAsync(candidate =>
+                candidate.Id == companyId.Value && candidate.PlayerId == player.Id);
+            if (company is not null)
+            {
+                return new ActiveTradingAccount(AccountContextType.Company, company, company.Name);
+            }
+        }
+
+        return new ActiveTradingAccount(AccountContextType.Person, null, player.DisplayName);
     }
 
     private static async Task<ActiveTradingAccount> ResolveActiveTradingAccountAsync(AppDbContext db, Player player)
