@@ -4500,6 +4500,254 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         Assert.Equal(GameConstants.TrendMin, trendState.TrendFactor);
     }
 
+    [Fact]
+    public async Task PublicSalesPhase_ResourceType_CreatesMarketTrendStateAndSalesRecord()
+    {
+        // Verifies that the public sales phase works correctly for RAW MATERIAL inventory
+        // (ResourceTypeId instead of ProductTypeId), including creation of a MarketTrendState row.
+        // This exercises the inventory branch in PublicSalesPhase that handles resource types.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var city = await db.Cities.FirstAsync();
+        var wood = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var player = new Player
+        {
+            Id = Guid.NewGuid(),
+            Email = $"rawsales-{Guid.NewGuid():N}@test.com",
+            DisplayName = "Raw Sales Player",
+            PasswordHash = "hash",
+            Role = PlayerRole.Player,
+        };
+        db.Players.Add(player);
+
+        var company = new Company
+        {
+            Id = Guid.NewGuid(),
+            PlayerId = player.Id,
+            Name = "Wood Retailer Corp",
+            Cash = 1_000_000m,
+        };
+        db.Companies.Add(company);
+
+        var building = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = BuildingType.SalesShop,
+            Name = "Wood Retail Shop",
+            Latitude = city.Latitude + 0.002,
+            Longitude = city.Longitude + 0.002,
+            Level = 1,
+        };
+        db.Buildings.Add(building);
+
+        var unit = new BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = UnitType.PublicSales,
+            GridX = 0,
+            GridY = 0,
+            Level = 1,
+            // No ProductTypeId — selling a resource type directly
+            MinPrice = wood.BasePrice,
+        };
+        db.BuildingUnits.Add(unit);
+
+        // Inventory holds raw material (ResourceTypeId, not ProductTypeId)
+        db.Inventories.Add(new Inventory
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            BuildingUnitId = unit.Id,
+            ResourceTypeId = wood.Id,  // raw material
+            Quantity = 1000m,
+            Quality = 0.8m,
+        });
+
+        db.BuildingLots.Add(new BuildingLot
+        {
+            Id = Guid.NewGuid(),
+            CityId = city.Id,
+            Name = "Wood Lot",
+            Description = "Test lot for raw material retail.",
+            District = "Wood District",
+            Latitude = building.Latitude,
+            Longitude = building.Longitude,
+            PopulationIndex = 1m,
+            BasePrice = 80_000m,
+            Price = 80_000m,
+            SuitableTypes = BuildingType.SalesShop,
+            OwnerCompanyId = company.Id,
+            BuildingId = building.Id,
+        });
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        // A MarketTrendState row must be created for this (city, wood) pair.
+        var trendState = await db.MarketTrendStates
+            .FirstOrDefaultAsync(t => t.CityId == city.Id && t.ItemId == wood.Id);
+        Assert.NotNull(trendState);
+        // Trend factor must be within the valid range [TrendMin, TrendMax].
+        Assert.True(trendState.TrendFactor >= GameConstants.TrendMin,
+            $"TrendFactor {trendState.TrendFactor} should be ≥ TrendMin ({GameConstants.TrendMin})");
+        Assert.True(trendState.TrendFactor <= GameConstants.TrendMax,
+            $"TrendFactor {trendState.TrendFactor} should be ≤ TrendMax ({GameConstants.TrendMax})");
+
+        // At least some raw material must have been sold (large stock, normal price, populated city).
+        var soldRecords = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == unit.Id)
+            .ToListAsync();
+        Assert.NotEmpty(soldRecords);
+        Assert.True(soldRecords.Sum(r => r.QuantitySold) > 0m, "Raw material shop should sell some inventory.");
+
+        // TrendFactor recorded on the sales record must match the state.
+        foreach (var record in soldRecords)
+        {
+            Assert.True(record.TrendFactor >= GameConstants.TrendMin,
+                $"PublicSalesRecord.TrendFactor {record.TrendFactor} must be ≥ TrendMin.");
+            Assert.True(record.TrendFactor <= GameConstants.TrendMax,
+                $"PublicSalesRecord.TrendFactor {record.TrendFactor} must be ≤ TrendMax.");
+        }
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_HighSalaryActivity_PlusTrend_CompoundsPositively_VsLowSalaryPlusColdTrend()
+    {
+        // Verifies that the dynamic salary signal and the trend signal compound multiplicatively:
+        // City A — recent high salary spending + pre-seeded hot trend (TrendMax)
+        // City B — zero recent salary spending + pre-seeded cold trend (TrendMin)
+        // After one tick, city A should sell strictly more units than city B.
+        //
+        // Non-flakiness proof (population=10_000, stock=5000):
+        //   City A cityBaseDemand  ≈ 10000 × 0.001 × 2.0(salary) × 1.5(trend) × 0.92(rand_min) ≈ 27.6
+        //   City A effectiveDemand ≈ 27.6 × satFactor(0.05) × marketFactor ≈ 6.4   (below cap=20 ✓)
+        //   City B cityBaseDemand  ≈ 10000 × 0.001 × 0.5(salary) × 0.5(trend) × 1.08(rand_max) ≈ 2.7
+        //   City B effectiveDemand ≈ 2.7 × satFactor(0.05) × marketFactor ≈ 0.63   (< city A ✓)
+        //   → A always sells more than B regardless of random seeds ✓
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(p => p.Industry == "FURNITURE");
+
+        // Small populations (10k) so demand stays below level-1 sales capacity (20).
+        // City A: high static wage (2× reference) + hot trend
+        var cityA = new City
+        {
+            Id = Guid.NewGuid(),
+            Name = "HighSalaryHotCity",
+            CountryCode = "TS",
+            Latitude = 50.0,
+            Longitude = 14.0,
+            Population = 10_000,
+            BaseSalaryPerManhour = GameConstants.ReferenceSalaryPerManhour * 2m, // high wage
+        };
+        // City B: low static wage (0.5× reference) + cold trend, zero recent salary
+        var cityB = new City
+        {
+            Id = Guid.NewGuid(),
+            Name = "LowSalaryColdCity",
+            CountryCode = "TS",
+            Latitude = 51.0,
+            Longitude = 15.0,
+            Population = 10_000,
+            BaseSalaryPerManhour = GameConstants.ReferenceSalaryPerManhour * 0.5m, // low wage
+        };
+        db.Cities.AddRange(cityA, cityB);
+
+        // Create a dummy company and building in city A to anchor the salary ledger entries.
+        var gs = await db.GameStates.FirstAsync();
+        var salaryPlayer = new Player
+        {
+            Id = Guid.NewGuid(),
+            Email = $"salary-anchor-{Guid.NewGuid():N}@test.com",
+            DisplayName = "SalaryAnchor",
+            PasswordHash = "h",
+            Role = PlayerRole.Player,
+        };
+        db.Players.Add(salaryPlayer);
+        var salaryCompany = new Company
+        {
+            Id = Guid.NewGuid(),
+            PlayerId = salaryPlayer.Id,
+            Name = "SalaryRef Corp",
+            Cash = 10_000_000m,
+        };
+        db.Companies.Add(salaryCompany);
+        var salaryBuilding = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = salaryCompany.Id,
+            CityId = cityA.Id,
+            Type = BuildingType.Factory,
+            Name = "Salary Anchor Factory",
+            Level = 1,
+        };
+        db.Buildings.Add(salaryBuilding);
+
+        // Seed a large LaborCost entry for city A (via the building).
+        // A very large salary total makes the dynamic blended factor ≥ 2.0 (capped) for cityA.
+        db.LedgerEntries.Add(new LedgerEntry
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = salaryCompany.Id,
+            BuildingId = salaryBuilding.Id,
+            Category = LedgerCategory.LaborCost,
+            Description = "Seed salary for city A",
+            Amount = -(cityA.Population * GameConstants.ExpectedSalaryParticipationRate
+                       * GameConstants.ReferenceSalaryPerManhour
+                       * GameConstants.RecentSalaryWindowTicks * 5m),
+            RecordedAtTick = gs.CurrentTick,
+            RecordedAtUtc = DateTime.UtcNow,
+        });
+        // City B gets NO salary ledger entries → dynamic factor = 0 → blended = static only (0.5)
+
+        await db.SaveChangesAsync();
+
+        // Pre-seed trend states: city A hot (TrendMax), city B cold (TrendMin)
+        db.MarketTrendStates.Add(new MarketTrendState
+        {
+            Id = Guid.NewGuid(),
+            CityId = cityA.Id,
+            ItemId = product.Id,
+            TrendFactor = GameConstants.TrendMax,
+            LastUpdatedTick = gs.CurrentTick - 1,
+        });
+        db.MarketTrendStates.Add(new MarketTrendState
+        {
+            Id = Guid.NewGuid(),
+            CityId = cityB.Id,
+            ItemId = product.Id,
+            TrendFactor = GameConstants.TrendMin,
+            LastUpdatedTick = gs.CurrentTick - 1,
+        });
+
+        // Add identical sellers in each city: same stock, price, quality.
+        var (_, _, unitIdA) = AddPublicSalesSeller(db, cityA, product, "compound-a", stockQuantity: 5000m);
+        var (_, _, unitIdB) = AddPublicSalesSeller(db, cityB, product, "compound-b", stockQuantity: 5000m);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var soldA = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == unitIdA)
+            .SumAsync(r => r.QuantitySold);
+        var soldB = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == unitIdB)
+            .SumAsync(r => r.QuantitySold);
+
+        Assert.True(soldA > soldB,
+            $"City A (high-salary + hot trend) should outsell city B (low-salary + cold trend). " +
+            $"A sold {soldA}, B sold {soldB}.");
+    }
+
     #endregion
 
     #region LockedCityId Procurement

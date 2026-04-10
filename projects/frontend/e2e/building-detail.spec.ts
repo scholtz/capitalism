@@ -7989,13 +7989,12 @@ test.describe('Public Sales Market Intelligence panel', () => {
     const pricePanel = panel.locator('[aria-label="Quick Price Update"]')
     await expect(pricePanel).toBeVisible()
 
-    // Simulate unit deletion from server state to trigger UNIT_NOT_FOUND
+    // Simulate unit deletion from server state to trigger UNIT_NOT_FOUND.
+    // The building is guaranteed to exist because makeShopPlayer() creates it.
     const shopBuilding = state.players
       .flatMap((p) => p.companies.flatMap((c) => c.buildings))
-      .find((b) => b.id === 'building-shop-mi')
-    if (shopBuilding) {
-      shopBuilding.units = shopBuilding.units?.filter((u) => u.id !== 'unit-shop-mi-ps') ?? []
-    }
+      .find((b) => b.id === 'building-shop-mi')!
+    shopBuilding.units = shopBuilding.units?.filter((u) => u.id !== 'unit-shop-mi-ps') ?? []
 
     // Enter a valid price and submit — backend will return UNIT_NOT_FOUND
     const priceInput = pricePanel.locator('#quick-price-input')
