@@ -17,6 +17,8 @@ namespace Api.Types;
 /// </summary>
 public sealed class Query
 {
+    private const int MaxRecentStockPriceHistoryPoints = 12;
+
     /// <summary>Returns the currently authenticated player's profile.</summary>
     [Authorize]
     public async Task<Player?> GetMe(
@@ -416,7 +418,7 @@ public sealed class Query
             .ToList();
 
         var currentPrice = sharePriceByCompany.GetValueOrDefault(companyId);
-        if (groupedHistory.Count == 0 || groupedHistory[^1].Tick != currentTick)
+        if (currentPrice > 0m && (groupedHistory.Count == 0 || groupedHistory[^1].Tick != currentTick))
         {
             groupedHistory.Add(new StockExchangePriceHistoryPointResult
             {
@@ -429,7 +431,7 @@ public sealed class Query
 
         return groupedHistory
             .OrderByDescending(point => point.Tick)
-            .Take(12)
+            .Take(MaxRecentStockPriceHistoryPoints)
             .OrderBy(point => point.Tick)
             .ToList();
     }

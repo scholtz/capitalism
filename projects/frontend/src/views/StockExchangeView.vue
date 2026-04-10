@@ -577,10 +577,10 @@ useTickRefresh(async () => {
                     <td>
                       <div class="ownership-cell">
                         <span>{{ formatPercent(listing.combinedControlledOwnershipRatio) }}</span>
-                        <span class="owned-shares-hint">
+                        <span v-if="listing.playerOwnedShares > 0" class="owned-shares-hint">
                           {{ t('stockExchange.personalShares', { shares: formatShares(listing.playerOwnedShares) }) }}
                         </span>
-                        <span class="owned-shares-hint">
+                        <span v-if="listing.controlledCompanyOwnedShares > 0" class="owned-shares-hint">
                           {{ t('stockExchange.controlledCompanyShares', { shares: formatShares(listing.controlledCompanyOwnedShares) }) }}
                         </span>
                       </div>

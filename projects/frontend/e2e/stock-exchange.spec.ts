@@ -783,6 +783,7 @@ test.describe('Stock exchange', () => {
     await expect(page.getByText('Stock Purchases')).toBeVisible()
     await page.getByRole('button', { name: 'Detail: Stock Purchases' }).click()
     await expect(page.locator('.drill-table')).toContainText('Bought 100 shares in Ledger Target')
+    await expect(page.locator('.drill-table')).toContainText('$6,060.00')
   })
 })
 
