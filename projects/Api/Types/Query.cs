@@ -2124,10 +2124,8 @@ public sealed class Query
         {
             var latestTick = records.Max(r => r.Tick);
             var latestRecord = records.FirstOrDefault(r => r.Tick == latestTick);
-            if (latestRecord is not null && latestRecord.TrendFactor != 1.0m)
+            if (latestRecord is not null)
                 currentTrendFactor = latestRecord.TrendFactor;
-            else if (latestRecord is not null)
-                currentTrendFactor = latestRecord.TrendFactor;  // include neutral 1.0 too
         }
         // Also try to fetch from MarketTrendState directly (most up-to-date).
         if (city is not null)
