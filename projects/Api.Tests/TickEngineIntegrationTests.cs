@@ -1172,19 +1172,21 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
     public async Task PublicSalesPhase_LowerPrice_IncreasesQuantitySold()
     {
         // ROADMAP AC: price reductions should increase quantity sold in a believable way.
-        // Two identical sellers compete in isolated cities with the same population and
-        // product quality.  The discounted seller (price 20% below base) should sell more
-        // units per tick than the one selling at the base price.
+        // Two identical sellers compete in the SAME city for the same product.
+        // The discounted seller (price 20% below base) has a higher competitiveness score
+        // (priceIndex = 1.07 > 1.0) and therefore wins a larger market share.
+        // Placing both sellers in one city ensures they share the same random demand
+        // multiplier (seeded by tick × city × item) so the comparison is deterministic
+        // regardless of test ordering or Guid hash values.
         await using var scope = _factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var product = await db.ProductTypes.FirstAsync(candidate => candidate.Slug == "wooden-chair");
 
-        var basePriceCity = CreatePublicSalesTestCity("BasePriceCity", 60_000);
-        var discountCity = CreatePublicSalesTestCity("DiscountCity", 60_000);
-        db.Cities.AddRange(basePriceCity, discountCity);
+        var sharedCity = CreatePublicSalesTestCity("PriceComparison", 60_000);
+        db.Cities.Add(sharedCity);
 
         var (_, _, basePriceUnitId) = AddPublicSalesSeller(
-            db, basePriceCity, product, "BasePrice",
+            db, sharedCity, product, "BasePrice",
             stockQuantity: 80m,
             quality: 0.8m,
             priceMultiplier: 1.0m,   // at base price
@@ -1192,10 +1194,10 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             brandAwareness: 0m);
 
         var (_, _, discountUnitId) = AddPublicSalesSeller(
-            db, discountCity, product, "Discount",
+            db, sharedCity, product, "Discount",
             stockQuantity: 80m,
             quality: 0.8m,
-            priceMultiplier: 0.8m,   // 20% below base price
+            priceMultiplier: 0.8m,   // 20% below base price → priceIndex ≈ 1.07 boost
             populationIndex: 1m,
             brandAwareness: 0m);
 
