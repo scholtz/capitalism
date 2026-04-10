@@ -499,23 +499,23 @@ async function confirmAcceptLoan() {
 }
 
 .loan-status-badge.status-active {
-  background: #d1fae5;
-  color: #065f46;
+  background: rgba(52, 211, 153, 0.15);
+  color: #4ade80;
 }
 
 .loan-status-badge.status-overdue {
-  background: #fef3c7;
-  color: #92400e;
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
 }
 
 .loan-status-badge.status-defaulted {
-  background: #fee2e2;
-  color: #991b1b;
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
 }
 
 .loan-status-badge.status-repaid {
-  background: #e0e7ff;
-  color: #3730a3;
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
 }
 
 .loan-card-body,
@@ -546,8 +546,8 @@ async function confirmAcceptLoan() {
 }
 
 .overdue-warning {
-  background: #fef3c7;
-  color: #92400e;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
   padding: var(--spacing-xs);
   border-radius: var(--radius-sm);
   font-size: 0.8rem;
@@ -691,16 +691,16 @@ async function confirmAcceptLoan() {
 }
 
 .risk-warning {
-  background: #fef3c7;
-  color: #92400e;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
   padding: var(--spacing-sm);
   border-radius: var(--radius-sm);
   font-size: 0.8rem;
 }
 
 .error-message {
-  background: #fee2e2;
-  color: #991b1b;
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
   padding: var(--spacing-sm);
   border-radius: var(--radius-sm);
   font-size: 0.85rem;

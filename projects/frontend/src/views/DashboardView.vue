@@ -877,7 +877,7 @@ async function createCompany() {
 
 .person-account-message {
   background: rgba(34, 197, 94, 0.12);
-  color: #15803d;
+  color: var(--color-secondary);
 }
 
 .person-account-error {
@@ -1070,12 +1070,12 @@ async function createCompany() {
 
 .power-badge--powered {
   background: rgba(34, 197, 94, 0.15);
-  color: #15803d;
+  color: var(--color-secondary);
 }
 
 .power-badge--constrained {
   background: rgba(251, 191, 36, 0.2);
-  color: #b45309;
+  color: #f59e0b;
 }
 
 .power-badge--offline {
@@ -1104,13 +1104,13 @@ async function createCompany() {
 .power-balance--balanced {
   background: rgba(34, 197, 94, 0.1);
   border: 1px solid rgba(34, 197, 94, 0.25);
-  color: #15803d;
+  color: var(--color-secondary);
 }
 
 .power-balance--constrained {
   background: rgba(251, 191, 36, 0.15);
   border: 1px solid rgba(251, 191, 36, 0.3);
-  color: #b45309;
+  color: #f59e0b;
 }
 
 .power-balance--critical {
