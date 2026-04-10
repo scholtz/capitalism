@@ -1924,11 +1924,12 @@ public sealed class Mutation
                 .Select(i => i.ProductTypeId!.Value)
                 .Distinct()
                 .ToHashSetAsync();
+            var allowedProductIds = mfgProductIds.Union(purchaseProductIds).Union(inventoryProductIds).ToHashSet();
 
             foreach (var unit in storageUnitsWithProduct)
             {
                 var pid = unit.ProductTypeId!.Value;
-                if (!mfgProductIds.Contains(pid) && !purchaseProductIds.Contains(pid) && !inventoryProductIds.Contains(pid))
+                if (!allowedProductIds.Contains(pid))
                 {
                     throw new GraphQLException(
                         ErrorBuilder.New()

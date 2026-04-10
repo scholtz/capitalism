@@ -1,11 +1,15 @@
 import type { GlobalExchangeProductQuote, ProductType } from '@/types'
 
+const MIN_WAVE_PERIOD = 2
+const MIN_BID_OFFER_SPREAD = 0.01
+
 function hashString(value: string): number {
   return [...value].reduce((sum, char) => sum + char.charCodeAt(0), 0)
 }
 
 function computeWave(seed: number, currentTick: number, period: number): number {
-  const position = ((seed + Math.max(currentTick, 0)) % period) / (period - 1)
+  const safePeriod = Math.max(period, MIN_WAVE_PERIOD)
+  const position = ((seed + Math.max(currentTick, 0)) % safePeriod) / (safePeriod - 1)
   return position * 2 - 1
 }
 
@@ -32,7 +36,10 @@ export function buildGlobalExchangeProductQuote(
     unitSymbol: product.unitSymbol,
     basePrice: product.basePrice,
     bidPricePerUnit,
-    offerPricePerUnit: Math.max(offerPricePerUnit, Number((bidPricePerUnit + 0.01).toFixed(2))),
+    offerPricePerUnit: Math.max(
+      offerPricePerUnit,
+      Number((bidPricePerUnit + MIN_BID_OFFER_SPREAD).toFixed(2)),
+    ),
     estimatedQuality: Number(estimatedQuality.toFixed(4)),
   }
 }

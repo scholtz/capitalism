@@ -15,6 +15,7 @@ const error = ref<string | null>(null)
 const draftMessage = ref('')
 const sendError = ref<string | null>(null)
 const sending = ref(false)
+const CHAT_REFRESH_INTERVAL_MS = 10000
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
@@ -96,7 +97,7 @@ onMounted(async () => {
   await loadMessages()
   refreshTimer = setInterval(() => {
     void loadMessages(true)
-  }, 5000)
+  }, CHAT_REFRESH_INTERVAL_MS)
 })
 
 onUnmounted(() => {

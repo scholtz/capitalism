@@ -18,6 +18,8 @@ namespace Api.Types;
 public sealed class Query
 {
     private const int MaxRecentStockPriceHistoryPoints = 12;
+    private const int DefaultChatMessageLimit = 50;
+    private const int MaxChatMessageLimit = 100;
 
     /// <summary>Returns the currently authenticated player's profile.</summary>
     [Authorize]
@@ -1312,7 +1314,7 @@ public sealed class Query
             return [];
         }
 
-        var safeLimit = Math.Clamp(limit ?? 50, 1, 100);
+        var safeLimit = Math.Clamp(limit ?? DefaultChatMessageLimit, 1, MaxChatMessageLimit);
         var canSeeInvisible = viewer.Role == PlayerRole.Admin;
 
         var messages = await db.ChatMessages
