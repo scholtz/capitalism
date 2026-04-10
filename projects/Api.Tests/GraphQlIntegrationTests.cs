@@ -16038,6 +16038,353 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
     #endregion
 
+    #region PublicSalesAnalytics – trendFactor and TREND demand driver
+
+    [Fact]
+    public async Task PublicSalesAnalytics_TrendFactor_NullWhenNoSalesRecords()
+    {
+        // When no sales have occurred (no PublicSalesRecords and no MarketTrendState),
+        // trendFactor must be null.
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+
+        var email = $"tf-null-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "TfNull");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "TfNullCo", Cash = 10_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.SalesShop, Name = "TfNullShop",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var productType = await db.ProductTypes.FirstAsync();
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(), BuildingId = building.Id,
+            UnitType = UnitType.PublicSales, GridX = 0, GridY = 0,
+            Level = 1, ProductTypeId = productType.Id,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        // No PublicSalesRecords, no MarketTrendState rows → trendFactor must be null.
+        var result = await ExecuteGraphQlAsync(isolatedClient,
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ trendFactor }} }}",
+            null, token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        Assert.True(
+            analytics.GetProperty("trendFactor").ValueKind == JsonValueKind.Null,
+            "trendFactor must be null before any sales tick has run");
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_TrendFactor_InBoundsAfterTick()
+    {
+        // When a MarketTrendState exists (pre-seeded or created by tick engine),
+        // publicSalesAnalytics must return trendFactor within [TrendMin, TrendMax].
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+
+        var email = $"tf-bounds-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "TfBounds");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "TfBoundsCo", Cash = 10_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.SalesShop, Name = "TfBoundsShop",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var productType = await db.ProductTypes.FirstAsync();
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(), BuildingId = building.Id,
+            UnitType = UnitType.PublicSales, GridX = 0, GridY = 0,
+            Level = 1, ProductTypeId = productType.Id,
+        };
+        db.BuildingUnits.Add(unit);
+
+        // Pre-seed a MarketTrendState at TrendNeutral to simulate a tick having run.
+        var trendState = new Api.Data.Entities.MarketTrendState
+        {
+            Id = Guid.NewGuid(),
+            CityId = city.Id,
+            ItemId = productType.Id,
+            TrendFactor = GameConstants.TrendNeutral,
+            LastUpdatedTick = 1,
+        };
+        db.MarketTrendStates.Add(trendState);
+
+        db.PublicSalesRecords.Add(new PublicSalesRecord
+        {
+            Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = building.Id,
+            CompanyId = company.Id, CityId = city.Id, ProductTypeId = productType.Id,
+            Tick = 1L, RecordedAtUtc = DateTime.UtcNow,
+            QuantitySold = 5m, Demand = 20m, PricePerUnit = productType.BasePrice,
+            Revenue = 5m * productType.BasePrice, SalesCapacity = 50m,
+            TrendFactor = GameConstants.TrendNeutral,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(isolatedClient,
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ trendFactor }} }}",
+            null, token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        // MarketTrendState exists → trendFactor must be non-null and within [TrendMin, TrendMax].
+        Assert.False(
+            analytics.GetProperty("trendFactor").ValueKind == JsonValueKind.Null,
+            "trendFactor must be non-null when a MarketTrendState row exists");
+        var tf = analytics.GetProperty("trendFactor").GetDecimal();
+        Assert.InRange(tf, GameConstants.TrendMin, GameConstants.TrendMax);
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_TrendFactor_ReflectsPreSeededHotTrend()
+    {
+        // When a MarketTrendState row is pre-seeded at TrendMax, publicSalesAnalytics
+        // must return trendFactor = TrendMax.
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+
+        var email = $"tf-hot-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "TfHot");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "TfHotCo", Cash = 10_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.SalesShop, Name = "TfHotShop",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var productType = await db.ProductTypes.FirstAsync();
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(), BuildingId = building.Id,
+            UnitType = UnitType.PublicSales, GridX = 0, GridY = 0,
+            Level = 1, ProductTypeId = productType.Id,
+        };
+        db.BuildingUnits.Add(unit);
+
+        // Pre-seed a MarketTrendState at TrendMax (1.5) so analytics can read it directly.
+        var trendState = new Api.Data.Entities.MarketTrendState
+        {
+            Id = Guid.NewGuid(),
+            CityId = city.Id,
+            ItemId = productType.Id,
+            TrendFactor = GameConstants.TrendMax,
+            LastUpdatedTick = 1,
+        };
+        db.MarketTrendStates.Add(trendState);
+
+        // Seed a PublicSalesRecord so the query has at least one record to work with.
+        db.PublicSalesRecords.Add(new PublicSalesRecord
+        {
+            Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = building.Id,
+            CompanyId = company.Id, CityId = city.Id, ProductTypeId = productType.Id,
+            Tick = 1L, RecordedAtUtc = DateTime.UtcNow,
+            QuantitySold = 5m, Demand = 20m, PricePerUnit = productType.BasePrice,
+            Revenue = 5m * productType.BasePrice, SalesCapacity = 50m,
+            TrendFactor = GameConstants.TrendMax,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(isolatedClient,
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ trendFactor }} }}",
+            null, token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        var tf = analytics.GetProperty("trendFactor").GetDecimal();
+        Assert.Equal(GameConstants.TrendMax, tf);
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_TrendDemandDriver_PresentWhenPreSeededHotTrend()
+    {
+        // When a MarketTrendState exists at TrendMax, the demandDrivers list must contain
+        // a TREND entry with POSITIVE impact — so players can see the market momentum.
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+
+        var email = $"tf-driver-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "TfDriver");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "TfDriverCo", Cash = 10_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.SalesShop, Name = "TfDriverShop",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var productType = await db.ProductTypes.FirstAsync();
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(), BuildingId = building.Id,
+            UnitType = UnitType.PublicSales, GridX = 0, GridY = 0,
+            Level = 1, ProductTypeId = productType.Id,
+        };
+        db.BuildingUnits.Add(unit);
+
+        var trendState = new Api.Data.Entities.MarketTrendState
+        {
+            Id = Guid.NewGuid(),
+            CityId = city.Id,
+            ItemId = productType.Id,
+            TrendFactor = GameConstants.TrendMax,
+            LastUpdatedTick = 1,
+        };
+        db.MarketTrendStates.Add(trendState);
+
+        db.PublicSalesRecords.Add(new PublicSalesRecord
+        {
+            Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = building.Id,
+            CompanyId = company.Id, CityId = city.Id, ProductTypeId = productType.Id,
+            Tick = 1L, RecordedAtUtc = DateTime.UtcNow,
+            QuantitySold = 5m, Demand = 20m, PricePerUnit = productType.BasePrice,
+            Revenue = 5m * productType.BasePrice, SalesCapacity = 50m,
+            TrendFactor = GameConstants.TrendMax,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(isolatedClient,
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ trendFactor demandDrivers {{ factor impact score description }} }} }}",
+            null, token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        var tf = analytics.GetProperty("trendFactor").GetDecimal();
+        Assert.Equal(GameConstants.TrendMax, tf);
+
+        var drivers = analytics.GetProperty("demandDrivers");
+        var trendDriver = Enumerable.Range(0, drivers.GetArrayLength())
+            .Select(i => drivers[i])
+            .FirstOrDefault(d => d.GetProperty("factor").GetString() == "TREND");
+
+        Assert.False(trendDriver.ValueKind == JsonValueKind.Undefined,
+            "TREND demand driver must be present when trendFactor is at TrendMax");
+        Assert.Equal("POSITIVE", trendDriver.GetProperty("impact").GetString());
+        // Score is normalised to [0,1]: (TrendMax - TrendMin) / (TrendMax - TrendMin) = 1.0
+        Assert.Equal(1m, trendDriver.GetProperty("score").GetDecimal());
+        var desc = trendDriver.GetProperty("description").GetString();
+        Assert.False(string.IsNullOrEmpty(desc), "TREND driver must have a non-empty description");
+        Assert.Contains("rising", desc, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task PublicSalesAnalytics_TrendDemandDriver_NegativeImpactWhenColdTrend()
+    {
+        // When trendFactor is at TrendMin (0.5), the TREND driver must have NEGATIVE impact.
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+
+        var email = $"tf-cold-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "TfCold");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "TfColdCo", Cash = 10_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.SalesShop, Name = "TfColdShop",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        await db.SaveChangesAsync();
+
+        var productType = await db.ProductTypes.FirstAsync();
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(), BuildingId = building.Id,
+            UnitType = UnitType.PublicSales, GridX = 0, GridY = 0,
+            Level = 1, ProductTypeId = productType.Id,
+        };
+        db.BuildingUnits.Add(unit);
+
+        var trendState = new Api.Data.Entities.MarketTrendState
+        {
+            Id = Guid.NewGuid(),
+            CityId = city.Id,
+            ItemId = productType.Id,
+            TrendFactor = GameConstants.TrendMin,
+            LastUpdatedTick = 1,
+        };
+        db.MarketTrendStates.Add(trendState);
+
+        db.PublicSalesRecords.Add(new PublicSalesRecord
+        {
+            Id = Guid.NewGuid(), BuildingUnitId = unit.Id, BuildingId = building.Id,
+            CompanyId = company.Id, CityId = city.Id, ProductTypeId = productType.Id,
+            Tick = 1L, RecordedAtUtc = DateTime.UtcNow,
+            QuantitySold = 1m, Demand = 20m, PricePerUnit = productType.BasePrice,
+            Revenue = productType.BasePrice, SalesCapacity = 50m,
+            TrendFactor = GameConstants.TrendMin,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(isolatedClient,
+            $"{{ publicSalesAnalytics(unitId: \"{unit.Id}\") {{ trendFactor demandDrivers {{ factor impact score }} }} }}",
+            null, token);
+
+        var analytics = result.GetProperty("data").GetProperty("publicSalesAnalytics");
+        var tf = analytics.GetProperty("trendFactor").GetDecimal();
+        Assert.Equal(GameConstants.TrendMin, tf);
+
+        var drivers = analytics.GetProperty("demandDrivers");
+        var trendDriver = Enumerable.Range(0, drivers.GetArrayLength())
+            .Select(i => drivers[i])
+            .FirstOrDefault(d => d.GetProperty("factor").GetString() == "TREND");
+
+        Assert.False(trendDriver.ValueKind == JsonValueKind.Undefined,
+            "TREND demand driver must be present when trendFactor is at TrendMin");
+        Assert.Equal("NEGATIVE", trendDriver.GetProperty("impact").GetString());
+        // Score is normalised to [0,1]: (TrendMin - TrendMin) / (TrendMax - TrendMin) = 0.0
+        Assert.Equal(0m, trendDriver.GetProperty("score").GetDecimal());
+    }
+
+    #endregion
+
     #region UnitProductAnalytics
 
     [Fact]
