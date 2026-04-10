@@ -1413,8 +1413,8 @@ export default {
     askPriceHint: 'Preis pro Aktie beim Kauf aus dem Streubesitz',
     bidPriceLabel: 'Bid (Verkauf)',
     bidPriceHint: 'Preis pro Aktie beim Verkauf an die Börse',
-    buyAt: 'Kaufen @ {price}',
-    sellAt: 'Verkaufen @ {price}',
+    buyAt: "Kaufen {'@'} {price}",
+    sellAt: "Verkaufen {'@'} {price}",
     bidAskHint: 'Bid {bid} / Ask {ask}',
   },
   powerGrid: {

@@ -1407,8 +1407,8 @@ export default {
     askPriceHint: 'Cena za akciu pri nákupe z voľného floatu',
     bidPriceLabel: 'Bid (predaj)',
     bidPriceHint: 'Cena za akciu pri predaji späť na burzu',
-    buyAt: 'Kúpiť @ {price}',
-    sellAt: 'Predať @ {price}',
+    buyAt: "Kúpiť {'@'} {price}",
+    sellAt: "Predať {'@'} {price}",
     bidAskHint: 'Bid {bid} / Ask {ask}',
   },
   powerGrid: {

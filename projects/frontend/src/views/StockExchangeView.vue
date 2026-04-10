@@ -141,9 +141,14 @@ const controlledCompanies = computed<ControlledCompanyAccount[]>(() => {
     cash: company.cash,
   }))
   const directCompanyIds = new Set(directCompanies.map((company) => company.id))
+  // Only include companies where the player has ALREADY switched to company account — not merely where
+  // they COULD claim control. Including all `canClaimControl` companies causes isControlledCompany()
+  // to return true, hiding the Claim Control button before the player has actually claimed anything.
+  const activeCompanyId = personAccount.value?.activeCompanyId ?? null
   const derivedCompanies = listings.value
     .filter((listing) => listing.canClaimControl)
     .filter((listing) => !directCompanyIds.has(listing.companyId))
+    .filter((listing) => activeCompanyId === listing.companyId)
     .map((listing) => ({
       id: listing.companyId,
       name: listing.companyName,
@@ -297,6 +302,8 @@ async function switchToCompanyAccount(companyId: string) {
     await auth.switchAccountContext('COMPANY', companyId)
     await loadData(true)
     successByCompany.value[companyId] = t('stockExchange.switchSuccess', { account: companyName })
+    // Auto-open the trade panel so the success message is visible to the player
+    expandedCompany.value = companyId
   } catch (reason: unknown) {
     errorByCompany.value[companyId] = reason instanceof Error ? reason.message : t('stockExchange.actionFailed')
   } finally {

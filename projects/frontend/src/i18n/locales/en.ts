@@ -1414,8 +1414,8 @@ export default {
     askPriceHint: 'Price per share when buying from public float',
     bidPriceLabel: 'Bid (sell)',
     bidPriceHint: 'Price per share when selling back to exchange',
-    buyAt: 'Buy @ {price}',
-    sellAt: 'Sell @ {price}',
+    buyAt: "Buy {'@'} {price}",
+    sellAt: "Sell {'@'} {price}",
     bidAskHint: 'Bid {bid} / Ask {ask}',
   },
   powerGrid: {

@@ -384,8 +384,8 @@ test.describe('Stock exchange', () => {
     const accountSelect = tradePanel.getByLabel(/Trade with AccountTarget/)
     await expect(accountSelect).toBeVisible()
 
-    // Switch to company account in-context
-    await accountSelect.selectOption({ label: /Home Holdings/ })
+    // Switch to company account in-context (must use string label, not regex, for selectOption)
+    await accountSelect.selectOption({ value: 'COMPANY:company-home' })
 
     // Buy using the company account
     const qtyInput = tradePanel.getByLabel(/Share quantity AccountTarget/)
