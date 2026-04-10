@@ -26,12 +26,14 @@
 
   /* Semantic alias tokens — used by components for cross-theme consistency.
      Components must reference these rather than raw literals so that a future
-     light-mode switch only requires updating this block. */
-  --color-text-primary: #e6edf3; /* primary readable text, alias for --color-text */
-  --color-text-muted: #8b949e; /* de-emphasised / placeholder text, alias for --color-text-secondary */
-  --color-text-tertiary: #8b949e; /* third-level label text */
-  --color-background: #0d1117; /* page-level background, alias for --color-bg */
-  --color-surface-secondary: #1e2430; /* nested surface / secondary card, alias for --color-surface-raised */
+     light-mode switch only requires updating this block.
+     New components should use --color-text and --color-text-secondary directly;
+     these aliases exist to satisfy references that predate the primary token names. */
+  --color-text-primary: #e6edf3; /* same value as --color-text; satisfies var(--color-text-primary) usage in older components */
+  --color-text-muted: #8b949e; /* same value as --color-text-secondary; de-emphasised / placeholder text */
+  --color-text-tertiary: #6e7681; /* slightly dimmer than --color-text-secondary; third-level label text */
+  --color-background: #0d1117; /* same value as --color-bg; page-level background */
+  --color-surface-secondary: #1e2430; /* nested surface / secondary card, same value as --color-surface-raised */
   --color-bg-secondary: rgba(255, 255, 255, 0.04); /* subtle inset or alternating row */
   --color-hover: rgba(255, 255, 255, 0.06); /* generic hover overlay on dark surfaces */
   --color-border-light: rgba(48, 54, 61, 0.7); /* lighter variant of --color-border */
