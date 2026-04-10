@@ -14,8 +14,16 @@ namespace Api.Types;
 /// <summary>
 /// GraphQL query type for the Capitalism V game.
 /// Provides read access to game data including players, cities, resources, products, and buildings.
+/// Split across multiple partial files, one per domain:
+/// <list type="bullet">
+/// <item><see cref="Query"/> (this file) — auth, admin, news, stock exchange, world, resources, products</item>
+/// <item><c>Query.Building.cs</c> — building inventory, operational status, analytics, ledger</item>
+/// <item><c>Query.Chat.cs</c> — in-game chat feed</item>
+/// <item><c>Query.Rankings.cs</c> — player/company rankings and game state</item>
+/// <item><c>Query.Lending.cs</c> — bank loan offers and player loans</item>
+/// </list>
 /// </summary>
-public sealed class Query
+public sealed partial class Query
 {
     private const int MaxRecentStockPriceHistoryPoints = 12;
     private const int DefaultChatMessageLimit = 50;
@@ -1294,52 +1302,6 @@ public sealed class Query
             .ToList();
     }
 
-    /// <summary>
-    /// Returns the latest shared in-game chat messages visible to the authenticated player.
-    /// Invisible-chat players remain visible to themselves and administrators only.
-    /// </summary>
-    [Authorize]
-    public async Task<List<InGameChatMessage>> GetChatMessages(
-        [Service] AppDbContext db,
-        [Service] IHttpContextAccessor httpContextAccessor,
-        int? limit)
-    {
-        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
-        var viewer = await db.Players
-            .AsNoTracking()
-            .FirstOrDefaultAsync(player => player.Id == userId);
-
-        if (viewer is null)
-        {
-            return [];
-        }
-
-        var safeLimit = Math.Clamp(limit ?? DefaultChatMessageLimit, 1, MaxChatMessageLimit);
-        var canSeeInvisible = viewer.Role == PlayerRole.Admin;
-
-        var messages = await db.ChatMessages
-            .AsNoTracking()
-            .Include(message => message.Player)
-            .Where(message => !message.Player.IsInvisibleInChat
-                              || message.PlayerId == userId
-                              || canSeeInvisible)
-            .OrderByDescending(message => message.SentAtUtc)
-            .Take(safeLimit)
-            .OrderBy(message => message.SentAtUtc)
-            .ToListAsync();
-
-        return messages
-            .Select(message => new InGameChatMessage
-            {
-                Id = message.Id,
-                PlayerId = message.PlayerId,
-                PlayerDisplayName = message.Player.DisplayName,
-                Message = message.Message,
-                SentAtUtc = message.SentAtUtc,
-                IsOwnMessage = message.PlayerId == userId
-            })
-            .ToList();
-    }
 
     /// <summary>
     /// Returns city-level global exchange offers for raw materials, including

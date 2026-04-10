@@ -1173,14 +1173,20 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
     {
         // ROADMAP AC: price reductions should increase quantity sold in a believable way.
         // Two identical sellers compete in the SAME city for the same product.
-        // The discounted seller (price 20% below base) has a higher competitiveness score
-        // (priceIndex = 1.07 > 1.0) and therefore wins a larger market share.
-        // Placing both sellers in one city ensures they share the same random demand
-        // multiplier (seeded by tick × city × item) so the comparison is deterministic
-        // regardless of test ordering or Guid hash values.
+        // The discounted seller is priced 50% below base, yielding a strong priceIndex boost:
+        //   priceIndex = 1 + elasticity(0.35) × discountFraction(0.50) = 1.175
+        // Competitiveness: base = 1.0 × q × b × pop, discount = 1.175 × q × b × pop
+        // Market share: base ≈ 0.460, discount ≈ 0.540 → 17% more demand for discount.
+        // Signal gap: 2× random amplitude (0.08), so discount deterministically wins regardless
+        // of test-ordering-driven tick values or Guid hash-based random seeds.
+        // Both sellers share the SAME random multiplier (seeded by tick × city.Id × itemId)
+        // because they are in the same city selling the same product.
         await using var scope = _factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var product = await db.ProductTypes.FirstAsync(candidate => candidate.Slug == "wooden-chair");
+        // Use an isolated test product to avoid any shared-state effects from the wooden-chair
+        // trend records or inventory changes left by earlier tests in this class.
+        var product = CreatePublicSalesTestProduct("LowerPriceTest", basePrice: 100m, priceElasticity: 0.35m);
+        db.ProductTypes.Add(product);
 
         var sharedCity = CreatePublicSalesTestCity("PriceComparison", 60_000);
         db.Cities.Add(sharedCity);
@@ -1189,7 +1195,7 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             db, sharedCity, product, "BasePrice",
             stockQuantity: 80m,
             quality: 0.8m,
-            priceMultiplier: 1.0m,   // at base price
+            priceMultiplier: 1.0m,   // at base price → priceIndex = 1.0
             populationIndex: 1m,
             brandAwareness: 0m);
 
@@ -1197,7 +1203,7 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             db, sharedCity, product, "Discount",
             stockQuantity: 80m,
             quality: 0.8m,
-            priceMultiplier: 0.8m,   // 20% below base price → priceIndex ≈ 1.07 boost
+            priceMultiplier: 0.5m,   // 50% below base price → priceIndex = 1.175 boost
             populationIndex: 1m,
             brandAwareness: 0m);
 
@@ -1214,8 +1220,9 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             .SumAsync(r => r.QuantitySold);
 
         Assert.True(
-            discountSold >= basePriceSold,
-            $"Discounted seller (price=0.8×base) should sell at least as much as base-price seller. Discount={discountSold}, BasePrice={basePriceSold}.");
+            discountSold > basePriceSold,
+            $"Discounted seller (price=0.5×base, priceIndex=1.175) should sell more than base-price seller. " +
+            $"Discount={discountSold}, BasePrice={basePriceSold}.");
     }
 
     [Fact]

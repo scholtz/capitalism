@@ -18,8 +18,14 @@ namespace Api.Types;
 /// <summary>
 /// GraphQL mutation type for the Capitalism V game.
 /// Handles authentication, company management, building placement, and onboarding.
+/// Split across multiple partial files, one per domain:
+/// <list type="bullet">
+/// <item><see cref="Mutation"/> (this file) — auth, admin, news, company, onboarding, stock exchange, building</item>
+/// <item><c>Mutation.Chat.cs</c> — in-game chat</item>
+/// <item><c>Mutation.Lending.cs</c> — bank loan publishing, updating, and accepting</item>
+/// </list>
 /// </summary>
-public sealed class Mutation
+public sealed partial class Mutation
 {
     private const decimal StarterFounderContribution = 50_000m;
     private const decimal DefaultDividendPayoutRatio = 0.2m;
@@ -70,56 +76,6 @@ public sealed class Mutation
             Token = session.Token,
             ExpiresAtUtc = session.ExpiresAtUtc,
             Player = player
-        };
-    }
-
-    /// <summary>Sends a shared in-game chat message authored by the authenticated player.</summary>
-    [Authorize]
-    public async Task<InGameChatMessage> SendChatMessage(
-        SendChatMessageInput input,
-        [Service] AppDbContext db,
-        [Service] IHttpContextAccessor httpContextAccessor)
-    {
-        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
-        var player = await db.Players.FirstOrDefaultAsync(candidate => candidate.Id == userId);
-        if (player is null)
-        {
-            throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage("Player not found.")
-                    .SetCode("PLAYER_NOT_FOUND")
-                    .Build());
-        }
-
-        var message = input.Message.Trim();
-        if (string.IsNullOrWhiteSpace(message))
-        {
-            throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage("Chat message cannot be empty.")
-                    .SetCode("CHAT_MESSAGE_EMPTY")
-                    .Build());
-        }
-
-        var chatMessage = new ChatMessage
-        {
-            Id = Guid.NewGuid(),
-            PlayerId = player.Id,
-            Message = message,
-            SentAtUtc = DateTime.UtcNow
-        };
-
-        db.ChatMessages.Add(chatMessage);
-        await db.SaveChangesAsync();
-
-        return new InGameChatMessage
-        {
-            Id = chatMessage.Id,
-            PlayerId = player.Id,
-            PlayerDisplayName = player.DisplayName,
-            Message = chatMessage.Message,
-            SentAtUtc = chatMessage.SentAtUtc,
-            IsOwnMessage = true
         };
     }
 
