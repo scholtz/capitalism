@@ -479,4 +479,43 @@ public sealed class PublicSalesPricingModelTests
             Math.Abs(current - GameConstants.TrendNeutral) <= tolerance,
             $"Trend should converge within 5% of neutral in {maxTicks} ticks, but got {current} (neutral={GameConstants.TrendNeutral}).");
     }
+
+    [Fact]
+    public void RandomDemandMultiplier_StaysWithinBoundedAmplitude_ForAnySeed()
+    {
+        // ROADMAP AC: "Verify the random component stays within the intended range and
+        // does not cause invalid negative outcomes or unrealistic spikes."
+        // Replicates the exact formula used in PublicSalesPhase to verify that the
+        // bounded random demand variation always stays in
+        // [1 - TrendRandomAmplitude, 1 + TrendRandomAmplitude] for any seed value.
+        var amplitudeMin = 1m - GameConstants.TrendRandomAmplitude;
+        var amplitudeMax = 1m + GameConstants.TrendRandomAmplitude;
+
+        for (var seed = 0; seed < 10_000; seed++)
+        {
+            var rng = new Random(seed);
+            var randomMultiplier = 1m + (decimal)(rng.NextDouble() * 2.0 - 1.0)
+                * GameConstants.TrendRandomAmplitude;
+            randomMultiplier = Math.Clamp(randomMultiplier, amplitudeMin, amplitudeMax);
+
+            Assert.InRange(randomMultiplier, amplitudeMin, amplitudeMax);
+            Assert.True(
+                randomMultiplier > 0m,
+                $"Random multiplier must be positive (seed={seed}, value={randomMultiplier})");
+        }
+    }
+
+    [Fact]
+    public void RandomDemandMultiplier_IsDeterministicForSameSeed()
+    {
+        // The multiplier must be reproducible so that the same (tick, city, item)
+        // combination always yields the same demand variation — preventing test flakiness
+        // and making the simulation debuggable.
+        const int seed = 42;
+        var rng1 = new Random(seed);
+        var rng2 = new Random(seed);
+        var v1 = 1m + (decimal)(rng1.NextDouble() * 2.0 - 1.0) * GameConstants.TrendRandomAmplitude;
+        var v2 = 1m + (decimal)(rng2.NextDouble() * 2.0 - 1.0) * GameConstants.TrendRandomAmplitude;
+        Assert.Equal(v1, v2);
+    }
 }

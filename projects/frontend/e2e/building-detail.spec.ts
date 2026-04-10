@@ -9057,6 +9057,90 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(saturationDriver.first()).toBeVisible()
   })
 
+  test('oversupplied market shows NEGATIVE SATURATION driver and market-saturated description', async ({
+    page,
+  }) => {
+    // ROADMAP AC: "Add coverage for at least one oversupply scenario."
+    // When stock far exceeds city demand (unmetDemandShare ≈ 0) the SATURATION driver
+    // should be NEGATIVE so the player knows to reduce stock, change product, or lower price.
+    const { player } = makeShopPlayer()
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Oversupplied Shop',
+      cityName: 'Bratislava',
+      totalRevenue: 2 * 45,
+      totalQuantitySold: 2,
+      averagePricePerUnit: 45,
+      currentSalesCapacity: 200,
+      dataFromTick: 1,
+      dataToTick: 1,
+      demandSignal: 'WEAK',
+      actionHint: 'Market is oversupplied. Consider reducing stock or switching to a higher-demand product.',
+      recentUtilization: 0.01,
+      revenueHistory: [{ tick: 1, revenue: 2 * 45, quantitySold: 2 }],
+      priceHistory: [{ tick: 1, pricePerUnit: 45 }],
+      marketShare: [
+        { label: 'My Shop', companyId: 'company-shop-mi', share: 0.5, isUnmet: false },
+        { label: 'Rival', companyId: 'rival-id', share: 0.5, isUnmet: false },
+      ],
+      elasticityIndex: -0.5,
+      unmetDemandShare: 0.01, // only 1% unmet → market is saturated
+      populationIndex: 1.0,
+      inventoryQuality: 0.7,
+      brandAwareness: 0.3,
+      totalProfit: 10,
+      profitHistory: [{ tick: 1, profit: 10, grossMarginPct: 11 }],
+      demandDrivers: [
+        {
+          factor: 'SATURATION',
+          impact: 'NEGATIVE',
+          score: 0.01,
+          description:
+            'Market is saturated — nearly all city demand is already being met. Reduce stock or switch products.',
+        },
+        {
+          factor: 'PRICE',
+          impact: 'NEUTRAL',
+          score: 0.75,
+          description: 'Price is at the market baseline.',
+        },
+      ],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Demand signal should show WEAK
+    const demandCard = panel.locator('.mi-demand-weak')
+    await expect(demandCard).toBeVisible()
+
+    // SATURATION driver should be NEGATIVE (market is oversupplied)
+    const driversSection = panel.locator('[aria-label="Demand Drivers"]')
+    await expect(driversSection).toBeVisible()
+    const saturationDriver = driversSection.locator('.mi-driver-negative', { hasText: 'Saturation' })
+    await expect(saturationDriver.first()).toBeVisible()
+  })
+
   test('competitive market with small own share shows NEGATIVE COMPETITION driver', async ({
     page,
   }) => {
