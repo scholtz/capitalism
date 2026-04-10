@@ -4626,10 +4626,14 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         // After one tick, city A should sell strictly more units than city B.
         //
         // Non-flakiness proof (population=10_000, stock=5000):
+        //   marketFactor ≈ satFactor(0.05) × marketAbsorption(0.2875) × attractiveness(0.8) ≈ 0.23
+        //   (satFactor clamped at 0.05 floor because demand ≪ stock for both cities)
+        //   (marketAbsorption = 0.25 + 0.75 × satFactor; attractiveness ≈ 0.8 for default quality/price)
+        //   (marketFactor is equal for both cities so the relative ordering is preserved regardless of value)
         //   City A cityBaseDemand  ≈ 10000 × 0.001 × 2.0(salary) × 1.5(trend) × 0.92(rand_min) ≈ 27.6
-        //   City A effectiveDemand ≈ 27.6 × satFactor(0.05) × marketFactor ≈ 6.4   (below cap=20 ✓)
+        //   City A effectiveDemand ≈ 27.6 × 0.23(marketFactor) ≈ 6.4   (below cap=20 ✓)
         //   City B cityBaseDemand  ≈ 10000 × 0.001 × 0.5(salary) × 0.5(trend) × 1.08(rand_max) ≈ 2.7
-        //   City B effectiveDemand ≈ 2.7 × satFactor(0.05) × marketFactor ≈ 0.63   (< city A ✓)
+        //   City B effectiveDemand ≈ 2.7 × 0.23(marketFactor) ≈ 0.63   (< city A ✓)
         //   → A always sells more than B regardless of random seeds ✓
         await using var scope = _factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -4690,21 +4694,24 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         };
         db.Buildings.Add(salaryBuilding);
 
-        // Seed a large LaborCost entry for city A (via the building).
-        // A very large salary total makes the dynamic blended factor ≥ 2.0 (capped) for cityA.
-        db.LedgerEntries.Add(new LedgerEntry
-        {
-            Id = Guid.NewGuid(),
-            CompanyId = salaryCompany.Id,
-            BuildingId = salaryBuilding.Id,
-            Category = LedgerCategory.LaborCost,
-            Description = "Seed salary for city A",
-            Amount = -(cityA.Population * GameConstants.ExpectedSalaryParticipationRate
-                       * GameConstants.ReferenceSalaryPerManhour
-                       * GameConstants.RecentSalaryWindowTicks * 5m),
-            RecordedAtTick = gs.CurrentTick,
-            RecordedAtUtc = DateTime.UtcNow,
-        });
+            // Seed a large LaborCost entry for city A (via the building).
+            // The reference equivalent for this city is: population × participationRate × refSalary × windowTicks.
+            // Multiplying by 5× ensures the raw total greatly exceeds the reference, so
+            // ComputeRecentSalaryPurchasingPowerFactor returns the maximum (2.0, capped),
+            // and the blended factor = 0.5 × staticFactor(2.0) + 0.5 × dynamicFactor(2.0) = 2.0.
+            db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = salaryCompany.Id,
+                BuildingId = salaryBuilding.Id,
+                Category = LedgerCategory.LaborCost,
+                Description = "Seed salary for city A",
+                Amount = -(cityA.Population * GameConstants.ExpectedSalaryParticipationRate
+                           * GameConstants.ReferenceSalaryPerManhour
+                           * GameConstants.RecentSalaryWindowTicks * 5m), // 5× reference → capped at 2.0
+                RecordedAtTick = gs.CurrentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+            });
         // City B gets NO salary ledger entries → dynamic factor = 0 → blended = static only (0.5)
 
         await db.SaveChangesAsync();
