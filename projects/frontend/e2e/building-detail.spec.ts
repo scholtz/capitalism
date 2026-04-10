@@ -5862,6 +5862,348 @@ test.describe('Product picker UX — collapsible trigger and dropdown', () => {
   })
 })
 
+// ── Link-aware product picker — STORAGE and B2B_SALES ─────────────────────────
+
+test.describe('Link-aware product picker — STORAGE unit', () => {
+  function makeFactoryWithMfgAndStorage(options: {
+    mfgProductId?: string | null
+    storageProductId?: string | null
+  } = {}) {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-storage-picker',
+          playerId: 'player-1',
+          name: 'Storage Picker Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-storage-picker',
+              companyId: 'company-storage-picker',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Storage Picker Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 2,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'storage-mfg-unit',
+                  buildingId: 'building-storage-picker',
+                  unitType: 'MANUFACTURING',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: true,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: options.mfgProductId ?? 'prod-chair',
+                },
+                {
+                  id: 'storage-unit',
+                  buildingId: 'building-storage-picker',
+                  unitType: 'STORAGE',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: options.storageProductId ?? null,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    return player
+  }
+
+  test('STORAGE unit product type uses ProductPicker (not a plain select)', async ({ page }) => {
+    const chair = makeChairProduct()
+    const player = makeFactoryWithMfgAndStorage()
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-storage-picker')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    // Click on the STORAGE cell at (1,0)
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    // The picker trigger should be visible (ProductPicker component, not a plain select)
+    await expect(productTypeField.locator('.picker-trigger')).toBeVisible()
+
+    // The old plain select should NOT exist
+    await expect(productTypeField.locator('select.form-input')).toHaveCount(0)
+  })
+
+  test('STORAGE unit product picker is collapsed by default and opens on click', async ({ page }) => {
+    const chair = makeChairProduct()
+    const player = makeFactoryWithMfgAndStorage()
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-storage-picker')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    // Panel should be hidden before clicking trigger
+    await expect(page.locator('.product-picker-panel')).toBeHidden()
+
+    // Click trigger to open
+    await productTypeField.locator('.picker-trigger').click()
+
+    // Dropdown should appear with Wooden Chair
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+    await expect(page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
+  })
+
+  test('STORAGE unit picker shows empty state when no products configured', async ({ page }) => {
+    const player = makeFactoryWithMfgAndStorage({ mfgProductId: null })
+    const state = setupMockApi(page, { players: [player], productTypes: [] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-storage-picker')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await productTypeField.locator('.picker-trigger').click()
+
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+    await expect(page.locator('.product-picker-panel .picker-empty-no-connected')).toBeVisible({
+      timeout: 10000,
+    })
+  })
+})
+
+test.describe('Link-aware product picker — B2B_SALES unit', () => {
+  function makeFactoryWithB2BSales(options: { mfgProductId?: string | null } = {}) {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-b2b-picker',
+          playerId: 'player-1',
+          name: 'B2B Picker Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-b2b-picker',
+              companyId: 'company-b2b-picker',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'B2B Picker Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 2,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'b2b-picker-mfg',
+                  buildingId: 'building-b2b-picker',
+                  unitType: 'MANUFACTURING',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: true,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: options.mfgProductId ?? 'prod-chair',
+                },
+                {
+                  id: 'b2b-picker-sales',
+                  buildingId: 'building-b2b-picker',
+                  unitType: 'B2B_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    return player
+  }
+
+  test('B2B_SALES unit config shows Product Type field with ProductPicker', async ({ page }) => {
+    const chair = makeChairProduct()
+    const player = makeFactoryWithB2BSales()
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-b2b-picker')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    // Click on the B2B_SALES cell at (1,0)
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    // B2B_SALES config must include Product Type field with picker trigger
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await expect(productTypeField.locator('.picker-trigger')).toBeVisible()
+  })
+
+  test('B2B_SALES unit product picker opens and shows connected products', async ({ page }) => {
+    const chair = makeChairProduct()
+    const player = makeFactoryWithB2BSales()
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-b2b-picker')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    // Panel hidden before click
+    await expect(page.locator('.product-picker-panel')).toBeHidden()
+
+    // Open picker
+    await productTypeField.locator('.picker-trigger').click()
+
+    // Panel should be visible with Wooden Chair listed
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+    await expect(page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
+  })
+
+  test('B2B_SALES unit picker still shows Min Price and Visibility fields', async ({ page }) => {
+    const chair = makeChairProduct()
+    const player = makeFactoryWithB2BSales()
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-b2b-picker')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    // Pre-existing B2B fields must still be present
+    await expect(page.getByText('Min Price', { exact: true })).toBeVisible()
+    await expect(page.getByText('Sale Visibility', { exact: true })).toBeVisible()
+  })
+})
+
 // ── Property Management (APARTMENT / COMMERCIAL) ──────────────────────────────
 
 function makeApartmentPlayer() {

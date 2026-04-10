@@ -1919,10 +1919,6 @@ function getManufacturingSelectableItems(unit: EditableGridUnit | undefined): Se
     }))
 }
 
-function getProductOptionLabel(product: ProductType) {
-  return product.isProOnly ? `${product.name} · ${t('catalog.proBadge')}` : product.name
-}
-
 function getBrandScopeLabel(scope: string | null): string {
   if (!scope) return t('buildingDetail.config.none')
 
@@ -3343,7 +3339,14 @@ watch(
     const unit = getDraftUnitAt(selectedCell.value.x, selectedCell.value.y)
     if (!unit) return null
     const type = unit.unitType
-    if (type === 'PUBLIC_SALES' || type === 'PRODUCT_QUALITY' || type === 'BRAND_QUALITY') return type
+    if (
+      type === 'PUBLIC_SALES' ||
+      type === 'PRODUCT_QUALITY' ||
+      type === 'BRAND_QUALITY' ||
+      type === 'STORAGE' ||
+      type === 'B2B_SALES'
+    )
+      return type
     return null
   },
   (unitType) => {
@@ -4443,6 +4446,17 @@ watch(
                 <!-- B2B Sales unit config -->
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'B2B_SALES'">
                   <div class="config-field">
+                    <label class="config-label">{{ t('buildingDetail.config.productType') }}</label>
+                    <ProductPicker
+                      :model-value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? null"
+                      :ranked-products="rankedProducts"
+                      :loading="rankedProductsLoading"
+                      :allow-none="true"
+                      none-label-key="buildingDetail.config.none"
+                      @update:model-value="updateSelectedUnitConfig('productTypeId', $event)"
+                    />
+                  </div>
+                  <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.minPrice') }}</label>
                     <input
                       type="number"
@@ -4615,16 +4629,14 @@ watch(
                   </div>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.productType') }}</label>
-                    <select
-                      class="form-input"
-                      :value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? ''"
-                      @change="updateSelectedUnitConfig('productTypeId', ($event.target as HTMLSelectElement).value || null)"
-                    >
-                      <option value="">{{ t('buildingDetail.config.anyProduct') }}</option>
-                      <option v-for="pt in productTypes" :key="pt.id" :value="pt.id" :disabled="isProductLocked(pt)">
-                        {{ getProductOptionLabel(pt) }}
-                      </option>
-                    </select>
+                    <ProductPicker
+                      :model-value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? null"
+                      :ranked-products="rankedProducts"
+                      :loading="rankedProductsLoading"
+                      :allow-none="true"
+                      none-label-key="buildingDetail.config.anyProduct"
+                      @update:model-value="updateSelectedUnitConfig('productTypeId', $event)"
+                    />
                   </div>
                 </template>
 

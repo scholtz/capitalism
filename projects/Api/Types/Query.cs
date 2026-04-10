@@ -674,6 +674,14 @@ public sealed class Query
     ///     units within the same building are ranked as <c>connected</c> (score 100) first.
     ///   </item>
     ///   <item>
+    ///     <b>STORAGE</b> context: products from MANUFACTURING units in the same building plus
+    ///     products currently present in the building's inventory are ranked as <c>connected</c> (score 100).
+    ///   </item>
+    ///   <item>
+    ///     <b>B2B_SALES</b> context: products configured in MANUFACTURING or STORAGE units within
+    ///     the same building (including pending configuration) are ranked as <c>connected</c> (score 100).
+    ///   </item>
+    ///   <item>
     ///     <b>PRODUCT_QUALITY</b> or <b>BRAND_QUALITY</b> context: products used in MANUFACTURING
     ///     units across all buildings owned by the caller's companies are ranked as
     ///     <c>used_by_company</c> (score 50).
@@ -731,6 +739,59 @@ public sealed class Query
             var pendingConnectedIds = await db.BuildingConfigurationPlanUnits
                 .Where(u => u.BuildingConfigurationPlan.BuildingId == buildingId
                     && (u.UnitType == "MANUFACTURING" || u.UnitType == "B2B_SALES")
+                    && u.ProductTypeId.HasValue)
+                .Select(u => u.ProductTypeId!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            foreach (var id in connectedProductIds.Concat(pendingConnectedIds).Distinct())
+                promotedIds.TryAdd(id, ProductRankingReason.Connected);
+        }
+        else if (normalizedUnitType is "STORAGE")
+        {
+            // Promote products from connected MANUFACTURING units in the same building.
+            var mfgProductIds = await db.BuildingUnits
+                .Where(u => u.BuildingId == buildingId
+                    && u.UnitType == "MANUFACTURING"
+                    && u.ProductTypeId.HasValue)
+                .Select(u => u.ProductTypeId!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            // Also check the pending configuration for MANUFACTURING products.
+            var pendingMfgIds = await db.BuildingConfigurationPlanUnits
+                .Where(u => u.BuildingConfigurationPlan.BuildingId == buildingId
+                    && u.UnitType == "MANUFACTURING"
+                    && u.ProductTypeId.HasValue)
+                .Select(u => u.ProductTypeId!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            // Promote products already present in the building's inventory.
+            var stockProductIds = await db.Inventories
+                .Where(i => i.BuildingId == buildingId && i.ProductTypeId.HasValue && i.Quantity > 0)
+                .Select(i => i.ProductTypeId!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            foreach (var id in mfgProductIds.Concat(pendingMfgIds).Concat(stockProductIds).Distinct())
+                promotedIds.TryAdd(id, ProductRankingReason.Connected);
+        }
+        else if (normalizedUnitType is "B2B_SALES")
+        {
+            // Promote products from MANUFACTURING or STORAGE units in the same building.
+            var connectedProductIds = await db.BuildingUnits
+                .Where(u => u.BuildingId == buildingId
+                    && (u.UnitType == "MANUFACTURING" || u.UnitType == "STORAGE")
+                    && u.ProductTypeId.HasValue)
+                .Select(u => u.ProductTypeId!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            // Also check the pending configuration.
+            var pendingConnectedIds = await db.BuildingConfigurationPlanUnits
+                .Where(u => u.BuildingConfigurationPlan.BuildingId == buildingId
+                    && (u.UnitType == "MANUFACTURING" || u.UnitType == "STORAGE")
                     && u.ProductTypeId.HasValue)
                 .Select(u => u.ProductTypeId!.Value)
                 .Distinct()
