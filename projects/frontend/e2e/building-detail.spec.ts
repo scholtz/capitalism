@@ -1552,11 +1552,11 @@ test.describe('Building detail upgrades', () => {
     const plannedSection = getGridSection(page, 'Planned Upgrade')
     await getGridCell(plannedSection, 0, 0).click()
     await expect(page.getByText('Research Product')).toBeVisible()
-    await page
+    const researchProductField = page
       .locator('.config-field')
       .filter({ has: page.getByText('Research Product') })
-      .locator('.picker-item-name', { hasText: 'Wooden Chair' })
-      .click()
+    await researchProductField.locator('.picker-trigger').click()
+    await page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' }).click()
 
     await getGridCell(plannedSection, 1, 0).click()
     await expect(page.getByText('Brand Scope')).toBeVisible()
@@ -1567,7 +1567,8 @@ test.describe('Building detail upgrades', () => {
       .selectOption('CATEGORY')
     const anchorProductField = page.locator('.config-field').filter({ has: page.getByText('Anchor Product', { exact: true }) })
     await expect(anchorProductField).toBeVisible()
-    await anchorProductField.locator('.picker-item-name', { hasText: 'Wooden Chair' }).click()
+    await anchorProductField.locator('.picker-trigger').click()
+    await page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' }).click()
     await expect(getGridCell(plannedSection, 1, 0)).toContainText('Wooden Chair')
   })
 
@@ -5580,13 +5581,14 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
     const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await publicSalesCell.click()
 
-    // PUBLIC_SALES uses ProductPicker for product type
+    // PUBLIC_SALES uses ProductPicker for product type — trigger opens the dropdown
     const productTypeField = page
       .locator('.config-field')
       .filter({ has: page.getByText('Product Type', { exact: true }) })
       .first()
-    await expect(productTypeField.locator('.picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
-    await productTypeField.locator('.picker-item-name', { hasText: 'Wooden Chair' }).click()
+    await productTypeField.locator('.picker-trigger').click()
+    await expect(page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
+    await page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' }).click()
 
     // Set a negative min price in the number input
     const minPriceField = page
@@ -5637,8 +5639,9 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
       .locator('.config-field')
       .filter({ has: page.getByText('Product Type', { exact: true }) })
       .first()
-    await expect(productTypeField.locator('.picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
-    await productTypeField.locator('.picker-item-name', { hasText: 'Wooden Chair' }).click()
+    await productTypeField.locator('.picker-trigger').click()
+    await expect(page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
+    await page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' }).click()
 
     // Set price to exactly 0
     const minPriceField = page
@@ -5659,6 +5662,203 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
     // Player remains in edit mode
     await expect(planningSection).toBeVisible()
     await expect(page.getByRole('button', { name: /Store Upgrade/i })).toBeVisible()
+  })
+})
+
+// ── Product Picker UX ─────────────────────────────────────────────────────────
+
+test.describe('Product picker UX — collapsible trigger and dropdown', () => {
+  function makeShopForPickerTests() {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-picker',
+          playerId: 'player-1',
+          name: 'Picker Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-picker-shop',
+              companyId: 'company-picker',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Picker Shop',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              units: [],
+            },
+          ],
+        },
+      ],
+    })
+    return player
+  }
+
+  test('product picker is collapsed by default and opens on click', async ({ page }) => {
+    const chair = makeChairProduct()
+    const player = makeShopForPickerTests()
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-picker-shop')
+    await page.getByRole('button', { name: /Apply Starter Shop Layout/i }).click()
+
+    const planningSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    // Click on the PUBLIC_SALES cell
+    const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await publicSalesCell.click()
+
+    // The Product Type field should show the trigger button (collapsed by default)
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    // Picker dropdown should NOT be visible before clicking
+    await expect(page.locator('.product-picker-panel')).toBeHidden()
+
+    // Trigger button should be visible
+    await expect(productTypeField.locator('.picker-trigger')).toBeVisible()
+
+    // Click trigger to open
+    await productTypeField.locator('.picker-trigger').click()
+
+    // Dropdown should appear with the product list
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+    await expect(page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
+  })
+
+  test('product picker shows help text and closes on selection', async ({ page }) => {
+    const chair = makeChairProduct()
+    const player = makeShopForPickerTests()
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-picker-shop')
+    await page.getByRole('button', { name: /Apply Starter Shop Layout/i }).click()
+
+    const planningSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await publicSalesCell.click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    // Help text should be visible
+    await expect(productTypeField.locator('.picker-help-text')).toBeVisible()
+
+    // Open picker and select a product
+    await productTypeField.locator('.picker-trigger').click()
+    await page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' }).click()
+
+    // After selection, picker closes and trigger shows selected product name
+    await expect(page.locator('.product-picker-panel')).toBeHidden()
+    await expect(productTypeField.locator('.picker-trigger-selected-name', { hasText: 'Wooden Chair' })).toBeVisible()
+  })
+
+  test('product picker shows empty state when no products available', async ({ page }) => {
+    const player = makeShopForPickerTests()
+    // Use empty productTypes to simulate no available products
+    const state = setupMockApi(page, { players: [player], productTypes: [] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-picker-shop')
+    await page.getByRole('button', { name: /Apply Starter Shop Layout/i }).click()
+
+    const planningSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await publicSalesCell.click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    // Open picker - click trigger
+    await productTypeField.locator('.picker-trigger').click()
+
+    // The panel opens — wait for empty state (loading is instant in mock)
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+    await expect(page.locator('.product-picker-panel .picker-empty-no-connected')).toBeVisible({
+      timeout: 10000,
+    })
+  })
+
+  test('product picker dropdown is not obscured — visible in viewport', async ({ page }) => {
+    const chair = makeChairProduct()
+    const player = makeShopForPickerTests()
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-picker-shop')
+    await page.getByRole('button', { name: /Apply Starter Shop Layout/i }).click()
+
+    const planningSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await publicSalesCell.click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    // Open picker
+    await productTypeField.locator('.picker-trigger').click()
+    const panel = page.locator('.product-picker-panel')
+    await expect(panel).toBeVisible()
+
+    // The panel must be within the viewport (not hidden behind navbar or clipped)
+    const panelBox = await panel.boundingBox()
+    // Panel y must be ≥ 0 (not behind the very top/navbar)
+    expect(panelBox!.y).toBeGreaterThanOrEqual(0)
+    // Panel x must be ≥ 0 (not scrolled off the left edge)
+    expect(panelBox!.x).toBeGreaterThanOrEqual(0)
+
+    // Product item should be interactable (visible and clickable)
+    await expect(page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
   })
 })
 
