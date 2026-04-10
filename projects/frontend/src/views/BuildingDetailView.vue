@@ -6376,12 +6376,12 @@ watch(
 
 .chain-step--configured {
   border-color: #34d399;
-  background: #f0fdf4;
+  background: rgba(52, 211, 153, 0.1);
 }
 
 .chain-step--missing {
   border-color: #fbbf24;
-  background: #fffbeb;
+  background: rgba(251, 191, 36, 0.1);
 }
 
 .chain-step-icon {
@@ -6400,7 +6400,7 @@ watch(
 .chain-step-value {
   font-size: 0.875rem;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text);
   word-break: break-word;
 }
 
@@ -8311,17 +8311,17 @@ watch(
 
 .mi-driver-positive {
   border-left: 3px solid #16a34a;
-  background: #f0fdf4;
+  background: rgba(22, 163, 74, 0.12);
 }
 
 .mi-driver-neutral {
   border-left: 3px solid #94a3b8;
-  background: #f8fafc;
+  background: rgba(148, 163, 184, 0.1);
 }
 
 .mi-driver-negative {
   border-left: 3px solid #dc2626;
-  background: #fef2f2;
+  background: rgba(220, 38, 38, 0.12);
 }
 
 .mi-driver-icon {
@@ -8332,15 +8332,15 @@ watch(
 }
 
 .mi-driver-positive .mi-driver-icon {
-  color: #16a34a;
+  color: #4ade80;
 }
 
 .mi-driver-neutral .mi-driver-icon {
-  color: #64748b;
+  color: #94a3b8;
 }
 
 .mi-driver-negative .mi-driver-icon {
-  color: #dc2626;
+  color: #f87171;
 }
 
 .mi-driver-content {
@@ -8497,16 +8497,16 @@ watch(
 }
 
 .activity-purchased .activity-tick {
-  color: #1d4ed8;
+  color: #60a5fa;
 }
 .activity-manufactured .activity-tick {
-  color: #059669;
+  color: #4ade80;
 }
 .activity-sold .activity-tick {
-  color: #7c3aed;
+  color: #c084fc;
 }
 .activity-moved .activity-tick {
-  color: #92400e;
+  color: #fbbf24;
 }
 
 /* ── Procurement Mode Selector ── */
@@ -8532,12 +8532,12 @@ watch(
 
 .procurement-mode-option:hover {
   border-color: var(--color-primary, #2563eb);
-  background: var(--color-bg-hover, #f0f7ff);
+  background: var(--color-bg-hover, rgba(59, 130, 246, 0.1));
 }
 
 .procurement-mode-option.selected {
   border-color: var(--color-primary, #2563eb);
-  background: var(--color-bg-selected, #eff6ff);
+  background: var(--color-bg-selected, rgba(59, 130, 246, 0.15));
 }
 
 .procurement-mode-radio {
@@ -8551,7 +8551,7 @@ watch(
 .procurement-mode-label {
   font-weight: 600;
   font-size: 0.88rem;
-  color: #0f172a;
+  color: var(--color-text);
 }
 
 .procurement-mode-desc {
@@ -8596,7 +8596,7 @@ watch(
 }
 
 .preview-status.ok {
-  color: #059669;
+  color: #4ade80;
 }
 
 .preview-status.blocked {
@@ -8627,7 +8627,7 @@ watch(
 }
 
 .preview-delivered {
-  color: #059669;
+  color: #4ade80;
   font-weight: 700;
 }
 
@@ -8722,7 +8722,7 @@ watch(
 }
 
 .sourcing-row.recommended {
-  background: #f0fdf4;
+  background: rgba(52, 211, 153, 0.08);
 }
 
 .sourcing-row.ineligible {
@@ -8730,7 +8730,7 @@ watch(
 }
 
 .sourcing-row.recommended td {
-  border-bottom-color: #bbf7d0;
+  border-bottom-color: rgba(52, 211, 153, 0.2);
 }
 
 .sourcing-col-source {
@@ -8759,13 +8759,13 @@ watch(
 }
 
 .sourcing-col-transit .transit-cost {
-  color: #b45309;
+  color: #f59e0b;
   font-weight: 500;
 }
 
 .sourcing-col-transit .transit-free {
   font-size: 0.72rem;
-  color: #059669;
+  color: #34d399;
 }
 
 .col-landed {
@@ -8774,7 +8774,7 @@ watch(
 }
 
 .sourcing-row.recommended .col-landed strong {
-  color: #059669;
+  color: #34d399;
 }
 
 .sourcing-row.ineligible .col-landed strong {
@@ -8887,7 +8887,7 @@ watch(
 
 .mi-price-success {
   font-size: 0.8rem;
-  color: #065f46;
+  color: #4ade80;
   margin: 0.4rem 0 0;
 }
 
@@ -8965,7 +8965,7 @@ watch(
 }
 
 .unit-upgrade-max-badge {
-  color: #d97706;
+  color: #f59e0b;
   font-size: 1.1rem;
 }
 
@@ -9031,7 +9031,7 @@ watch(
 }
 
 .stat-next {
-  color: #065f46;
+  color: #4ade80;
   font-weight: 600;
 }
 
@@ -9073,7 +9073,7 @@ watch(
 
 .form-success {
   font-size: 0.8rem;
-  color: #065f46;
+  color: #4ade80;
   margin: 0.35rem 0 0;
 }
 

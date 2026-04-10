@@ -23,6 +23,19 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.55);
   --font-sans: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+
+  /* Semantic alias tokens — used by components for cross-theme consistency.
+     Components must reference these rather than raw literals so that a future
+     light-mode switch only requires updating this block. */
+  --color-text-primary: #e6edf3; /* primary readable text, alias for --color-text */
+  --color-text-muted: #8b949e; /* de-emphasised / placeholder text, alias for --color-text-secondary */
+  --color-text-tertiary: #8b949e; /* third-level label text */
+  --color-background: #0d1117; /* page-level background, alias for --color-bg */
+  --color-surface-secondary: #1e2430; /* nested surface / secondary card, alias for --color-surface-raised */
+  --color-bg-secondary: rgba(255, 255, 255, 0.04); /* subtle inset or alternating row */
+  --color-hover: rgba(255, 255, 255, 0.06); /* generic hover overlay on dark surfaces */
+  --color-border-light: rgba(48, 54, 61, 0.7); /* lighter variant of --color-border */
+  --color-border-muted: rgba(48, 54, 61, 0.5); /* muted / tertiary border */
 }
 
 *,
