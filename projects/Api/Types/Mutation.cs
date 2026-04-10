@@ -1752,6 +1752,90 @@ public sealed class Mutation
     }
 
     /// <summary>
+    /// Validates that products assigned to STORAGE and B2B_SALES units are topologically
+    /// reachable within the submitted configuration plan.
+    ///
+    /// Rules:
+    /// <list type="bullet">
+    ///   <item>STORAGE: productTypeId must match a MANUFACTURING unit in the submitted plan,
+    ///   or be currently present in the building's inventory stock.</item>
+    ///   <item>B2B_SALES: productTypeId must match a MANUFACTURING or STORAGE unit in the
+    ///   submitted plan.</item>
+    /// </list>
+    /// </summary>
+    private static async Task ValidateProductTopologyAsync(
+        AppDbContext db,
+        Guid buildingId,
+        IReadOnlyCollection<BuildingConfigurationUnitInput> submittedUnits)
+    {
+        // Gather product IDs configured on MANUFACTURING units in this plan.
+        var mfgProductIds = submittedUnits
+            .Where(u => u.UnitType == "MANUFACTURING" && u.ProductTypeId.HasValue)
+            .Select(u => u.ProductTypeId!.Value)
+            .ToHashSet();
+
+        // Gather product IDs configured on STORAGE units in this plan.
+        var storageProductIds = submittedUnits
+            .Where(u => u.UnitType == "STORAGE" && u.ProductTypeId.HasValue)
+            .Select(u => u.ProductTypeId!.Value)
+            .ToHashSet();
+
+        // Validate STORAGE units.
+        var storageUnitsWithProduct = submittedUnits
+            .Where(u => u.UnitType == "STORAGE" && u.ProductTypeId.HasValue)
+            .ToList();
+
+        if (storageUnitsWithProduct.Count > 0)
+        {
+            // Allowed products for STORAGE = MFG products in plan + current inventory.
+            var inventoryProductIds = await db.Inventories
+                .Where(i => i.BuildingId == buildingId && i.ProductTypeId.HasValue && i.Quantity > 0)
+                .Select(i => i.ProductTypeId!.Value)
+                .Distinct()
+                .ToHashSetAsync();
+
+            foreach (var unit in storageUnitsWithProduct)
+            {
+                var pid = unit.ProductTypeId!.Value;
+                if (!mfgProductIds.Contains(pid) && !inventoryProductIds.Contains(pid))
+                {
+                    throw new GraphQLException(
+                        ErrorBuilder.New()
+                            .SetMessage(
+                                "A STORAGE unit's product must match a MANUFACTURING unit in this configuration or be present in the building's current inventory.")
+                            .SetCode("STORAGE_PRODUCT_NOT_REACHABLE")
+                            .Build());
+                }
+            }
+        }
+
+        // Validate B2B_SALES units.
+        var b2bUnitsWithProduct = submittedUnits
+            .Where(u => u.UnitType == "B2B_SALES" && u.ProductTypeId.HasValue)
+            .ToList();
+
+        if (b2bUnitsWithProduct.Count > 0)
+        {
+            // Allowed products for B2B_SALES = MFG products + STORAGE products in plan.
+            var allowedForB2B = mfgProductIds.Union(storageProductIds).ToHashSet();
+
+            foreach (var unit in b2bUnitsWithProduct)
+            {
+                var pid = unit.ProductTypeId!.Value;
+                if (!allowedForB2B.Contains(pid))
+                {
+                    throw new GraphQLException(
+                        ErrorBuilder.New()
+                            .SetMessage(
+                                "A B2B_SALES unit's product must match a MANUFACTURING or STORAGE unit in this configuration.")
+                            .SetCode("B2B_PRODUCT_NOT_REACHABLE")
+                            .Build());
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Validates that any MediaHouseBuildingId on MARKETING units references an actual
     /// MEDIA_HOUSE building in the same city as the shop being configured.
     /// </summary>
@@ -1856,6 +1940,7 @@ public sealed class Mutation
         var hasActiveProSubscription = ProductAccessService.HasActiveProSubscription(subscriptionEndsAtUtc, DateTime.UtcNow);
         await EnsureSubmittedProductsAreAccessibleAsync(db, building, input.Units, hasActiveProSubscription);
         await ValidateMediaHouseReferencesAsync(db, building, input.Units);
+        await ValidateProductTopologyAsync(db, building.Id, input.Units);
 
         var plan = await BuildingConfigurationService.StoreConfigurationAsync(db, building, input.Units, gameState.CurrentTick);
         await db.SaveChangesAsync();
