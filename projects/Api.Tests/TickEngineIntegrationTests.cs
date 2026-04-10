@@ -4362,6 +4362,144 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         }
     }
 
+    [Fact]
+    public async Task PublicSalesPhase_TwoProductsSameCity_HaveIndependentTrendStates()
+    {
+        // Each (city, product) pair must have its own separate MarketTrendState.
+        // Pre-seed one product at TrendMax and another at TrendMin; after a tick,
+        // each product's trend state must be updated independently.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var chair = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+        var table = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-table");
+
+        var city = CreatePublicSalesTestCity("MultiProduct", 100_000);
+        db.Cities.Add(city);
+
+        var (_, _, chairUnitId) = AddPublicSalesSeller(
+            db, city, chair, "MultiProdChair",
+            stockQuantity: 500m, quality: 0.85m, priceMultiplier: 1.0m,
+            populationIndex: 1m, brandAwareness: 0m);
+
+        var (_, _, tableUnitId) = AddPublicSalesSeller(
+            db, city, table, "MultiProdTable",
+            stockQuantity: 500m, quality: 0.85m, priceMultiplier: 1.0m,
+            populationIndex: 1m, brandAwareness: 0m);
+
+        // Pre-seed different trend states for each product.
+        db.MarketTrendStates.AddRange(
+            new MarketTrendState { Id = Guid.NewGuid(), CityId = city.Id, ItemId = chair.Id, TrendFactor = GameConstants.TrendMax, LastUpdatedTick = 0 },
+            new MarketTrendState { Id = Guid.NewGuid(), CityId = city.Id, ItemId = table.Id, TrendFactor = GameConstants.TrendMin, LastUpdatedTick = 0 });
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var chairTrend = await db.MarketTrendStates.FirstOrDefaultAsync(t => t.CityId == city.Id && t.ItemId == chair.Id);
+        var tableTrend = await db.MarketTrendStates.FirstOrDefaultAsync(t => t.CityId == city.Id && t.ItemId == table.Id);
+
+        Assert.NotNull(chairTrend);
+        Assert.NotNull(tableTrend);
+
+        // The two products must have different trend factors — they started at opposite extremes.
+        Assert.NotEqual(chairTrend.TrendFactor, tableTrend.TrendFactor);
+
+        // Both must remain within valid bounds.
+        Assert.InRange(chairTrend.TrendFactor, GameConstants.TrendMin, GameConstants.TrendMax);
+        Assert.InRange(tableTrend.TrendFactor, GameConstants.TrendMin, GameConstants.TrendMax);
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_ConsecutiveStrongSales_TrendReachesMax()
+    {
+        // After enough ticks of high-utilisation sales, the trend factor must reach TrendMax.
+        // We pre-seed at (TrendMax - 2×TrendRiseRate) so that exactly 2 RISE ticks are
+        // needed to reach TrendMax — guaranteeing the test is deterministic and fast.
+        // With population 10M and stock 100,000 the seller is demand-constrained every tick
+        // (demand ≈ 8,000 >> sales capacity = 20), so utilisation = 1.0 → RISE every tick.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        var city = CreatePublicSalesTestCity("TrendToMax", 10_000_000);
+        db.Cities.Add(city);
+
+        // Large stock (100,000) ensures stockTurnoverCap (= stock × 0.5 × ~0.9) >> capacity (20)
+        // throughout the test run, so sales are always capacity-limited (util = 1.0 every tick).
+        AddPublicSalesSeller(
+            db, city, product, "TrendToMax",
+            stockQuantity: 100_000m,
+            quality: 0.9m,
+            priceMultiplier: 1.0m,
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        // Pre-seed trend state close to max so we only need a few ticks to confirm the cap.
+        var preSeedFactor = GameConstants.TrendMax - 2m * GameConstants.TrendRiseRate;
+        db.MarketTrendStates.Add(new MarketTrendState
+        {
+            Id = Guid.NewGuid(),
+            CityId = city.Id,
+            ItemId = product.Id,
+            TrendFactor = preSeedFactor,
+            LastUpdatedTick = 0,
+        });
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+
+        // 5 ticks is far more than the 2 needed to reach TrendMax from preSeedFactor.
+        for (var i = 0; i < 5; i++)
+            await processor.ProcessTickAsync();
+
+        var trendState = await db.MarketTrendStates
+            .FirstOrDefaultAsync(t => t.CityId == city.Id && t.ItemId == product.Id);
+
+        Assert.NotNull(trendState);
+        // The trend must have reached the maximum.
+        Assert.Equal(GameConstants.TrendMax, trendState.TrendFactor);
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_ConsecutiveWeakSales_TrendReachesMin()
+    {
+        // After enough ticks of low-utilisation sales in a saturated market,
+        // the trend factor must reach TrendMin.
+        // (TrendNeutral - TrendMin) / TrendFallRate = 0.5 / 0.03 ≈ 17 ticks.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        // Tiny city population → very low demand → low utilisation → trend falls.
+        var city = CreatePublicSalesTestCity("TrendToMin", 100);
+        db.Cities.Add(city);
+
+        AddPublicSalesSeller(
+            db, city, product, "TrendToMin",
+            stockQuantity: 10_000m,   // huge stock → always ample supply (required for fall condition)
+            quality: 0.85m,
+            priceMultiplier: 1.0m,
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+
+        // 25 ticks is more than enough to reach TrendMin at 0.03/tick from neutral.
+        for (var i = 0; i < 25; i++)
+            await processor.ProcessTickAsync();
+
+        var trendState = await db.MarketTrendStates
+            .FirstOrDefaultAsync(t => t.CityId == city.Id && t.ItemId == product.Id);
+
+        Assert.NotNull(trendState);
+        // The trend must have fallen to the minimum.
+        Assert.Equal(GameConstants.TrendMin, trendState.TrendFactor);
+    }
+
     #endregion
 
     #region LockedCityId Procurement

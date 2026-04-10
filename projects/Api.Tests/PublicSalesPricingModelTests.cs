@@ -518,4 +518,80 @@ public sealed class PublicSalesPricingModelTests
         var v2 = 1m + (decimal)(rng2.NextDouble() * 2.0 - 1.0) * GameConstants.TrendRandomAmplitude;
         Assert.Equal(v1, v2);
     }
+
+    // ── Trend update logic (pure math) ─────────────────────────────────────
+
+    [Theory]
+    [InlineData(1.00, 1.03)]  // neutral → rises by TrendRiseRate
+    [InlineData(1.47, 1.50)]  // near TrendMax → clamped to TrendMax
+    [InlineData(0.50, 0.53)]  // at TrendMin → rises
+    public void TrendUpdateLogic_StrongSales_RisesCorrectly(decimal before, decimal expected)
+    {
+        // Strong sales (utilisation >= TrendStrongUtilisationThreshold) → trend rises.
+        var updated = Math.Clamp(
+            before + GameConstants.TrendRiseRate,
+            GameConstants.TrendMin, GameConstants.TrendMax);
+        Assert.Equal(expected, updated);
+    }
+
+    [Theory]
+    [InlineData(1.00, 0.97)]  // neutral → falls by TrendFallRate
+    [InlineData(0.53, 0.50)]  // near TrendMin → clamped to TrendMin
+    [InlineData(1.50, 1.47)]  // at TrendMax → falls
+    public void TrendUpdateLogic_WeakSales_FallsCorrectly(decimal before, decimal expected)
+    {
+        // Weak sales with ample stock → trend falls.
+        var updated = Math.Clamp(
+            before - GameConstants.TrendFallRate,
+            GameConstants.TrendMin, GameConstants.TrendMax);
+        Assert.Equal(expected, updated);
+    }
+
+    [Theory]
+    [InlineData(1.50)]   // hot trend decays toward neutral
+    [InlineData(0.50)]   // cold trend decays toward neutral
+    [InlineData(1.20)]   // above-neutral decays toward neutral
+    [InlineData(0.80)]   // below-neutral decays toward neutral
+    public void TrendUpdateLogic_ModerateSales_DecaysTowardNeutral(decimal before)
+    {
+        // Moderate performance → decay toward neutral (1.0) by TrendDecayFraction.
+        var gap = GameConstants.TrendNeutral - before;
+        var updated = Math.Clamp(
+            before + gap * GameConstants.TrendDecayFraction,
+            GameConstants.TrendMin, GameConstants.TrendMax);
+
+        if (before > GameConstants.TrendNeutral)
+            Assert.True(updated < before, $"Trend should decay from {before} toward neutral, got {updated}");
+        else if (before < GameConstants.TrendNeutral)
+            Assert.True(updated > before, $"Trend should decay from {before} toward neutral, got {updated}");
+        else
+            Assert.Equal(GameConstants.TrendNeutral, updated);
+
+        Assert.InRange(updated, GameConstants.TrendMin, GameConstants.TrendMax);
+    }
+
+    [Fact]
+    public void TrendUpdateLogic_AtNeutral_ModerateSales_RemainsNeutral()
+    {
+        // When trend is exactly at neutral (1.0), decay step produces no change.
+        var before = GameConstants.TrendNeutral;
+        var gap = GameConstants.TrendNeutral - before;
+        var updated = Math.Clamp(
+            before + gap * GameConstants.TrendDecayFraction,
+            GameConstants.TrendMin, GameConstants.TrendMax);
+        Assert.Equal(GameConstants.TrendNeutral, updated);
+    }
+
+    [Fact]
+    public void TrendFactor_CombinedWithRandomMultiplier_AlwaysPositive()
+    {
+        // Combined trendFactor × randomMultiplier must always be positive.
+        // This guarantees cityBaseDemand = population × BaseDemandPerCapita × salary × trend × random > 0
+        // when population and salary are positive.
+        var amplitudeMin = 1m - GameConstants.TrendRandomAmplitude;
+        var worstCase = GameConstants.TrendMin * amplitudeMin;
+        Assert.True(worstCase > 0m,
+            $"TrendMin × (1 - amplitude) must be > 0 (got {worstCase}). " +
+            $"If this fails, demand could go negative.");
+    }
 }
