@@ -793,3 +793,29 @@ Root-cause of a product owner rejection (April 2026, PR #266 building performanc
 3. **A PR description that says "already implemented" without a screenshot is not sufficient proof** for a product owner who cannot run the app locally. Provide visual evidence.
 4. **Hover the chart to show the per-tick tooltip in the screenshot** — this proves both the chart renders AND the interactivity works.
 5. **When the diff is small (only tests), the reply comment must include**: (a) a screenshot of the working feature, (b) the exact test counts, (c) which acceptance criteria the tests verify.
+
+## Playwright browser version mismatch — always install from project's package.json, not globally
+
+Root-cause of a quality failure (April 2026, PR #287 trend-aware demand):
+- The previous session ran `npx playwright install --with-deps chromium` which installed chromium_headless_shell-1217.
+- The project's `package.json` requires `@playwright/test@1.51.x` which needs chromium_headless_shell-1208.
+- All E2E tests failed with "Executable doesn't exist at .../chromium_headless_shell-1208/..." because the wrong version was installed.
+- The agent abandoned E2E validation when tests timed out, not realizing the root cause was a version mismatch.
+
+**Rules to prevent recurrence:**
+1. **Always install Playwright from within the project directory:** `cd projects/frontend && npx playwright install chromium`. This reads the version from the project's own `node_modules/@playwright/test` and installs the correct browser version.
+2. **Never use `npx playwright install --with-deps` from outside the project directory.** The global `npx playwright` may use a different version than what the project requires.
+3. **After E2E tests fail with "Executable doesn't exist", the root cause is always a browser version mismatch**, not a test code issue. Fix by running `npx playwright install chromium` from the project directory.
+4. **The correct CI-equivalent command is:** `cd projects/frontend && npx playwright install chromium && CI=true npx playwright test --project=chromium`.
+
+## Trend-aware demand edge cases — always test zero-stock, oversupply, and extreme pricing
+
+Root-cause of a quality gap (April 2026, PR #287):
+- The hot/cold trend impact tests were added but only for the happy path (normal stock, base price).
+- The product owner asked for edge cases: zero stock, oversupply, extreme pricing.
+- These are important because they prove the trend mechanism plays fair with other game rules (stock limits, saturation, price elasticity).
+
+**Rules to prevent recurrence:**
+1. **For any demand multiplier feature (trend, salary, brand), add tests for:** (a) zero-stock → demand boost cannot create sales from nothing, (b) oversupply → demand depression stacks with other penalties, (c) extreme markup → price elasticity overrides demand boost.
+2. **Three integration tests per demand signal are the minimum:** hot-vs-neutral, cold-vs-neutral, and at least one edge case proving the signal does not violate another game rule.
+3. **The formula: `signal_gap > 2 × random_amplitude` is required for deterministic two-city tests.** For TrendMax=1.5 vs TrendNeutral=1.0 with amplitude=0.08: gap=0.5 > 0.16 ✓. Document this calculation in the test comment.

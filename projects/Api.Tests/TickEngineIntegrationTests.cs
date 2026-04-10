@@ -4162,6 +4162,206 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             $"({coldRecord.QuantitySold}) than neutral trend ({neutralRecord2.QuantitySold}).");
     }
 
+    [Fact]
+    public async Task PublicSalesPhase_ZeroStock_WithHotTrend_GeneratesNoSalesRecord()
+    {
+        // ROADMAP AC #7: Edge-case coverage — hot trend cannot manufacture sales from thin air.
+        // A pre-seeded TrendMax should not cause the engine to sell more than what's in stock.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        var city = CreatePublicSalesTestCity("ZeroStockHotTrend", 200_000);
+        db.Cities.Add(city);
+
+        var (_, _, unitId) = AddPublicSalesSeller(
+            db, city, product, "ZeroStockHot",
+            stockQuantity: 0m,          // zero stock
+            quality: 0.85m,
+            priceMultiplier: 1.0m,
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        // Pre-seed a hot trend — it should NOT allow selling non-existent stock.
+        db.MarketTrendStates.Add(new MarketTrendState
+        {
+            Id = Guid.NewGuid(),
+            CityId = city.Id,
+            ItemId = product.Id,
+            TrendFactor = GameConstants.TrendMax,
+            LastUpdatedTick = 0,
+        });
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var record = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == unitId)
+            .FirstOrDefaultAsync();
+
+        // Either no record created or zero sold — hot trend cannot create sales from zero stock.
+        Assert.True(record == null || record.QuantitySold == 0m,
+            $"Expected zero sales from zero-stock unit even with hot trend (TrendMax={GameConstants.TrendMax}), " +
+            $"but sold {record?.QuantitySold} units.");
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_OversuppliedMarket_ColdTrend_ReducesSalesFurther()
+    {
+        // ROADMAP AC #3: Both saturation AND cold trend stack to reduce demand.
+        // With huge stock (oversupply) saturation already depresses demand; cold trend should
+        // reduce it further compared to an oversupplied neutral-trend city.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        var coldCity = CreatePublicSalesTestCity("OversupplyCold", 50_000);
+        var neutralCity = CreatePublicSalesTestCity("OversupplyNeutral", 50_000);
+        db.Cities.AddRange(coldCity, neutralCity);
+
+        // Large stock → saturation presses demand down in both cities.
+        var (_, _, coldUnitId) = AddPublicSalesSeller(
+            db, coldCity, product, "OvCold",
+            stockQuantity: 5000m,
+            quality: 0.85m,
+            priceMultiplier: 1.0m,
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        var (_, _, neutralUnitId) = AddPublicSalesSeller(
+            db, neutralCity, product, "OvNeutral",
+            stockQuantity: 5000m,
+            quality: 0.85m,
+            priceMultiplier: 1.0m,
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        // Cold trend compounds the saturation penalty.
+        db.MarketTrendStates.AddRange(
+            new MarketTrendState
+            {
+                Id = Guid.NewGuid(),
+                CityId = coldCity.Id,
+                ItemId = product.Id,
+                TrendFactor = GameConstants.TrendMin,
+                LastUpdatedTick = 0,
+            },
+            new MarketTrendState
+            {
+                Id = Guid.NewGuid(),
+                CityId = neutralCity.Id,
+                ItemId = product.Id,
+                TrendFactor = GameConstants.TrendNeutral,
+                LastUpdatedTick = 0,
+            });
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var coldRecord = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == coldUnitId)
+            .FirstOrDefaultAsync();
+        var neutralRecord = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == neutralUnitId)
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(coldRecord);
+        Assert.NotNull(neutralRecord);
+
+        // The cold-trend city should sell ≤ neutral even in an oversupplied market.
+        Assert.True(coldRecord.QuantitySold <= neutralRecord.QuantitySold,
+            $"Oversupplied cold-trend city ({coldRecord.QuantitySold}) should sell ≤ neutral-trend city " +
+            $"({neutralRecord.QuantitySold}).");
+    }
+
+    [Fact]
+    public async Task PublicSalesPhase_ExtremeMarkup_HotTrendCannotRescueSales()
+    {
+        // ROADMAP AC #3: Existing drivers (price) are not drowned out by trend.
+        // An extreme price markup (PriceIndex → 0) should suppress sales even with TrendMax.
+        // The hot city sells at max-markup; neutral city at base price.
+        // Hot city should sell less (or nothing) despite its trend boost, because price
+        // elasticity is the binding constraint.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+
+        var hotMarkupCity = CreatePublicSalesTestCity("HotExtreme", 200_000);
+        var neutralBaseCity = CreatePublicSalesTestCity("NeutralBase", 200_000);
+        db.Cities.AddRange(hotMarkupCity, neutralBaseCity);
+
+        // Hot-trend city: extreme markup → PriceIndex ≈ 0
+        var maxRatio = PublicSalesPricingModel.ComputeMaxPriceRatio(product.PriceElasticity);
+        var extremePrice = product.BasePrice * (maxRatio + 0.1m); // just above the ceiling
+
+        var (_, _, hotUnitId) = AddPublicSalesSeller(
+            db, hotMarkupCity, product, "HotExtreme",
+            stockQuantity: 200m,
+            quality: 0.85m,
+            priceMultiplier: maxRatio + 0.1m,   // above price ceiling
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        // Neutral city: base-price seller at TrendNeutral (1.0).
+        var (_, _, neutralUnitId) = AddPublicSalesSeller(
+            db, neutralBaseCity, product, "NeutralBase",
+            stockQuantity: 200m,
+            quality: 0.85m,
+            priceMultiplier: 1.0m,
+            populationIndex: 1m,
+            brandAwareness: 0m);
+
+        db.MarketTrendStates.AddRange(
+            new MarketTrendState
+            {
+                Id = Guid.NewGuid(),
+                CityId = hotMarkupCity.Id,
+                ItemId = product.Id,
+                TrendFactor = GameConstants.TrendMax,
+                LastUpdatedTick = 0,
+            },
+            new MarketTrendState
+            {
+                Id = Guid.NewGuid(),
+                CityId = neutralBaseCity.Id,
+                ItemId = product.Id,
+                TrendFactor = GameConstants.TrendNeutral,
+                LastUpdatedTick = 0,
+            });
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var hotRecord = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == hotUnitId)
+            .FirstOrDefaultAsync();
+        var neutralRecord = await db.PublicSalesRecords
+            .Where(r => r.BuildingUnitId == neutralUnitId)
+            .FirstOrDefaultAsync();
+
+        // Price floor enforcement: hot trend cannot overcome a zero-priceIndex seller.
+        // Either hot record is null (no sales) or it sold less than the fairly-priced neutral.
+        if (hotRecord == null)
+        {
+            // Best case: PriceIndex=0 suppressed all sales — pass.
+            Assert.NotNull(neutralRecord);
+            Assert.True(neutralRecord.QuantitySold > 0m,
+                "Neutral base-price seller should have positive sales.");
+        }
+        else
+        {
+            Assert.True(hotRecord.QuantitySold <= neutralRecord!.QuantitySold,
+                $"Extreme-markup hot-trend city ({hotRecord.QuantitySold}) should sell ≤ base-price neutral city " +
+                $"({neutralRecord?.QuantitySold}), because price elasticity dominates.");
+        }
+    }
+
     #endregion
 
     #region LockedCityId Procurement
