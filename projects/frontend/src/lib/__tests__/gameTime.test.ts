@@ -3,6 +3,7 @@ import {
   computeGameYearFromTick,
   computeInGameTimeUtcFromTick,
   computeNextTaxTick,
+  formatGameTickTime,
   formatInGameTime,
 } from '../gameTime'
 
@@ -31,5 +32,10 @@ describe('gameTime helpers', () => {
   it('converts ticks into in-game UTC timestamps', () => {
     expect(computeInGameTimeUtcFromTick(0)).toBe('2000-01-01T00:00:00.000Z')
     expect(computeInGameTimeUtcFromTick(24)).toBe('2000-01-02T00:00:00.000Z')
+  })
+
+  it('formats a game tick as in-game time', () => {
+    expect(formatGameTickTime(24, 'en')).toContain('2000')
+    expect(formatGameTickTime(24, 'en')).toContain('02')
   })
 })

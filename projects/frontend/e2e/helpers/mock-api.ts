@@ -357,6 +357,13 @@ export type MockProductExchangeListing = {
   createdAtUtc: string
 }
 
+export type MockChatMessage = {
+  id: string
+  playerId: string
+  message: string
+  sentAtUtc: string
+}
+
 export type MockResearchBrandState = {
   id: string
   companyId: string
@@ -598,6 +605,7 @@ export type MockState = {
   upgradeInsufficientFundsUnitId: string | null
   /** Active player SELL exchange orders for products (the globalExchangeProductListings query). */
   productExchangeListings: MockProductExchangeListing[]
+  chatMessages: MockChatMessage[]
   rootAdminEmails: string[]
   globalGameAdminGrants: MockGlobalGameAdminGrant[]
   gameNewsEntries: MockGameNewsEntry[]
@@ -1478,6 +1486,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     unitUpgradeInfoOverrides: {},
     upgradeInsufficientFundsUnitId: null,
     productExchangeListings: [],
+    chatMessages: [],
     rootAdminEmails: ['root@example.com'],
     globalGameAdminGrants: [],
     gameNewsEntries: [],
@@ -3633,6 +3642,90 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { globalExchangeProductListings: listings } }),
+      })
+    }
+
+    if (query.includes('chatMessages')) {
+      if (!state.currentUserId) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Not authenticated.' }] }),
+        })
+      }
+
+      const currentPlayer = state.players.find((player) => player.id === state.currentUserId)
+      const limit = Math.min(Math.max(Number(body.variables?.limit ?? 50), 1), 100)
+      const canSeeInvisible = currentPlayer?.role === 'ADMIN'
+
+      const messages = state.chatMessages
+        .filter((message) => {
+          const author = state.players.find((player) => player.id === message.playerId)
+          if (!author) return false
+          return !author.isInvisibleInChat || author.id === state.currentUserId || canSeeInvisible
+        })
+        .slice(-limit)
+        .map((message) => {
+          const author = state.players.find((player) => player.id === message.playerId)!
+          return {
+            id: message.id,
+            playerId: message.playerId,
+            playerDisplayName: author.displayName,
+            message: message.message,
+            sentAtUtc: message.sentAtUtc,
+            isOwnMessage: message.playerId === state.currentUserId,
+          }
+        })
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { chatMessages: messages } }),
+      })
+    }
+
+    if (query.includes('sendChatMessage')) {
+      if (!state.currentUserId) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Not authenticated.' }] }),
+        })
+      }
+
+      const currentPlayer = state.players.find((player) => player.id === state.currentUserId)
+      const message = String(body.variables?.input?.message ?? '').trim()
+      if (!currentPlayer || !message) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Chat message cannot be empty.' }] }),
+        })
+      }
+
+      const chatMessage = {
+        id: `chat-${state.chatMessages.length + 1}`,
+        playerId: currentPlayer.id,
+        message,
+        sentAtUtc: new Date().toISOString(),
+      }
+      state.chatMessages.push(chatMessage)
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            sendChatMessage: {
+              id: chatMessage.id,
+              playerId: currentPlayer.id,
+              playerDisplayName: currentPlayer.displayName,
+              message: chatMessage.message,
+              sentAtUtc: chatMessage.sentAtUtc,
+              isOwnMessage: true,
+            },
+          },
+        }),
       })
     }
 

@@ -259,6 +259,27 @@ export interface GlobalExchangeProductListing {
   createdAtUtc: string
 }
 
+export interface GlobalExchangeProductQuote {
+  productTypeId: string
+  productName: string
+  productSlug: string
+  productIndustry: string
+  unitSymbol: string
+  basePrice: number
+  bidPricePerUnit: number
+  offerPricePerUnit: number
+  estimatedQuality: number
+}
+
+export interface InGameChatMessage {
+  id: string
+  playerId: string
+  playerDisplayName: string
+  message: string
+  sentAtUtc: string
+  isOwnMessage: boolean
+}
+
 /** Matches backend ApplicationUser entity */
 export interface User {
   id: string

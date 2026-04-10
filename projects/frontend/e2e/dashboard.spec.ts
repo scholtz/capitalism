@@ -71,7 +71,8 @@ test.describe('Dashboard — tick countdown', () => {
     await page.goto('/dashboard')
 
     await expect(page.locator('.tick-clock-widget')).toBeVisible()
-    await expect(page.locator('.tick-clock-label')).toContainText('42')
+    await expect(page.locator('.tick-clock-label')).toContainText('2000')
+    await expect(page.locator('.tick-clock-widget')).toHaveAttribute('title', /42/)
   })
 
   test('shows countdown timer in tick clock widget', async ({ page }) => {
@@ -133,7 +134,7 @@ test.describe('Dashboard — tick countdown', () => {
     // Reload and verify countdown reappears (derived from backend data)
     await page.reload()
     await expect(page.locator('.tick-clock-widget')).toBeVisible()
-    await expect(page.locator('.tick-clock-label')).toContainText('7')
+    await expect(page.locator('.tick-clock-widget')).toHaveAttribute('title', /7/)
   })
 
   test('refreshes dashboard data after the next tick', async ({ page }) => {
@@ -160,12 +161,12 @@ test.describe('Dashboard — tick countdown', () => {
     await authenticateViaLocalStorage(page, `token-${player.id}`)
     await page.goto('/dashboard')
 
-    await expect(page.locator('.tick-clock-label')).toContainText('42')
+    await expect(page.locator('.tick-clock-widget')).toHaveAttribute('title', /42/)
 
     state.gameState.currentTick = 43
     state.gameState.lastTickAtUtc = new Date().toISOString()
 
-    await expect(page.locator('.tick-clock-label')).toContainText('43', { timeout: 5000 })
+    await expect(page.locator('.tick-clock-widget')).toHaveAttribute('title', /43/, { timeout: 5000 })
   })
 })
 
@@ -242,7 +243,8 @@ test.describe('Dashboard — pending actions timeline', () => {
     await expect(actionsList).toBeVisible()
     await expect(actionsList).toContainText('Layout upgrade')
     await expect(actionsList).toContainText('Main Factory')
-    await expect(actionsList).toContainText('3 ticks remaining')
+    await expect(actionsList).toContainText('Applies')
+    await expect(actionsList.locator('.applies-at')).toHaveAttribute('title', /53/)
   })
 
   test('shows view building link for pending action', async ({ page }) => {
@@ -342,6 +344,49 @@ test.describe('Dashboard — pending actions timeline', () => {
 
     // After tick advance, the plan is applied and the action should be gone
     await expect(page.getByRole('status')).toContainText('No scheduled actions')
+  })
+})
+
+test.describe('Dashboard — chat panel', () => {
+  test('shows existing messages and sends a new chat message', async ({ page }) => {
+    const player = makePlayer({
+      displayName: 'Chatty CEO',
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-chat',
+          playerId: 'player-1',
+          name: 'Chat Corp',
+          cash: 400000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, {
+      players: [player],
+      chatMessages: [
+        {
+          id: 'chat-1',
+          playerId: player.id,
+          message: 'Welcome to the exchange floor.',
+          sentAtUtc: '2026-01-01T00:00:00Z',
+        },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.getByRole('heading', { name: 'In-Game Chat' })).toBeVisible()
+    await expect(page.locator('.chat-log')).toContainText('Welcome to the exchange floor.')
+
+    await page.getByLabel('Chat message').fill('Need more wooden chairs in Bratislava.')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    await expect(page.locator('.chat-log')).toContainText('Need more wooden chairs in Bratislava.')
   })
 })
 

@@ -948,15 +948,19 @@ test.describe('Global Exchange — Products marketplace tab', () => {
     await expect(page.locator('.products-mode-hint')).toBeVisible()
   })
 
-  test('Products tab shows empty state when no listings exist', async ({ page }) => {
+  test('Products tab shows market bid and offer quotes even when no player listings exist', async ({ page }) => {
     setupMockApi(page, { productExchangeListings: [] })
     await page.goto('/exchange')
 
     await page.getByRole('tab', { name: 'Products' }).click()
     await expect(page.locator('.exchange-loading')).toHaveCount(0)
 
-    // The page should show the product marketplace with no listings
+    const chairRow = page.locator('.product-row').filter({ hasText: 'Wooden Chair' })
+    await expect(chairRow).toBeVisible()
     await expect(page.locator('.products-mode-hint')).toBeVisible()
+    await expect(chairRow).toContainText('Bid price')
+    await expect(chairRow).toContainText('Ask price')
+    await expect(chairRow).toContainText('Listings appear when players place sell orders')
   })
 
   test('Products tab shows listings when sell orders exist', async ({ page }) => {
@@ -997,6 +1001,11 @@ test.describe('Global Exchange — Products marketplace tab', () => {
 
     // Industry badge should show
     await expect(page.locator('.product-industry-badge', { hasText: 'Furniture' })).toBeVisible()
+
+    // Synthetic market quote should still be present above player listings
+    const chairRow = page.locator('.product-row').filter({ hasText: 'Wooden Chair' })
+    await expect(chairRow).toContainText('Bid price')
+    await expect(chairRow).toContainText('Ask price')
 
     // Listing details should be visible
     await expect(page.locator('.listing-price', { hasText: '$55' })).toBeVisible()

@@ -73,6 +73,56 @@ public sealed class Mutation
         };
     }
 
+    /// <summary>Sends a shared in-game chat message authored by the authenticated player.</summary>
+    [Authorize]
+    public async Task<InGameChatMessage> SendChatMessage(
+        SendChatMessageInput input,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var player = await db.Players.FirstOrDefaultAsync(candidate => candidate.Id == userId);
+        if (player is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+        }
+
+        var message = input.Message.Trim();
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Chat message cannot be empty.")
+                    .SetCode("CHAT_MESSAGE_EMPTY")
+                    .Build());
+        }
+
+        var chatMessage = new ChatMessage
+        {
+            Id = Guid.NewGuid(),
+            PlayerId = player.Id,
+            Message = message,
+            SentAtUtc = DateTime.UtcNow
+        };
+
+        db.ChatMessages.Add(chatMessage);
+        await db.SaveChangesAsync();
+
+        return new InGameChatMessage
+        {
+            Id = chatMessage.Id,
+            PlayerId = player.Id,
+            PlayerDisplayName = player.DisplayName,
+            Message = chatMessage.Message,
+            SentAtUtc = chatMessage.SentAtUtc,
+            IsOwnMessage = true
+        };
+    }
+
     /// <summary>Authenticates a player and returns an auth token.</summary>
     public async Task<AuthPayload> Login(
         LoginInput input,
@@ -1848,6 +1898,11 @@ public sealed class Mutation
             .Select(u => u.ProductTypeId!.Value)
             .ToHashSet();
 
+        var purchaseProductIds = submittedUnits
+            .Where(u => u.UnitType == "PURCHASE" && u.ProductTypeId.HasValue)
+            .Select(u => u.ProductTypeId!.Value)
+            .ToHashSet();
+
         // Gather product IDs configured on STORAGE units in this plan.
         var storageProductIds = submittedUnits
             .Where(u => u.UnitType == "STORAGE" && u.ProductTypeId.HasValue)
@@ -1861,7 +1916,9 @@ public sealed class Mutation
 
         if (storageUnitsWithProduct.Count > 0)
         {
-            // Allowed products for STORAGE = MFG products in plan + current inventory.
+            // Allowed products for STORAGE = MFG products in plan + purchase products
+            // in plan + current inventory. This lets Sales Shops buffer purchased
+            // products before routing them to Public Sales.
             var inventoryProductIds = await db.Inventories
                 .Where(i => i.BuildingId == buildingId && i.ProductTypeId.HasValue && i.Quantity > 0)
                 .Select(i => i.ProductTypeId!.Value)
@@ -1871,12 +1928,12 @@ public sealed class Mutation
             foreach (var unit in storageUnitsWithProduct)
             {
                 var pid = unit.ProductTypeId!.Value;
-                if (!mfgProductIds.Contains(pid) && !inventoryProductIds.Contains(pid))
+                if (!mfgProductIds.Contains(pid) && !purchaseProductIds.Contains(pid) && !inventoryProductIds.Contains(pid))
                 {
                     throw new GraphQLException(
                         ErrorBuilder.New()
                             .SetMessage(
-                                "A STORAGE unit's product must match a MANUFACTURING unit in this configuration or be present in the building's current inventory.")
+                                "A STORAGE unit's product must match a MANUFACTURING or PURCHASE unit in this configuration or be present in the building's current inventory.")
                             .SetCode("STORAGE_PRODUCT_NOT_REACHABLE")
                             .Build());
                 }

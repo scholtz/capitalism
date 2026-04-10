@@ -11,10 +11,12 @@ import { useTickCountdown } from '@/composables/useTickCountdown'
 import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { deepEqual } from '@/lib/utils'
 import { getActiveCompany } from '@/lib/accountContext'
+import { formatInGameTime } from '@/lib/gameTime'
 import PendingActionsTimeline from '@/components/dashboard/PendingActionsTimeline.vue'
 import SupplyChainPanel from '@/components/dashboard/SupplyChainPanel.vue'
 import FinancialSummaryCard from '@/components/dashboard/FinancialSummaryCard.vue'
 import StarterGuidance from '@/components/dashboard/StarterGuidance.vue'
+import DashboardChatPanel from '@/components/dashboard/DashboardChatPanel.vue'
 import type { Company, GameState, ScheduledActionSummary, CityPowerBalance, CompanyLedgerSummary, City, BuildingUnitOperationalStatus } from '@/types'
 
 const { t, locale } = useI18n()
@@ -46,6 +48,9 @@ const { saveScrollPosition, restoreScrollPosition } = useScrollPreservation()
 const activeCompany = computed(() => getActiveCompany(auth.player, companies.value))
 const isPersonAccount = computed(() => auth.player?.activeAccountType !== 'COMPANY' || !activeCompany.value)
 const visibleCompanies = computed(() => (activeCompany.value ? [activeCompany.value] : []))
+const formattedGameTime = computed(() =>
+  gameState.value?.currentGameTimeUtc ? formatInGameTime(gameState.value.currentGameTimeUtc, locale.value) : '',
+)
 
 const buildingTypeIcons: Record<string, string> = {
   MINE: '⛏️',
@@ -338,8 +343,13 @@ async function createCompany() {
           <span class="player-email">{{ auth.player.email }}</span>
         </div>
       </div>
-      <div v-if="gameState" class="tick-clock-widget" :aria-label="t('tickClock.sectionTitle')">
-        <span class="tick-clock-label">{{ t('tickClock.currentTick', { tick: gameState.currentTick }) }}</span>
+      <div
+        v-if="gameState"
+        class="tick-clock-widget"
+        :aria-label="t('tickClock.sectionTitle')"
+        :title="t('tickClock.currentTick', { tick: gameState.currentTick })"
+      >
+        <span class="tick-clock-label">{{ t('tickClock.currentTime', { time: formattedGameTime }) }}</span>
         <span v-if="tickCountdown" class="tick-clock-countdown" role="timer">{{ tickCountdown }}</span>
       </div>
     </div>
@@ -381,6 +391,8 @@ async function createCompany() {
       </section>
 
       <PendingActionsTimeline :actions="pendingActions" :loading="pendingActionsLoading" :current-tick="gameState?.currentTick ?? null" />
+
+      <DashboardChatPanel />
 
       <section v-if="isPersonAccount" class="person-account-panel">
         <div class="person-account-header">

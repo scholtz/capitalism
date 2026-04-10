@@ -93,6 +93,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     /// <summary>Audit trail for administrator actions performed while impersonating players.</summary>
     public DbSet<AdminActionAuditLog> AdminActionAuditLogs => Set<AdminActionAuditLog>();
 
+    /// <summary>Shared in-game chat messages authored by players.</summary>
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -111,6 +114,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(p => p.OnboardingCurrentStep).HasMaxLength(40);
             e.Property(p => p.OnboardingIndustry).HasMaxLength(50);
             e.Property(p => p.ConcurrencyToken).IsConcurrencyToken();
+        });
+
+        // ChatMessage
+        modelBuilder.Entity<ChatMessage>(e =>
+        {
+            e.HasKey(message => message.Id);
+            e.Property(message => message.Message).HasMaxLength(300);
+            e.HasOne(message => message.Player)
+                .WithMany()
+                .HasForeignKey(message => message.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(message => message.SentAtUtc);
         });
 
         // Company

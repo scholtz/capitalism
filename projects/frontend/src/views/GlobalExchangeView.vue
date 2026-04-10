@@ -8,7 +8,9 @@ import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useGameStateStore } from '@/stores/gameState'
 import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { deepEqual } from '@/lib/utils'
-import type { GlobalExchangeOffer, GlobalExchangeProductListing, ResourceType, ProductType } from '@/types'
+import { buildGlobalExchangeProductQuote } from '@/lib/globalExchangeProductQuotes'
+import { formatInGameTime } from '@/lib/gameTime'
+import type { GlobalExchangeOffer, GlobalExchangeProductListing, GlobalExchangeProductQuote, ResourceType, ProductType } from '@/types'
 
 interface City {
   id: string
@@ -36,13 +38,14 @@ interface ProductRow {
   productIndustry: string
   unitSymbol: string
   basePrice: number
+  marketQuote: GlobalExchangeProductQuote
   listings: GlobalExchangeProductListing[]
   bestPrice: number
 }
 
 type MarketMode = 'resources' | 'products'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
 const gameStateStore = useGameStateStore()
 const route = useRoute()
@@ -266,6 +269,11 @@ useTickRefresh(async () => {
 })
 
 const currentTick = computed(() => gameStateStore.gameState?.currentTick ?? null)
+const formattedSnapshotTime = computed(() =>
+  gameStateStore.gameState?.currentGameTimeUtc
+    ? formatInGameTime(gameStateStore.gameState.currentGameTimeUtc, locale.value)
+    : '',
+)
 
 const categories = computed(() => {
   const cats = [...new Set(resources.value.map((r) => r.category))]
@@ -316,6 +324,7 @@ const productRows = computed<ProductRow[]>(() => {
 
   return filtered.map((product) => {
     const listings = allProductListings.value.filter((l) => l.productTypeId === product.id)
+    const marketQuote = buildGlobalExchangeProductQuote(product, currentTick.value ?? 0)
     return {
       productId: product.id,
       productName: product.name,
@@ -323,18 +332,14 @@ const productRows = computed<ProductRow[]>(() => {
       productIndustry: product.industry,
       unitSymbol: product.unitSymbol,
       basePrice: product.basePrice,
+      marketQuote,
       listings,
       bestPrice: listings.length > 0 ? Math.min(...listings.map((l) => l.pricePerUnit)) : 0,
     }
   })
 })
 
-// Only show rows that have listings when in products mode, plus a filtered empty indicator
-const productRowsWithListings = computed(() => productRows.value.filter((r) => r.listings.length > 0))
 const productRowsEmpty = computed(() => productRows.value.length === 0)
-const noProductListingsAtAll = computed(
-  () => !productListingsLoading.value && productRows.value.length > 0 && productRowsWithListings.value.length === 0,
-)
 
 function formatPrice(value: number): string {
   return `$${value.toFixed(2)}`
@@ -386,9 +391,12 @@ function priceVsBaseClass(pricePerUnit: number, basePrice: number): string {
         <h1 class="exchange-title">{{ t('globalExchange.title') }}</h1>
         <p class="exchange-subtitle">{{ t('globalExchange.subtitle') }}</p>
         <div class="exchange-hero-meta">
-          <span class="exchange-tick-chip" :title="t('globalExchange.tickHint')">
-            <span class="exchange-tick-label">{{ t('globalExchange.tick') }}</span>
-            <span class="exchange-tick-value">{{ currentTick !== null ? currentTick : '—' }}</span>
+          <span
+            class="exchange-tick-chip"
+            :title="currentTick !== null ? t('globalExchange.tickHint', { tick: currentTick }) : undefined"
+          >
+            <span class="exchange-tick-label">{{ t('globalExchange.snapshotTime') }}</span>
+            <span class="exchange-tick-value">{{ formattedSnapshotTime || '—' }}</span>
           </span>
           <span v-if="marketMode === 'resources'" class="exchange-supply-chip">{{ t('globalExchange.endlessSupply') }}</span>
         </div>
@@ -572,16 +580,11 @@ function priceVsBaseClass(pricePerUnit: number, basePrice: number): string {
         <p v-else-if="productRowsEmpty" class="exchange-empty">
           {{ t('globalExchange.noProductResults') }}
         </p>
-        <p v-else-if="noProductListingsAtAll" class="exchange-empty products-empty-state">
-          {{ t('globalExchange.noProductListings') }}
-          <br />
-          <span class="empty-hint">{{ t('globalExchange.noProductListingsHint') }}</span>
-        </p>
 
-        <!-- Product rows — only show products with active listings -->
+        <!-- Product rows -->
         <template v-else>
           <div
-            v-for="row in productRowsWithListings"
+            v-for="row in productRows"
             :key="row.productId"
             class="product-row"
             :data-slug="row.productSlug"
@@ -589,7 +592,7 @@ function priceVsBaseClass(pricePerUnit: number, basePrice: number): string {
             <div class="product-row-header">
               <span class="product-name">{{ row.productName }}</span>
               <span class="product-industry-badge">{{ localizedIndustry(row.productIndustry) }}</span>
-              <span class="product-listing-count">{{ row.listings.length }} listing{{ row.listings.length !== 1 ? 's' : '' }}</span>
+              <span class="product-listing-count">{{ t('globalExchange.productListingsCount', { count: row.listings.length }) }}</span>
               <RouterLink
                 :to="`/encyclopedia/products/${row.productSlug}`"
                 class="production-chain-link"
@@ -597,10 +600,28 @@ function priceVsBaseClass(pricePerUnit: number, basePrice: number): string {
               >{{ t('globalExchange.viewProductDetail') }}</RouterLink>
             </div>
 
-            <!-- Listings table -->
-            <div class="product-listings-table">
+            <div class="product-market-quote-grid">
+              <div class="product-market-quote">
+                <span class="metric-label">{{ t('globalExchange.productBasePrice') }}</span>
+                <strong>{{ formatPrice(row.marketQuote.basePrice) }}/{{ row.unitSymbol }}</strong>
+              </div>
+              <div class="product-market-quote">
+                <span class="metric-label">{{ t('globalExchange.productBidPrice') }}</span>
+                <strong class="listing-price">{{ formatPrice(row.marketQuote.bidPricePerUnit) }}/{{ row.unitSymbol }}</strong>
+              </div>
+              <div class="product-market-quote">
+                <span class="metric-label">{{ t('globalExchange.productAskPrice') }}</span>
+                <strong class="listing-price">{{ formatPrice(row.marketQuote.offerPricePerUnit) }}/{{ row.unitSymbol }}</strong>
+              </div>
+              <div class="product-market-quote">
+                <span class="metric-label">{{ t('globalExchange.quality') }}</span>
+                <strong>{{ formatPercent(row.marketQuote.estimatedQuality) }}</strong>
+              </div>
+            </div>
+
+            <div v-if="row.listings.length > 0" class="product-listings-table">
               <div class="listings-header">
-                <span>{{ t('globalExchange.productAskPrice') }}</span>
+                <span>{{ t('globalExchange.productPlayerAskPrice') }}</span>
                 <span>{{ t('globalExchange.productPriceVsBase') }}</span>
                 <span>{{ t('globalExchange.productAvailable') }}</span>
                 <span>{{ t('globalExchange.productSeller') }}</span>
@@ -624,16 +645,8 @@ function priceVsBaseClass(pricePerUnit: number, basePrice: number): string {
                 <span class="listing-city">{{ listing.sellerCityName }}</span>
               </div>
             </div>
+            <p v-else class="no-product-listings-hint">{{ t('globalExchange.noProductListingsHint') }}</p>
           </div>
-
-          <!-- Show all matching products (including those without listings) if no listings found -->
-          <template v-if="productRowsWithListings.length === 0 && productRows.length > 0">
-            <p class="exchange-empty products-empty-state">
-              {{ t('globalExchange.noProductListings') }}
-              <br />
-              <span class="empty-hint">{{ t('globalExchange.noProductListingsHint') }}</span>
-            </p>
-          </template>
         </template>
       </template>
     </div>
@@ -1087,6 +1100,23 @@ function priceVsBaseClass(pricePerUnit: number, basePrice: number): string {
   font-weight: 500;
 }
 
+.product-market-quote-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  padding: 0.75rem 1rem 0;
+}
+
+.product-market-quote {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 /* Product listings table */
 .product-listings-table {
   padding: 0.75rem 1rem;
@@ -1163,6 +1193,13 @@ function priceVsBaseClass(pricePerUnit: number, basePrice: number): string {
 
 .listing-city {
   color: var(--color-text-secondary);
+}
+
+.no-product-listings-hint {
+  margin: 0;
+  padding: 0 1rem 1rem;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
 }
 
 /* Narrow / mobile */

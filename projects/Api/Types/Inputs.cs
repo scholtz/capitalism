@@ -31,6 +31,14 @@ public sealed class LoginInput
     public string Password { get; set; } = string.Empty;
 }
 
+/// <summary>Input for sending a shared in-game chat message.</summary>
+public sealed class SendChatMessageInput
+{
+    /// <summary>Plain-text message body shown in the shared chat feed.</summary>
+    [Required, MaxLength(300)]
+    public string Message { get; set; } = string.Empty;
+}
+
 /// <summary>Input for creating a new company.</summary>
 public sealed class CreateCompanyInput
 {

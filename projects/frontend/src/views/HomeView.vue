@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
@@ -7,15 +7,19 @@ import { gqlRequest } from '@/lib/graphql'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useGameStateStore } from '@/stores/gameState'
 import { deepEqual } from '@/lib/utils'
+import { formatInGameTime } from '@/lib/gameTime'
 import type { PlayerRanking, GameState } from '@/types'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
 const gameStateStore = useGameStateStore()
 const { gameState } = storeToRefs(gameStateStore)
 
 const rankings = ref<PlayerRanking[]>([])
 const loading = ref(true)
+const formattedGameTime = computed(() =>
+  gameState.value?.currentGameTimeUtc ? formatInGameTime(gameState.value.currentGameTimeUtc, locale.value) : '',
+)
 
 async function loadHomeData(isRefresh = false) {
   if (!isRefresh) {
@@ -84,10 +88,10 @@ useTickRefresh(() => loadHomeData(true))
     </section>
 
     <section v-if="gameState" class="game-status container">
-      <div class="status-cards">
-        <div class="status-card">
-          <span class="status-label">{{ t('home.currentTick') }}</span>
-          <span class="status-value">{{ gameState.currentTick }}</span>
+        <div class="status-cards">
+        <div class="status-card" :title="t('home.currentTick', { tick: gameState.currentTick })">
+          <span class="status-label">{{ t('home.currentTime') }}</span>
+          <span class="status-value">{{ formattedGameTime }}</span>
         </div>
         <div class="status-card">
           <span class="status-label">{{ t('home.taxRate') }}</span>

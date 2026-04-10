@@ -39,3 +39,7 @@ export function computeInGameTimeUtcFromTick(currentTick: number): string {
   gameStart.setUTCHours(gameStart.getUTCHours() + Math.max(currentTick, 0))
   return gameStart.toISOString()
 }
+
+export function formatGameTickTime(tick: number, locale: string): string {
+  return formatInGameTime(computeInGameTimeUtcFromTick(tick), locale)
+}

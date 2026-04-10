@@ -36,7 +36,7 @@ test.describe('Home page', () => {
   test('shows game status cards when data loads', async ({ page }) => {
     setupMockApi(page)
     await page.goto('/')
-    await expect(page.getByText('Current Tick')).toBeVisible()
+    await expect(page.getByText('Current Time')).toBeVisible()
     await expect(page.getByText('Tax Rate')).toBeVisible()
     await expect(page.getByText('Active Players')).toBeVisible()
   })

@@ -1293,6 +1293,53 @@ public sealed class Query
     }
 
     /// <summary>
+    /// Returns the latest shared in-game chat messages visible to the authenticated player.
+    /// Invisible-chat players remain visible to themselves and administrators only.
+    /// </summary>
+    [Authorize]
+    public async Task<List<InGameChatMessage>> GetChatMessages(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        int? limit)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+        var viewer = await db.Players
+            .AsNoTracking()
+            .FirstOrDefaultAsync(player => player.Id == userId);
+
+        if (viewer is null)
+        {
+            return [];
+        }
+
+        var safeLimit = Math.Clamp(limit ?? 50, 1, 100);
+        var canSeeInvisible = viewer.Role == PlayerRole.Admin;
+
+        var messages = await db.ChatMessages
+            .AsNoTracking()
+            .Include(message => message.Player)
+            .Where(message => !message.Player.IsInvisibleInChat
+                              || message.PlayerId == userId
+                              || canSeeInvisible)
+            .OrderByDescending(message => message.SentAtUtc)
+            .Take(safeLimit)
+            .OrderBy(message => message.SentAtUtc)
+            .ToListAsync();
+
+        return messages
+            .Select(message => new InGameChatMessage
+            {
+                Id = message.Id,
+                PlayerId = message.PlayerId,
+                PlayerDisplayName = message.Player.DisplayName,
+                Message = message.Message,
+                SentAtUtc = message.SentAtUtc,
+                IsOwnMessage = message.PlayerId == userId
+            })
+            .ToList();
+    }
+
+    /// <summary>
     /// Returns city-level global exchange offers for raw materials, including
     /// quality and estimated transit cost into the destination city.
     /// </summary>
@@ -3792,6 +3839,19 @@ public sealed class GlobalExchangeProductListing
 
     /// <summary>When this order was created.</summary>
     public DateTime CreatedAtUtc { get; set; }
+}
+
+/// <summary>
+/// A single line in the shared in-game chat feed.
+/// </summary>
+public sealed class InGameChatMessage
+{
+    public Guid Id { get; set; }
+    public Guid PlayerId { get; set; }
+    public string PlayerDisplayName { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public DateTime SentAtUtc { get; set; }
+    public bool IsOwnMessage { get; set; }
 }
 
 /// <summary>Inventory fill information for a single building unit.</summary>

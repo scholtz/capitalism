@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { formatGameTickTime } from '@/lib/gameTime'
 import type { ScheduledActionSummary } from '@/types'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
-defineProps<{
+const props = defineProps<{
   actions: ScheduledActionSummary[]
   loading: boolean
   currentTick: number | null
@@ -33,6 +34,14 @@ function actionLabel(actionType: string): string {
   }
   return actionType
 }
+
+function formatApplyTime(appliesAtTick: number): string {
+  return formatGameTickTime(appliesAtTick, locale.value)
+}
+
+function actionDebugTitle(action: ScheduledActionSummary): string {
+  return `${t('pendingActions.appliesAtTick', { tick: action.appliesAtTick })} · ${t('pendingActions.ticksRemaining', { ticks: action.ticksRemaining })}`
+}
 </script>
 
 <template>
@@ -55,11 +64,13 @@ function actionLabel(actionType: string): string {
             <span class="action-building-name">{{ action.buildingName }}</span>
           </div>
           <div class="action-meta">
-            <span class="ticks-remaining" role="timer">
-              {{ t('pendingActions.ticksRemaining', { ticks: action.ticksRemaining }) }}
-            </span>
-            <span v-if="currentTick !== null" class="applies-at">
-              {{ t('pendingActions.appliesAtTick', { tick: action.appliesAtTick }) }}
+            <span
+              v-if="props.currentTick !== null"
+              class="applies-at"
+              role="timer"
+              :title="actionDebugTitle(action)"
+            >
+              {{ t('pendingActions.appliesAtTime', { time: formatApplyTime(action.appliesAtTick) }) }}
             </span>
           </div>
           <div class="action-progress">

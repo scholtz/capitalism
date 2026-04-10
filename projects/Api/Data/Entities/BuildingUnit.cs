@@ -22,7 +22,7 @@ public sealed class BuildingUnit
     /// Unit type determining its function. Valid types depend on building type:
     /// Mine: MINING, STORAGE, B2B_SALES
     /// Factory: PURCHASE, MANUFACTURING, BRANDING, STORAGE, B2B_SALES
-    /// Sales Shop: PURCHASE, MARKETING, PUBLIC_SALES
+    /// Sales Shop: PURCHASE, MARKETING, STORAGE, PUBLIC_SALES
     /// R&amp;D: PRODUCT_QUALITY, BRAND_QUALITY
     /// </summary>
     [Required, MaxLength(30)]

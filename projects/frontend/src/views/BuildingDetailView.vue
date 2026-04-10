@@ -297,7 +297,7 @@ const LAYOUT_STORAGE_KEY = 'capitalism_building_layouts'
 const allowedUnitsMap: Record<string, string[]> = {
   MINE: ['MINING', 'STORAGE', 'B2B_SALES'],
   FACTORY: ['PURCHASE', 'MANUFACTURING', 'BRANDING', 'STORAGE', 'B2B_SALES'],
-  SALES_SHOP: ['PURCHASE', 'MARKETING', 'PUBLIC_SALES'],
+  SALES_SHOP: ['PURCHASE', 'MARKETING', 'STORAGE', 'PUBLIC_SALES'],
   RESEARCH_DEVELOPMENT: ['PRODUCT_QUALITY', 'BRAND_QUALITY'],
 }
 
@@ -1532,7 +1532,7 @@ const configWarnings = computed<ValidationWarning[]>(() => {
   if (building.value.type === 'SALES_SHOP') {
     for (const pu of purchaseUnits) {
       const linked = getLinkedUnits(pu, units)
-      const hasConsumer = linked.some((u) => ['PUBLIC_SALES', 'MARKETING'].includes(u.unitType))
+      const hasConsumer = linked.some((u) => ['PUBLIC_SALES', 'MARKETING', 'STORAGE'].includes(u.unitType))
       if (!hasConsumer) {
         warnings.push({ key: 'buildingDetail.warnings.purchaseNotLinked', params: { x: pu.gridX, y: pu.gridY } })
       }

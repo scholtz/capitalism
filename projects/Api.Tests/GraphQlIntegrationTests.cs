@@ -353,6 +353,168 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task SendChatMessage_PersistsAndReturnsDisplayName()
+    {
+        var token = await RegisterAndGetTokenAsync($"chat-{Guid.NewGuid():N}@test.com", "Chatty Trader");
+
+        var sendResult = await ExecuteGraphQlAsync(
+            """
+            mutation SendChatMessage($input: SendChatMessageInput!) {
+              sendChatMessage(input: $input) {
+                id
+                playerDisplayName
+                message
+                isOwnMessage
+              }
+            }
+            """,
+            new { input = new { message = "Hello market" } },
+            token);
+
+        var payload = sendResult.GetProperty("data").GetProperty("sendChatMessage");
+        Assert.Equal("Chatty Trader", payload.GetProperty("playerDisplayName").GetString());
+        Assert.Equal("Hello market", payload.GetProperty("message").GetString());
+        Assert.True(payload.GetProperty("isOwnMessage").GetBoolean());
+
+        var queryResult = await ExecuteGraphQlAsync(
+            """
+            query ChatMessages {
+              chatMessages(limit: 10) {
+                playerDisplayName
+                message
+              }
+            }
+            """,
+            token: token);
+
+        var messages = queryResult.GetProperty("data").GetProperty("chatMessages");
+        Assert.Contains(messages.EnumerateArray(), message =>
+            message.GetProperty("playerDisplayName").GetString() == "Chatty Trader"
+            && message.GetProperty("message").GetString() == "Hello market");
+    }
+
+    [Fact]
+    public async Task SendChatMessage_RequiresAuthentication()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation SendChatMessage($input: SendChatMessageInput!) {
+              sendChatMessage(input: $input) {
+                id
+              }
+            }
+            """,
+            new { input = new { message = "Hello without token" } });
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.NotEqual(0, errors.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task ChatMessages_HideInvisiblePlayersFromOtherRegularPlayers()
+    {
+        var hiddenEmail = $"hidden-{Guid.NewGuid():N}@test.com";
+        var viewerEmail = $"viewer-{Guid.NewGuid():N}@test.com";
+        var hiddenToken = await RegisterAndGetTokenAsync(hiddenEmail, "Hidden Trader");
+        var viewerToken = await RegisterAndGetTokenAsync(viewerEmail, "Viewer");
+
+        await ExecuteGraphQlAsync(
+            """
+            mutation SendChatMessage($input: SendChatMessageInput!) {
+              sendChatMessage(input: $input) {
+                id
+              }
+            }
+            """,
+            new { input = new { message = "Invisible support note" } },
+            hiddenToken);
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var hiddenPlayer = await db.Players.SingleAsync(player => player.Email == hiddenEmail);
+            hiddenPlayer.IsInvisibleInChat = true;
+            await db.SaveChangesAsync();
+        }
+
+        var viewerResult = await ExecuteGraphQlAsync(
+            """
+            query ChatMessages {
+              chatMessages(limit: 10) {
+                playerDisplayName
+                message
+              }
+            }
+            """,
+            token: viewerToken);
+        Assert.DoesNotContain(viewerResult.GetProperty("data").GetProperty("chatMessages").EnumerateArray(), message =>
+            message.GetProperty("playerDisplayName").GetString() == "Hidden Trader");
+
+        var hiddenResult = await ExecuteGraphQlAsync(
+            """
+            query ChatMessages {
+              chatMessages(limit: 10) {
+                playerDisplayName
+                message
+              }
+            }
+            """,
+            token: hiddenToken);
+        Assert.Contains(hiddenResult.GetProperty("data").GetProperty("chatMessages").EnumerateArray(), message =>
+            message.GetProperty("playerDisplayName").GetString() == "Hidden Trader");
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_SalesShopStoragePlanWithPurchasedProduct_IsAllowed()
+    {
+        var token = await RegisterAndGetTokenAsync($"sales-shop-storage-{Guid.NewGuid():N}@test.com", "Retail Planner");
+
+        var companyResult = await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Retail Planner Co" } },
+            token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var citiesResult = await ExecuteGraphQlAsync("{ cities { id } }");
+        var cityId = citiesResult.GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingResult = await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "SALES_SHOP", name = "Retail Buffer Shop" } },
+            token);
+        var buildingId = buildingResult.GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString()!;
+
+        var chairProductId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+              storeBuildingConfiguration(input: $input) {
+                id
+              }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId, minPrice = (decimal?)null },
+                        new { unitType = "STORAGE", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId, minPrice = (decimal?)null },
+                        new { unitType = "PUBLIC_SALES", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId, minPrice = (decimal?)45m },
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        Assert.True(result.GetProperty("data").TryGetProperty("storeBuildingConfiguration", out var payload));
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("id").GetString()));
+    }
+
+    [Fact]
     public async Task FinishOnboarding_CompletesStagedFlowWithoutUnexpectedExecutionError()
     {
         var token = await RegisterAndGetTokenAsync(email: $"finish-onboarding-{Guid.NewGuid():N}@test.com");
