@@ -164,6 +164,13 @@ public sealed class PublicSalesAnalytics
     /// Each entry carries a factor name, impact direction, score, and player-facing description.
     /// </summary>
     public List<DemandDriverEntry> DemandDrivers { get; set; } = [];
+    /// <summary>
+    /// Current market trend factor for this product in this city.
+    /// Range [0.5, 1.5]; 1.0 = neutral. Values above 1.0 indicate a hot market
+    /// (trend is boosting demand); values below 1.0 indicate a cold market.
+    /// Null when no trend state exists yet (first tick).
+    /// </summary>
+    public decimal? TrendFactor { get; set; }
 }
 
 public sealed class ProfitTickSnapshot

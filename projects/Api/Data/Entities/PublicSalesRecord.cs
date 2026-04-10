@@ -23,4 +23,9 @@ public sealed class PublicSalesRecord
     public decimal Revenue { get; set; }
     public decimal Demand { get; set; }
     public decimal SalesCapacity { get; set; }
+    /// <summary>
+    /// Market trend factor that was active for this city/product during this tick.
+    /// Range [0.5, 1.5]; 1.0 = neutral.  Stored for analytics and trend-driver display.
+    /// </summary>
+    public decimal TrendFactor { get; set; } = 1.0m;
 }

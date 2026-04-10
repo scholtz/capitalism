@@ -924,6 +924,7 @@ export default {
       trendUp: '↑ Steigend',
       trendDown: '↓ Fallend',
       trendFlat: '→ Stabil',
+      trendFactor: 'Marktdynamik',
       totalRevenue: 'Gesamtumsatz',
       totalProfit: 'Bruttogewinn',
       totalSold: 'Verkaufte Einheiten',
@@ -966,6 +967,7 @@ export default {
         factor_SATURATION: 'Marktsättigung',
         factor_COMPETITION: 'Wettbewerb',
         factor_SALARY: 'Kaufkraft',
+        factor_TREND: 'Markttrend',
       },
       priceUpdateFailed: 'Preisaktualisierung fehlgeschlagen. Bitte versuchen Sie es erneut.',
       priceUpdate: {

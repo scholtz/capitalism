@@ -2117,10 +2117,36 @@ public sealed class Query
         // ── Demand drivers ──────────────────────────────────────────────────────
         // Compute structured demand driver explanations from current unit state so
         // players can understand why sales are strong or weak.
+        // Load the current market trend factor from the most-recent sales records
+        // (stored there by PublicSalesPhase for analytics use).
+        decimal? currentTrendFactor = null;
+        if (records.Count > 0)
+        {
+            var latestTick = records.Max(r => r.Tick);
+            var latestRecord = records.FirstOrDefault(r => r.Tick == latestTick);
+            if (latestRecord is not null && latestRecord.TrendFactor != 1.0m)
+                currentTrendFactor = latestRecord.TrendFactor;
+            else if (latestRecord is not null)
+                currentTrendFactor = latestRecord.TrendFactor;  // include neutral 1.0 too
+        }
+        // Also try to fetch from MarketTrendState directly (most up-to-date).
+        if (city is not null)
+        {
+            var resolvedItemIdForTrend = productTypeIdForElasticity
+                ?? records.FirstOrDefault()?.ResourceTypeId;
+            if (resolvedItemIdForTrend.HasValue)
+            {
+                var trendState = await db.MarketTrendStates
+                    .FirstOrDefaultAsync(t => t.CityId == city.Id && t.ItemId == resolvedItemIdForTrend.Value);
+                if (trendState is not null)
+                    currentTrendFactor = trendState.TrendFactor;
+            }
+        }
+
         var demandDrivers = ComputeDemandDrivers(
             unit, productTypeForAnalytics, inventoryQuality, brandAwareness, populationIndex,
             marketShare, unmetDemandShare, city?.BaseSalaryPerManhour,
-            recentCitySalary, city?.Population ?? 0);
+            recentCitySalary, city?.Population ?? 0, currentTrendFactor);
 
         // ── Trend direction ─────────────────────────────────────────────────────
         // Compare average revenue in the most-recent 5 ticks vs the prior 5 ticks to give
@@ -2165,6 +2191,7 @@ public sealed class Query
             TotalProfit = totalProfit,
             ProfitHistory = profitHistory,
             DemandDrivers = demandDrivers,
+            TrendFactor = currentTrendFactor,
         };
     }
 
@@ -2319,7 +2346,8 @@ public sealed class Query
         decimal? unmetDemandShare,
         decimal? baseSalaryPerManhour = null,
         decimal recentCitySalary = 0m,
-        long cityPopulation = 0)
+        long cityPopulation = 0,
+        decimal? trendFactor = null)
     {
         var drivers = new List<DemandDriverEntry>();
 
@@ -2542,6 +2570,35 @@ public sealed class Query
 
                 drivers.Add(new DemandDriverEntry { Factor = "COMPETITION", Impact = compImpact, Score = compScore, Description = compDesc });
             }
+        }
+
+        // TREND driver – based on the persisted market-trend factor for this city/product.
+        if (trendFactor.HasValue)
+        {
+            var tf = Math.Clamp(trendFactor.Value, GameConstants.TrendMin, GameConstants.TrendMax);
+            // Normalise to [0,1] for the score field.
+            var trendScore = Math.Clamp((tf - GameConstants.TrendMin)
+                / (GameConstants.TrendMax - GameConstants.TrendMin), 0m, 1m);
+            string trendImpact;
+            string trendDesc;
+            if (tf > 1.10m)
+            {
+                trendImpact = "POSITIVE";
+                trendDesc = $"Market trend is rising (+{((tf - 1m) * 100m):F0}%) — consumer demand is growing for this product. Keep stock well-supplied to capitalise.";
+            }
+            else if (tf >= 0.90m)
+            {
+                trendImpact = "NEUTRAL";
+                trendDesc = tf >= 1.0m
+                    ? "Market trend is slightly positive — demand is near the baseline."
+                    : "Market trend is slightly below baseline — demand is softening but still healthy.";
+            }
+            else
+            {
+                trendImpact = "NEGATIVE";
+                trendDesc = $"Market trend is falling ({((tf - 1m) * 100m):F0}%) — consumer demand for this product is suppressed. Consider lowering price, improving quality, or investing in marketing to reverse the trend.";
+            }
+            drivers.Add(new DemandDriverEntry { Factor = "TREND", Impact = trendImpact, Score = trendScore, Description = trendDesc });
         }
 
         // Order: most impactful first — NEGATIVE first, then NEUTRAL, then POSITIVE.

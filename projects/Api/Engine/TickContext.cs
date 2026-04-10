@@ -47,6 +47,14 @@ public sealed class TickContext
     /// </summary>
     public Dictionary<Guid, decimal> RecentSalaryByCity { get; init; } = [];
 
+    /// <summary>
+    /// Persisted market-trend states keyed by <c>(CityId, ItemId)</c>.
+    /// Pre-loaded by <see cref="TickProcessor"/> and mutated in-place by
+    /// <see cref="Phases.PublicSalesPhase"/> so changes are saved in the same
+    /// <c>SaveChangesAsync</c> call at the end of the tick.
+    /// </summary>
+    public Dictionary<(Guid CityId, Guid ItemId), MarketTrendState> TrendStatesByKey { get; init; } = [];
+
     public List<Inventory> NewInventory { get; } = [];
     public List<BuildingUnitResourceHistory> NewUnitResourceHistories { get; } = [];
 

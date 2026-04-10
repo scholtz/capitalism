@@ -2686,6 +2686,7 @@ async function loadPublicSalesAnalytics(unitId: string | null, isRefresh = false
           brandAwareness
           totalProfit
           trendDirection
+          trendFactor
           revenueHistory { tick revenue quantitySold }
           priceHistory { tick pricePerUnit }
           profitHistory { tick profit grossMarginPct }
@@ -5368,6 +5369,20 @@ watch(
                               ? t('buildingDetail.marketIntelligence.trendDown')
                               : t('buildingDetail.marketIntelligence.trendFlat')
                         }}
+                      </strong>
+                    </div>
+                    <!-- Market trend factor (live trend multiplier from the simulation) -->
+                    <div v-if="publicSalesAnalytics.trendFactor !== null" class="mi-metric">
+                      <span class="mi-metric-label">{{ t('buildingDetail.marketIntelligence.trendFactor') }}</span>
+                      <strong
+                        class="mi-metric-value mi-trend"
+                        :class="{
+                          'mi-trend-up': publicSalesAnalytics.trendFactor > 1.05,
+                          'mi-trend-down': publicSalesAnalytics.trendFactor < 0.95,
+                          'mi-trend-flat': publicSalesAnalytics.trendFactor >= 0.95 && publicSalesAnalytics.trendFactor <= 1.05,
+                        }"
+                      >
+                        {{ publicSalesAnalytics.trendFactor > 1 ? '+' : '' }}{{ ((publicSalesAnalytics.trendFactor - 1) * 100).toFixed(0) }}%
                       </strong>
                     </div>
                   </div>

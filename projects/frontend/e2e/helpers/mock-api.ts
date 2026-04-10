@@ -400,6 +400,7 @@ export type MockPublicSalesAnalytics = {
   totalProfit: number | null
   profitHistory: Array<{ tick: number; profit: number; grossMarginPct: number | null }> | null
   demandDrivers: Array<{ factor: string; impact: string; score: number; description: string }>
+  trendFactor?: number | null
 }
 
 export type MockUnitProductAnalytics = {

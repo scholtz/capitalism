@@ -922,6 +922,7 @@ export default {
       trendUp: '↑ Rising',
       trendDown: '↓ Declining',
       trendFlat: '→ Stable',
+      trendFactor: 'Market Momentum',
       totalRevenue: 'Total Revenue',
       totalProfit: 'Gross Profit',
       totalSold: 'Units Sold',
@@ -964,6 +965,7 @@ export default {
         factor_SATURATION: 'Market Saturation',
         factor_COMPETITION: 'Competition',
         factor_SALARY: 'Purchasing Power',
+        factor_TREND: 'Market Trend',
       },
       priceUpdateFailed: 'Failed to update price. Please try again.',
       priceUpdate: {

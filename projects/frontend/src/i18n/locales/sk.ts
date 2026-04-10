@@ -920,6 +920,7 @@ export default {
       trendUp: '↑ Rast',
       trendDown: '↓ Pokles',
       trendFlat: '→ Stabilný',
+      trendFactor: 'Momentum trhu',
       totalRevenue: 'Celkové tržby',
       totalProfit: 'Hrubý zisk',
       totalSold: 'Predané jednotky',
@@ -962,6 +963,7 @@ export default {
         factor_SATURATION: 'Nasýtenosť trhu',
         factor_COMPETITION: 'Konkurencia',
         factor_SALARY: 'Kúpna sila',
+        factor_TREND: 'Trhový trend',
       },
       priceUpdateFailed: 'Nepodarilo sa aktualizovať cenu. Skúste to znova.',
       priceUpdate: {

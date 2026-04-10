@@ -723,6 +723,12 @@ export interface PublicSalesAnalytics {
   profitHistory: ProfitTickSnapshot[] | null
   /** Structured demand driver explanations: price, quality, brand, location factors. */
   demandDrivers: DemandDriverEntry[]
+  /**
+   * Current market-trend factor for this product in this city.
+   * Range [0.5, 1.5]; 1.0 = neutral. > 1.0 = hot market, < 1.0 = cold market.
+   * Null when no trend state exists yet (first tick).
+   */
+  trendFactor: number | null
 }
 
 export interface SalesTickSnapshot {

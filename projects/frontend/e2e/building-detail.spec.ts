@@ -9346,6 +9346,212 @@ test.describe('Public Sales Market Intelligence panel', () => {
     await expect(panel.locator('.mi-tick-window')).toContainText('T1')
     await expect(panel.locator('.mi-tick-window')).toContainText('T100')
   })
+
+  test('shows market momentum metric when trendFactor is provided and > 1 (hot market)', async ({
+    page,
+  }) => {
+    const { player, chairProduct } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      productTypeId: chairProduct.id,
+      productName: chairProduct.name,
+      totalRevenue: 2000,
+      totalQuantitySold: 130,
+      averagePricePerUnit: chairProduct.basePrice * 1.5,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'STRONG',
+      actionHint: 'Demand is strong.',
+      recentUtilization: 0.92,
+      trendDirection: 'UP',
+      trendFactor: 1.21,
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 200, quantitySold: 13 })),
+      priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice * 1.5 })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0,
+      populationIndex: 1.2,
+      inventoryQuality: 0.8,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [
+        {
+          factor: 'TREND',
+          impact: 'POSITIVE',
+          score: 0.7,
+          description: 'Market trend is rising (+21%) — consumer demand is growing for this product.',
+        },
+      ],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Market Momentum metric should show +21% with up styling.
+    await expect(panel.getByText('Market Momentum')).toBeVisible()
+    await expect(panel.locator('.mi-trend-up').last()).toBeVisible()
+    await expect(panel.locator('.mi-trend-up').last()).toContainText('+21%')
+
+    // TREND driver should appear in the Demand Drivers section.
+    const driversSection = panel.locator('[aria-label="Demand Drivers"]')
+    await expect(driversSection).toBeVisible()
+    await expect(driversSection.getByText('Market Trend', { exact: true })).toBeVisible()
+    await expect(driversSection.getByText('Market trend is rising')).toBeVisible()
+  })
+
+  test('shows market momentum metric when trendFactor < 1 (cold market)', async ({ page }) => {
+    const { player, chairProduct } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      productTypeId: chairProduct.id,
+      productName: chairProduct.name,
+      totalRevenue: 500,
+      totalQuantitySold: 30,
+      averagePricePerUnit: chairProduct.basePrice * 1.5,
+      currentSalesCapacity: 120,
+      dataFromTick: 1,
+      dataToTick: 10,
+      demandSignal: 'WEAK',
+      actionHint: 'Consider lowering price.',
+      recentUtilization: 0.25,
+      trendDirection: 'DOWN',
+      trendFactor: 0.72,
+      revenueHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, revenue: 50, quantitySold: 3 })),
+      priceHistory: Array.from({ length: 10 }, (_, i) => ({ tick: i + 1, pricePerUnit: chairProduct.basePrice * 1.5 })),
+      marketShare: [{ label: 'Market Intel Corp', companyId: 'company-shop-mi', share: 1.0, isUnmet: false }],
+      elasticityIndex: -1.0,
+      unmetDemandShare: 0.7,
+      populationIndex: 1.0,
+      inventoryQuality: 0.6,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [
+        {
+          factor: 'TREND',
+          impact: 'NEGATIVE',
+          score: 0.22,
+          description: 'Market trend is falling (-28%) — consumer demand for this product is suppressed.',
+        },
+      ],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // Market Momentum metric should show -28% with down styling.
+    await expect(panel.getByText('Market Momentum')).toBeVisible()
+    await expect(panel.locator('.mi-trend-down').last()).toBeVisible()
+    await expect(panel.locator('.mi-trend-down').last()).toContainText('-28%')
+
+    // TREND driver should appear in the Demand Drivers section as negative.
+    const driversSection = panel.locator('[aria-label="Demand Drivers"]')
+    await expect(driversSection).toBeVisible()
+    await expect(driversSection.getByText('Market Trend', { exact: true })).toBeVisible()
+    await expect(driversSection.getByText('Market trend is falling')).toBeVisible()
+  })
+
+  test('does not show market momentum metric when trendFactor is null', async ({ page }) => {
+    const { player } = makeShopPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    const analytics: MockPublicSalesAnalytics = {
+      buildingUnitId: 'unit-shop-mi-ps',
+      buildingId: 'building-shop-mi',
+      buildingName: 'Market Intel Shop',
+      cityName: 'Bratislava',
+      productTypeId: null,
+      productName: null,
+      totalRevenue: 0,
+      totalQuantitySold: 0,
+      averagePricePerUnit: 0,
+      currentSalesCapacity: 120,
+      dataFromTick: 0,
+      dataToTick: 0,
+      demandSignal: 'NO_DATA',
+      actionHint: '',
+      recentUtilization: 0,
+      trendDirection: 'NO_DATA',
+      trendFactor: null,
+      revenueHistory: [],
+      priceHistory: [],
+      marketShare: [],
+      elasticityIndex: null,
+      unmetDemandShare: null,
+      populationIndex: null,
+      inventoryQuality: null,
+      brandAwareness: null,
+      totalProfit: null,
+      profitHistory: null,
+      demandDrivers: [],
+    }
+    state.publicSalesAnalytics['unit-shop-mi-ps'] = analytics
+
+    await page.goto('/building/building-shop-mi')
+
+    const activeSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Current Configuration' }) })
+      .first()
+    const psCell = activeSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await psCell.click()
+
+    const panel = page.locator('[aria-label="Market Intelligence"]')
+    await expect(panel).toBeVisible()
+
+    // "Market Momentum" label should NOT be visible when trendFactor is null.
+    await expect(panel.getByText('Market Momentum')).toBeHidden()
+  })
 })
 
 test.describe('Mine building edit mode', () => {

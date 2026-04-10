@@ -145,6 +145,43 @@ public sealed class PublicSalesPhase : ITickPhase
             var groupList = group.ToList();
             var firstOffer = groupList[0];
             var city = firstOffer.City;
+            var itemId = firstOffer.ItemId;
+            var trendKey = (city.Id, itemId);
+
+            // ── Market trend factor ──────────────────────────────────────────────
+            // Load or create the persisted trend state for this (city, product) pair.
+            // The trend factor is a demand multiplier in [0.5, 1.5].
+            if (!context.TrendStatesByKey.TryGetValue(trendKey, out var trendState))
+            {
+                trendState = new MarketTrendState
+                {
+                    Id = Guid.NewGuid(),
+                    CityId = city.Id,
+                    ItemId = itemId,
+                    TrendFactor = GameConstants.TrendNeutral,
+                    LastUpdatedTick = context.CurrentTick,
+                };
+                context.Db.MarketTrendStates.Add(trendState);
+                context.TrendStatesByKey[trendKey] = trendState;
+            }
+
+            var trendFactor = Math.Clamp(trendState.TrendFactor, GameConstants.TrendMin, GameConstants.TrendMax);
+
+            // ── Bounded random variation ─────────────────────────────────────────
+            // Apply a deterministic (tick + city + item seeded) ±TrendRandomAmplitude
+            // variation so identical products do not always produce identical sales.
+            // The seed is stable per (tick, city, item) combination for reproducibility.
+            var randomSeed = (int)(
+                (context.CurrentTick * 2654435761L)
+                ^ ((long)city.Id.GetHashCode() * 104395301L)
+                ^ ((long)itemId.GetHashCode() * 40503L)) & int.MaxValue;
+            var rng = new Random(randomSeed);
+            var randomMultiplier = 1m + (decimal)(rng.NextDouble() * 2.0 - 1.0)
+                * GameConstants.TrendRandomAmplitude;
+            randomMultiplier = Math.Clamp(
+                randomMultiplier,
+                1m - GameConstants.TrendRandomAmplitude,
+                1m + GameConstants.TrendRandomAmplitude);
 
             // City-level base demand for this product (population-driven, no location bias).
             // Salary purchasing power uses a blended signal:
@@ -155,7 +192,9 @@ public sealed class PublicSalesPhase : ITickPhase
             context.RecentSalaryByCity.TryGetValue(city.Id, out var recentSalary);
             var salaryFactor = PublicSalesPricingModel.ComputeBlendedSalaryFactor(
                 city.BaseSalaryPerManhour, recentSalary, city.Population);
-            var cityBaseDemand = city.Population * GameConstants.BaseDemandPerCapita * salaryFactor;
+            // Apply trend and random multipliers to the base city demand.
+            var cityBaseDemand = city.Population * GameConstants.BaseDemandPerCapita
+                * salaryFactor * trendFactor * randomMultiplier;
             if (cityBaseDemand <= 0m)
                 continue;
 
@@ -173,6 +212,10 @@ public sealed class PublicSalesPhase : ITickPhase
             var totalCompetitiveness = groupList.Sum(o => o.Competitiveness);
             if (totalCompetitiveness <= 0m)
                 continue;
+
+            // Track group-level totals for trend evolution after all offers are processed.
+            decimal groupTotalSold = 0m;
+            decimal groupTotalCapacity = 0m;
 
             foreach (var offer in groupList)
             {
@@ -192,6 +235,8 @@ public sealed class PublicSalesPhase : ITickPhase
                         * TickContext.GetPowerEfficiency(offer.Building);
                     unitCapacityCache[offer.Unit.Id] = salesCapacity;
                 }
+
+                groupTotalCapacity += salesCapacity;
 
                 var remainingCapacity = Math.Max(0m, salesCapacity - unitSoldSoFar);
                 if (remainingCapacity <= 0m)
@@ -215,6 +260,8 @@ public sealed class PublicSalesPhase : ITickPhase
                 sold = Math.Max(0m, Math.Floor(sold * 10000m) / 10000m);
                 if (sold <= 0m) continue;
 
+                groupTotalSold += sold;
+
                 // Record ledger entry.
                 context.Db.LedgerEntries.Add(new LedgerEntry
                 {
@@ -231,7 +278,7 @@ public sealed class PublicSalesPhase : ITickPhase
                     ResourceTypeId = offer.Inventory.ResourceTypeId,
                 });
 
-                // Record sales snapshot.
+                // Record sales snapshot including the active trend factor for analytics.
                 context.Db.PublicSalesRecords.Add(new PublicSalesRecord
                 {
                     Id = Guid.NewGuid(),
@@ -248,6 +295,7 @@ public sealed class PublicSalesPhase : ITickPhase
                     Revenue = sold * offer.Price,
                     Demand = demand,
                     SalesCapacity = salesCapacity,
+                    TrendFactor = trendFactor,
                 });
 
                 context.RecordUnitResourceHistory(
@@ -260,6 +308,42 @@ public sealed class PublicSalesPhase : ITickPhase
                 offer.Company.Cash += sold * offer.Price;
                 unitSoldTotals[offer.Unit.Id] = unitSoldSoFar + sold;
             }
+
+            // ── Trend evolution ──────────────────────────────────────────────────
+            // Update the trend factor based on how well this group performed.
+            // groupTotalCapacity > 0 guard prevents division-by-zero for groups that
+            // had no capacity available (e.g. all units at max capacity).
+            var groupUtilisation = groupTotalCapacity > 0m
+                ? Math.Clamp(groupTotalSold / groupTotalCapacity, 0m, 1m)
+                : 0m;
+
+            decimal updatedTrendFactor;
+            if (groupUtilisation >= GameConstants.TrendStrongUtilisationThreshold)
+            {
+                // Strong sales → trend rises toward TrendMax.
+                updatedTrendFactor = Math.Clamp(
+                    trendFactor + GameConstants.TrendRiseRate,
+                    GameConstants.TrendMin, GameConstants.TrendMax);
+            }
+            else if (groupUtilisation < GameConstants.TrendWeakUtilisationThreshold
+                     && totalCurrentStock > effectiveCityDemand)
+            {
+                // Weak sales AND ample supply (not supply-constrained) → trend falls toward TrendMin.
+                updatedTrendFactor = Math.Clamp(
+                    trendFactor - GameConstants.TrendFallRate,
+                    GameConstants.TrendMin, GameConstants.TrendMax);
+            }
+            else
+            {
+                // Moderate performance → decay toward neutral (1.0).
+                var gap = GameConstants.TrendNeutral - trendFactor;
+                updatedTrendFactor = Math.Clamp(
+                    trendFactor + gap * GameConstants.TrendDecayFraction,
+                    GameConstants.TrendMin, GameConstants.TrendMax);
+            }
+
+            trendState.TrendFactor = updatedTrendFactor;
+            trendState.LastUpdatedTick = context.CurrentTick;
         }
     }
 

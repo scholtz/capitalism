@@ -78,6 +78,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     /// <summary>Per-tick public sales snapshots for analytics.</summary>
     public DbSet<PublicSalesRecord> PublicSalesRecords => Set<PublicSalesRecord>();
 
+    /// <summary>Persisted market-trend state keyed by (city, item) pair.</summary>
+    public DbSet<MarketTrendState> MarketTrendStates => Set<MarketTrendState>();
+
     /// <summary>Loan offers published by bank buildings.</summary>
     public DbSet<LoanOffer> LoanOffers => Set<LoanOffer>();
 
@@ -431,6 +434,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(r => r.Revenue).HasPrecision(18, 4);
             e.Property(r => r.Demand).HasPrecision(18, 4);
             e.Property(r => r.SalesCapacity).HasPrecision(18, 4);
+            e.Property(r => r.TrendFactor).HasPrecision(8, 4);
             e.HasOne(r => r.BuildingUnit).WithMany().HasForeignKey(r => r.BuildingUnitId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(r => r.Building).WithMany().HasForeignKey(r => r.BuildingId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(r => r.Company).WithMany().HasForeignKey(r => r.CompanyId).OnDelete(DeleteBehavior.Restrict);
@@ -439,6 +443,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasOne(r => r.ResourceType).WithMany().HasForeignKey(r => r.ResourceTypeId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(r => new { r.BuildingUnitId, r.Tick });
             e.HasIndex(r => new { r.CompanyId, r.Tick });
+        });
+
+        // MarketTrendState
+        modelBuilder.Entity<MarketTrendState>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.Property(t => t.TrendFactor).HasPrecision(8, 4);
+            // Unique constraint: one trend state per (city, item) pair.
+            e.HasIndex(t => new { t.CityId, t.ItemId }).IsUnique();
         });
 
         // LoanOffer

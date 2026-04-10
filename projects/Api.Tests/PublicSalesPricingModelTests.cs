@@ -423,4 +423,60 @@ public sealed class PublicSalesPricingModelTests
             }
         }
     }
+
+    // ── Market trend constants sanity checks ──────────────────────────────────
+
+    [Fact]
+    public void GameConstants_TrendRange_IsValidForMultiplication()
+    {
+        // TrendMin and TrendMax must be positive so they act as valid demand multipliers.
+        Assert.True(GameConstants.TrendMin > 0m, "TrendMin must be positive");
+        Assert.True(GameConstants.TrendMax > GameConstants.TrendMin, "TrendMax must exceed TrendMin");
+        Assert.True(GameConstants.TrendNeutral >= GameConstants.TrendMin, "TrendNeutral must be >= TrendMin");
+        Assert.True(GameConstants.TrendNeutral <= GameConstants.TrendMax, "TrendNeutral must be <= TrendMax");
+    }
+
+    [Fact]
+    public void GameConstants_TrendRates_AreReasonable()
+    {
+        // Rise/fall rates must be small enough not to reach the max in a single tick
+        // from neutral (otherwise one good tick would instantly peg the trend to TrendMax).
+        var riseInOneTick = GameConstants.TrendNeutral + GameConstants.TrendRiseRate;
+        Assert.True(riseInOneTick < GameConstants.TrendMax,
+            $"A single TrendRiseRate step ({GameConstants.TrendRiseRate}) from neutral must not reach TrendMax ({GameConstants.TrendMax}) immediately.");
+        var fallInOneTick = GameConstants.TrendNeutral - GameConstants.TrendFallRate;
+        Assert.True(fallInOneTick > GameConstants.TrendMin,
+            $"A single TrendFallRate step ({GameConstants.TrendFallRate}) from neutral must not reach TrendMin ({GameConstants.TrendMin}) immediately.");
+    }
+
+    [Fact]
+    public void GameConstants_TrendRandomAmplitude_IsSmallFraction()
+    {
+        // Random amplitude must be a small fraction so it enriches gameplay noise without
+        // dominating player-controlled variables. 0 < amplitude < 0.3.
+        Assert.True(GameConstants.TrendRandomAmplitude > 0m, "RandomAmplitude must be > 0");
+        Assert.True(GameConstants.TrendRandomAmplitude < 0.3m,
+            $"RandomAmplitude {GameConstants.TrendRandomAmplitude} should be < 0.3 so it doesn't overwhelm player decisions.");
+    }
+
+    [Fact]
+    public void GameConstants_TrendDecayFraction_ConvergesToNeutral()
+    {
+        // Given the decay fraction, trend from TrendMax should reach within 5% of neutral
+        // within a reasonable number of ticks (e.g., 50 ticks is about 2 in-game days).
+        var current = GameConstants.TrendMax;
+        const int maxTicks = 50;
+        for (var i = 0; i < maxTicks; i++)
+        {
+            var gap = GameConstants.TrendNeutral - current;
+            current = Math.Clamp(
+                current + gap * GameConstants.TrendDecayFraction,
+                GameConstants.TrendMin,
+                GameConstants.TrendMax);
+        }
+        var tolerance = 0.05m * (GameConstants.TrendMax - GameConstants.TrendMin);
+        Assert.True(
+            Math.Abs(current - GameConstants.TrendNeutral) <= tolerance,
+            $"Trend should converge within 5% of neutral in {maxTicks} ticks, but got {current} (neutral={GameConstants.TrendNeutral}).");
+    }
 }

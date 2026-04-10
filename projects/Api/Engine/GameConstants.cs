@@ -168,6 +168,59 @@ public static class GameConstants
     /// </summary>
     public const decimal ConstrainedEfficiencyFactor = 0.5m;
 
+    // ── Market trend constants ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Neutral trend factor — no boost or penalty.
+    /// The trend factor starts here and returns to this level after sustained
+    /// moderate performance.
+    /// </summary>
+    public const decimal TrendNeutral = 1.0m;
+
+    /// <summary>Minimum trend factor (maximum cold-market penalty).</summary>
+    public const decimal TrendMin = 0.5m;
+
+    /// <summary>Maximum trend factor (maximum hot-market boost).</summary>
+    public const decimal TrendMax = 1.5m;
+
+    /// <summary>
+    /// Amount the trend factor rises per tick when sales utilisation exceeds
+    /// <see cref="TrendStrongUtilisationThreshold"/>.
+    /// </summary>
+    public const decimal TrendRiseRate = 0.03m;
+
+    /// <summary>
+    /// Amount the trend factor falls per tick when sales utilisation is below
+    /// <see cref="TrendWeakUtilisationThreshold"/> while stock was ample.
+    /// </summary>
+    public const decimal TrendFallRate = 0.03m;
+
+    /// <summary>
+    /// Fraction of the gap between the current trend factor and neutral (1.0)
+    /// that decays per tick during moderate sales performance.
+    /// E.g. 0.10 means the gap closes 10 % per tick: factor 1.3 → 1.27 → 1.24 …
+    /// </summary>
+    public const decimal TrendDecayFraction = 0.10m;
+
+    /// <summary>
+    /// Utilisation ratio above which sales are classified as "strong",
+    /// causing the trend to rise.
+    /// </summary>
+    public const decimal TrendStrongUtilisationThreshold = 0.75m;
+
+    /// <summary>
+    /// Utilisation ratio below which sales are classified as "weak",
+    /// causing the trend to fall (only when stock was ample to rule out supply constraints).
+    /// </summary>
+    public const decimal TrendWeakUtilisationThreshold = 0.25m;
+
+    /// <summary>
+    /// Amplitude of the bounded random demand variation applied per tick.
+    /// The demand multiplier is drawn from [1 - amplitude, 1 + amplitude].
+    /// 0.08 means ±8 % variation around the baseline city demand.
+    /// </summary>
+    public const decimal TrendRandomAmplitude = 0.08m;
+
     // ── Analytics constants ───────────────────────────────────────────────────
 
     /// <summary>

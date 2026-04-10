@@ -141,6 +141,10 @@ public sealed class TickProcessor(
             .GroupBy(e => buildingCityLookup[e.BuildingId!.Value])
             .ToDictionary(g => g.Key, g => g.Sum(e => Math.Abs(e.Amount)));
 
+        // Load persisted market-trend states so PublicSalesPhase can apply and evolve them.
+        var trendStates = await db.MarketTrendStates.ToListAsync(ct);
+        var trendStatesByKey = trendStates.ToDictionary(t => (t.CityId, t.ItemId));
+
         return new TickContext
         {
             Db = db,
@@ -180,6 +184,7 @@ public sealed class TickProcessor(
             ActiveExchangeOrders = exchangeOrders,
             TickStartRemainingQuantityByInventoryId = inventories.ToDictionary(i => i.Id, i => i.Quantity),
             RecentSalaryByCity = recentSalaryByCity,
+            TrendStatesByKey = trendStatesByKey,
         };
     }
 }
