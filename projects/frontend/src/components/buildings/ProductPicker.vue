@@ -30,6 +30,12 @@ const triggerRef = ref<HTMLElement | null>(null)
 /** Position of the dropdown panel calculated from the trigger's bounding rect. */
 const panelStyle = ref<{ top: string; left: string; width: string } | null>(null)
 
+/** Layout constants for the dropdown panel. */
+const PANEL_MAX_HEIGHT = 340
+const MIN_SPACE_BELOW = 200
+const VIEWPORT_HEIGHT_FRACTION = 0.5
+const PANEL_GAP = 4
+
 const filteredProducts = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   if (!q) return props.rankedProducts
@@ -73,22 +79,26 @@ function computePanelPosition() {
   const rect = triggerRef.value.getBoundingClientRect()
   const spaceBelow = window.innerHeight - rect.bottom
   panelStyle.value = {
-    top: `${rect.bottom + 4}px`,
+    top: `${rect.bottom + PANEL_GAP}px`,
     left: `${rect.left}px`,
     width: `${rect.width}px`,
   }
   // If not enough space below, position above the trigger
-  if (spaceBelow < 200) {
-    const panelMaxHeight = Math.min(340, window.innerHeight * 0.5)
-    panelStyle.value.top = `${rect.top - panelMaxHeight - 4}px`
+  if (spaceBelow < MIN_SPACE_BELOW) {
+    const maxHeight = Math.min(PANEL_MAX_HEIGHT, window.innerHeight * VIEWPORT_HEIGHT_FRACTION)
+    panelStyle.value.top = `${rect.top - maxHeight - PANEL_GAP}px`
   }
 }
+
+const searchInputRef = ref<HTMLInputElement | null>(null)
 
 async function open() {
   isOpen.value = true
   searchQuery.value = ''
   await nextTick()
   computePanelPosition()
+  // Move focus to search input so keyboard users can type immediately
+  searchInputRef.value?.focus()
 }
 
 function close() {
@@ -199,12 +209,12 @@ watch(
       <!-- Search input -->
       <div class="picker-search">
         <input
+          ref="searchInputRef"
           v-model="searchQuery"
           type="text"
           class="picker-search-input"
           :placeholder="t('productPicker.searchPlaceholder')"
           :aria-label="t('productPicker.searchPlaceholder')"
-          autofocus
         />
       </div>
 
