@@ -700,7 +700,7 @@ public static class BuildingConfigurationService
                     .Build());
         }
 
-        var unitPositions = new HashSet<(int, int)>(submittedUnits.Select(u => (u.GridX, u.GridY)));
+        var unitByPosition = submittedUnits.ToDictionary(u => (u.GridX, u.GridY));
 
         foreach (var unit in submittedUnits)
         {
@@ -724,7 +724,11 @@ public static class BuildingConfigurationService
 
             // Validate directional link flags: each active link must point to a cell
             // that is within the 4x4 grid boundary and occupied by another unit in the plan.
-            ValidateDirectionalLinks(unit, unitPositions);
+            ValidateDirectionalLinks(unit, unitByPosition);
+
+            // Validate that no pair of units forms a contradictory bidirectional link.
+            // Per the product rules, a link pair can only flow one way between two units.
+            ValidateContradictoryLinks(unit, unitByPosition);
 
             if (unit.UnitType == UnitType.ProductQuality && !unit.ProductTypeId.HasValue)
             {
@@ -784,7 +788,7 @@ public static class BuildingConfigurationService
     /// </summary>
     private static void ValidateDirectionalLinks(
         BuildingConfigurationUnitInput unit,
-        HashSet<(int, int)> unitPositions)
+        Dictionary<(int, int), BuildingConfigurationUnitInput> unitByPosition)
     {
         void CheckLink(bool flagActive, int targetX, int targetY, string direction)
         {
@@ -800,7 +804,7 @@ public static class BuildingConfigurationService
                         .Build());
             }
 
-            if (!unitPositions.Contains((targetX, targetY)))
+            if (!unitByPosition.ContainsKey((targetX, targetY)))
             {
                 throw new GraphQLException(
                     ErrorBuilder.New()
@@ -819,5 +823,44 @@ public static class BuildingConfigurationService
         CheckLink(unit.LinkDownLeft,  unit.GridX - 1, unit.GridY + 1, "down-left diagonal");
         CheckLink(unit.LinkUpRight,   unit.GridX + 1, unit.GridY - 1, "up-right diagonal");
         CheckLink(unit.LinkUpLeft,    unit.GridX - 1, unit.GridY - 1, "up-left diagonal");
+    }
+
+    /// <summary>
+    /// Validates that no pair of units forms a contradictory bidirectional link.
+    /// Per product rules (ROADMAP), a link between two units can only flow in one direction:
+    /// it is not possible to have both a forward and a reverse link between the same two units.
+    ///
+    /// Contradiction pairs:
+    ///   Horizontal : A.LinkRight  and B.LinkLeft  (where B is A's right neighbor)
+    ///   Vertical   : A.LinkDown   and B.LinkUp    (where B is A's lower neighbor)
+    ///   Diag ↘/↖  : A.LinkDownRight and B.LinkUpLeft  (B is A's bottom-right neighbor)
+    ///   Diag ↙/↗  : A.LinkDownLeft  and B.LinkUpRight (B is A's bottom-left neighbor)
+    /// </summary>
+    private static void ValidateContradictoryLinks(
+        BuildingConfigurationUnitInput unit,
+        Dictionary<(int, int), BuildingConfigurationUnitInput> unitByPosition)
+    {
+        void CheckPair(bool outgoingFlag, int neighborX, int neighborY, Func<BuildingConfigurationUnitInput, bool> incomingFlag, string axis)
+        {
+            if (!outgoingFlag) return;
+            if (!unitByPosition.TryGetValue((neighborX, neighborY), out var neighbor)) return;
+            if (!incomingFlag(neighbor)) return;
+
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage(
+                        $"Contradictory bidirectional {axis} link between units at ({unit.GridX}, {unit.GridY}) and ({neighborX}, {neighborY}). A link can only flow in one direction between the same pair of units.")
+                    .SetCode("CONTRADICTORY_LINK")
+                    .Build());
+        }
+
+        // Horizontal: A→B conflicts with B→A
+        CheckPair(unit.LinkRight,     unit.GridX + 1, unit.GridY,     n => n.LinkLeft,      "horizontal");
+        // Vertical: A↓B conflicts with B↑A
+        CheckPair(unit.LinkDown,      unit.GridX,     unit.GridY + 1, n => n.LinkUp,         "vertical");
+        // Diagonal tl-br: A↘B conflicts with B↖A
+        CheckPair(unit.LinkDownRight, unit.GridX + 1, unit.GridY + 1, n => n.LinkUpLeft,     "diagonal (↘/↖)");
+        // Diagonal tr-bl: A↙B conflicts with B↗A
+        CheckPair(unit.LinkDownLeft,  unit.GridX - 1, unit.GridY + 1, n => n.LinkUpRight,    "diagonal (↙/↗)");
     }
 }

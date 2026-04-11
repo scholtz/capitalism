@@ -502,8 +502,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     units = new[]
                     {
                         new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId, minPrice = (decimal?)null },
-                        new { unitType = "STORAGE", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId, minPrice = (decimal?)null },
-                        new { unitType = "PUBLIC_SALES", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId, minPrice = (decimal?)45m },
+                        new { unitType = "STORAGE", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId, minPrice = (decimal?)null },
+                        new { unitType = "PUBLIC_SALES", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId, minPrice = (decimal?)45m },
                     }
                 }
             },
@@ -3036,7 +3036,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     units = new[]
                     {
                         new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null },
-                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = proProductId }
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = proProductId }
                     }
                 }
             },
@@ -3107,7 +3107,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     units = new[]
                     {
                         new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null },
-                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = proProductId }
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = proProductId }
                     }
                 }
             },
@@ -3137,7 +3137,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     units = new[]
                     {
                         new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null },
-                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = proProductId }
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = proProductId }
                     }
                 }
             },
@@ -3215,9 +3215,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                                         units = new[]
                                         {
                                                 new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = true },
-                                                new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = true, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = true, linkDownRight = false },
-                                                new { unitType = "STORAGE", gridX = 0, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = true, linkDownLeft = false, linkDownRight = false },
-                                                new { unitType = "B2B_SALES", gridX = 1, gridY = 1, linkUp = true, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = true, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                                                new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = true, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = true, linkDownRight = false },
+                                                new { unitType = "STORAGE", gridX = 0, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                                                new { unitType = "B2B_SALES", gridX = 1, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
                                         }
                                 }
                         },
@@ -3283,9 +3283,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                                         units = new[]
                                         {
                                                 new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = true },
-                                                new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = true, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = true, linkDownRight = false },
-                                                new { unitType = "STORAGE", gridX = 0, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = true, linkDownLeft = false, linkDownRight = false },
-                                                new { unitType = "B2B_SALES", gridX = 1, gridY = 1, linkUp = true, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = true, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                                                new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = true, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = true, linkDownRight = false },
+                                                new { unitType = "STORAGE", gridX = 0, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                                                new { unitType = "B2B_SALES", gridX = 1, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
                                         }
                                 }
                         },
@@ -3548,7 +3548,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                             units = new[]
                             {
                                 new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
-                                new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                                new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
                             }
                         }
                     },
@@ -3571,7 +3571,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                             units = new[]
                             {
                                 new { unitType = "BRANDING", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
-                                new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                                new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
                             }
                         }
                     },
@@ -3900,8 +3900,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     units = new[]
                     {
                         new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = woodResourceId, productTypeId = (string?)null },
-                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId },
-                        new { unitType = "STORAGE", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null }
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId },
+                        new { unitType = "STORAGE", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null }
                     }
                 }
             },
@@ -3989,8 +3989,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     units = new[]
                     {
                         new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = grainResourceId, productTypeId = (string?)null },
-                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId },
-                        new { unitType = "STORAGE", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null }
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId },
+                        new { unitType = "STORAGE", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null }
                     }
                 }
             },
@@ -4045,8 +4045,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     units = new[]
                     {
                         new { unitType = "PURCHASE", gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null },
-                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId },
-                        new { unitType = "STORAGE", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = true, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null }
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = chairProductId },
+                        new { unitType = "STORAGE", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false, resourceTypeId = (string?)null, productTypeId = (string?)null }
                     }
                 }
             },
@@ -4646,8 +4646,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     units = new[]
                     {
                         new { unitType = "PURCHASE",     gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true,  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
-                        new { unitType = "MARKETING",    gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true,  linkRight = true,  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
-                        new { unitType = "PUBLIC_SALES", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = true,  linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                        new { unitType = "MARKETING",    gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false,  linkRight = true,  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "PUBLIC_SALES", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = false,  linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
                     }
                 }
             },
@@ -4698,8 +4698,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     units = new[]
                     {
                         new { unitType = "PURCHASE",     gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true,  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
-                        new { unitType = "STORAGE",      gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true,  linkRight = true,  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
-                        new { unitType = "PUBLIC_SALES", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = true,  linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                        new { unitType = "STORAGE",      gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false,  linkRight = true,  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "PUBLIC_SALES", gridX = 2, gridY = 0, linkUp = false, linkDown = false, linkLeft = false,  linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
                     }
                 }
             },
@@ -4825,7 +4825,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     units = new[]
                     {
                         new { unitType = "PURCHASE",       gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = true, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
-                        new { unitType = "MANUFACTURING",  gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = true,  linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                        new { unitType = "MANUFACTURING",  gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false,  linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
                     }
                 }
             },
@@ -4841,13 +4841,102 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             $"A link-only change must require exactly {BuildingConfigurationService.LinkChangeTicks} tick(s), got {totalTicks}.");
 
         var units = plan.GetProperty("units").EnumerateArray().ToList();
-        foreach (var unit in units)
-        {
-            var unitTicks = unit.GetProperty("ticksRequired").GetInt32();
-            Assert.True(
-                unitTicks == BuildingConfigurationService.LinkChangeTicks,
-                $"Each changed unit must require exactly {BuildingConfigurationService.LinkChangeTicks} tick(s).");
-        }
+        // In the new single-direction model, only the SOURCE unit (PURCHASE with linkRight=true) changed.
+        // The DESTINATION unit (MANUFACTURING) has no link change and gets ticksRequired=0.
+        var purchaseUnit = units.Single(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+        Assert.Equal(BuildingConfigurationService.LinkChangeTicks, purchaseUnit.GetProperty("ticksRequired").GetInt32());
+        var mfgUnit = units.Single(u => u.GetProperty("unitType").GetString() == "MANUFACTURING");
+        Assert.Equal(0, mfgUnit.GetProperty("ticksRequired").GetInt32());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_BothUnitsChangeLinksIndependently_BothReceiveNonZeroTicks()
+    {
+        // When BOTH units change their OWN independent outgoing links, both should receive ticksRequired > 0.
+        // This proves the tick calculation is per-unit (not per-pair).
+        // PURCHASE changes linkDown false→true (pointing to STORAGE), MANUFACTURING changes linkDown false→true
+        // (pointing to B2B_SALES). Neither link is a contradiction since they point to different targets.
+        var token = await RegisterAndGetTokenAsync($"link-both-{Guid.NewGuid()}@test.com", "LinkBothTester");
+
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Link Both Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Link Both Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // First activate a 2×2 layout with no links.
+        await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "STORAGE",       gridX = 0, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "B2B_SALES",     gridX = 1, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        await AdvanceGameTicksAsync(BuildingConfigurationService.UnitPlanChangeTicks + 1);
+
+        // Now change links independently on both PURCHASE (linkDown→STORAGE) and MANUFACTURING (linkDown→B2B_SALES).
+        // No contradiction: PURCHASE.linkDown points to STORAGE(0,1), MANUFACTURING.linkDown points to B2B_SALES(1,1).
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) {
+                    totalTicksRequired
+                    units { unitType ticksRequired }
+                }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0, linkUp = false, linkDown = true,  linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = true,  linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "STORAGE",       gridX = 0, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "B2B_SALES",     gridX = 1, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+
+        var plan = result.GetProperty("data").GetProperty("storeBuildingConfiguration");
+        Assert.Equal(BuildingConfigurationService.LinkChangeTicks, plan.GetProperty("totalTicksRequired").GetInt32());
+
+        var planUnits = plan.GetProperty("units").EnumerateArray().ToList();
+        // Both PURCHASE and MANUFACTURING changed their linkDown — both must have ticksRequired = LinkChangeTicks.
+        var purchaseUnit = planUnits.Single(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+        Assert.Equal(BuildingConfigurationService.LinkChangeTicks, purchaseUnit.GetProperty("ticksRequired").GetInt32());
+        var mfgUnit = planUnits.Single(u => u.GetProperty("unitType").GetString() == "MANUFACTURING");
+        Assert.Equal(BuildingConfigurationService.LinkChangeTicks, mfgUnit.GetProperty("ticksRequired").GetInt32());
+        // Unchanged units (STORAGE, B2B_SALES) should have ticksRequired = 0.
+        var storageUnit = planUnits.Single(u => u.GetProperty("unitType").GetString() == "STORAGE");
+        Assert.Equal(0, storageUnit.GetProperty("ticksRequired").GetInt32());
     }
 
     #endregion
@@ -13132,10 +13221,10 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                               linkUpLeft = false, linkUpRight = false, linkDownLeft = true, linkDownRight = false },
                         new { unitType = "STORAGE",        gridX = 0, gridY = 1,
                               linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
-                              linkUpLeft = false, linkUpRight = true, linkDownLeft = false, linkDownRight = false },
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
                         new { unitType = "B2B_SALES",      gridX = 1, gridY = 1,
                               linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
-                              linkUpLeft = true, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
                     }
                 }
             },
@@ -13152,12 +13241,13 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.True(mfgUnitDiag.GetProperty("linkDownLeft").GetBoolean());
         Assert.False(mfgUnitDiag.GetProperty("linkDownRight").GetBoolean());
 
+        // Per ROADMAP: no bidirectional links. STORAGE and B2B_SALES have no return diagonal flags.
         var storageUnitDiag = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "STORAGE");
-        Assert.True(storageUnitDiag.GetProperty("linkUpRight").GetBoolean());
+        Assert.False(storageUnitDiag.GetProperty("linkUpRight").GetBoolean());
         Assert.False(storageUnitDiag.GetProperty("linkUpLeft").GetBoolean());
 
         var b2bSalesUnitDiag = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "B2B_SALES");
-        Assert.True(b2bSalesUnitDiag.GetProperty("linkUpLeft").GetBoolean());
+        Assert.False(b2bSalesUnitDiag.GetProperty("linkUpLeft").GetBoolean());
         Assert.False(b2bSalesUnitDiag.GetProperty("linkUpRight").GetBoolean());
     }
 
@@ -13297,6 +13387,363 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         Assert.True(result.TryGetProperty("errors", out var errors));
         Assert.Equal("LINK_TARGET_MISSING", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    // ── Additional directional link coverage: all 8 orientations ──────────────────────────
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_BackwardHorizontalLink_StoredAndReadBackCorrectly()
+    {
+        // Right-to-left (B→A): only MANUFACTURING has linkLeft=true pointing back to PURCHASE.
+        // Verifies that backward horizontal links are persisted asymmetrically and read back correctly.
+        var token = await RegisterAndGetTokenAsync($"bkwdh-{Guid.NewGuid()}@test.com", "BkwdHTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Backward H Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Backward H Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // Only MANUFACTURING.linkLeft=true (B→A), PURCHASE has no linkRight (A does not send right)
+        var configResult = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) {
+                    units { gridX gridY unitType linkRight linkLeft }
+                }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = true, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(configResult.TryGetProperty("errors", out _));
+        var planUnits = configResult.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units");
+
+        // MANUFACTURING should have linkLeft=true (backward direction: right→left)
+        var mfgUnit = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "MANUFACTURING");
+        Assert.True(mfgUnit.GetProperty("linkLeft").GetBoolean());
+
+        // PURCHASE should have linkRight=false (asymmetric: only backward flag is set)
+        var purchaseUnit = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+        Assert.False(purchaseUnit.GetProperty("linkRight").GetBoolean());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_VerticalLinks_StoredAndReadBackCorrectly()
+    {
+        // Tests both top-to-bottom (linkDown) and bottom-to-top (linkUp) in a single building.
+        // Verifies that vertical directional links are persisted asymmetrically.
+        var token = await RegisterAndGetTokenAsync($"vert-{Guid.NewGuid()}@test.com", "VertTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Vertical Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Vertical Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // PURCHASE(0,0) → MANUFACTURING(0,1) via linkDown (top-to-bottom, forward)
+        // STORAGE(1,0) ← MANUFACTURING(1,1) via linkUp (bottom-to-top, backward: only bottom has linkUp)
+        var configResult = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) {
+                    units { gridX gridY unitType linkDown linkUp }
+                }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = true, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 0, gridY = 1,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "STORAGE",       gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "B2B_SALES",     gridX = 1, gridY = 1,
+                              linkUp = true, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(configResult.TryGetProperty("errors", out _));
+        var planUnits = configResult.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units");
+
+        // PURCHASE.linkDown=true (top→bottom, forward vertical)
+        var purchaseUnit = planUnits.EnumerateArray().Single(u =>
+            u.GetProperty("gridX").GetInt32() == 0 && u.GetProperty("gridY").GetInt32() == 0);
+        Assert.True(purchaseUnit.GetProperty("linkDown").GetBoolean());
+
+        // MANUFACTURING.linkUp=false (no reciprocal flag — asymmetric)
+        var mfgUnit = planUnits.EnumerateArray().Single(u =>
+            u.GetProperty("gridX").GetInt32() == 0 && u.GetProperty("gridY").GetInt32() == 1);
+        Assert.False(mfgUnit.GetProperty("linkUp").GetBoolean());
+
+        // B2B_SALES.linkUp=true (bottom→top, backward vertical)
+        var b2bUnit = planUnits.EnumerateArray().Single(u =>
+            u.GetProperty("gridX").GetInt32() == 1 && u.GetProperty("gridY").GetInt32() == 1);
+        Assert.True(b2bUnit.GetProperty("linkUp").GetBoolean());
+
+        // STORAGE.linkDown=false (no reciprocal flag — asymmetric)
+        var storageUnit = planUnits.EnumerateArray().Single(u =>
+            u.GetProperty("gridX").GetInt32() == 1 && u.GetProperty("gridY").GetInt32() == 0);
+        Assert.False(storageUnit.GetProperty("linkDown").GetBoolean());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_LinkLeftOutOfBounds_ReturnsError()
+    {
+        // linkLeft on a unit at x=0 points to x=-1 — outside the 4×4 grid boundary.
+        var token = await RegisterAndGetTokenAsync($"leftbound-{Guid.NewGuid()}@test.com", "LeftBoundTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Left Bounds Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Left Bounds Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        // linkLeft at left edge (x=0): target would be x=-1
+                        new { unitType = "STORAGE", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = true, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("LINK_OUT_OF_BOUNDS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_LinkDownOutOfBounds_ReturnsError()
+    {
+        // linkDown on a unit at y=3 points to y=4 — outside the 4×4 grid boundary.
+        var token = await RegisterAndGetTokenAsync($"downbound-{Guid.NewGuid()}@test.com", "DownBoundTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Down Bounds Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Down Bounds Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        // linkDown at bottom row (y=3): target would be y=4
+                        new { unitType = "STORAGE", gridX = 0, gridY = 3,
+                              linkUp = false, linkDown = true, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("LINK_OUT_OF_BOUNDS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_LinkUpOutOfBounds_ReturnsError()
+    {
+        // linkUp on a unit at y=0 points to y=-1 — outside the 4×4 grid boundary.
+        var token = await RegisterAndGetTokenAsync($"upbound-{Guid.NewGuid()}@test.com", "UpBoundTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Up Bounds Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Up Bounds Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        // linkUp at top row (y=0): target would be y=-1
+                        new { unitType = "STORAGE", gridX = 0, gridY = 0,
+                              linkUp = true, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("LINK_OUT_OF_BOUNDS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_DiagonalLinkDownLeftOutOfBounds_ReturnsError()
+    {
+        // linkDownLeft on a unit at x=0 targets (x-1, y+1) = (-1, 1) — out of bounds on the left edge.
+        var token = await RegisterAndGetTokenAsync($"diagdlbound-{Guid.NewGuid()}@test.com", "DiagDLBoundTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Diag DL Bounds Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Diag DL Bounds Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        // linkDownLeft at left column (x=0): target would be (-1, 1) — x out of bounds
+                        new { unitType = "STORAGE", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = true, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("LINK_OUT_OF_BOUNDS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_DiagonalLinkUpRightOutOfBounds_ReturnsError()
+    {
+        // linkUpRight on a unit at y=0 targets (x+1, y-1) = (1, -1) — out of bounds on the top edge.
+        var token = await RegisterAndGetTokenAsync($"diagurbound-{Guid.NewGuid()}@test.com", "DiagURBoundTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Diag UR Bounds Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Diag UR Bounds Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        // linkUpRight at top row (y=0): target would be (1, -1) — y out of bounds
+                        new { unitType = "STORAGE", gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = true, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("LINK_OUT_OF_BOUNDS", errors[0].GetProperty("extensions").GetProperty("code").GetString());
     }
 
     [Fact]
@@ -23340,5 +23787,201 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     }
 
     #endregion
+
+    // ── Contradictory bidirectional link rejection ─────────────────────────────────────────────
+    // The ROADMAP rule: "it is not possible to have bidirectional link between units like
+    // top to bottom and bottom to top at the same time."
+    // All four link axes (horizontal, vertical, diagonal ↘/↖, diagonal ↙/↗) are covered.
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ContradictoryHorizontalLink_ReturnsError()
+    {
+        // A.linkRight=true AND B.linkLeft=true between the same pair is a contradictory bidirectional link.
+        var token = await RegisterAndGetTokenAsync($"contra-h-{Guid.NewGuid()}@test.com", "ContraHTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Contra H Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Contra H Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // PURCHASE(0,0).linkRight=true AND MANUFACTURING(1,0).linkLeft=true → both A→B and B→A
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = true,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = true, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("CONTRADICTORY_LINK", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ContradictoryVerticalLink_ReturnsError()
+    {
+        // A.linkDown=true AND B.linkUp=true between the same pair is a contradictory vertical link.
+        var token = await RegisterAndGetTokenAsync($"contra-v-{Guid.NewGuid()}@test.com", "ContraVTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Contra V Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Contra V Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // PURCHASE(0,0).linkDown=true AND MANUFACTURING(0,1).linkUp=true → both top→bottom and bottom→top
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = true, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 0, gridY = 1,
+                              linkUp = true, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("CONTRADICTORY_LINK", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ContradictoryDiagonalTlBr_ReturnsError()
+    {
+        // TopLeft.linkDownRight=true AND BottomRight.linkUpLeft=true → contradictory diagonal ↘/↖.
+        var token = await RegisterAndGetTokenAsync($"contra-d1-{Guid.NewGuid()}@test.com", "ContraD1Tester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Contra D1 Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Contra D1 Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // PURCHASE(0,0).linkDownRight=true AND MANUFACTURING(1,1).linkUpLeft=true → ↘ and ↖ simultaneously
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = true },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 1,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = true, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("CONTRADICTORY_LINK", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ContradictoryDiagonalTrBl_ReturnsError()
+    {
+        // TopRight.linkDownLeft=true AND BottomLeft.linkUpRight=true → contradictory diagonal ↙/↗.
+        var token = await RegisterAndGetTokenAsync($"contra-d2-{Guid.NewGuid()}@test.com", "ContraD2Tester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Contra D2 Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Contra D2 Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // MANUFACTURING(1,0).linkDownLeft=true AND STORAGE(0,1).linkUpRight=true → ↙ and ↗ simultaneously
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = true, linkDownRight = false },
+                        new { unitType = "STORAGE",       gridX = 0, gridY = 1,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = true, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("CONTRADICTORY_LINK", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
 
 }
