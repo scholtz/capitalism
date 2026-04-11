@@ -157,6 +157,7 @@ function selectItem(item: SelectorItem) {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
   padding: 0.625rem 0.75rem;
   border-radius: 10px;
   background: rgba(0, 71, 255, 0.08);
