@@ -5,30 +5,29 @@ Create a fun game on style of the capitalism II game. This game is economic simu
 It will use real world map. The game will start in single city and later other cities will be added.
 
 ## Issues to work on
-- Improve product selection in sales and storage unit - select products only from connected units or current stock items.
-- Product picker does not work at the moment - looks like lines are shrinked and it does not show the products. Perhaps the list should be hidden by the default until the select button is clicked?
-- Show save layout and load layout not in the unit editation but in the building editation. Building layout should be loadable and storeable. Allow user to store this to the master game api, so that he can reuse the layouts between different games.
-- While upgrade of unit is in progress do not move the items from or to the unit or do not produce the items. Allow upgrades UX to be the same as the edit building. Show the upgrade buttons in the edit mode and allow multiple units in the building to be upgraded at the same time.
-- Allow in the sale shop show build the storage unit
+- Unit linkage on frontend is directional from left to right, right to left, top to bottom and bottom to top, but is not directional from bottom right to top left for example. Make sure all direction combinations are allowed, for example top left to bottom right with bottom left to top right direction. Direction must be always set between the units, and it is not possible to have bidirectional link between units like top to bottom and bottom to top at the same time.
+- When linking Storage unit and sales unit make sure to create correct direction in the first click - all resources must go towards sales units. All directions must go from purchase unit by default.
+- Improve product selection in storage unit - select products only from connected units or current stock items
+- Show save layout and load layout not in the unit editation but in the building editation when no unit is selected. Building layout should be loadable and storeable. Allow user to store this to the master game api, so that he can reuse the layouts between different games.
+- Make storage unit have 10x storage capacity then the purchase or sales units by default
+- While upgrade of unit is in progress do not move the items from or to the unit or do not produce the items. Allow upgrades UX to be the same as the edit building. Show the upgrade buttons in the edit mode and allow multiple units in the building to be upgraded at the same time. Test this by the upgrading active sales unit which did sale some product past tick and first tick while unit is upgraded it should not sell any products.
 - For upgrading the units show true changes what effect it will have. For example the storage capacity of the unit will expand from 100 to 250 and power consumption will increase from 1MW to 1.5MW and salaries will increase from 1 manhour to 2 manhour for example.
-- Global exchange should provide bid and offer for every product. The prices and qualities should be subject of small changes.
-- In stock exchange should be clear list of all companies in the game with public ownership with the stock price, market value, and player aggregated ownership information listed in the table which can be sorted and filtered and paginated
-- Stock exchange model must allow purchase of stocks of any company from any other person or company account and see the stock price history. 
-- UX in stock exchange must allow to buy the stock of any company with public ownership. 
-- Remove account switching from stock exchange as it is implemented now in the top navigation bar. 
-- When error occurs with the buy or sell of the stock, show the error right next to the button. When UX is scrolled to the bottom to do the actions and the error is in the top of the screen user is not aware of the error. Or implement the toast window so that this can be solved in the whole app.
-- Add to the buy and sell buttons information about the exact bid and offer price. Add it on the same line as the quantity selection.
-- All stock exchange operations should be also visible in the ledger overview
+- Make the quality in global exchange vary from 5 to 20 %
+- Do not hide the account selection in the navbar in stock exchange
+- After onboarding the person account should have no cash - He moves his initial cash to the company using the IPO process. At the moment $150000 is present on the person account after the onboarding process.
+- In the stock exchange, "trade with" should not be visible, but in the navbar should be visible the company selectin as is visible on other pages
 - Dashboard and ledger is loading slow, make sure to use the caching headers so that when user goes fast between the panels it does not have to load all information from the database again. Analyze the issue of the slow requests and if the database is missing an indexes make sure they are created.
-- When creating b2b sale unit, make sure to suggest the competetive price
-- Choose product and vendor does not show icons and the top of the window is hidden by the navbar
-- When updating building the spacing on page is wrong. Component touch each other. Sell building button touches the cancel editing button. 
+- In manufacturing output product selection show the product images
+- In b2b unit show the sale price, when creating b2b sale unit in factory make sure to set the competetive default price
+- Choose product and vendor does not show product icons and the top of the window is hidden by the navbar. Also make the own products to be at the top of the list.
+- Add bottom margin to building-header as the components touch the components below. Make sure not to make the design errors in the future.
 - Instead of ticks everywhere in the game show the tick time and show the tick only as a title for better debugging
 - In each building header right below the building name show chart of total costs, total revenue and total profit in the top building overview
 - Hide Sales Loop Status or Production Chain panel after user close it and do not show it any more until there is an error in the building. 
 - In loans offers make sure is the action button to do some action. If user needs to buy a bank to allow public loan service make sure there is button to buy the building. If user can offer a loan make sure to navigate him to the form where he can offer a loan.
-- Create ingame chat
+- Create ingame chat. Make sure the game administrators has full control of the chat to reduce spam.
 - Administrators role management, dashboard, impersonalization, newspaper
+- Newspaper nor changelog does not show any data
 
 ## Multiple Game Servers
 
