@@ -6675,6 +6675,274 @@ test.describe('Product picker — contextual ranking section headers', () => {
   })
 })
 
+// ── Purchase selector dialog — z-index and navbar visibility ─────────────────
+
+test.describe('Purchase selector dialog — navbar visibility and z-index', () => {
+  function makePurchaseFactory() {
+    return makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-ps-z',
+          playerId: 'player-1',
+          name: 'PS Z Co',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-ps-z',
+              companyId: 'company-ps-z',
+              cityId: 'city-ba',
+              type: 'FACTORY' as const,
+              name: 'PS Z Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 2,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'psz-purchase',
+                  buildingId: 'building-ps-z',
+                  unitType: 'PURCHASE',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  resourceTypeId: 'res-wood',
+                  purchaseSource: 'EXCHANGE',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+  }
+
+  test('purchase selector dialog header is fully visible above navbar', async ({ page }) => {
+    const player = makePurchaseFactory()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-ps-z')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Open the purchase selector dialog
+    await page.getByRole('button', { name: /product and vendor/i }).click()
+    const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+    await expect(dialog).toBeVisible()
+
+    // The Close button must be visible (previously hidden behind navbar when z-index was 70)
+    const closeBtn = dialog.getByRole('button', { name: 'Close' })
+    await expect(closeBtn).toBeVisible()
+
+    // Verify the dialog header is not obscured by checking the bounding box
+    const dialogBox = await dialog.boundingBox()
+    expect(dialogBox!.y).toBeGreaterThanOrEqual(0)
+
+    // The eyebrow label "Choose product and vendor" must be readable
+    await expect(dialog).toContainText('Choose product and vendor')
+  })
+
+  test('purchase selector dialog renders vendor section with Auto and Own Company options', async ({
+    page,
+  }) => {
+    const player = makePurchaseFactory()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-ps-z')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Switch to LOCAL mode so vendor section appears
+    await page
+      .locator('.procurement-mode-option')
+      .filter({ has: page.locator('.procurement-mode-label', { hasText: 'Local Supplier' }) })
+      .click()
+
+    const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
+    await page.getByRole('button', { name: /product and vendor/i }).click()
+    await expect(dialog).toBeVisible()
+
+    // Vendor section heading must be visible
+    await expect(dialog.getByRole('heading', { name: 'Vendor link' })).toBeVisible()
+
+    // Auto option (no vendor lock) and Own company option must both be visible
+    await expect(dialog.getByRole('button', { name: /Auto-select best source/i })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: /Your own company/i })).toBeVisible()
+  })
+})
+
+// ── Complete building configuration end-to-end journey ───────────────────────
+
+test.describe('Complete building configuration end-to-end journey', () => {
+  test('player opens STORAGE picker, selects connected product, saves, and config persists', async ({
+    page,
+  }) => {
+    const chair = makeChairProduct()
+    const bread = { ...chair, id: 'prod-bread', name: 'Bread', slug: 'bread', industry: 'FOOD_PROCESSING' as const, basePrice: 3 }
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-e2e-journey',
+          playerId: 'player-1',
+          name: 'Journey Co',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-e2e-factory',
+              companyId: 'company-e2e-journey',
+              cityId: 'city-ba',
+              type: 'FACTORY' as const,
+              name: 'Journey Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 2,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'journey-mfg',
+                  buildingId: 'building-e2e-factory',
+                  unitType: 'MANUFACTURING',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: true,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: 'prod-chair',
+                },
+                {
+                  id: 'journey-storage',
+                  buildingId: 'building-e2e-factory',
+                  unitType: 'STORAGE',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: null, // unset — player will pick it
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player], products: [chair, bread] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    // ── Step 1: Navigate to the building
+    await page.goto('/building/building-e2e-factory')
+    await expect(page.getByRole('heading', { name: 'Journey Factory' })).toBeVisible()
+
+    // ── Step 2: Enter edit mode
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    // ── Step 3: Open the STORAGE unit config
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    // ── Step 4: Verify the ProductPicker trigger is visible
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await expect(productTypeField.locator('.picker-trigger')).toBeVisible()
+
+    // ── Step 5: Open the picker
+    await productTypeField.locator('.picker-trigger').click()
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+
+    // ── Step 6: Verify Wooden Chair appears in "Connected to this building" section
+    await expect(
+      page.locator('.product-picker-panel .picker-section-header', { hasText: 'Connected to this building' }),
+    ).toBeVisible()
+
+    const chairItem = page
+      .locator('.product-picker-panel .picker-item')
+      .filter({ has: page.locator('.picker-item-name', { hasText: 'Wooden Chair' }) })
+    await expect(chairItem.locator('.badge-connected')).toBeVisible()
+
+    // ── Step 7: Select the product
+    await chairItem.locator('.picker-item-name').click()
+
+    // Picker closes, trigger updates with product name
+    await expect(page.locator('.product-picker-panel')).toBeHidden()
+    await expect(productTypeField.locator('.picker-trigger-selected-name', { hasText: 'Wooden Chair' })).toBeVisible()
+
+    // ── Step 8: Save the configuration
+    await page.getByRole('button', { name: /Store Upgrade/i }).click()
+
+    // ── Step 9: Verify the saved configuration persisted in the mock state
+    const building = state.players[0].companies[0].buildings[0]
+    const pendingUnits = building.pendingConfiguration?.units ?? []
+    const storageUnit = pendingUnits.find((u) => u.unitType === 'STORAGE')
+    expect(storageUnit?.productTypeId).toBe('prod-chair')
+  })
+})
+
 // ── Property Management (APARTMENT / COMMERCIAL) ──────────────────────────────
 
 function makeApartmentPlayer() {

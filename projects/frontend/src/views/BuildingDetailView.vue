@@ -7268,7 +7268,7 @@ watch(
 .purchase-selector-page {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  z-index: 110;
   background: rgba(15, 23, 42, 0.82);
   padding: 2rem;
   overflow: auto;
