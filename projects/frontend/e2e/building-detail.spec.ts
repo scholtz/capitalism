@@ -6204,6 +6204,477 @@ test.describe('Link-aware product picker — B2B_SALES unit', () => {
   })
 })
 
+// ── Product picker — contextual "Connected" section and icon display ───────────
+
+test.describe('Product picker — contextual ranking section headers', () => {
+  test('STORAGE picker shows "Connected to this building" section when MFG unit has product set', async ({
+    page,
+  }) => {
+    const chair = makeChairProduct()
+    // Use makeDefaultProducts so Bread is also available — confirms Chair appears in "Connected" not buried in Catalog
+    const bread = { ...chair, id: 'prod-bread', name: 'Bread', slug: 'bread', industry: 'FOOD_PROCESSING' }
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-ctx-storage',
+          playerId: 'player-1',
+          name: 'Context Storage Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-ctx-storage',
+              companyId: 'company-ctx-storage',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Context Storage Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 2,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'ctx-mfg-unit',
+                  buildingId: 'building-ctx-storage',
+                  unitType: 'MANUFACTURING',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: true,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: 'prod-chair', // Wooden Chair is connected
+                },
+                {
+                  id: 'ctx-storage-unit',
+                  buildingId: 'building-ctx-storage',
+                  unitType: 'STORAGE',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: null,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player], products: [chair, bread] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-ctx-storage')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    // Click on the STORAGE cell
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await productTypeField.locator('.picker-trigger').click()
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+
+    // "Connected to this building" section must appear because MFG has Wooden Chair set
+    await expect(
+      page.locator('.product-picker-panel .picker-section-header', {
+        hasText: 'Connected to this building',
+      }),
+    ).toBeVisible()
+
+    // Wooden Chair must be in the connected section — identified by the "Connected" badge
+    const chairItem = page
+      .locator('.product-picker-panel .picker-item')
+      .filter({ has: page.locator('.picker-item-name', { hasText: 'Wooden Chair' }) })
+    await expect(chairItem.locator('.badge-connected')).toBeVisible()
+  })
+
+  test('B2B_SALES picker shows "Connected" section when MFG unit has product set', async ({
+    page,
+  }) => {
+    const chair = makeChairProduct()
+    const bread = { ...chair, id: 'prod-bread', name: 'Bread', slug: 'bread', industry: 'FOOD_PROCESSING' }
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-ctx-b2b',
+          playerId: 'player-1',
+          name: 'Context B2B Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-ctx-b2b',
+              companyId: 'company-ctx-b2b',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Context B2B Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 2,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'ctx-b2b-mfg',
+                  buildingId: 'building-ctx-b2b',
+                  unitType: 'MANUFACTURING',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: true,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: 'prod-chair',
+                },
+                {
+                  id: 'ctx-b2b-sales',
+                  buildingId: 'building-ctx-b2b',
+                  unitType: 'B2B_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player], products: [chair, bread] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-ctx-b2b')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await productTypeField.locator('.picker-trigger').click()
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+
+    await expect(
+      page.locator('.product-picker-panel .picker-section-header', {
+        hasText: 'Connected to this building',
+      }),
+    ).toBeVisible()
+
+    const chairItem = page
+      .locator('.product-picker-panel .picker-item')
+      .filter({ has: page.locator('.picker-item-name', { hasText: 'Wooden Chair' }) })
+    await expect(chairItem.locator('.badge-connected')).toBeVisible()
+  })
+
+  test('PUBLIC_SALES picker shows "Connected" section when MFG unit has product set', async ({
+    page,
+  }) => {
+    const chair = makeChairProduct()
+    const bread = { ...chair, id: 'prod-bread', name: 'Bread', slug: 'bread', industry: 'FOOD_PROCESSING' }
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-ctx-ps',
+          playerId: 'player-1',
+          name: 'Context PS Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-ctx-ps',
+              companyId: 'company-ctx-ps',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Context PS Shop',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'ctx-ps-mfg',
+                  buildingId: 'building-ctx-ps',
+                  unitType: 'MANUFACTURING',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: true,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: 'prod-chair',
+                },
+                {
+                  id: 'ctx-ps-unit',
+                  buildingId: 'building-ctx-ps',
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player], products: [chair, bread] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-ctx-ps')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await productTypeField.locator('.picker-trigger').click()
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+
+    await expect(
+      page.locator('.product-picker-panel .picker-section-header', {
+        hasText: 'Connected to this building',
+      }),
+    ).toBeVisible()
+
+    const chairItem = page
+      .locator('.product-picker-panel .picker-item')
+      .filter({ has: page.locator('.picker-item-name', { hasText: 'Wooden Chair' }) })
+    await expect(chairItem.locator('.badge-connected')).toBeVisible()
+  })
+
+  test('product picker rows show product icon image', async ({ page }) => {
+    const chair = makeChairProduct()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-icon-test',
+          playerId: 'player-1',
+          name: 'Icon Test Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-icon-shop',
+              companyId: 'company-icon-test',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Icon Shop',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              units: [],
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-icon-shop')
+    await page.getByRole('button', { name: /Apply Starter Shop Layout/i }).click()
+
+    const planningSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
+    await publicSalesCell.click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await productTypeField.locator('.picker-trigger').click()
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+
+    // Product rows must include an icon image element
+    const pickerItem = page.locator('.product-picker-panel .picker-item').filter({ hasText: 'Wooden Chair' }).first()
+    await expect(pickerItem).toBeVisible()
+    // Icon element should be present (may load as fallback but element must exist)
+    await expect(pickerItem.locator('.picker-item-img')).toHaveCount(1)
+  })
+
+  test('product picker shows stale selection warning when saved product is not in list', async ({
+    page,
+  }) => {
+    const chair = makeChairProduct()
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-stale-test',
+          playerId: 'player-1',
+          name: 'Stale Test Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-stale-shop',
+              companyId: 'company-stale-test',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Stale Shop',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 1,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              // Unit already has a PUBLIC_SALES unit configured with an obscure product ID
+              units: [
+                {
+                  id: 'stale-ps-unit',
+                  buildingId: 'building-stale-shop',
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: 'prod-unknown-deleted', // ID that is NOT in the products list
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    // Only provide "Wooden Chair" in the products list — the saved "prod-unknown-deleted" won't be found
+    const state = setupMockApi(page, { players: [player], products: [chair] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-stale-shop')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // The stale warning alert must appear because the saved productTypeId is not found in the ranked list
+    await expect(
+      page
+        .locator('.config-field')
+        .filter({ has: page.getByText('Product Type', { exact: true }) })
+        .first()
+        .locator('.picker-stale-warning'),
+    ).toBeVisible({ timeout: 10000 })
+  })
+})
+
 // ── Property Management (APARTMENT / COMMERCIAL) ──────────────────────────────
 
 function makeApartmentPlayer() {

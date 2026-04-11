@@ -3488,21 +3488,66 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     if (query.includes('rankedProductTypes')) {
       const activePlayer = state.players.find((player) => player.id === state.currentUserId)
       const hasActiveProSubscription = !!activePlayer?.proSubscriptionEndsAtUtc && new Date(activePlayer.proSubscriptionEndsAtUtc).getTime() > Date.now()
+      const buildingId = body.variables?.buildingId
+      const unitType = (body.variables?.unitType as string | undefined)?.toUpperCase() ?? ''
+
+      // Find the building to compute context-aware rankings (simulates backend logic)
+      const building = state.players
+        .flatMap((p) => p.companies)
+        .flatMap((c) => c.buildings)
+        .find((b) => b.id === buildingId)
+
+      // Collect unit product IDs from active + pending configuration
+      const allBuildingUnits = [
+        ...(building?.units ?? []),
+        ...(building?.pendingConfiguration?.units ?? []),
+      ]
+
+      const connectedProductIds = new Set<string>()
+      if (unitType === 'PUBLIC_SALES') {
+        // Connected = products from MANUFACTURING or B2B_SALES units
+        allBuildingUnits
+          .filter((u) => (u.unitType === 'MANUFACTURING' || u.unitType === 'B2B_SALES') && u.productTypeId)
+          .forEach((u) => connectedProductIds.add(u.productTypeId!))
+      } else if (unitType === 'STORAGE') {
+        // Connected = products from MANUFACTURING units
+        allBuildingUnits
+          .filter((u) => u.unitType === 'MANUFACTURING' && u.productTypeId)
+          .forEach((u) => connectedProductIds.add(u.productTypeId!))
+        // Also products currently in inventory
+        allBuildingUnits
+          .filter((u) => u.inventoryItems && u.inventoryItems.length > 0)
+          .flatMap((u) => u.inventoryItems ?? [])
+          .filter((item) => item.productTypeId)
+          .forEach((item) => connectedProductIds.add(item.productTypeId!))
+      } else if (unitType === 'B2B_SALES') {
+        // Connected = products from MANUFACTURING or STORAGE units
+        allBuildingUnits
+          .filter((u) => (u.unitType === 'MANUFACTURING' || u.unitType === 'STORAGE') && u.productTypeId)
+          .forEach((u) => connectedProductIds.add(u.productTypeId!))
+      }
+
+      // Sort: connected first (score 100), then catalog (score 10), both alphabetical
+      const enriched = state.productTypes.map((product) => {
+        const isConnected = connectedProductIds.has(product.id)
+        return {
+          rankingReason: isConnected ? 'connected' : 'catalog',
+          rankingScore: isConnected ? 100 : 10,
+          productType: {
+            ...product,
+            isUnlockedForCurrentPlayer: product.isProOnly ? hasActiveProSubscription : true,
+          },
+        }
+      })
+      enriched.sort((a, b) => {
+        if (b.rankingScore !== a.rankingScore) return b.rankingScore - a.rankingScore
+        return a.productType.name.localeCompare(b.productType.name)
+      })
+
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({
-          data: {
-            rankedProductTypes: state.productTypes.map((product) => ({
-              rankingReason: 'catalog',
-              rankingScore: 10,
-              productType: {
-                ...product,
-                isUnlockedForCurrentPlayer: product.isProOnly ? hasActiveProSubscription : true,
-              },
-            })),
-          },
-        }),
+        body: JSON.stringify({ data: { rankedProductTypes: enriched } }),
       })
     }
 
