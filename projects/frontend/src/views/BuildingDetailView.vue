@@ -20,7 +20,7 @@ import {
   getVerticalLinkState,
 } from '@/lib/linkHelpers'
 import { annotateExchangeOffers, selectOptimalOffer, sortExchangeOffers, detectLogisticsTrap, type AnnotatedExchangeOffer, type ExchangeSortBy } from '@/lib/globalExchange'
-import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedResourceDescription, getLocalizedResourceName } from '@/lib/catalogPresentation'
+import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedResourceDescription, getLocalizedResourceName, getProductImageUrl, getResourceImageUrl } from '@/lib/catalogPresentation'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
@@ -28,6 +28,7 @@ import { deepEqual } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 import { useGameStateStore } from '@/stores/gameState'
 import { getUnitResourceHistoryItemKey, type UnitResourceHistoryItemOption } from '@/lib/unitResourceHistory'
+import { buildPurchaseVendorOptions, collectSameCityVendorItemKeys, getPurchaseSelectorItemKey, sortPurchaseSelectorItems } from '@/lib/purchaseSelector'
 import ProductPicker from '@/components/buildings/ProductPicker.vue'
 import type {
   Building,
@@ -61,6 +62,7 @@ type SelectorItem = {
   kind: 'resource' | 'product'
   id: string
   name: string
+  imageUrl?: string | null
   description?: string | null
   helperText?: string | null
   groupLabel: string
@@ -75,6 +77,8 @@ type PurchaseVendorOption = {
   buildingId: string
   buildingName: string
   cityId: string
+  pricePerUnit: number | null
+  transitCostPerUnit: number
 }
 
 type PurchaseVendorCompanyData = {
@@ -89,6 +93,7 @@ type PurchaseVendorCompanyData = {
       unitType: string
       resourceTypeId: string | null
       productTypeId: string | null
+      minPrice: number | null
     }>
   }>
 }
@@ -340,6 +345,7 @@ const allSelectableItems = computed<SelectorItem[]>(() => [
     kind: 'resource' as const,
     id: resource.id,
     name: getLocalizedResourceName(resource, locale.value),
+    imageUrl: getResourceImageUrl(resource),
     description: getLocalizedResourceDescription(resource, locale.value),
     groupLabel: t('buildingDetail.selector.rawMaterials'),
     unitSymbol: resource.unitSymbol,
@@ -348,6 +354,7 @@ const allSelectableItems = computed<SelectorItem[]>(() => [
     kind: 'product' as const,
     id: product.id,
     name: getLocalizedProductName(product, locale.value),
+    imageUrl: getProductImageUrl(product),
     description: getLocalizedProductDescription(product, locale.value),
     helperText: isProductLocked(product) ? t('catalog.proDetail') : null,
     groupLabel: t('buildingDetail.selector.products'),
@@ -667,55 +674,71 @@ const selectedPurchaseResourceSlug = computed<string | null>(() => {
 })
 
 const purchaseSelectorItems = computed<SelectorItem[]>(() => {
+  const preferredHint = t('buildingDetail.purchaseSelector.ownSupplyHint')
+  const annotatePreferred = (items: SelectorItem[]) =>
+    items.map((item) =>
+      sameCityVendorItemKeys.value.has(getPurchaseSelectorItemKey(item.kind, item.id))
+        ? {
+            ...item,
+            helperText: item.helperText ? `${preferredHint} ${item.helperText}` : preferredHint,
+          }
+        : item,
+    )
+
   if (building.value?.type === 'FACTORY') {
-    return getFactoryPurchaseSelectableItems()
+    return sortPurchaseSelectorItems(
+      annotatePreferred(getFactoryPurchaseSelectableItems()),
+      building.value?.type ?? null,
+      sameCityVendorItemKeys.value,
+    )
   }
 
   if (building.value?.type === 'SALES_SHOP') {
-    return [...allSelectableItems.value.filter((item) => item.kind === 'product'), ...allSelectableItems.value.filter((item) => item.kind === 'resource')]
+    return sortPurchaseSelectorItems(
+      annotatePreferred([
+        ...allSelectableItems.value.filter((item) => item.kind === 'product'),
+        ...allSelectableItems.value.filter((item) => item.kind === 'resource'),
+      ]),
+      building.value?.type ?? null,
+      sameCityVendorItemKeys.value,
+    )
   }
 
-  return allSelectableItems.value
+  return sortPurchaseSelectorItems(
+    annotatePreferred(allSelectableItems.value),
+    building.value?.type ?? null,
+    sameCityVendorItemKeys.value,
+  )
 })
 
 const selectedPurchaseSelection = computed<ItemSelection>(() => getItemSelection(selectedDraftPurchaseUnit.value))
 
+const sameCityVendorItemKeys = computed(() =>
+  collectSameCityVendorItemKeys(
+    purchaseVendorCompanies.value,
+    building.value?.cityId ?? null,
+    building.value?.id ?? null,
+  ),
+)
+
 const purchaseVendorOptions = computed<PurchaseVendorOption[]>(() => {
-  const unit = selectedDraftPurchaseUnit.value
-  const selection = selectedPurchaseSelection.value
-  const cityId = building.value?.cityId
-  if (!unit || !selection || !cityId) return []
-
-  const options: PurchaseVendorOption[] = []
-  for (const company of purchaseVendorCompanies.value) {
-    for (const vendorBuilding of company.buildings) {
-      if (vendorBuilding.cityId !== cityId || vendorBuilding.id === building.value?.id) continue
-      const matches = vendorBuilding.units.some(
-        (candidate) =>
-          candidate.unitType === 'B2B_SALES' &&
-          ((selection.kind === 'product' && candidate.productTypeId === selection.id) || (selection.kind === 'resource' && candidate.resourceTypeId === selection.id)),
-      )
-
-      if (matches) {
-        options.push({
-          companyId: company.id,
-          companyName: company.name,
-          buildingId: vendorBuilding.id,
-          buildingName: vendorBuilding.name,
-          cityId: vendorBuilding.cityId,
-        })
-      }
-    }
-  }
-
-  return options
+  return buildPurchaseVendorOptions(
+    purchaseVendorCompanies.value,
+    selectedPurchaseSelection.value,
+    building.value?.cityId ?? null,
+    building.value?.id ?? null,
+  )
 })
 
 const selectedPurchaseVendorSummary = computed<string | null>(() => {
   const companyId = selectedDraftPurchaseUnit.value?.vendorLockCompanyId
   if (!companyId) return null
   const match = purchaseVendorOptions.value.find((option) => option.companyId === companyId)
-  if (match) return `${match.companyName} · ${match.buildingName}`
+  if (match) {
+    return match.pricePerUnit != null
+      ? `${match.companyName} · ${match.buildingName} · ${formatCurrency(match.pricePerUnit)}`
+      : `${match.companyName} · ${match.buildingName}`
+  }
   if (companyId === building.value?.companyId) return t('buildingDetail.purchaseSelector.vendorOwnCompany')
   return purchaseVendorCompanies.value.find((company) => company.id === companyId)?.name ?? null
 })
@@ -3175,6 +3198,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
           unitType: unit.unitType,
           resourceTypeId: unit.resourceTypeId,
           productTypeId: unit.productTypeId,
+          minPrice: unit.minPrice,
         })),
       })),
     }))
@@ -3581,6 +3605,16 @@ watch(
                 >
                   <strong>{{ option.companyName }}</strong>
                   <span>{{ option.buildingName }}</span>
+                  <span v-if="option.pricePerUnit != null" class="purchase-vendor-pricing">
+                    {{ t('buildingDetail.purchaseSelector.vendorPrice', { price: formatCurrency(option.pricePerUnit) }) }}
+                  </span>
+                  <span class="purchase-vendor-pricing">
+                    {{
+                      option.transitCostPerUnit > 0
+                        ? t('buildingDetail.purchaseSelector.vendorTransit', { price: formatCurrency(option.transitCostPerUnit) })
+                        : t('buildingDetail.purchaseSelector.vendorTransitFree')
+                    }}
+                  </span>
                 </button>
               </div>
               <p v-else class="config-help">{{ t('buildingDetail.purchaseSelector.vendorEmpty') }}</p>
@@ -7346,6 +7380,10 @@ watch(
 .purchase-vendor-card span {
   color: var(--color-text-secondary);
   font-size: 0.82rem;
+}
+
+.purchase-vendor-pricing {
+  font-variant-numeric: tabular-nums;
 }
 
 .purchase-selector-actions {

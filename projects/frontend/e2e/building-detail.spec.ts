@@ -6807,6 +6807,294 @@ test.describe('Purchase selector dialog — navbar visibility and z-index', () =
   })
 })
 
+test.describe('Purchase selector list visuals and same-city vendor context', () => {
+  test('sales shop purchase selector shows product icons and keeps same-city own supply products at the top', async ({
+    page,
+  }) => {
+    const chair = makeChairProduct()
+    const bread = {
+      ...chair,
+      id: 'prod-bread',
+      name: 'Bread',
+      slug: 'bread',
+      industry: 'FOOD_PROCESSING' as const,
+      basePrice: 3,
+    }
+    const player = makePlayer()
+    player.onboardingCompletedAtUtc = '2026-01-01T00:00:00Z'
+    player.companies.push({
+      id: 'company-city-supply',
+      playerId: player.id,
+      name: 'City Supply Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-city-shop',
+          companyId: 'company-city-supply',
+          cityId: 'city-ba',
+          type: 'SALES_SHOP',
+          name: 'City Shop',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 1,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'city-shop-purchase',
+              buildingId: 'building-city-shop',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            } satisfies MockBuildingUnit,
+            {
+              id: 'city-shop-sales',
+              buildingId: 'building-city-shop',
+              unitType: 'PUBLIC_SALES',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: true,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+        {
+          id: 'building-city-factory',
+          companyId: 'company-city-supply',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Bread Factory',
+          latitude: 48.16,
+          longitude: 17.12,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'city-factory-b2b',
+              buildingId: 'building-city-factory',
+              unitType: 'B2B_SALES',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              productTypeId: 'prod-bread',
+              minPrice: 4,
+            } satisfies MockBuildingUnit,
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player], products: [chair, bread] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-city-shop')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 0, 0).click()
+
+    const dialog = await openPurchaseSelector(page)
+    const firstOption = dialog.locator('.selector-option').first()
+    await expect(firstOption.locator('.option-title')).toHaveText('Bread')
+    await expect(firstOption.locator('.selector-option-img')).toBeVisible()
+    await expect(firstOption).toContainText('Available from your own factory in this city.')
+  })
+
+  test('same-city vendor cards show price and transit details for a selected resource and sort cheapest first', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.onboardingCompletedAtUtc = '2026-01-01T00:00:00Z'
+    player.companies.push(
+      {
+        id: 'company-current-factory',
+        playerId: player.id,
+        name: 'Current Factory Co',
+        cash: 500000,
+        foundedAtUtc: '2026-01-01T00:00:00Z',
+        buildings: [
+          {
+            id: 'building-current-factory',
+            companyId: 'company-current-factory',
+            cityId: 'city-ba',
+            type: 'FACTORY',
+            name: 'Current Factory',
+            latitude: 48.15,
+            longitude: 17.11,
+            level: 1,
+            powerConsumption: 2,
+            isForSale: false,
+            builtAtUtc: '2026-01-01T00:00:00Z',
+            pendingConfiguration: null,
+            units: [
+              {
+                id: 'current-purchase',
+                buildingId: 'building-current-factory',
+                unitType: 'PURCHASE',
+                gridX: 0,
+                gridY: 0,
+                level: 1,
+                linkUp: false,
+                linkDown: false,
+                linkLeft: false,
+                linkRight: false,
+                linkUpLeft: false,
+                linkUpRight: false,
+                linkDownLeft: false,
+                linkDownRight: false,
+                resourceTypeId: 'res-wood',
+                purchaseSource: 'LOCAL',
+              } satisfies MockBuildingUnit,
+            ],
+          },
+        ],
+      },
+      {
+        id: 'company-beta',
+        playerId: player.id,
+        name: 'Beta Supply',
+        cash: 500000,
+        foundedAtUtc: '2026-01-01T00:00:00Z',
+        buildings: [
+          {
+            id: 'building-beta',
+            companyId: 'company-beta',
+            cityId: 'city-ba',
+            type: 'FACTORY',
+            name: 'Beta Mill',
+            latitude: 48.17,
+            longitude: 17.13,
+            level: 1,
+            powerConsumption: 2,
+            isForSale: false,
+            builtAtUtc: '2026-01-01T00:00:00Z',
+            pendingConfiguration: null,
+            units: [
+              {
+                id: 'beta-b2b',
+                buildingId: 'building-beta',
+                unitType: 'B2B_SALES',
+                gridX: 0,
+                gridY: 0,
+                level: 1,
+                linkUp: false,
+                linkDown: false,
+                linkLeft: false,
+                linkRight: false,
+                linkUpLeft: false,
+                linkUpRight: false,
+                linkDownLeft: false,
+                linkDownRight: false,
+                resourceTypeId: 'res-wood',
+                minPrice: 40,
+              } satisfies MockBuildingUnit,
+            ],
+          },
+        ],
+      },
+      {
+        id: 'company-alpha',
+        playerId: player.id,
+        name: 'Alpha Supply',
+        cash: 500000,
+        foundedAtUtc: '2026-01-01T00:00:00Z',
+        buildings: [
+          {
+            id: 'building-alpha',
+            companyId: 'company-alpha',
+            cityId: 'city-ba',
+            type: 'FACTORY',
+            name: 'Alpha Sawmill',
+            latitude: 48.18,
+            longitude: 17.14,
+            level: 1,
+            powerConsumption: 2,
+            isForSale: false,
+            builtAtUtc: '2026-01-01T00:00:00Z',
+            pendingConfiguration: null,
+            units: [
+              {
+                id: 'alpha-b2b',
+                buildingId: 'building-alpha',
+                unitType: 'B2B_SALES',
+                gridX: 0,
+                gridY: 0,
+                level: 1,
+                linkUp: false,
+                linkDown: false,
+                linkLeft: false,
+                linkRight: false,
+                linkUpLeft: false,
+                linkUpRight: false,
+                linkDownLeft: false,
+                linkDownRight: false,
+                resourceTypeId: 'res-wood',
+                minPrice: 45,
+              } satisfies MockBuildingUnit,
+            ],
+          },
+        ],
+      },
+    )
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-current-factory')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 0, 0).click()
+
+    const dialog = await openPurchaseSelector(page)
+    const vendorCards = dialog.locator('.purchase-vendor-list .purchase-vendor-card')
+    await expect(vendorCards).toHaveCount(2)
+    await expect(vendorCards.first()).toContainText('Beta Supply')
+    await expect(vendorCards.first()).toContainText('Price $40 per unit')
+    await expect(vendorCards.first()).toContainText('Transit free in this city')
+    await expect(vendorCards.nth(1)).toContainText('Alpha Supply')
+    await expect(vendorCards.nth(1)).toContainText('Price $45 per unit')
+  })
+})
+
 // ── Complete building configuration end-to-end journey ───────────────────────
 
 test.describe('Complete building configuration end-to-end journey', () => {

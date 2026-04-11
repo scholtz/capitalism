@@ -6,6 +6,7 @@ type SelectorItem = {
   kind: 'resource' | 'product'
   id: string
   name: string
+  imageUrl?: string | null
   description?: string | null
   helperText?: string | null
   groupLabel: string
@@ -76,9 +77,18 @@ function selectItem(item: SelectorItem) {
     />
 
     <div v-if="selectedItem" class="selected-chip" role="status">
-      <strong>{{ selectedItem.name }}</strong>
-      <span v-if="selectedItem.badge" class="selected-badge">{{ selectedItem.badge }}</span>
-      <span class="selected-meta">{{ selectedItem.groupLabel }} <template v-if="selectedItem.unitSymbol">· {{ selectedItem.unitSymbol }}</template></span>
+      <img
+        v-if="selectedItem.imageUrl"
+        :src="selectedItem.imageUrl"
+        :alt="selectedItem.name"
+        class="selected-chip-img"
+        aria-hidden="true"
+      />
+      <div class="selected-copy">
+        <strong>{{ selectedItem.name }}</strong>
+        <span v-if="selectedItem.badge" class="selected-badge">{{ selectedItem.badge }}</span>
+        <span class="selected-meta">{{ selectedItem.groupLabel }} <template v-if="selectedItem.unitSymbol">· {{ selectedItem.unitSymbol }}</template></span>
+      </div>
       <button type="button" class="clear-btn" @click="emit('update:modelValue', null)">×</button>
     </div>
 
@@ -95,13 +105,18 @@ function selectItem(item: SelectorItem) {
             :disabled="item.disabled"
             @click="selectItem(item)"
           >
-            <span class="option-title-row">
-              <span class="option-title">{{ item.name }}</span>
-              <span v-if="item.badge" class="option-badge">{{ item.badge }}</span>
+            <span v-if="item.imageUrl" class="option-visual">
+              <img :src="item.imageUrl" :alt="item.name" class="selector-option-img" aria-hidden="true" />
             </span>
-            <span class="option-meta">{{ item.kind === 'resource' ? t('buildingDetail.selector.itemKindResource') : t('buildingDetail.selector.itemKindProduct') }}<template v-if="item.unitSymbol"> · {{ item.unitSymbol }}</template></span>
-            <span v-if="item.description" class="option-description">{{ item.description }}</span>
-            <span v-if="item.helperText" class="option-description">{{ item.helperText }}</span>
+            <span class="option-copy">
+              <span class="option-title-row">
+                <span class="option-title">{{ item.name }}</span>
+                <span v-if="item.badge" class="option-badge">{{ item.badge }}</span>
+              </span>
+              <span class="option-meta">{{ item.kind === 'resource' ? t('buildingDetail.selector.itemKindResource') : t('buildingDetail.selector.itemKindProduct') }}<template v-if="item.unitSymbol"> · {{ item.unitSymbol }}</template></span>
+              <span v-if="item.description" class="option-description">{{ item.description }}</span>
+              <span v-if="item.helperText" class="option-description">{{ item.helperText }}</span>
+            </span>
           </button>
         </div>
       </template>
@@ -142,11 +157,25 @@ function selectItem(item: SelectorItem) {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-wrap: wrap;
   padding: 0.625rem 0.75rem;
   border-radius: 10px;
   background: rgba(0, 71, 255, 0.08);
   color: var(--color-text);
+}
+
+.selected-chip-img,
+.selector-option-img {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.75rem;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.selected-copy {
+  display: grid;
+  gap: 0.125rem;
 }
 
 .selected-meta,
@@ -204,12 +233,26 @@ function selectItem(item: SelectorItem) {
   width: 100%;
   text-align: left;
   display: grid;
-  gap: 0.125rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
   padding: 0.65rem 0.75rem;
   border-radius: 10px;
   border: 1px solid var(--color-border);
   background: var(--color-bg);
   cursor: pointer;
+}
+
+.option-visual {
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 0.05rem;
+}
+
+.option-copy {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
 }
 
 .selector-option.disabled {
