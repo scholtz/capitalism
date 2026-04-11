@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-import { gqlRequest } from '@/lib/graphqlMasterServer'
+import { gqlRequest } from '@/lib/graphql'
 import type { GameNewsFeed } from '@/types'
 
 const FEED_FIELDS = `
@@ -38,11 +38,12 @@ export const useNewsStore = defineStore('news', () => {
 
     try {
       const data = await gqlRequest<{ gameNewsFeed: GameNewsFeed }>(
-        `query GameNewsFeed() {
-          gameNewsFeed() {
+        `query GameNewsFeed($includeDrafts: Boolean!) {
+          gameNewsFeed(includeDrafts: $includeDrafts) {
             ${FEED_FIELDS}
           }
         }`,
+        { includeDrafts },
       )
 
       feed.value = data.gameNewsFeed
@@ -59,11 +60,12 @@ export const useNewsStore = defineStore('news', () => {
   async function fetchUnreadCount() {
     try {
       const data = await gqlRequest<{ gameNewsFeed: Pick<GameNewsFeed, 'unreadCount'> }>(
-        `query GameNewsUnreadCount {
-          gameNewsFeed() {
+        `query GameNewsUnreadCount($includeDrafts: Boolean!) {
+          gameNewsFeed(includeDrafts: $includeDrafts) {
             unreadCount
           }
         }`,
+        { includeDrafts: false },
       )
 
       unreadCount.value = data.gameNewsFeed.unreadCount
