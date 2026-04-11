@@ -607,7 +607,8 @@ const selectedDraftPurchaseUnit = computed(() => (isEditing.value && selectedDis
  * selected STORAGE unit, based on:
  *   1. Products configured on units directly connected to this storage unit (draft layout).
  *   2. Products currently in inventory of this storage unit (active layout).
- * This enables the "smart" storage product picker that hides unrelated catalog options.
+ * When this set is non-empty, the picker is filtered to only those products.
+ * When empty (no links yet), the full catalog is shown as a fallback.
  */
 const storageConnectedProductIds = computed<Set<string>>(() => {
   const ids = new Set<string>()
