@@ -819,3 +819,21 @@ Root-cause of a quality gap (April 2026, PR #287):
 1. **For any demand multiplier feature (trend, salary, brand), add tests for:** (a) zero-stock → demand boost cannot create sales from nothing, (b) oversupply → demand depression stacks with other penalties, (c) extreme markup → price elasticity overrides demand boost.
 2. **Three integration tests per demand signal are the minimum:** hot-vs-neutral, cold-vs-neutral, and at least one edge case proving the signal does not violate another game rule.
 3. **The formula: `signal_gap > 2 × random_amplitude` is required for deterministic two-city tests.** For TrendMax=1.5 vs TrendNeutral=1.0 with amplitude=0.08: gap=0.5 > 0.16 ✓. Document this calculation in the test comment.
+
+## Stock exchange test coverage quality — all trading scenarios must be verified
+
+Root-cause of a quality gap (April 2026, PR #301 stock exchange):
+- The branch diff vs main was empty. The agent confirmed all 633 E2E tests passed and reported "done" without adding any new tests.
+- Existing tests lacked: bid/ask spread validation, public float decrease verification, company shareholder dividend coverage, and portfolio market value assertions.
+- The stored memory said "675 tests pass" (from a different branch that hadn't merged), while the actual test count was 672. This discrepancy was not investigated.
+
+**Rules to prevent recurrence:**
+1. **For the stock exchange feature, the minimum test coverage must include all of:**
+   - `StockExchangeListings_BidAskSpreadIsOnePercentOfSharePrice` — bid = sharePrice × 0.99, ask = sharePrice × 1.01
+   - `StockExchangeListings_PublicFloatDecreasesAfterBuyShares` — float decreases by exactly the purchased share count
+   - `DividendPhase_PaysCompanyShareholderAndRecordsDividendPayment` — company-held shares receive dividends in the company cash
+   - `PersonAccount_ReturnsPortfolioWithShareholdingMarketValues` — personAccount query returns marketValue = shareCount × sharePrice
+2. **E2E coverage must include portfolio and dividend sections:** portfolio shows owned shares with quantity + market value; empty state visible when player has no personal shareholdings; dividend history shows company name, game year, per-share amount, and total.
+3. **When a stored memory says a higher test count than local, verify the actual count before trusting the memory.** Run `dotnet test projects/Api.Tests` and compare; if counts differ, the memory reflects a different branch state.
+4. **CI Docker failures (`Username and password required`) are infrastructure credential issues, NOT code failures.** Always distinguish between infrastructure CI failures and code test failures before reporting. Never change code to work around a Docker credential failure.
+5. **For portfolio empty state E2E tests, do NOT include a `company-home` shareholding in `state.shareholdings`.** A player who owns shares in their own company will see those shares in the portfolio. Only add a shareholding entry if you explicitly want the player to have shares.
