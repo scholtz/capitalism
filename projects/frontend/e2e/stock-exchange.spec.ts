@@ -956,6 +956,204 @@ test.describe('Stock exchange', () => {
     // Sign-in prompt should be shown
     await expect(page.locator('.market-note')).toBeVisible()
   })
+
+  test('portfolio section shows owned shares for authenticated player', async ({ page }) => {
+    const rival = makePlayer({
+      id: 'player-portfolio-rival',
+      email: 'portfolio-rival@test.com',
+      displayName: 'Portfolio Rival',
+      companies: [
+        {
+          id: 'company-portfolio-target',
+          playerId: 'player-portfolio-rival',
+          name: 'Portfolio Target Corp',
+          cash: 300000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 5,
+          buildings: [],
+        },
+      ],
+    })
+    const player = makePlayer({
+      personalCash: 250000,
+      companies: [makeControlledCompany()],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-portfolio-target', ownerPlayerId: 'player-portfolio-rival', ownerCompanyId: null, shareCount: 8000 },
+        { companyId: 'company-portfolio-target', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 1500 },
+      ],
+    })
+    player.activeAccountType = 'PERSON'
+    player.activeCompanyId = null
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    // Portfolio section must be visible for authenticated player
+    await expect(page.getByRole('heading', { name: 'Personal portfolio' })).toBeVisible()
+
+    // The owned shares must be shown in the portfolio table
+    const portfolioTable = page.locator('.panel').filter({ hasText: 'Personal portfolio' }).locator('.data-table')
+    await expect(portfolioTable).toContainText('Portfolio Target Corp')
+    await expect(portfolioTable).toContainText('1,500')
+  })
+
+  test('portfolio section shows empty state when player owns no shares', async ({ page }) => {
+    const rival = makePlayer({
+      id: 'player-empty-portfolio-rival',
+      email: 'empty-portfolio-rival@test.com',
+      displayName: 'Empty Portfolio Rival',
+      companies: [
+        {
+          id: 'company-empty-portfolio-target',
+          playerId: 'player-empty-portfolio-rival',
+          name: 'No My Shares Corp',
+          cash: 200000,
+          totalSharesIssued: 5000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 2,
+          buildings: [],
+        },
+      ],
+    })
+    const player = makePlayer({
+      personalCash: 100000,
+      companies: [makeControlledCompany()],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        // Company-home founder shares are company-controlled (not in player's personal portfolio)
+        { companyId: 'company-home', ownerPlayerId: null, ownerCompanyId: 'company-home', shareCount: 10000 },
+        { companyId: 'company-empty-portfolio-target', ownerPlayerId: 'player-empty-portfolio-rival', ownerCompanyId: null, shareCount: 5000 },
+      ],
+    })
+    player.activeAccountType = 'PERSON'
+    player.activeCompanyId = null
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    await expect(page.getByRole('heading', { name: 'Personal portfolio' })).toBeVisible()
+    const portfolioPanel = page.locator('.panel').filter({ hasText: 'Personal portfolio' }).first()
+    await expect(portfolioPanel.locator('.empty-state')).toBeVisible()
+  })
+
+  test('dividend history section shows payment entry when player received dividends', async ({ page }) => {
+    const rival = makePlayer({
+      id: 'player-div-hist-rival',
+      email: 'div-hist-rival@test.com',
+      displayName: 'Div Hist Rival',
+      companies: [
+        {
+          id: 'company-div-issuer',
+          playerId: 'player-div-hist-rival',
+          name: 'Dividend Issuer Corp',
+          cash: 400000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.3,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+    const player = makePlayer({
+      personalCash: 180000,
+      companies: [makeControlledCompany()],
+      dividendPayments: [
+        {
+          id: 'div-payment-1',
+          companyId: 'company-div-issuer',
+          companyName: 'Dividend Issuer Corp',
+          shareCount: 2000,
+          amountPerShare: 1.5,
+          totalAmount: 3000,
+          gameYear: 1,
+          recordedAtTick: 8760,
+          recordedAtUtc: '2026-01-01T00:00:00Z',
+          description: 'Annual dividend payout',
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-div-issuer', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 2000 },
+        { companyId: 'company-div-issuer', ownerPlayerId: 'player-div-hist-rival', ownerCompanyId: null, shareCount: 8000 },
+      ],
+    })
+    player.activeAccountType = 'PERSON'
+    player.activeCompanyId = null
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    await expect(page.getByRole('heading', { name: 'Dividend history' })).toBeVisible()
+    const divTable = page.locator('.panel').filter({ hasText: 'Dividend history' }).locator('.data-table')
+    await expect(divTable).toContainText('Dividend Issuer Corp')
+    await expect(divTable).toContainText('3,000')
+  })
+
+  test('dividend history section shows empty state when player has no dividend payments', async ({ page }) => {
+    const rival = makePlayer({
+      id: 'player-no-div-rival',
+      email: 'no-div-rival@test.com',
+      displayName: 'No Div Rival',
+      companies: [
+        {
+          id: 'company-no-div',
+          playerId: 'player-no-div-rival',
+          name: 'No Dividend Corp',
+          cash: 150000,
+          totalSharesIssued: 5000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 3,
+          buildings: [],
+        },
+      ],
+    })
+    const player = makePlayer({
+      personalCash: 90000,
+      companies: [makeControlledCompany()],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-no-div', ownerPlayerId: 'player-no-div-rival', ownerCompanyId: null, shareCount: 5000 },
+      ],
+    })
+    player.activeAccountType = 'PERSON'
+    player.activeCompanyId = null
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    await expect(page.getByRole('heading', { name: 'Dividend history' })).toBeVisible()
+    const divPanel = page.locator('.panel').filter({ hasText: 'Dividend history' })
+    await expect(divPanel.locator('.empty-state')).toBeVisible()
+  })
 })
 
 test.describe('Stock exchange live refresh', () => {
