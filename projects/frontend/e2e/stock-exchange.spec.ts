@@ -1189,7 +1189,7 @@ test.describe('Stock exchange', () => {
     await expect(portfolioTable).toContainText('1,500')
   })
 
-  test('portfolio section shows empty state when player owns no shares', async ({ page }) => {
+  test('portfolio section shows empty state when only company-owned shares exist', async ({ page }) => {
     const rival = makePlayer({
       id: 'player-empty-portfolio-rival',
       email: 'empty-portfolio-rival@test.com',
@@ -1727,7 +1727,7 @@ test.describe('Stock exchange portfolio and dividend sections', () => {
     await expect(holdingRow.locator('td').last()).toBeVisible()
   })
 
-  test('portfolio section shows empty state when player owns no shares', async ({ page }) => {
+  test('portfolio section shows empty state when player owns no personal shares but has a company', async ({ page }) => {
     const player = makePlayer({
       personalCash: 200000,
       companies: [makeControlledCompany()],
