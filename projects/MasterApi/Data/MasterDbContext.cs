@@ -19,6 +19,8 @@ public sealed class MasterDbContext(DbContextOptions<MasterDbContext> options) :
 
     public DbSet<GameNewsReadReceipt> GameNewsReadReceipts => Set<GameNewsReadReceipt>();
 
+    public DbSet<BuildingLayoutTemplate> BuildingLayoutTemplates => Set<BuildingLayoutTemplate>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         var gameServer = modelBuilder.Entity<GameServerNode>();
@@ -84,5 +86,16 @@ public sealed class MasterDbContext(DbContextOptions<MasterDbContext> options) :
         readReceipt.HasIndex(receipt => new { receipt.GameNewsEntryId, receipt.PlayerEmail, receipt.ServerKey }).IsUnique();
         readReceipt.Property(receipt => receipt.PlayerEmail).HasMaxLength(200);
         readReceipt.Property(receipt => receipt.ServerKey).HasMaxLength(120);
+
+        var layout = modelBuilder.Entity<BuildingLayoutTemplate>();
+        layout.HasKey(l => l.Id);
+        layout.HasIndex(l => new { l.PlayerAccountId, l.BuildingType });
+        layout.HasOne(l => l.PlayerAccount)
+            .WithMany()
+            .HasForeignKey(l => l.PlayerAccountId)
+            .OnDelete(DeleteBehavior.Cascade);
+        layout.Property(l => l.Name).HasMaxLength(120);
+        layout.Property(l => l.Description).HasMaxLength(500);
+        layout.Property(l => l.BuildingType).HasMaxLength(60);
     }
 }

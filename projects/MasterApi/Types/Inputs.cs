@@ -265,3 +265,29 @@ public sealed class GameNewsLocalizationInfo
 
     public string HtmlContent { get; set; } = string.Empty;
 }
+
+public sealed class BuildingLayoutTemplateInfo
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string BuildingType { get; set; } = string.Empty;
+    public string UnitsJson { get; set; } = "[]";
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+public sealed class SaveBuildingLayoutInput
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string BuildingType { get; set; } = string.Empty;
+    public string UnitsJson { get; set; } = "[]";
+    /// <summary>If provided, update the existing template instead of creating a new one.</summary>
+    public Guid? ExistingId { get; set; }
+}
+
+public sealed class DeleteBuildingLayoutInput
+{
+    public Guid Id { get; set; }
+}
