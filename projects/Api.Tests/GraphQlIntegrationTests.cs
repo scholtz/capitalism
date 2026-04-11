@@ -4849,6 +4849,96 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(0, mfgUnit.GetProperty("ticksRequired").GetInt32());
     }
 
+    [Fact]
+    public async Task StoreBuildingConfiguration_BothUnitsChangeLinksIndependently_BothReceiveNonZeroTicks()
+    {
+        // When BOTH units change their OWN independent outgoing links, both should receive ticksRequired > 0.
+        // This proves the tick calculation is per-unit (not per-pair).
+        // PURCHASE changes linkDown false→true (pointing to STORAGE), MANUFACTURING changes linkDown false→true
+        // (pointing to B2B_SALES). Neither link is a contradiction since they point to different targets.
+        var token = await RegisterAndGetTokenAsync($"link-both-{Guid.NewGuid()}@test.com", "LinkBothTester");
+
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Link Both Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Link Both Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // First activate a 2×2 layout with no links.
+        await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "STORAGE",       gridX = 0, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "B2B_SALES",     gridX = 1, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        await AdvanceGameTicksAsync(BuildingConfigurationService.UnitPlanChangeTicks + 1);
+
+        // Now change links independently on both PURCHASE (linkDown→STORAGE) and MANUFACTURING (linkDown→B2B_SALES).
+        // No contradiction: PURCHASE.linkDown points to STORAGE(0,1), MANUFACTURING.linkDown points to B2B_SALES(1,1).
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) {
+                    totalTicksRequired
+                    units { unitType ticksRequired }
+                }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0, linkUp = false, linkDown = true,  linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0, linkUp = false, linkDown = true,  linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "STORAGE",       gridX = 0, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "B2B_SALES",     gridX = 1, gridY = 1, linkUp = false, linkDown = false, linkLeft = false, linkRight = false, linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+
+        var plan = result.GetProperty("data").GetProperty("storeBuildingConfiguration");
+        Assert.Equal(BuildingConfigurationService.LinkChangeTicks, plan.GetProperty("totalTicksRequired").GetInt32());
+
+        var planUnits = plan.GetProperty("units").EnumerateArray().ToList();
+        // Both PURCHASE and MANUFACTURING changed their linkDown — both must have ticksRequired = LinkChangeTicks.
+        var purchaseUnit = planUnits.Single(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+        Assert.Equal(BuildingConfigurationService.LinkChangeTicks, purchaseUnit.GetProperty("ticksRequired").GetInt32());
+        var mfgUnit = planUnits.Single(u => u.GetProperty("unitType").GetString() == "MANUFACTURING");
+        Assert.Equal(BuildingConfigurationService.LinkChangeTicks, mfgUnit.GetProperty("ticksRequired").GetInt32());
+        // Unchanged units (STORAGE, B2B_SALES) should have ticksRequired = 0.
+        var storageUnit = planUnits.Single(u => u.GetProperty("unitType").GetString() == "STORAGE");
+        Assert.Equal(0, storageUnit.GetProperty("ticksRequired").GetInt32());
+    }
+
     #endregion
 
     #region CancelBuildingConfiguration

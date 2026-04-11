@@ -700,7 +700,6 @@ public static class BuildingConfigurationService
                     .Build());
         }
 
-        var unitPositions = new HashSet<(int, int)>(submittedUnits.Select(u => (u.GridX, u.GridY)));
         var unitByPosition = submittedUnits.ToDictionary(u => (u.GridX, u.GridY));
 
         foreach (var unit in submittedUnits)
@@ -725,7 +724,7 @@ public static class BuildingConfigurationService
 
             // Validate directional link flags: each active link must point to a cell
             // that is within the 4x4 grid boundary and occupied by another unit in the plan.
-            ValidateDirectionalLinks(unit, unitPositions);
+            ValidateDirectionalLinks(unit, unitByPosition);
 
             // Validate that no pair of units forms a contradictory bidirectional link.
             // Per the product rules, a link pair can only flow one way between two units.
@@ -789,7 +788,7 @@ public static class BuildingConfigurationService
     /// </summary>
     private static void ValidateDirectionalLinks(
         BuildingConfigurationUnitInput unit,
-        HashSet<(int, int)> unitPositions)
+        Dictionary<(int, int), BuildingConfigurationUnitInput> unitByPosition)
     {
         void CheckLink(bool flagActive, int targetX, int targetY, string direction)
         {
@@ -805,7 +804,7 @@ public static class BuildingConfigurationService
                         .Build());
             }
 
-            if (!unitPositions.Contains((targetX, targetY)))
+            if (!unitByPosition.ContainsKey((targetX, targetY)))
             {
                 throw new GraphQLException(
                     ErrorBuilder.New()
