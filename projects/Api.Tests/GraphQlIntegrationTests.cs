@@ -6161,6 +6161,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                 var investorId = await GetCurrentPlayerIdAsync(investorToken);
                 var companyId = await SeedPublicCompanyAsync(controllerId, name: "Dividend Issuer", cash: 50_000m, founderShares: 0m, dividendPayoutRatio: 0.5m);
 
+
                 await using (var scope = _factory.Services.CreateAsyncScope())
                 {
                         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -6207,6 +6208,158 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                     Assert.Equal(200_000m + expectedDividend, personAccount.GetProperty("personalCash").GetDecimal());
                 Assert.Equal(1, personAccount.GetProperty("dividendPayments").GetArrayLength());
                     Assert.Equal(expectedDividend, personAccount.GetProperty("dividendPayments")[0].GetProperty("totalAmount").GetDecimal());
+        }
+
+        [Fact]
+        public async Task StockExchangeListings_BidAndAskArePlusMinusOnePercentOfSharePrice()
+        {
+                // ROADMAP: "Market bid price is 1% below the share price and offer is 1% above the share price."
+                var ownerToken = await RegisterAndGetTokenAsync($"bidask-owner-{Guid.NewGuid():N}@test.com", "BidAsk Owner");
+                var ownerId = await GetCurrentPlayerIdAsync(ownerToken);
+                var companyId = await SeedPublicCompanyAsync(ownerId, name: "BidAsk Co", cash: 200_000m, totalShares: 10_000m, founderShares: 5_000m);
+
+                var result = await ExecuteGraphQlAsync(
+                        """
+                        {
+                            stockExchangeListings {
+                                companyId
+                                sharePrice
+                                bidPrice
+                                askPrice
+                            }
+                        }
+                        """,
+                        token: ownerToken);
+
+                var listings = result.GetProperty("data").GetProperty("stockExchangeListings").EnumerateArray().ToList();
+                var listing = listings.First(l => l.GetProperty("companyId").GetString() == companyId.ToString());
+
+                var sharePrice = listing.GetProperty("sharePrice").GetDecimal();
+                var bidPrice = listing.GetProperty("bidPrice").GetDecimal();
+                var askPrice = listing.GetProperty("askPrice").GetDecimal();
+
+                Assert.True(sharePrice > 0m, "Share price must be positive");
+                // bid is 1% below share price
+                var expectedBid = Math.Round(sharePrice * 0.99m, 2);
+                Assert.Equal(expectedBid, Math.Round(bidPrice, 2));
+                // ask is 1% above share price
+                var expectedAsk = Math.Round(sharePrice * 1.01m, 2);
+                Assert.Equal(expectedAsk, Math.Round(askPrice, 2));
+        }
+
+        [Fact]
+        public async Task DividendPhase_PaysCompanyShareholderAndRecordsLedgerEntry()
+        {
+                // ROADMAP: Company-owned shares should also receive dividends
+                await ResetGameStateAsync();
+
+                var issuerToken = await RegisterAndGetTokenAsync($"div-issuer-{Guid.NewGuid():N}@test.com", "Dividend Issuer Owner");
+                var issuerId = await GetCurrentPlayerIdAsync(issuerToken);
+                var issuerCompanyId = await SeedPublicCompanyAsync(issuerId, name: "Dividend Source Co", cash: 80_000m, founderShares: 0m, dividendPayoutRatio: 0.5m);
+
+                var holderToken = await RegisterAndGetTokenAsync($"div-holder-{Guid.NewGuid():N}@test.com", "Dividend Holder");
+                var holderPlayerId = await GetCurrentPlayerIdAsync(holderToken);
+                var holderCompanyId = Guid.Parse((await ExecuteGraphQlAsync(
+                        """
+                        mutation CreateCompany($input: CreateCompanyInput!) {
+                            createCompany(input: $input) { id }
+                        }
+                        """,
+                        new { input = new { name = "Dividend Holder Corp" } },
+                        holderToken)).GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!);
+
+                // Seed the holder company's shareholding and revenue for the issuer so dividends get paid
+                decimal holderCashBefore;
+                await using (var scope = _factory.Services.CreateAsyncScope())
+                {
+                        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                        db.Shareholdings.Add(new Shareholding
+                        {
+                                Id = Guid.NewGuid(),
+                                CompanyId = issuerCompanyId,
+                                OwnerCompanyId = holderCompanyId,
+                                ShareCount = 4_000m,
+                        });
+                        db.LedgerEntries.Add(new LedgerEntry
+                        {
+                                Id = Guid.NewGuid(),
+                                CompanyId = issuerCompanyId,
+                                Category = LedgerCategory.Revenue,
+                                Description = "Annual revenue",
+                                Amount = 10_000m,
+                                RecordedAtTick = 1,
+                                RecordedAtUtc = DateTime.UtcNow,
+                        });
+                        var holderCompany = await db.Companies.FirstAsync(c => c.Id == holderCompanyId);
+                        holderCashBefore = holderCompany.Cash;
+                        await db.SaveChangesAsync();
+                }
+
+                await AdvanceGameTicksAsync(GameConstants.TicksPerYear - 1);
+                await ProcessTicksAsync(1);
+
+                // Holder company's cash should have increased (dividend was paid)
+                await using (var verifyScope = _factory.Services.CreateAsyncScope())
+                {
+                        var db = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+                        var holderCompany = await db.Companies.FirstAsync(c => c.Id == holderCompanyId);
+                        Assert.True(holderCompany.Cash > holderCashBefore, "Company shareholder cash should increase after dividend phase");
+
+                        // There should be a DividendPayment record for the company holding
+                        var divPayment = await db.DividendPayments
+                                .FirstOrDefaultAsync(p => p.RecipientCompanyId == holderCompanyId && p.CompanyId == issuerCompanyId);
+                        Assert.NotNull(divPayment);
+                        Assert.Equal(4_000m, divPayment.ShareCount);
+                        Assert.True(divPayment.TotalAmount > 0m);
+                }
+        }
+
+        [Fact]
+        public async Task StockExchangeListings_PublicFloatDecreasesAfterBuy()
+        {
+                // Buying shares should reduce the publicly available float
+                var ownerToken = await RegisterAndGetTokenAsync($"float-owner-{Guid.NewGuid():N}@test.com", "Float Owner");
+                var ownerId = await GetCurrentPlayerIdAsync(ownerToken);
+                var companyId = await SeedPublicCompanyAsync(ownerId, name: "Float Test Co", cash: 150_000m, totalShares: 10_000m, founderShares: 4_000m);
+
+                // Record initial float
+                var before = await ExecuteGraphQlAsync(
+                        """
+                        {
+                            stockExchangeListings {
+                                companyId
+                                publicFloatShares
+                            }
+                        }
+                        """);
+                var beforeFloat = before.GetProperty("data").GetProperty("stockExchangeListings").EnumerateArray()
+                        .First(l => l.GetProperty("companyId").GetString() == companyId.ToString())
+                        .GetProperty("publicFloatShares").GetDecimal();
+
+                var investorToken = await RegisterAndGetTokenAsync($"float-investor-{Guid.NewGuid():N}@test.com", "Float Investor");
+                await ExecuteGraphQlAsync(
+                        """
+                        mutation BuyShares($input: BuySharesInput!) {
+                            buyShares(input: $input) { shareCount }
+                        }
+                        """,
+                        new { input = new { companyId, shareCount = 500m } },
+                        investorToken);
+
+                var after = await ExecuteGraphQlAsync(
+                        """
+                        {
+                            stockExchangeListings {
+                                companyId
+                                publicFloatShares
+                            }
+                        }
+                        """);
+                var afterFloat = after.GetProperty("data").GetProperty("stockExchangeListings").EnumerateArray()
+                        .First(l => l.GetProperty("companyId").GetString() == companyId.ToString())
+                        .GetProperty("publicFloatShares").GetDecimal();
+
+                Assert.Equal(beforeFloat - 500m, afterFloat);
         }
 
     [Fact]

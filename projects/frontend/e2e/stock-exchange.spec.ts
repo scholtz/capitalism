@@ -914,6 +914,189 @@ test.describe('Stock exchange', () => {
     await expect(tradeRow).toContainText('25')
   })
 
+  test('personal portfolio section shows owned shares with market value', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 180000,
+      companies: [makeControlledCompany()],
+    })
+    const issuer = makePlayer({
+      id: 'player-portf',
+      email: 'portf@test.com',
+      displayName: 'Portfolio Issuer',
+      companies: [
+        {
+          id: 'company-portf',
+          playerId: 'player-portf',
+          name: 'Portfolio Corp',
+          cash: 500000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.25,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, issuer],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        // Player personally owns 2000 shares (20% of 10000)
+        { companyId: 'company-portf', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 2000 },
+        { companyId: 'company-portf', ownerPlayerId: 'player-portf', ownerCompanyId: null, shareCount: 3000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    // Portfolio section must be visible
+    const portfolioSection = page.locator('section').filter({
+      has: page.getByRole('heading', { name: 'Personal portfolio' }),
+    })
+    await expect(portfolioSection).toBeVisible()
+
+    // The owned shares row should show Portfolio Corp with quantity 2,000
+    const holdingRow = portfolioSection.locator('tr', { hasText: 'Portfolio Corp' })
+    await expect(holdingRow).toBeVisible()
+    await expect(holdingRow).toContainText('2,000')
+
+    // Ownership ratio: 2000 / 10000 = 20.0%
+    await expect(holdingRow).toContainText('20.0%')
+  })
+
+  test('portfolio section shows empty state when player owns no shares', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 100000,
+      // player has a company but personally owns NO shares in any company
+      companies: [makeControlledCompany()],
+    })
+    const rival = makePlayer({
+      id: 'player-noown',
+      email: 'noown@test.com',
+      displayName: 'No-Own Target',
+      companies: [
+        {
+          id: 'company-noown',
+          playerId: 'player-noown',
+          name: 'Unowned Corp',
+          cash: 300000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        // NO player-1 shareholdings at all — portfolio should be empty
+        { companyId: 'company-noown', ownerPlayerId: 'player-noown', ownerCompanyId: null, shareCount: 5000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    const portfolioSection = page.locator('section').filter({
+      has: page.getByRole('heading', { name: 'Personal portfolio' }),
+    })
+    await expect(portfolioSection).toBeVisible()
+    // Empty state message should appear
+    await expect(portfolioSection.locator('.empty-state')).toBeVisible()
+    await expect(portfolioSection.locator('.empty-state')).toContainText('You do not own any shares')
+  })
+
+  test('dividend history section shows dividend payments with amount and game year', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 220000,
+      companies: [makeControlledCompany()],
+      dividendPayments: [
+        {
+          id: 'div-1',
+          companyId: 'company-divpay',
+          companyName: 'DivPay Corp',
+          shareCount: 1000,
+          amountPerShare: 2.5,
+          totalAmount: 2500,
+          gameYear: 1,
+          recordedAtTick: 100,
+          recordedAtUtc: '2026-03-01T00:00:00Z',
+          description: 'Dividend for game year 1',
+        },
+        {
+          id: 'div-2',
+          companyId: 'company-divpay',
+          companyName: 'DivPay Corp',
+          shareCount: 1000,
+          amountPerShare: 3.0,
+          totalAmount: 3000,
+          gameYear: 2,
+          recordedAtTick: 200,
+          recordedAtUtc: '2026-06-01T00:00:00Z',
+          description: 'Dividend for game year 2',
+        },
+      ],
+    })
+    const issuer = makePlayer({
+      id: 'player-divpay',
+      email: 'divpay@test.com',
+      displayName: 'DivPay Owner',
+      companies: [
+        {
+          id: 'company-divpay',
+          playerId: 'player-divpay',
+          name: 'DivPay Corp',
+          cash: 400000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.3,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, issuer],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-divpay', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 1000 },
+        { companyId: 'company-divpay', ownerPlayerId: 'player-divpay', ownerCompanyId: null, shareCount: 4000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    const dividendSection = page.locator('section').filter({
+      has: page.getByRole('heading', { name: 'Dividend history' }),
+    })
+    await expect(dividendSection).toBeVisible()
+
+    // Both dividend rows must be visible
+    const rows = dividendSection.locator('tr', { hasText: 'DivPay Corp' })
+    await expect(rows).toHaveCount(2)
+
+    // First row: year 1, $2,500
+    await expect(rows.first()).toContainText('1')
+    await expect(rows.first()).toContainText('$2,500.00')
+
+    // Second row: year 2, $3,000
+    await expect(rows.nth(1)).toContainText('2')
+    await expect(rows.nth(1)).toContainText('$3,000.00')
+  })
+
   test('unauthenticated visitor sees market table but no trade buttons', async ({ page }) => {
     const rival = makePlayer({
       id: 'player-public',
