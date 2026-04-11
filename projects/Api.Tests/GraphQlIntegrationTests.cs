@@ -4841,13 +4841,12 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             $"A link-only change must require exactly {BuildingConfigurationService.LinkChangeTicks} tick(s), got {totalTicks}.");
 
         var units = plan.GetProperty("units").EnumerateArray().ToList();
-        foreach (var unit in units)
-        {
-            var unitTicks = unit.GetProperty("ticksRequired").GetInt32();
-            Assert.True(
-                unitTicks == BuildingConfigurationService.LinkChangeTicks,
-                $"Each changed unit must require exactly {BuildingConfigurationService.LinkChangeTicks} tick(s).");
-        }
+        // In the new single-direction model, only the SOURCE unit (PURCHASE with linkRight=true) changed.
+        // The DESTINATION unit (MANUFACTURING) has no link change and gets ticksRequired=0.
+        var purchaseUnit = units.Single(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+        Assert.Equal(BuildingConfigurationService.LinkChangeTicks, purchaseUnit.GetProperty("ticksRequired").GetInt32());
+        var mfgUnit = units.Single(u => u.GetProperty("unitType").GetString() == "MANUFACTURING");
+        Assert.Equal(0, mfgUnit.GetProperty("ticksRequired").GetInt32());
     }
 
     #endregion
@@ -13132,10 +13131,10 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                               linkUpLeft = false, linkUpRight = false, linkDownLeft = true, linkDownRight = false },
                         new { unitType = "STORAGE",        gridX = 0, gridY = 1,
                               linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
-                              linkUpLeft = false, linkUpRight = true, linkDownLeft = false, linkDownRight = false },
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
                         new { unitType = "B2B_SALES",      gridX = 1, gridY = 1,
                               linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
-                              linkUpLeft = true, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
                     }
                 }
             },
@@ -13152,12 +13151,13 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.True(mfgUnitDiag.GetProperty("linkDownLeft").GetBoolean());
         Assert.False(mfgUnitDiag.GetProperty("linkDownRight").GetBoolean());
 
+        // Per ROADMAP: no bidirectional links. STORAGE and B2B_SALES have no return diagonal flags.
         var storageUnitDiag = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "STORAGE");
-        Assert.True(storageUnitDiag.GetProperty("linkUpRight").GetBoolean());
+        Assert.False(storageUnitDiag.GetProperty("linkUpRight").GetBoolean());
         Assert.False(storageUnitDiag.GetProperty("linkUpLeft").GetBoolean());
 
         var b2bSalesUnitDiag = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "B2B_SALES");
-        Assert.True(b2bSalesUnitDiag.GetProperty("linkUpLeft").GetBoolean());
+        Assert.False(b2bSalesUnitDiag.GetProperty("linkUpLeft").GetBoolean());
         Assert.False(b2bSalesUnitDiag.GetProperty("linkUpRight").GetBoolean());
     }
 
@@ -23697,5 +23697,201 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     }
 
     #endregion
+
+    // ── Contradictory bidirectional link rejection ─────────────────────────────────────────────
+    // The ROADMAP rule: "it is not possible to have bidirectional link between units like
+    // top to bottom and bottom to top at the same time."
+    // All four link axes (horizontal, vertical, diagonal ↘/↖, diagonal ↙/↗) are covered.
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ContradictoryHorizontalLink_ReturnsError()
+    {
+        // A.linkRight=true AND B.linkLeft=true between the same pair is a contradictory bidirectional link.
+        var token = await RegisterAndGetTokenAsync($"contra-h-{Guid.NewGuid()}@test.com", "ContraHTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Contra H Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Contra H Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // PURCHASE(0,0).linkRight=true AND MANUFACTURING(1,0).linkLeft=true → both A→B and B→A
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = true,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = true, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("CONTRADICTORY_LINK", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ContradictoryVerticalLink_ReturnsError()
+    {
+        // A.linkDown=true AND B.linkUp=true between the same pair is a contradictory vertical link.
+        var token = await RegisterAndGetTokenAsync($"contra-v-{Guid.NewGuid()}@test.com", "ContraVTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Contra V Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Contra V Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // PURCHASE(0,0).linkDown=true AND MANUFACTURING(0,1).linkUp=true → both top→bottom and bottom→top
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = true, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 0, gridY = 1,
+                              linkUp = true, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("CONTRADICTORY_LINK", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ContradictoryDiagonalTlBr_ReturnsError()
+    {
+        // TopLeft.linkDownRight=true AND BottomRight.linkUpLeft=true → contradictory diagonal ↘/↖.
+        var token = await RegisterAndGetTokenAsync($"contra-d1-{Guid.NewGuid()}@test.com", "ContraD1Tester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Contra D1 Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Contra D1 Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // PURCHASE(0,0).linkDownRight=true AND MANUFACTURING(1,1).linkUpLeft=true → ↘ and ↖ simultaneously
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = true },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 1,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = true, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("CONTRADICTORY_LINK", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_ContradictoryDiagonalTrBl_ReturnsError()
+    {
+        // TopRight.linkDownLeft=true AND BottomLeft.linkUpRight=true → contradictory diagonal ↙/↗.
+        var token = await RegisterAndGetTokenAsync($"contra-d2-{Guid.NewGuid()}@test.com", "ContraD2Tester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Contra D2 Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Contra D2 Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // MANUFACTURING(1,0).linkDownLeft=true AND STORAGE(0,1).linkUpRight=true → ↙ and ↗ simultaneously
+        var result = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = true, linkDownRight = false },
+                        new { unitType = "STORAGE",       gridX = 0, gridY = 1,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = true, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("CONTRADICTORY_LINK", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
 
 }

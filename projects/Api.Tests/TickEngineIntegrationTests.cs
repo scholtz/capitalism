@@ -4858,4 +4858,191 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
     }
 
     #endregion
+
+    #region Diagonal link routing
+
+    [Fact]
+    public async Task ResourceMovementPhase_DiagonalLinkDownRight_MovesInventoryToBottomRightNeighbor()
+    {
+        // Proves that a linkDownRight flag on unit A causes resources to flow diagonally
+        // from A(0,0) to B(1,1) after one tick (the ROADMAP diagonal routing requirement).
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync();
+        var wood = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var player = new Player
+        {
+            Id = Guid.NewGuid(),
+            Email = $"diag-link-{Guid.NewGuid():N}@test.com",
+            DisplayName = "Diag Link Tester",
+            PasswordHash = "hash",
+            Role = PlayerRole.Player
+        };
+        db.Players.Add(player);
+
+        var company = new Company
+        {
+            Id = Guid.NewGuid(),
+            PlayerId = player.Id,
+            Name = "Diag Link Corp",
+            Cash = 1_000_000m
+        };
+        db.Companies.Add(company);
+
+        var building = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = BuildingType.Factory,
+            Name = "Diag Factory",
+            Level = 1,
+            Latitude = city.Latitude,
+            Longitude = city.Longitude
+        };
+        db.Buildings.Add(building);
+
+        // Source unit A at (0,0) with linkDownRight=true pointing diagonally to B(1,1).
+        var sourceUnit = new BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = UnitType.Storage,
+            GridX = 0, GridY = 0,
+            Level = 1,
+            LinkDownRight = true    // diagonal: A → B
+        };
+
+        // Destination unit B at (1,1) — no outgoing links (pure sink for this test).
+        var destUnit = new BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = UnitType.Storage,
+            GridX = 1, GridY = 1,
+            Level = 1
+        };
+
+        db.BuildingUnits.AddRange(sourceUnit, destUnit);
+
+        // Pre-stock 5 wood in source unit.
+        db.Inventories.Add(new Inventory
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            BuildingUnitId = sourceUnit.Id,
+            ResourceTypeId = wood.Id,
+            Quantity = 5m,
+            Quality = 0.7m,
+            SourcingCostTotal = 10m
+        });
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        // After one tick the source should have pushed its wood to the dest unit.
+        var sourceQty = await db.Inventories
+            .Where(i => i.BuildingUnitId == sourceUnit.Id)
+            .SumAsync(i => i.Quantity);
+
+        var destQty = await db.Inventories
+            .Where(i => i.BuildingUnitId == destUnit.Id)
+            .SumAsync(i => i.Quantity);
+
+        Assert.True(destQty > 0,
+            $"Diagonal link (↘) should have moved wood from (0,0) to (1,1). Dest has {destQty}, source has {sourceQty}.");
+    }
+
+    [Fact]
+    public async Task ResourceMovementPhase_DiagonalLinkUpRight_MovesInventoryToUpperRightNeighbor()
+    {
+        // Proves that a linkUpRight flag on unit A at (0,1) causes resources to flow
+        // diagonally from A to B(1,0) after one tick (↗ diagonal direction).
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var city = await db.Cities.FirstAsync();
+        var wood = await db.ResourceTypes.FirstAsync(r => r.Slug == "wood");
+
+        var player = new Player
+        {
+            Id = Guid.NewGuid(),
+            Email = $"diag-ur-{Guid.NewGuid():N}@test.com",
+            DisplayName = "Diag UR Tester",
+            PasswordHash = "hash",
+            Role = PlayerRole.Player
+        };
+        db.Players.Add(player);
+
+        var company = new Company
+        {
+            Id = Guid.NewGuid(),
+            PlayerId = player.Id,
+            Name = "Diag UR Corp",
+            Cash = 1_000_000m
+        };
+        db.Companies.Add(company);
+
+        var building = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = BuildingType.Factory,
+            Name = "Diag UR Factory",
+            Level = 1,
+            Latitude = city.Latitude + 0.01,
+            Longitude = city.Longitude + 0.01
+        };
+        db.Buildings.Add(building);
+
+        // Source unit A at (0,1) with linkUpRight=true pointing ↗ to B(1,0).
+        var sourceUnit = new BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = UnitType.Storage,
+            GridX = 0, GridY = 1,
+            Level = 1,
+            LinkUpRight = true    // diagonal: A → B (↗)
+        };
+
+        var destUnit = new BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = UnitType.Storage,
+            GridX = 1, GridY = 0,
+            Level = 1
+        };
+
+        db.BuildingUnits.AddRange(sourceUnit, destUnit);
+
+        db.Inventories.Add(new Inventory
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            BuildingUnitId = sourceUnit.Id,
+            ResourceTypeId = wood.Id,
+            Quantity = 5m,
+            Quality = 0.7m,
+            SourcingCostTotal = 10m
+        });
+
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        var destQty = await db.Inventories
+            .Where(i => i.BuildingUnitId == destUnit.Id)
+            .SumAsync(i => i.Quantity);
+
+        Assert.True(destQty > 0,
+            $"Diagonal link (↗) should have moved wood from (0,1) to (1,0). Dest has {destQty}.");
+    }
+
+    #endregion
 }
