@@ -80,7 +80,7 @@ function selectItem(item: SelectorItem) {
       <img
         v-if="selectedItem.imageUrl"
         :src="selectedItem.imageUrl"
-        :alt="selectedItem.name"
+        alt=""
         class="selected-chip-img"
         aria-hidden="true"
       />
@@ -106,7 +106,7 @@ function selectItem(item: SelectorItem) {
             @click="selectItem(item)"
           >
             <span v-if="item.imageUrl" class="option-visual">
-              <img :src="item.imageUrl" :alt="item.name" class="selector-option-img" aria-hidden="true" />
+              <img :src="item.imageUrl" alt="" class="selector-option-img" aria-hidden="true" />
             </span>
             <span class="option-copy">
               <span class="option-title-row">

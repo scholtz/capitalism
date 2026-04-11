@@ -128,6 +128,8 @@ export function buildPurchaseVendorOptions(
         buildingName: building.name,
         cityId: building.cityId,
         pricePerUnit,
+        // Local B2B vendor candidates are restricted to the destination city.
+        // That means their transit cost is intentionally always zero.
         transitCostPerUnit: 0,
       })
     }
@@ -139,6 +141,7 @@ export function buildPurchaseVendorOptions(
     }
     if (left.pricePerUnit != null && right.pricePerUnit == null) return -1
     if (left.pricePerUnit == null && right.pricePerUnit != null) return 1
-    return left.companyName.localeCompare(right.companyName) || left.buildingName.localeCompare(right.buildingName)
+    const companyCompare = left.companyName.localeCompare(right.companyName)
+    return companyCompare !== 0 ? companyCompare : left.buildingName.localeCompare(right.buildingName)
   })
 }

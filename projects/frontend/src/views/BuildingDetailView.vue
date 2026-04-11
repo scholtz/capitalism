@@ -2135,6 +2135,12 @@ function formatCurrency(value: number | null | undefined): string {
   return `$${formatter.format(amount)}`
 }
 
+function getPurchaseVendorTransitLabel(transitCostPerUnit: number): string {
+  return transitCostPerUnit > 0
+    ? t('buildingDetail.purchaseSelector.vendorTransit', { price: formatCurrency(transitCostPerUnit) })
+    : t('buildingDetail.purchaseSelector.vendorTransitFree')
+}
+
 function getCityName(cityId: string | null | undefined): string {
   if (!cityId) return t('common.notAvailable')
   return cities.value.find((city) => city.id === cityId)?.name ?? t('common.notAvailable')
@@ -3609,11 +3615,7 @@ watch(
                     {{ t('buildingDetail.purchaseSelector.vendorPrice', { price: formatCurrency(option.pricePerUnit) }) }}
                   </span>
                   <span class="purchase-vendor-pricing">
-                    {{
-                      option.transitCostPerUnit > 0
-                        ? t('buildingDetail.purchaseSelector.vendorTransit', { price: formatCurrency(option.transitCostPerUnit) })
-                        : t('buildingDetail.purchaseSelector.vendorTransitFree')
-                    }}
+                    {{ getPurchaseVendorTransitLabel(option.transitCostPerUnit) }}
                   </span>
                 </button>
               </div>
