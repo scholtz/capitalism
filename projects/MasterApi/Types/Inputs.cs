@@ -166,9 +166,8 @@ public sealed class GetGameNewsFeedInput : MasterServerServiceInput
     public string? RequesterEmail { get; set; }
 }
 
-public sealed class MarkGameNewsReadInput : MasterServerServiceInput
+public sealed class MarkGameNewsReadInput
 {
-    public string PlayerEmail { get; set; } = string.Empty;
 
     public List<Guid> EntryIds { get; set; } = [];
 }

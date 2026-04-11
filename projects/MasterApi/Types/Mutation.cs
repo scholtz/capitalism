@@ -344,24 +344,31 @@ public sealed class Mutation
         return Query.ToGameNewsEntryInfo(entry, null, input.ServerKey);
     }
 
+    [HotChocolate.Authorization.Authorize]
     public async Task<bool> MarkGameNewsRead(
-        MarkGameNewsReadInput input,
         [Service] MasterDbContext db,
-        [Service] IOptions<MasterServerOptions> masterServerOptions)
+        [Service] IOptions<MasterServerOptions> masterServerOptions,
+        ClaimsPrincipal claimsPrincipal,
+        MarkGameNewsReadInput? input = null)
     {
-        Query.EnsureServiceAccess(input, masterServerOptions);
+        if(input is null)
+        {
+            input = new MarkGameNewsReadInput()
+            {
 
+            };
+        }
+        
         if (input.EntryIds.Count == 0)
         {
             return true;
         }
 
-        var playerEmail = Query.NormalizeEmail(input.PlayerEmail, "INVALID_PLAYER_EMAIL");
+        var playerEmail = claimsPrincipal.Claims.Single(x => x.Type == ClaimTypes.Email).Value;
         var validEntryIds = await db.GameNewsEntries
             .AsNoTracking()
             .Where(entry => input.EntryIds.Contains(entry.Id))
             .Where(entry => entry.Status == GameNewsEntryStatus.Published)
-            .Where(entry => entry.TargetServerKey == null || entry.TargetServerKey == input.ServerKey)
             .Select(entry => entry.Id)
             .ToListAsync();
 
@@ -372,7 +379,7 @@ public sealed class Mutation
 
         var existingReadEntryIds = await db.GameNewsReadReceipts
             .AsNoTracking()
-            .Where(receipt => receipt.PlayerEmail == playerEmail && receipt.ServerKey == input.ServerKey)
+            .Where(receipt => receipt.PlayerEmail == playerEmail )
             .Where(receipt => validEntryIds.Contains(receipt.GameNewsEntryId))
             .Select(receipt => receipt.GameNewsEntryId)
             .ToListAsync();
@@ -385,7 +392,6 @@ public sealed class Mutation
                 Id = Guid.NewGuid(),
                 GameNewsEntryId = entryId,
                 PlayerEmail = playerEmail,
-                ServerKey = input.ServerKey,
                 ReadAtUtc = now,
             });
         }
