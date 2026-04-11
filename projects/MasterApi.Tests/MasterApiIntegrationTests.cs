@@ -583,14 +583,39 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
 
                         Assert.False(result.TryGetProperty("errors", out _));
                         var items = result.GetProperty("data").GetProperty("gameNewsFeed").GetProperty("items").EnumerateArray().ToList();
-                        Assert.Contains(
-                                items,
-                                item => item.GetProperty("entryType").GetString() == "CHANGELOG"
-                                        && item.GetProperty("status").GetString() == "PUBLISHED"
-                                        && item.GetProperty("localizations").EnumerateArray().Any(localization =>
-                                                localization.GetProperty("locale").GetString() == "en"
-                                                && localization.GetProperty("title").GetString() == "Game administration and newsroom launched"));
+        Assert.Contains(
+                items,
+                item => item.GetProperty("entryType").GetString() == "CHANGELOG"
+                        && item.GetProperty("status").GetString() == "PUBLISHED"
+                        && item.GetProperty("localizations").EnumerateArray().Any(localization =>
+                                localization.GetProperty("locale").GetString() == "en"
+                                && localization.GetProperty("title").GetString() == "Game administration and newsroom launched"));
                 }
+
+        [Fact]
+        public async Task GameNewsFeed_AllowsAnonymousPublicRequests()
+        {
+            var result = await GraphQlAsync("""
+                query Feed($input: GetGameNewsFeedInput!) {
+                    gameNewsFeed(input: $input) {
+                        items { id entryType status }
+                    }
+                }
+                """,
+                new
+                {
+                    input = new
+                    {
+                        registrationKey = "test-registration-key",
+                        serverKey = "capitalism-local",
+                        includeDrafts = false,
+                        limit = 20,
+                    }
+                });
+
+            Assert.False(result.TryGetProperty("errors", out _));
+            Assert.NotEmpty(result.GetProperty("data").GetProperty("gameNewsFeed").GetProperty("items").EnumerateArray());
+        }
 
         [Fact]
         public async Task GameNewsFeed_HidesDraftsFromPublicButIncludesThemForAdminView()
