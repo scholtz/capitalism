@@ -14193,3 +14193,322 @@ test.describe('Sales shop building financial overview', () => {
     await expect(finCard.locator('.building-financial-chart')).toHaveCount(0)
   })
 })
+
+
+// ── Building Layouts panel ─────────────────────────────────────────────────────
+
+test.describe('Building Layouts panel — edit mode, no unit selected', () => {
+  function makeLayoutTestPlayer() {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-lt',
+          playerId: 'player-1',
+          name: 'Layout Test Co',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-lt',
+              companyId: 'company-lt',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Layout Test Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 0,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    return player
+  }
+
+  test('layout panel is hidden in read-only (non-edit) mode', async ({ page }) => {
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    await expect(page.getByRole('heading', { name: 'Building Overview' })).toBeVisible()
+    // Layout panel should NOT appear in read-only mode
+    await expect(page.locator('[aria-label="Building Layouts"]')).toHaveCount(0)
+  })
+
+  test('layout panel appears in placeholder sidebar when editing with no cell selected', async ({ page }) => {
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    // Enter edit mode — placeholder sidebar should show the layout panel
+    await expect(page.locator('[aria-label="Building Layouts"]')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Building Layouts' })).toBeVisible()
+  })
+
+  test('layout panel shows connect-to-master form and empty local state', async ({ page }) => {
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+    // Master connect form shown when not connected
+    await expect(panel.locator('.layout-connect-body')).toBeVisible()
+    await expect(panel.locator('input[type="email"]')).toBeVisible()
+    await expect(panel.locator('input[type="password"]')).toBeVisible()
+    // Empty local section
+    await expect(panel.locator('.layout-empty').first()).toBeVisible()
+  })
+
+  test('save layout persists to localStorage and shows it in the list', async ({ page }) => {
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    // Use "Apply Starter Layout" to get a non-empty draft
+    await page.getByRole('button', { name: /Apply Starter Layout/i }).click()
+    // Now in edit mode with a non-empty draft; no cell selected → layout panel visible
+    await expect(page.locator('[aria-label="Building Layouts"]')).toBeVisible()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await panel.locator('[aria-label="Layout name"]').fill('My Production Layout')
+    await panel.getByRole('button', { name: 'Save Layout' }).click()
+
+    // Success confirmation should appear
+    await expect(panel.locator('.layout-save-success')).toBeVisible()
+    // Layout should appear in the local list
+    await expect(panel.locator('.layout-item').filter({ hasText: 'My Production Layout' })).toBeVisible()
+  })
+
+  test('load from localStorage applies to draft when draft is empty (no overwrite confirm)', async ({ page }) => {
+    await page.addInitScript(() => {
+      const layouts = [
+        {
+          name: 'Starter Chain',
+          description: 'Basic production chain',
+          buildingType: 'FACTORY',
+          units: [
+            {
+              unitType: 'PURCHASE',
+              gridX: 0, gridY: 0,
+              linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
+              linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false,
+              resourceTypeId: null, productTypeId: null, minPrice: null, maxPrice: null,
+              purchaseSource: null, saleVisibility: null, budget: null,
+              mediaHouseBuildingId: null, minQuality: null, brandScope: null,
+              vendorLockCompanyId: null,
+            },
+          ],
+        },
+      ]
+      localStorage.setItem('capitalism_building_layouts', JSON.stringify(layouts))
+    })
+
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+    await expect(panel.locator('.layout-item').filter({ hasText: 'Starter Chain' })).toBeVisible()
+
+    // Draft is empty → load directly, no overwrite confirm
+    await panel.locator('.layout-item').filter({ hasText: 'Starter Chain' }).getByRole('button', { name: 'Load' }).click()
+    await expect(page.locator('.layout-overwrite-confirm')).toHaveCount(0)
+
+    // The planning grid should now contain the loaded PURCHASE unit
+    const planSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(planSection.locator('.grid-cell.occupied').first()).toBeVisible()
+  })
+
+  test('loading into non-empty draft shows overwrite confirmation', async ({ page }) => {
+    await page.addInitScript(() => {
+      const layouts = [
+        {
+          name: 'Overwrite Me',
+          description: null,
+          buildingType: 'FACTORY',
+          units: [
+            {
+              unitType: 'MANUFACTURING',
+              gridX: 0, gridY: 0,
+              linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
+              linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false,
+              resourceTypeId: null, productTypeId: null, minPrice: null, maxPrice: null,
+              purchaseSource: null, saleVisibility: null, budget: null,
+              mediaHouseBuildingId: null, minQuality: null, brandScope: null,
+              vendorLockCompanyId: null,
+            },
+          ],
+        },
+      ]
+      localStorage.setItem('capitalism_building_layouts', JSON.stringify(layouts))
+    })
+
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    // Use starter layout to get a non-empty draft
+    await page.getByRole('button', { name: /Apply Starter Layout/i }).click()
+    // Wait for layout panel to be visible
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+    await expect(panel.locator('.layout-item').filter({ hasText: 'Overwrite Me' })).toBeVisible()
+
+    // Draft is non-empty → load should show overwrite confirm
+    await panel.locator('.layout-item').filter({ hasText: 'Overwrite Me' }).getByRole('button', { name: 'Load' }).click()
+    await expect(page.locator('.layout-overwrite-confirm')).toBeVisible()
+  })
+
+  test('cancel overwrite dismisses confirm without changing draft', async ({ page }) => {
+    await page.addInitScript(() => {
+      const layouts = [
+        {
+          name: 'Cancel Test',
+          description: null,
+          buildingType: 'FACTORY',
+          units: [],
+        },
+      ]
+      localStorage.setItem('capitalism_building_layouts', JSON.stringify(layouts))
+    })
+
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    // Get a non-empty draft via starter layout
+    await page.getByRole('button', { name: /Apply Starter Layout/i }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+    await panel.locator('.layout-item').filter({ hasText: 'Cancel Test' }).getByRole('button', { name: 'Load' }).click()
+    await expect(page.locator('.layout-overwrite-confirm')).toBeVisible()
+
+    // Cancel — confirm should disappear and planning section should still show starter units
+    await page.locator('.layout-overwrite-confirm').getByRole('button', { name: 'Cancel' }).click()
+    await expect(page.locator('.layout-overwrite-confirm')).toHaveCount(0)
+    // Planning grid still has units from starter layout
+    const planSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(planSection.locator('.grid-cell.occupied').first()).toBeVisible()
+  })
+
+  test('delete layout removes it from the local list', async ({ page }) => {
+    await page.addInitScript(() => {
+      const layouts = [
+        { name: 'Delete Me', description: null, buildingType: 'FACTORY', units: [] },
+        { name: 'Keep Me', description: null, buildingType: 'FACTORY', units: [] },
+      ]
+      localStorage.setItem('capitalism_building_layouts', JSON.stringify(layouts))
+    })
+
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel.locator('.layout-item').filter({ hasText: 'Delete Me' })).toBeVisible()
+    await expect(panel.locator('.layout-item').filter({ hasText: 'Keep Me' })).toBeVisible()
+
+    await panel.locator('.layout-item').filter({ hasText: 'Delete Me' }).getByRole('button', { name: 'Delete' }).click()
+
+    await expect(panel.locator('.layout-item').filter({ hasText: 'Delete Me' })).toHaveCount(0)
+    await expect(panel.locator('.layout-item').filter({ hasText: 'Keep Me' })).toBeVisible()
+  })
+
+  test('master portal register/login toggle works', async ({ page }) => {
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+
+    // Initially shows login form (no display name field visible)
+    await expect(panel.locator('input[placeholder="Display name"]')).toHaveCount(0)
+
+    // Click "Create one" to switch to register form
+    await panel.getByRole('button', { name: 'Create one' }).click()
+    await expect(panel.locator('input[placeholder="Display name"]')).toBeVisible()
+
+    // Click "Log in" to switch back to login form
+    await panel.getByRole('button', { name: 'Log in' }).click()
+    await expect(panel.locator('input[placeholder="Display name"]')).toHaveCount(0)
+  })
+})

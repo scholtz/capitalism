@@ -24,6 +24,21 @@ import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedRe
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
+import {
+  isMasterConnected,
+  getMasterEmail,
+  clearMasterSession,
+  masterLogin,
+  masterRegister,
+  fetchMasterLayouts,
+  saveMasterLayout,
+  deleteMasterLayout,
+  saveLocalLayout,
+  deleteLocalLayout,
+  getLocalLayoutsForType,
+  type BuildingLayoutTemplate,
+  type LayoutUnit,
+} from '@/lib/masterLayoutApi'
 import { deepEqual } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 import { useGameStateStore } from '@/stores/gameState'
@@ -275,7 +290,25 @@ const savingSale = ref(false)
 const cancellingPlan = ref(false)
 const cancelPlanError = ref<string | null>(null)
 const layoutName = ref('')
-const showLayoutDialog = ref(false)
+const layoutDescription = ref('')
+// Master-API layout state
+const masterLayouts = ref<BuildingLayoutTemplate[]>([])
+const masterLayoutsLoading = ref(false)
+const masterLayoutsError = ref<string | null>(null)
+const localLayouts = ref<BuildingLayoutTemplate[]>([])
+const layoutSaving = ref(false)
+const layoutSaveError = ref<string | null>(null)
+const layoutSaveSuccess = ref(false)
+const layoutDeleteError = ref<string | null>(null)
+const overwriteConfirmPending = ref<BuildingLayoutTemplate | null>(null)
+const masterEmail = ref('')
+const masterPassword = ref('')
+const masterDisplayName = ref('')
+const masterLoginError = ref<string | null>(null)
+const masterLoggingIn = ref(false)
+const showMasterRegisterForm = ref(false)
+const masterConnected = computed(() => isMasterConnected())
+const masterUserEmail = computed(() => getMasterEmail())
 const selectedHistoryItemKey = ref<string | null>(null)
 
 const { saveScrollPosition, restoreScrollPosition } = useScrollPreservation()
@@ -299,8 +332,6 @@ const unitUpgradeInfoCache = ref<import('@/types').UnitUpgradeInfo | null>(null)
 
 let activeBuildingLoadRequest = 0
 let activeExchangeOffersRequest = 0
-
-const LAYOUT_STORAGE_KEY = 'capitalism_building_layouts'
 
 const allowedUnitsMap: Record<string, string[]> = {
   MINE: ['MINING', 'STORAGE', 'B2B_SALES'],
@@ -882,6 +913,8 @@ function startEditing() {
   isEditing.value = true
   setReadOnlySelectedCell(null)
   showUnitPicker.value = false
+  refreshLocalLayouts()
+  refreshMasterLayouts()
 }
 
 function cancelEditing() {
@@ -1011,9 +1044,9 @@ function applyStarterLayout() {
   isEditing.value = true
   setReadOnlySelectedCell(null)
   showUnitPicker.value = false
-}
-
-function applyShopStarterLayout() {
+  refreshLocalLayouts()
+  refreshMasterLayouts()
+} {
   const shopStarterUnits: EditableGridUnit[] = [
     {
       id: 'draft-shop-starter-0-0',
@@ -1075,6 +1108,8 @@ function applyShopStarterLayout() {
   isEditing.value = true
   setReadOnlySelectedCell(null)
   showUnitPicker.value = false
+  refreshLocalLayouts()
+  refreshMasterLayouts()
 }
 
 function clickDraftCell(x: number, y: number) {
@@ -1753,88 +1788,151 @@ async function saveRentPerSqm() {
 
 // ── Layout save/load ──
 
-type SavedLayout = {
-  name: string
-  buildingType: string
-  units: Array<{
-    unitType: string
-    gridX: number
-    gridY: number
-    linkUp: boolean
-    linkDown: boolean
-    linkLeft: boolean
-    linkRight: boolean
-    linkUpLeft: boolean
-    linkUpRight: boolean
-    linkDownLeft: boolean
-    linkDownRight: boolean
-    resourceTypeId: string | null
-    productTypeId: string | null
-    minPrice: number | null
-    maxPrice: number | null
-    purchaseSource: string | null
-    saleVisibility: string | null
-    budget: number | null
-    mediaHouseBuildingId: string | null
-    minQuality: number | null
-    brandScope: string | null
-    vendorLockCompanyId: string | null
-    lockedCityId?: string | null
-  }>
+/** Extract serialisable unit data from the draft list. */
+function getDraftLayoutUnits(): LayoutUnit[] {
+  return draftUnits.value.map((u) => ({
+    unitType: u.unitType,
+    gridX: u.gridX,
+    gridY: u.gridY,
+    linkUp: u.linkUp,
+    linkDown: u.linkDown,
+    linkLeft: u.linkLeft,
+    linkRight: u.linkRight,
+    linkUpLeft: u.linkUpLeft,
+    linkUpRight: u.linkUpRight,
+    linkDownLeft: u.linkDownLeft,
+    linkDownRight: u.linkDownRight,
+    resourceTypeId: u.resourceTypeId,
+    productTypeId: u.productTypeId,
+    minPrice: u.minPrice,
+    maxPrice: u.maxPrice,
+    purchaseSource: u.purchaseSource,
+    saleVisibility: u.saleVisibility,
+    budget: u.budget,
+    mediaHouseBuildingId: u.mediaHouseBuildingId,
+    minQuality: u.minQuality,
+    brandScope: u.brandScope,
+    vendorLockCompanyId: u.vendorLockCompanyId,
+    lockedCityId: u.lockedCityId,
+  }))
 }
 
-function getSavedLayouts(): SavedLayout[] {
+/** Refresh local layouts from localStorage into the reactive ref. */
+function refreshLocalLayouts(): void {
+  if (!building.value) return
+  localLayouts.value = getLocalLayoutsForType(building.value.type)
+}
+
+/** Fetch cloud layouts from master API (no-op when not connected). */
+async function refreshMasterLayouts(): Promise<void> {
+  if (!masterConnected.value) return
+  masterLayoutsLoading.value = true
+  masterLayoutsError.value = null
   try {
-    return JSON.parse(localStorage.getItem(LAYOUT_STORAGE_KEY) || '[]') as SavedLayout[]
-  } catch {
-    return []
+    const all = await fetchMasterLayouts()
+    masterLayouts.value = building.value
+      ? all.filter((l) => l.buildingType === building.value!.type)
+      : all
+  } catch (err: unknown) {
+    masterLayoutsError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    masterLayoutsLoading.value = false
   }
 }
 
-const savedLayouts = computed(() => {
-  if (!building.value) return []
-  return getSavedLayouts().filter((layout) => layout.buildingType === building.value!.type)
-})
-
-function saveLayout() {
+/** Save current draft as a named layout template. */
+async function saveLayout(): Promise<void> {
   if (!building.value || !layoutName.value.trim()) return
-  const layout: SavedLayout = {
-    name: layoutName.value.trim(),
-    buildingType: building.value.type,
-    units: draftUnits.value.map((u) => ({
-      unitType: u.unitType,
-      gridX: u.gridX,
-      gridY: u.gridY,
-      linkUp: u.linkUp,
-      linkDown: u.linkDown,
-      linkLeft: u.linkLeft,
-      linkRight: u.linkRight,
-      linkUpLeft: u.linkUpLeft,
-      linkUpRight: u.linkUpRight,
-      linkDownLeft: u.linkDownLeft,
-      linkDownRight: u.linkDownRight,
-      resourceTypeId: u.resourceTypeId,
-      productTypeId: u.productTypeId,
-      minPrice: u.minPrice,
-      maxPrice: u.maxPrice,
-      purchaseSource: u.purchaseSource,
-      saleVisibility: u.saleVisibility,
-      budget: u.budget,
-      mediaHouseBuildingId: u.mediaHouseBuildingId,
-      minQuality: u.minQuality,
-      brandScope: u.brandScope,
-      vendorLockCompanyId: u.vendorLockCompanyId,
-      lockedCityId: u.lockedCityId,
-    })),
+  if (draftUnits.value.length === 0) {
+    layoutSaveError.value = t('buildingDetail.layouts.noUnits')
+    return
   }
-  const layouts = getSavedLayouts()
-  layouts.push(layout)
-  localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layouts))
-  layoutName.value = ''
-  showLayoutDialog.value = false
+
+  layoutSaving.value = true
+  layoutSaveError.value = null
+  layoutSaveSuccess.value = false
+
+  const name = layoutName.value.trim()
+  const description = layoutDescription.value.trim() || null
+  const buildingType = building.value.type
+  const units = getDraftLayoutUnits()
+
+  try {
+    if (masterConnected.value) {
+      // Find if an existing cloud layout with the same name exists so we can update it
+      const existing = masterLayouts.value.find((l) => l.name === name)
+      const saved = await saveMasterLayout(name, description, buildingType, units, existing?.id)
+      // Update local cache
+      const idx = masterLayouts.value.findIndex((l) => l.id === saved.id)
+      if (idx >= 0) {
+        masterLayouts.value.splice(idx, 1, saved)
+      } else {
+        masterLayouts.value = [saved, ...masterLayouts.value]
+      }
+    } else {
+      // Fallback: localStorage
+      saveLocalLayout(name, description, buildingType, units)
+      refreshLocalLayouts()
+    }
+    layoutName.value = ''
+    layoutDescription.value = ''
+    layoutSaveSuccess.value = true
+    setTimeout(() => {
+      layoutSaveSuccess.value = false
+    }, 3000)
+  } catch (err: unknown) {
+    // If cloud failed, persist locally and surface a fallback warning
+    if (masterConnected.value) {
+      try {
+        saveLocalLayout(name, description, buildingType, units)
+        refreshLocalLayouts()
+        layoutSaveError.value = t('buildingDetail.layouts.masterError')
+        layoutSaveSuccess.value = true
+        setTimeout(() => {
+          layoutSaveSuccess.value = false
+          layoutSaveError.value = null
+        }, 4000)
+      } catch {
+        layoutSaveError.value = err instanceof Error ? err.message : String(err)
+      }
+    } else {
+      layoutSaveError.value = err instanceof Error ? err.message : String(err)
+    }
+  } finally {
+    layoutSaving.value = false
+  }
 }
 
-function loadLayout(layout: SavedLayout) {
+/** Confirm and apply a layout template to the current draft. */
+function requestLoadLayout(layout: BuildingLayoutTemplate): void {
+  // Compatibility check: building types must match
+  if (layout.buildingType !== building.value?.type) {
+    layoutSaveError.value = t('buildingDetail.layouts.incompatible', {
+      type: layout.buildingType,
+      buildingType: building.value?.type ?? '?',
+    })
+    return
+  }
+  // If the draft is non-empty, ask for overwrite confirmation
+  if (draftUnits.value.length > 0) {
+    overwriteConfirmPending.value = layout
+  } else {
+    applyLayout(layout)
+  }
+}
+
+function confirmOverwrite(): void {
+  if (overwriteConfirmPending.value) {
+    applyLayout(overwriteConfirmPending.value)
+    overwriteConfirmPending.value = null
+  }
+}
+
+function cancelOverwrite(): void {
+  overwriteConfirmPending.value = null
+}
+
+function applyLayout(layout: BuildingLayoutTemplate): void {
   draftUnits.value = layout.units.map((u, i) => ({
     id: `layout-${i}-${Date.now()}`,
     ...u,
@@ -1843,16 +1941,46 @@ function loadLayout(layout: SavedLayout) {
   }))
 }
 
-function deleteLayout(index: number) {
-  const allLayouts = getSavedLayouts()
-  const filtered = allLayouts.filter((l) => l.buildingType === building.value?.type)
-  const toDelete = filtered[index]
-  if (!toDelete) return
-  const globalIndex = allLayouts.indexOf(toDelete)
-  if (globalIndex !== -1) {
-    allLayouts.splice(globalIndex, 1)
-    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(allLayouts))
+/** Delete a layout template. */
+async function deleteLayout(layout: BuildingLayoutTemplate): Promise<void> {
+  layoutDeleteError.value = null
+  try {
+    if (!layout.isLocal && layout.id) {
+      await deleteMasterLayout(layout.id)
+      masterLayouts.value = masterLayouts.value.filter((l) => l.id !== layout.id)
+    } else {
+      deleteLocalLayout(layout.name, layout.buildingType)
+      refreshLocalLayouts()
+    }
+  } catch (err: unknown) {
+    layoutDeleteError.value = err instanceof Error ? err.message : String(err)
   }
+}
+
+/** Log in to the master portal. */
+async function connectMaster(): Promise<void> {
+  masterLoginError.value = null
+  masterLoggingIn.value = true
+  try {
+    if (showMasterRegisterForm.value) {
+      await masterRegister(masterEmail.value, masterDisplayName.value, masterPassword.value)
+    } else {
+      await masterLogin(masterEmail.value, masterPassword.value)
+    }
+    masterEmail.value = ''
+    masterPassword.value = ''
+    masterDisplayName.value = ''
+    await refreshMasterLayouts()
+  } catch (err: unknown) {
+    masterLoginError.value = err instanceof Error ? err.message : t('buildingDetail.layouts.masterLoginError')
+  } finally {
+    masterLoggingIn.value = false
+  }
+}
+
+function disconnectMaster(): void {
+  clearMasterSession()
+  masterLayouts.value = []
 }
 
 // ── Unit config helpers ──
@@ -4951,29 +5079,6 @@ watch(
               </div>
             </div>
           </div>
-
-          <!-- Layout save/load -->
-          <div v-if="isEditing" class="layout-section">
-            <div class="layout-header">
-              <h4>{{ t('buildingDetail.layouts.title') }}</h4>
-            </div>
-            <div class="layout-save">
-              <input type="text" class="form-input" v-model="layoutName" :placeholder="t('buildingDetail.layouts.namePlaceholder')" />
-              <button class="btn btn-secondary btn-sm" :disabled="!layoutName.trim()" @click="saveLayout">
-                {{ t('buildingDetail.layouts.save') }}
-              </button>
-            </div>
-            <div v-if="savedLayouts.length > 0" class="layout-list">
-              <div v-for="(layout, i) in savedLayouts" :key="i" class="layout-item">
-                <span class="layout-name">{{ layout.name }} ({{ layout.units.length }} {{ t('buildingDetail.layouts.units') }})</span>
-                <div class="layout-item-actions">
-                  <button class="btn btn-ghost btn-sm" @click="loadLayout(layout)">{{ t('buildingDetail.layouts.load') }}</button>
-                  <button class="btn btn-ghost btn-sm" @click="deleteLayout(i)">{{ t('buildingDetail.layouts.delete') }}</button>
-                </div>
-              </div>
-            </div>
-            <p v-else class="layout-empty">{{ t('buildingDetail.layouts.empty') }}</p>
-          </div>
         </div>
 
         <!-- Read-only unit detail sidebar (click on active grid) -->
@@ -5873,9 +5978,9 @@ watch(
             <div v-if="isEditing" class="unit-detail placeholder-detail">
               <h4>{{ t('buildingDetail.sidebarPlaceholderTitle') }}</h4>
               <p class="unit-desc">
-                {{ isEditing ? t('buildingDetail.sidebarPlaceholderBodyEditing') : t('buildingDetail.sidebarPlaceholderBody') }}
+                {{ t('buildingDetail.sidebarPlaceholderBodyEditing') }}
               </p>
-              <div v-if="isEditing" class="unit-insight-card placeholder-summary-card">
+              <div class="unit-insight-card placeholder-summary-card">
                 <h5>{{ t('buildingDetail.costSummaryTitle') }}</h5>
                 <div class="unit-stats">
                   <span class="stat">{{ t('buildingDetail.totalBuildCost', { cost: formatCurrency(draftConstructionCost) }) }}</span>
@@ -5884,6 +5989,148 @@ watch(
                   </span>
                 </div>
               </div>
+
+              <!-- ── Building Layouts panel ── -->
+              <div class="layout-section" aria-label="Building Layouts">
+                <div class="layout-header">
+                  <h4>{{ t('buildingDetail.layouts.title') }}</h4>
+                </div>
+
+                <!-- Overwrite confirmation dialog -->
+                <div v-if="overwriteConfirmPending" class="layout-overwrite-confirm" role="alertdialog" aria-modal="true">
+                  <p class="layout-confirm-text">{{ t('buildingDetail.layouts.overwriteConfirm') }}</p>
+                  <div class="layout-confirm-actions">
+                    <button class="btn btn-danger btn-sm" @click="confirmOverwrite">{{ t('common.confirm') }}</button>
+                    <button class="btn btn-ghost btn-sm" @click="cancelOverwrite">{{ t('common.cancel') }}</button>
+                  </div>
+                </div>
+
+                <!-- Save form -->
+                <div class="layout-save" v-if="!overwriteConfirmPending">
+                  <input
+                    type="text"
+                    class="form-input"
+                    v-model="layoutName"
+                    :placeholder="t('buildingDetail.layouts.namePlaceholder')"
+                    :aria-label="t('buildingDetail.layouts.namePlaceholder')"
+                  />
+                  <input
+                    type="text"
+                    class="form-input layout-desc-input"
+                    v-model="layoutDescription"
+                    :placeholder="t('buildingDetail.layouts.descriptionPlaceholder')"
+                    :aria-label="t('buildingDetail.layouts.descriptionPlaceholder')"
+                  />
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    :disabled="!layoutName.trim() || layoutSaving"
+                    @click="saveLayout"
+                  >
+                    {{ layoutSaving ? t('buildingDetail.layouts.masterSaving') : t('buildingDetail.layouts.save') }}
+                  </button>
+                  <p v-if="layoutSaveSuccess" class="layout-save-success">✓ {{ t('buildingDetail.layouts.saveSuccess') }}</p>
+                  <p v-if="layoutSaveError" class="layout-save-error">{{ layoutSaveError }}</p>
+                  <p v-if="layoutDeleteError" class="layout-save-error">{{ layoutDeleteError }}</p>
+                </div>
+
+                <!-- Cloud layouts section -->
+                <template v-if="masterConnected">
+                  <div class="layout-cloud-header">
+                    <span class="layout-cloud-badge">☁ {{ t('buildingDetail.layouts.cloudBadge') }}</span>
+                    <span class="layout-connected-email">{{ t('buildingDetail.layouts.masterConnected', { email: masterUserEmail }) }}</span>
+                    <button class="btn btn-ghost btn-xs" @click="disconnectMaster">{{ t('buildingDetail.layouts.masterDisconnect') }}</button>
+                  </div>
+                  <p v-if="masterLayoutsLoading" class="layout-empty">{{ t('common.loading') }}</p>
+                  <p v-else-if="masterLayoutsError" class="layout-save-error">{{ masterLayoutsError }}</p>
+                  <div v-else-if="masterLayouts.length > 0" class="layout-list">
+                    <div v-for="layout in masterLayouts" :key="layout.id ?? layout.name" class="layout-item">
+                      <div class="layout-item-info">
+                        <span class="layout-name">{{ layout.name }}</span>
+                        <span v-if="layout.description" class="layout-desc">{{ layout.description }}</span>
+                        <span class="layout-meta">{{ layout.units.length }} {{ t('buildingDetail.layouts.units') }}</span>
+                      </div>
+                      <div class="layout-item-actions">
+                        <button class="btn btn-ghost btn-sm" @click="requestLoadLayout(layout)">{{ t('buildingDetail.layouts.load') }}</button>
+                        <button class="btn btn-ghost btn-sm" @click="deleteLayout(layout)">{{ t('buildingDetail.layouts.delete') }}</button>
+                      </div>
+                    </div>
+                  </div>
+                  <p v-else class="layout-empty">{{ t('buildingDetail.layouts.empty') }}</p>
+                  <p class="layout-sync-hint">{{ t('buildingDetail.layouts.cloudSyncHint') }}</p>
+                </template>
+
+                <!-- Connect to master portal form -->
+                <template v-else>
+                  <div class="layout-master-connect">
+                    <p class="layout-connect-body">{{ t('buildingDetail.layouts.masterConnectBody') }}</p>
+                    <div class="layout-login-form">
+                      <input
+                        v-if="showMasterRegisterForm"
+                        type="text"
+                        class="form-input"
+                        v-model="masterDisplayName"
+                        :placeholder="t('buildingDetail.layouts.masterDisplayName')"
+                        autocomplete="name"
+                      />
+                      <input
+                        type="email"
+                        class="form-input"
+                        v-model="masterEmail"
+                        :placeholder="t('buildingDetail.layouts.masterEmail')"
+                        autocomplete="email"
+                      />
+                      <input
+                        type="password"
+                        class="form-input"
+                        v-model="masterPassword"
+                        :placeholder="t('buildingDetail.layouts.masterPassword')"
+                        autocomplete="current-password"
+                        @keyup.enter="connectMaster"
+                      />
+                      <button
+                        class="btn btn-secondary btn-sm"
+                        :disabled="!masterEmail.trim() || !masterPassword.trim() || masterLoggingIn"
+                        @click="connectMaster"
+                      >
+                        {{ masterLoggingIn ? t('buildingDetail.layouts.masterLoggingIn') : t('buildingDetail.layouts.masterConnect') }}
+                      </button>
+                      <p v-if="masterLoginError" class="layout-save-error">{{ masterLoginError }}</p>
+                      <p class="layout-form-toggle">
+                        <template v-if="showMasterRegisterForm">
+                          {{ t('buildingDetail.layouts.masterLoginPrompt') }}
+                          <button class="btn-link" @click="showMasterRegisterForm = false">{{ t('buildingDetail.layouts.masterLoginLink') }}</button>
+                        </template>
+                        <template v-else>
+                          {{ t('buildingDetail.layouts.masterRegisterPrompt') }}
+                          <button class="btn-link" @click="showMasterRegisterForm = true">{{ t('buildingDetail.layouts.masterRegisterLink') }}</button>
+                        </template>
+                      </p>
+                    </div>
+                  </div>
+
+                  <!-- Local-only fallback -->
+                  <div class="layout-local-section">
+                    <div class="layout-local-header">
+                      <span class="layout-local-badge">{{ t('buildingDetail.layouts.localBadge') }}</span>
+                    </div>
+                    <div v-if="localLayouts.length > 0" class="layout-list">
+                      <div v-for="layout in localLayouts" :key="layout.name" class="layout-item">
+                        <div class="layout-item-info">
+                          <span class="layout-name">{{ layout.name }}</span>
+                          <span v-if="layout.description" class="layout-desc">{{ layout.description }}</span>
+                          <span class="layout-meta">{{ layout.units.length }} {{ t('buildingDetail.layouts.units') }}</span>
+                        </div>
+                        <div class="layout-item-actions">
+                          <button class="btn btn-ghost btn-sm" @click="requestLoadLayout(layout)">{{ t('buildingDetail.layouts.load') }}</button>
+                          <button class="btn btn-ghost btn-sm" @click="deleteLayout(layout)">{{ t('buildingDetail.layouts.delete') }}</button>
+                        </div>
+                      </div>
+                    </div>
+                    <p v-else class="layout-empty">{{ t('buildingDetail.layouts.empty') }}</p>
+                  </div>
+                </template>
+              </div>
+              <!-- ── End Building Layouts panel ── -->
             </div>
             <div v-else class="unit-detail building-overview-detail">
               <p class="building-overview-name">{{ building.name }}</p>
@@ -7848,12 +8095,13 @@ watch(
 
 .layout-save {
   display: flex;
+  flex-direction: column;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
 
-.layout-save .form-input {
-  flex: 1;
+.layout-desc-input {
+  font-size: 0.8125rem;
 }
 
 .layout-list {
@@ -7865,24 +8113,168 @@ watch(
 .layout-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   padding: 0.5rem;
   background: var(--color-bg);
   border-radius: var(--radius-md, 8px);
+  gap: 0.5rem;
+}
+
+.layout-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
 }
 
 .layout-name {
   font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.layout-desc {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.layout-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
 }
 
 .layout-item-actions {
   display: flex;
   gap: 0.25rem;
+  flex-shrink: 0;
 }
 
 .layout-empty {
   font-size: 0.8125rem;
   color: var(--color-text-secondary);
+  margin: 0.5rem 0;
+}
+
+.layout-save-success {
+  font-size: 0.8125rem;
+  color: var(--color-success, #22c55e);
+  margin: 0.25rem 0 0;
+}
+
+.layout-save-error {
+  font-size: 0.8125rem;
+  color: var(--color-danger, #ef4444);
+  margin: 0.25rem 0 0;
+}
+
+.layout-overwrite-confirm {
+  background: color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent);
+  border: 1px solid var(--color-warning, #f59e0b);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.layout-confirm-text {
+  font-size: 0.875rem;
+  margin: 0 0 0.5rem;
+}
+
+.layout-confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.layout-cloud-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.layout-cloud-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 15%, transparent);
+  color: var(--color-primary, #3b82f6);
+  border-radius: var(--radius-sm, 4px);
+  padding: 0.125rem 0.375rem;
+}
+
+.layout-local-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-border) 40%, transparent);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm, 4px);
+  padding: 0.125rem 0.375rem;
+}
+
+.layout-connected-email {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.layout-master-connect {
+  margin-bottom: 0.75rem;
+}
+
+.layout-connect-body {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.75rem;
+}
+
+.layout-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.layout-form-toggle {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  margin: 0.25rem 0 0;
+}
+
+.layout-local-section {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.layout-local-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.layout-sync-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin: 0.5rem 0 0;
+  font-style: italic;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-primary, #3b82f6);
+  font-size: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.btn-xs {
+  padding: 0.125rem 0.375rem;
+  font-size: 0.75rem;
 }
 
 .placeholder-detail {
