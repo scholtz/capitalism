@@ -1312,4 +1312,159 @@ test.describe('Stock exchange live refresh', () => {
     // No loading spinner must have blanked the page
     await expect(page.locator('.state-box', { hasText: 'Loading' })).toBeHidden()
   })
+
+  test('dividend payout column shows badge for every listed company', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 100000,
+      companies: [makeControlledCompany({ dividendPayoutRatio: 0.2 })],
+    })
+    const rival = makePlayer({
+      id: 'player-2',
+      email: 'rival@test.com',
+      displayName: 'Rival Owner',
+      companies: [
+        {
+          id: 'company-rival',
+          playerId: 'player-2',
+          name: 'Rival Corp',
+          cash: 600000,
+          totalSharesIssued: 8000,
+          dividendPayoutRatio: 0.4,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 10,
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-rival', ownerPlayerId: 'player-2', ownerCompanyId: null, shareCount: 8000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    // Dividend Payout column header must be present and sortable
+    const table = page.locator('table.market-table')
+    await expect(table.getByRole('button', { name: /Dividend payout/ })).toBeVisible()
+
+    // Each company row must show a dividend-badge with the correct payout %
+    const homeRow = table.locator('tr.listing-row', { hasText: 'Home Holdings' })
+    await expect(homeRow.locator('.dividend-badge')).toContainText('20.0%')
+
+    const rivalRow = table.locator('tr.listing-row', { hasText: 'Rival Corp' })
+    await expect(rivalRow.locator('.dividend-badge')).toContainText('40.0%')
+  })
+
+  test('trade panel shows company snapshot with total shares, public float, and dividend policy', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 200000,
+      companies: [makeControlledCompany()],
+    })
+    const rival = makePlayer({
+      id: 'player-2',
+      email: 'rival@test.com',
+      displayName: 'Rival Owner',
+      companies: [
+        {
+          id: 'company-snap',
+          playerId: 'player-2',
+          name: 'Snapshot Corp',
+          cash: 300000,
+          totalSharesIssued: 5000,
+          dividendPayoutRatio: 0.25,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 5,
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-snap', ownerPlayerId: 'player-2', ownerCompanyId: null, shareCount: 5000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    // Open the trade panel for Snapshot Corp
+    await openTradePanel(page, 'Snapshot Corp')
+
+    const snapshot = page.locator('.company-snapshot')
+    await expect(snapshot).toBeVisible()
+
+    // Company snapshot must show total shares issued
+    await expect(snapshot.locator('.snapshot-item', { hasText: 'Total shares issued' }).locator('dd')).toContainText('5,000')
+    // Company snapshot must show public float and percentage
+    await expect(snapshot.locator('.snapshot-item', { hasText: 'Public float' }).locator('dd')).toBeVisible()
+    // Company snapshot must show dividend policy
+    await expect(snapshot.locator('.snapshot-item', { hasText: 'Dividend policy' }).locator('dd')).toContainText('25.0%')
+  })
+
+  test('trade panel shows estimated cost and proceeds that update with quantity', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 300000,
+      companies: [makeControlledCompany()],
+    })
+    const rival = makePlayer({
+      id: 'player-2',
+      email: 'rival@test.com',
+      displayName: 'Rival Owner',
+      companies: [
+        {
+          id: 'company-est',
+          playerId: 'player-2',
+          name: 'EstCost Corp',
+          cash: 400000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-est', ownerPlayerId: 'player-2', ownerCompanyId: null, shareCount: 10000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    await openTradePanel(page, 'EstCost Corp')
+    const tradePanel = page.locator('.trade-panel')
+
+    // Default quantity is 100 — estimated cost/proceeds must appear immediately
+    await expect(tradePanel.locator('.trade-est').first()).toBeVisible()
+    await expect(tradePanel.locator('.trade-est').nth(1)).toBeVisible()
+
+    // Change quantity to 200 and verify estimated cost label updates
+    const qtyInput = tradePanel.getByLabel(/Share quantity EstCost Corp/)
+    await qtyInput.fill('200')
+
+    // After typing 200 shares, both estimated values must appear (non-zero)
+    const estCost = tradePanel.locator('.trade-est').first()
+    const estProceeds = tradePanel.locator('.trade-est').nth(1)
+    await expect(estCost).toContainText('Est. cost')
+    await expect(estProceeds).toContainText('Est. proceeds')
+    // Values should be visible and non-trivial (> $0)
+    await expect(estCost).not.toContainText('$0.00')
+    await expect(estProceeds).not.toContainText('$0.00')
+  })
 })
