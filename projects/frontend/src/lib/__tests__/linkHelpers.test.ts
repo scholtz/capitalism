@@ -1,7 +1,8 @@
 /**
  * Unit tests for the directional link helpers in linkHelpers.ts.
- * These tests verify state detection, arrow characters, and 4-state toggle cycle
- * without requiring a Vue app instance or i18n context.
+ * These tests verify state detection, arrow characters, 3-state toggle cycle
+ * (no bidirectional), smart direction defaults, and the full 5-state diagonal
+ * cycle – all without requiring a Vue app instance or i18n context.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -15,6 +16,8 @@ import {
   getHorizontalLinkState,
   getVerticalLinkArrow,
   getVerticalLinkState,
+  inferHorizontalDefault,
+  inferVerticalDefault,
   type LinkFlagSource,
 } from '../linkHelpers'
 
@@ -163,11 +166,11 @@ describe('getVerticalLinkArrow', () => {
 })
 
 // ---------------------------------------------------------------------------
-// applyHorizontalLinkCycle — 4-state cycle: none → forward → backward → both → none
+// applyHorizontalLinkCycle — 3-state cycle: none → (default dir) → (other dir) → none
 // ---------------------------------------------------------------------------
 
 describe('applyHorizontalLinkCycle', () => {
-  it('none → forward: left sends right, right does not', () => {
+  it('none → forward (default): left sends right, right does not', () => {
     const left = makeUnit(0, 0)
     const right = makeUnit(1, 0)
     applyHorizontalLinkCycle(left, right, 'none')
@@ -183,15 +186,15 @@ describe('applyHorizontalLinkCycle', () => {
     expect(right.linkLeft).toBe(true)
   })
 
-  it('backward → both: both flags set', () => {
+  it('backward → none: all flags cleared (no bidirectional state)', () => {
     const left = makeUnit(0, 0)
     const right = makeUnit(1, 0, { linkLeft: true })
     applyHorizontalLinkCycle(left, right, 'backward')
-    expect(left.linkRight).toBe(true)
-    expect(right.linkLeft).toBe(true)
+    expect(left.linkRight).toBe(false)
+    expect(right.linkLeft).toBe(false)
   })
 
-  it('both → none: all flags cleared', () => {
+  it('legacy both → none: all flags cleared', () => {
     const left = makeUnit(0, 0, { linkRight: true })
     const right = makeUnit(1, 0, { linkLeft: true })
     applyHorizontalLinkCycle(left, right, 'both')
@@ -199,7 +202,7 @@ describe('applyHorizontalLinkCycle', () => {
     expect(right.linkLeft).toBe(false)
   })
 
-  it('full cycle returns to none after 4 steps', () => {
+  it('full cycle returns to none after 3 steps', () => {
     const left = makeUnit(0, 0)
     const right = makeUnit(1, 0)
 
@@ -211,18 +214,16 @@ describe('applyHorizontalLinkCycle', () => {
     applyHorizontalLinkCycle(left, right, getState())
     expect(getState()).toBe('backward')
     applyHorizontalLinkCycle(left, right, getState())
-    expect(getState()).toBe('both')
-    applyHorizontalLinkCycle(left, right, getState())
     expect(getState()).toBe('none')
   })
 })
 
 // ---------------------------------------------------------------------------
-// applyVerticalLinkCycle — 4-state cycle: none → forward → backward → both → none
+// applyVerticalLinkCycle — 3-state cycle: none → (default dir) → (other dir) → none
 // ---------------------------------------------------------------------------
 
 describe('applyVerticalLinkCycle', () => {
-  it('none → forward: top sends down, bottom does not', () => {
+  it('none → forward (default): top sends down, bottom does not', () => {
     const top = makeUnit(0, 0)
     const bottom = makeUnit(0, 1)
     applyVerticalLinkCycle(top, bottom, 'none')
@@ -238,15 +239,15 @@ describe('applyVerticalLinkCycle', () => {
     expect(bottom.linkUp).toBe(true)
   })
 
-  it('backward → both: both flags set', () => {
+  it('backward → none: all flags cleared (no bidirectional state)', () => {
     const top = makeUnit(0, 0)
     const bottom = makeUnit(0, 1, { linkUp: true })
     applyVerticalLinkCycle(top, bottom, 'backward')
-    expect(top.linkDown).toBe(true)
-    expect(bottom.linkUp).toBe(true)
+    expect(top.linkDown).toBe(false)
+    expect(bottom.linkUp).toBe(false)
   })
 
-  it('both → none: all flags cleared', () => {
+  it('legacy both → none: all flags cleared', () => {
     const top = makeUnit(0, 0, { linkDown: true })
     const bottom = makeUnit(0, 1, { linkUp: true })
     applyVerticalLinkCycle(top, bottom, 'both')
@@ -254,7 +255,7 @@ describe('applyVerticalLinkCycle', () => {
     expect(bottom.linkUp).toBe(false)
   })
 
-  it('full cycle returns to none after 4 steps', () => {
+  it('full cycle returns to none after 3 steps', () => {
     const top = makeUnit(0, 0)
     const bottom = makeUnit(0, 1)
 
@@ -266,14 +267,12 @@ describe('applyVerticalLinkCycle', () => {
     applyVerticalLinkCycle(top, bottom, getState())
     expect(getState()).toBe('backward')
     applyVerticalLinkCycle(top, bottom, getState())
-    expect(getState()).toBe('both')
-    applyVerticalLinkCycle(top, bottom, getState())
     expect(getState()).toBe('none')
   })
 })
 
 // ---------------------------------------------------------------------------
-// getDiagonalLinkState
+// getDiagonalLinkState — now checks all 4 directional diagonal flags
 // ---------------------------------------------------------------------------
 
 describe('getDiagonalLinkState', () => {
@@ -292,6 +291,16 @@ describe('getDiagonalLinkState', () => {
     expect(getDiagonalLinkState(units, 0, 0)).toBe('tl-br')
   })
 
+  it('returns br-tl when bottomRight.linkUpLeft is true', () => {
+    const units = [
+      makeUnit(0, 0),
+      makeUnit(1, 0),
+      makeUnit(0, 1),
+      makeUnit(1, 1, { linkUpLeft: true }),
+    ]
+    expect(getDiagonalLinkState(units, 0, 0)).toBe('br-tl')
+  })
+
   it('returns tr-bl when topRight.linkDownLeft is true', () => {
     const units = [
       makeUnit(0, 0),
@@ -302,12 +311,32 @@ describe('getDiagonalLinkState', () => {
     expect(getDiagonalLinkState(units, 0, 0)).toBe('tr-bl')
   })
 
-  it('returns cross when both topLeft.linkDownRight and topRight.linkDownLeft are true', () => {
+  it('returns bl-tr when bottomLeft.linkUpRight is true', () => {
+    const units = [
+      makeUnit(0, 0),
+      makeUnit(1, 0),
+      makeUnit(0, 1, { linkUpRight: true }),
+      makeUnit(1, 1),
+    ]
+    expect(getDiagonalLinkState(units, 0, 0)).toBe('bl-tr')
+  })
+
+  it('returns cross when multiple diagonal flags are set', () => {
     const units = [
       makeUnit(0, 0, { linkDownRight: true }),
       makeUnit(1, 0, { linkDownLeft: true }),
       makeUnit(0, 1),
       makeUnit(1, 1),
+    ]
+    expect(getDiagonalLinkState(units, 0, 0)).toBe('cross')
+  })
+
+  it('returns cross when tl-br and br-tl flags both set (legacy bidirectional)', () => {
+    const units = [
+      makeUnit(0, 0, { linkDownRight: true }),
+      makeUnit(1, 0),
+      makeUnit(0, 1),
+      makeUnit(1, 1, { linkUpLeft: true }),
     ]
     expect(getDiagonalLinkState(units, 0, 0)).toBe('cross')
   })
@@ -337,8 +366,16 @@ describe('getDiagonalLinkLabel', () => {
     expect(getDiagonalLinkLabel('tl-br')).toBe('↘')
   })
 
+  it('returns ↖ for br-tl', () => {
+    expect(getDiagonalLinkLabel('br-tl')).toBe('↖')
+  })
+
   it('returns ↙ for tr-bl', () => {
     expect(getDiagonalLinkLabel('tr-bl')).toBe('↙')
+  })
+
+  it('returns ↗ for bl-tr', () => {
+    expect(getDiagonalLinkLabel('bl-tr')).toBe('↗')
   })
 
   it('returns ✕ for cross', () => {
@@ -351,7 +388,8 @@ describe('getDiagonalLinkLabel', () => {
 })
 
 // ---------------------------------------------------------------------------
-// applyDiagonalLinkCycle
+// applyDiagonalLinkCycle — 5-state: none → tl-br → br-tl → tr-bl → bl-tr → none
+// Each state sets ONLY the source flag (no bidirectional reverse flag)
 // ---------------------------------------------------------------------------
 
 describe('applyDiagonalLinkCycle', () => {
@@ -384,36 +422,56 @@ describe('applyDiagonalLinkCycle', () => {
     }
   }
 
-  it('none → tl-br: topLeft.linkDownRight and bottomRight.linkUpLeft set', () => {
+  it('none → tl-br: only topLeft.linkDownRight set (unidirectional)', () => {
     const { tl, tr, bl, br } = make2x2()
     applyDiagonalLinkCycle(tl, tr, bl, br, 'none')
     expect(tl.linkDownRight).toBe(true)
-    expect(br.linkUpLeft).toBe(true)
+    // reverse flag must NOT be set (bidirectional prevention)
+    expect(br.linkUpLeft).toBe(false)
     expect(tr.linkDownLeft).toBe(false)
     expect(bl.linkUpRight).toBe(false)
   })
 
-  it('tl-br → tr-bl: topRight.linkDownLeft and bottomLeft.linkUpRight set', () => {
+  it('tl-br → br-tl: only bottomRight.linkUpLeft set', () => {
     const { tl, tr, bl, br } = make2x2()
     applyDiagonalLinkCycle(tl, tr, bl, br, 'tl-br')
+    expect(br.linkUpLeft).toBe(true)
     expect(tl.linkDownRight).toBe(false)
-    expect(br.linkUpLeft).toBe(false)
-    expect(tr.linkDownLeft).toBe(true)
-    expect(bl.linkUpRight).toBe(true)
+    expect(tr.linkDownLeft).toBe(false)
+    expect(bl.linkUpRight).toBe(false)
   })
 
-  it('tr-bl → cross: all four diagonal flags set', () => {
+  it('br-tl → tr-bl: only topRight.linkDownLeft set', () => {
+    const { tl, tr, bl, br } = make2x2()
+    applyDiagonalLinkCycle(tl, tr, bl, br, 'br-tl')
+    expect(tr.linkDownLeft).toBe(true)
+    expect(tl.linkDownRight).toBe(false)
+    expect(br.linkUpLeft).toBe(false)
+    expect(bl.linkUpRight).toBe(false)
+  })
+
+  it('tr-bl → bl-tr: only bottomLeft.linkUpRight set', () => {
     const { tl, tr, bl, br } = make2x2()
     applyDiagonalLinkCycle(tl, tr, bl, br, 'tr-bl')
-    expect(tl.linkDownRight).toBe(true)
-    expect(br.linkUpLeft).toBe(true)
-    expect(tr.linkDownLeft).toBe(true)
     expect(bl.linkUpRight).toBe(true)
+    expect(tl.linkDownRight).toBe(false)
+    expect(br.linkUpLeft).toBe(false)
+    expect(tr.linkDownLeft).toBe(false)
+  })
+
+  it('bl-tr → none: all diagonal flags cleared', () => {
+    const { tl, tr, bl, br } = make2x2()
+    bl.linkUpRight = true
+    applyDiagonalLinkCycle(tl, tr, bl, br, 'bl-tr')
+    expect(tl.linkDownRight).toBe(false)
+    expect(br.linkUpLeft).toBe(false)
+    expect(tr.linkDownLeft).toBe(false)
+    expect(bl.linkUpRight).toBe(false)
   })
 
   it('cross → none: all diagonal flags cleared', () => {
     const { tl, tr, bl, br } = make2x2()
-    // Pre-set all flags
+    // Pre-set multiple flags (legacy multi-flag state)
     tl.linkDownRight = true
     br.linkUpLeft = true
     tr.linkDownLeft = true
@@ -425,7 +483,7 @@ describe('applyDiagonalLinkCycle', () => {
     expect(bl.linkUpRight).toBe(false)
   })
 
-  it('full cycle returns to none after 4 steps', () => {
+  it('full cycle returns to none after 5 steps', () => {
     const { tl, tr, bl, br } = make2x2()
     const units = [tl, tr, bl, br]
 
@@ -435,10 +493,115 @@ describe('applyDiagonalLinkCycle', () => {
     applyDiagonalLinkCycle(tl, tr, bl, br, getState())
     expect(getState()).toBe('tl-br')
     applyDiagonalLinkCycle(tl, tr, bl, br, getState())
+    expect(getState()).toBe('br-tl')
+    applyDiagonalLinkCycle(tl, tr, bl, br, getState())
     expect(getState()).toBe('tr-bl')
     applyDiagonalLinkCycle(tl, tr, bl, br, getState())
-    expect(getState()).toBe('cross')
+    expect(getState()).toBe('bl-tr')
     applyDiagonalLinkCycle(tl, tr, bl, br, getState())
     expect(getState()).toBe('none')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// inferHorizontalDefault — smart direction based on unit types
+// ---------------------------------------------------------------------------
+
+describe('inferHorizontalDefault', () => {
+  it('returns forward when left is PURCHASE (supply origin)', () => {
+    expect(inferHorizontalDefault('PURCHASE', 'STORAGE')).toBe('forward')
+  })
+
+  it('returns backward when right is PURCHASE (supply origin on right)', () => {
+    expect(inferHorizontalDefault('STORAGE', 'PURCHASE')).toBe('backward')
+  })
+
+  it('returns backward when left is PUBLIC_SALES (sink on left)', () => {
+    expect(inferHorizontalDefault('PUBLIC_SALES', 'STORAGE')).toBe('backward')
+  })
+
+  it('returns forward when right is PUBLIC_SALES (sink on right)', () => {
+    expect(inferHorizontalDefault('MANUFACTURING', 'PUBLIC_SALES')).toBe('forward')
+  })
+
+  it('returns forward when right is B2B_SALES', () => {
+    expect(inferHorizontalDefault('STORAGE', 'B2B_SALES')).toBe('forward')
+  })
+
+  it('returns forward when right is MINING (mining is supply origin on right → backward)', () => {
+    // MINING on right → backward (MINING pushes outward, so link should be backward)
+    expect(inferHorizontalDefault('STORAGE', 'MINING')).toBe('backward')
+  })
+
+  it('returns forward as default when no special unit types involved', () => {
+    expect(inferHorizontalDefault('MANUFACTURING', 'STORAGE')).toBe('forward')
+  })
+
+  it('returns forward when unit types are undefined', () => {
+    expect(inferHorizontalDefault(undefined, undefined)).toBe('forward')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// inferVerticalDefault — smart direction based on unit types
+// ---------------------------------------------------------------------------
+
+describe('inferVerticalDefault', () => {
+  it('returns forward when top is PURCHASE', () => {
+    expect(inferVerticalDefault('PURCHASE', 'MANUFACTURING')).toBe('forward')
+  })
+
+  it('returns backward when bottom is PURCHASE', () => {
+    expect(inferVerticalDefault('MANUFACTURING', 'PURCHASE')).toBe('backward')
+  })
+
+  it('returns forward when bottom is PUBLIC_SALES', () => {
+    expect(inferVerticalDefault('STORAGE', 'PUBLIC_SALES')).toBe('forward')
+  })
+
+  it('returns backward when top is B2B_SALES', () => {
+    expect(inferVerticalDefault('B2B_SALES', 'MANUFACTURING')).toBe('backward')
+  })
+
+  it('returns forward as default', () => {
+    expect(inferVerticalDefault('MANUFACTURING', 'STORAGE')).toBe('forward')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Smart defaults in applyHorizontalLinkCycle with PURCHASE unit
+// ---------------------------------------------------------------------------
+
+describe('applyHorizontalLinkCycle with smart defaults', () => {
+  it('PURCHASE on left: first click goes forward (purchase → right)', () => {
+    const left = makeUnit(0, 0, { unitType: 'PURCHASE' })
+    const right = makeUnit(1, 0, { unitType: 'STORAGE' })
+    applyHorizontalLinkCycle(left, right, 'none')
+    expect(left.linkRight).toBe(true)
+    expect(right.linkLeft).toBe(false)
+  })
+
+  it('PURCHASE on right: first click goes backward (right sends left)', () => {
+    const left = makeUnit(0, 0, { unitType: 'STORAGE' })
+    const right = makeUnit(1, 0, { unitType: 'PURCHASE' })
+    applyHorizontalLinkCycle(left, right, 'none')
+    expect(left.linkRight).toBe(false)
+    expect(right.linkLeft).toBe(true)
+  })
+
+  it('STORAGE → PUBLIC_SALES: first click goes forward (storage feeds sales)', () => {
+    const left = makeUnit(0, 0, { unitType: 'STORAGE' })
+    const right = makeUnit(1, 0, { unitType: 'PUBLIC_SALES' })
+    applyHorizontalLinkCycle(left, right, 'none')
+    expect(left.linkRight).toBe(true)
+    expect(right.linkLeft).toBe(false)
+  })
+
+  it('PUBLIC_SALES on left: first click goes backward (sales should receive)', () => {
+    const left = makeUnit(0, 0, { unitType: 'PUBLIC_SALES' })
+    const right = makeUnit(1, 0, { unitType: 'STORAGE' })
+    applyHorizontalLinkCycle(left, right, 'none')
+    expect(left.linkRight).toBe(false)
+    expect(right.linkLeft).toBe(true)
   })
 })

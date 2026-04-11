@@ -173,7 +173,7 @@ test.describe('Building detail upgrades', () => {
     await queuedDiagonal.click()
     await queuedDiagonal.click()
 
-    await expect(queuedDiagonal).toHaveClass(/state-cross/)
+    await expect(queuedDiagonal).toHaveClass(/state-tr-bl/)
     await expect(queuedSection.getByText('Upgrade time: 3 ticks')).toBeVisible()
 
     await page.getByRole('button', { name: 'Store Upgrade' }).click()
@@ -190,23 +190,24 @@ test.describe('Building detail upgrades', () => {
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const refreshedQueuedSection = getGridSection(page, 'Queued Upgrade')
     await expect(getGridCell(refreshedQueuedSection, 0, 0)).toContainText('Branding')
-    await expect(refreshedQueuedSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-cross/)
+    await expect(refreshedQueuedSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-tr-bl/)
 
     state.gameState.currentTick += 2
     await page.reload()
 
     await expect(page.getByText('Building upgrade in progress')).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Planned Upgrade' })).toHaveCount(0)
-    await expect(refreshedCurrentSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-cross/)
+    await expect(refreshedCurrentSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-tr-bl/)
 
     const finalCurrentSection = getGridSection(page, 'Current Configuration')
     await expect(getGridCell(finalCurrentSection, 0, 0)).toContainText('Branding')
 
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const refreshedPlannedSection = getGridSection(page, 'Planned Upgrade')
-    await expect(refreshedPlannedSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-cross/)
+    await expect(refreshedPlannedSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-tr-bl/)
     await getGridCell(refreshedPlannedSection, 0, 0).click()
-    await expect(page.getByText('Down-Right')).toBeVisible()
+    // In tr-bl state only topRight (1,0) has linkDownLeft; topLeft (0,0) has no active diagonal flag
+    await expect(page.getByText('Down-Right')).toHaveCount(0)
     await getGridCell(refreshedPlannedSection, 1, 0).click()
     await expect(page.getByText('Down-Left')).toBeVisible()
   })
@@ -2294,14 +2295,7 @@ test.describe('Building detail upgrades', () => {
     await expect(hLink).toHaveClass(/link-state-backward/)
     await expect(hLink).toHaveClass(/active/)
 
-    // Third click: both (bidirectional)
-    await hLink.click()
-    await expect(hLink).toHaveClass(/link-state-both/)
-    await expect(hLink).toHaveClass(/active/)
-    // Two flags set = two added entries in the summary
-    await expect(summary.locator('.link-change-added')).toHaveCount(2)
-
-    // Fourth click: back to none
+    // Third click: back to none (3-state cycle — no bidirectional state)
     await hLink.click()
     await expect(hLink).toHaveClass(/link-state-none/)
     await expect(hLink).not.toHaveClass(/active/)
@@ -2413,6 +2407,72 @@ test.describe('Building detail upgrades', () => {
     // Purchase is now linked — its warning should be gone but manufacturing still has no output
     await expect(page.locator('.config-warnings')).not.toContainText('Purchase unit at (0, 0) is not linked to a consumer unit.')
     await expect(page.locator('.config-warnings')).toContainText('Manufacturing unit at (1, 0) is not linked to a storage or sales output.')
+  })
+
+  test('smart link defaults: PURCHASE left→first click is forward; PUBLIC_SALES right→first click is forward; PURCHASE right→first click is backward', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-smart',
+      playerId: player.id,
+      name: 'Smart Defaults Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-smart',
+          companyId: 'company-smart',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Smart Defaults Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            // Row 0: PURCHASE(0,0) — MANUFACTURING(1,0) — PUBLIC_SALES(2,0)
+            { id: 'sm-1', buildingId: 'building-smart', unitType: 'PURCHASE', gridX: 0, gridY: 0, level: 1, linkUp: false, linkDown: false, linkLeft: false, linkRight: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+            { id: 'sm-2', buildingId: 'building-smart', unitType: 'MANUFACTURING', gridX: 1, gridY: 0, level: 1, linkUp: false, linkDown: false, linkLeft: false, linkRight: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+            { id: 'sm-3', buildingId: 'building-smart', unitType: 'PUBLIC_SALES', gridX: 2, gridY: 0, level: 1, linkUp: false, linkDown: false, linkLeft: false, linkRight: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+            // Row 1: STORAGE(0,1) — PURCHASE(1,1) (purchase on right side → smart default is backward)
+            { id: 'sm-4', buildingId: 'building-smart', unitType: 'STORAGE', gridX: 0, gridY: 1, level: 1, linkUp: false, linkDown: false, linkLeft: false, linkRight: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+            { id: 'sm-5', buildingId: 'building-smart', unitType: 'PURCHASE', gridX: 1, gridY: 1, level: 1, linkUp: false, linkDown: false, linkLeft: false, linkRight: false, linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto('/building/building-smart')
+    await expect(page.getByRole('heading', { name: 'Smart Defaults Factory' })).toBeVisible()
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    const hLinks = plannedSection.locator('.link-toggle.horizontal')
+
+    // PURCHASE(0,0) → MANUFACTURING(1,0): first click should go forward (purchase is supply origin)
+    const link01 = hLinks.nth(0)
+    await expect(link01).toHaveClass(/link-state-none/)
+    await link01.click()
+    await expect(link01).toHaveClass(/link-state-forward/)
+
+    // MANUFACTURING(1,0) → PUBLIC_SALES(2,0): first click should go forward (sales is sink)
+    const link12 = hLinks.nth(1)
+    await expect(link12).toHaveClass(/link-state-none/)
+    await link12.click()
+    await expect(link12).toHaveClass(/link-state-forward/)
+
+    // Row 1: STORAGE(0,1) — PURCHASE(1,1): first click should go backward (PURCHASE on right pushes inward)
+    const link01row1 = hLinks.nth(3)
+    await expect(link01row1).toHaveClass(/link-state-none/)
+    await link01row1.click()
+    await expect(link01row1).toHaveClass(/link-state-backward/)
   })
 
   test('diagonal link editing: full journey — create diagonal connections, review summary, submit plan', async ({ page }) => {
@@ -2535,17 +2595,21 @@ test.describe('Building detail upgrades', () => {
     const summary = plannedSection.locator('.link-changes-summary')
     await expect(summary).toBeVisible()
     await expect(summary).toContainText('Link changes')
-    await expect(summary.locator('.link-change-added')).toHaveCount(2) // tl has linkDownRight, br has linkUpLeft
+    await expect(summary.locator('.link-change-added')).toHaveCount(1) // only tl has linkDownRight (unidirectional)
 
-    // Second click: tr-bl (↙ direction)
+    // Second click: br-tl (↖ direction)
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-br-tl/)
+
+    // Third click: tr-bl (↙ direction)
     await diagButton.click()
     await expect(diagButton).toHaveClass(/state-tr-bl/)
 
-    // Third click: cross (both diagonals)
+    // Fourth click: bl-tr (↗ direction)
     await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-cross/)
+    await expect(diagButton).toHaveClass(/state-bl-tr/)
 
-    // Fourth click: back to none
+    // Fifth click: back to none
     await diagButton.click()
     await expect(diagButton).toHaveClass(/state-none/)
     // No changes → summary should disappear

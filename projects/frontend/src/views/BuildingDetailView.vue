@@ -601,6 +601,61 @@ const selectedPurchaseUnit = computed(() => (selectedDisplayUnit.value?.unitType
 const selectedPublicSalesUnit = computed(() => (!isEditing.value && selectedDisplayUnit.value?.unitType === 'PUBLIC_SALES' ? selectedDisplayUnit.value : undefined))
 const selectedManufacturingUnit = computed(() => (!isEditing.value && selectedDisplayUnit.value?.unitType === 'MANUFACTURING' ? selectedDisplayUnit.value : undefined))
 const selectedDraftPurchaseUnit = computed(() => (isEditing.value && selectedDisplayUnit.value?.unitType === 'PURCHASE' ? (selectedDisplayUnit.value as EditableGridUnit) : undefined))
+
+/**
+ * Returns the set of product type IDs that are valid selections for the currently
+ * selected STORAGE unit, based on:
+ *   1. Products configured on units directly connected to this storage unit (draft layout).
+ *   2. Products currently in inventory of this storage unit (active layout).
+ * This enables the "smart" storage product picker that hides unrelated catalog options.
+ */
+const storageConnectedProductIds = computed<Set<string>>(() => {
+  const ids = new Set<string>()
+  if (!selectedCell.value || !isEditing.value) return ids
+
+  const unit = getDraftUnitAt(selectedCell.value.x, selectedCell.value.y)
+  if (!unit || unit.unitType !== 'STORAGE') return ids
+
+  // Products from directly linked units (in draft configuration)
+  for (const connected of getDirectlyConnectedUnits(unit, draftUnits.value)) {
+    if (connected.productTypeId) ids.add(connected.productTypeId)
+  }
+
+  // Products already in stock in this storage unit (from active unit's inventory)
+  const activeUnit = getUnitAtFrom(activeUnits.value, unit.gridX, unit.gridY)
+  if (activeUnit && 'inventoryItems' in activeUnit) {
+    const items = (activeUnit as { inventoryItems?: Array<{ productTypeId?: string | null }> }).inventoryItems ?? []
+    for (const item of items) {
+      if (item.productTypeId) ids.add(item.productTypeId)
+    }
+  }
+
+  return ids
+})
+
+/**
+ * Filtered ranked products for the STORAGE unit picker:
+ * - If connected products are found, only show those (ranked as 'connected') plus the current selection.
+ * - Otherwise fall back to the full rankedProducts list so the player is never stuck.
+ */
+const storageFilteredRankedProducts = computed<import('@/types').RankedProductResult[]>(() => {
+  const unit = selectedCell.value && isEditing.value ? getDraftUnitAt(selectedCell.value.x, selectedCell.value.y) : null
+  if (!unit || unit.unitType !== 'STORAGE') return rankedProducts.value
+
+  const connectedIds = storageConnectedProductIds.value
+  if (connectedIds.size === 0) {
+    // No connections yet – show full list so player can still configure the unit
+    return rankedProducts.value
+  }
+
+  // Always include the currently selected product (avoid stale-selection warning)
+  const filtered = rankedProducts.value.filter(
+    (r) => connectedIds.has(r.productType.id) || r.productType.id === unit.productTypeId,
+  )
+  // If filtering left nothing (e.g. selected product not in connected), fall back to full list
+  return filtered.length > 0 ? filtered : rankedProducts.value
+})
+
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
 const buildingOverviewCityName = computed(() => getCityName(building.value?.cityId))
@@ -4105,6 +4160,7 @@ watch(
                     >
                       <span class="diag-line diag-line-primary"></span>
                       <span class="diag-line diag-line-secondary"></span>
+                      <span v-if="getDiagonalStateFor(activeUnits, x, y) !== 'none'" class="diag-arrow" aria-hidden="true">{{ getDiagonalLinkLabel(getDiagonalStateFor(activeUnits, x, y)) }}</span>
                     </div>
                   </template>
                 </div>
@@ -4306,6 +4362,7 @@ watch(
                     >
                       <span class="diag-line diag-line-primary"></span>
                       <span class="diag-line diag-line-secondary"></span>
+                      <span v-if="getDiagonalStateFor(plannedUnits, x, y) !== 'none'" class="diag-arrow" aria-hidden="true">{{ getDiagonalLinkLabel(getDiagonalStateFor(plannedUnits, x, y)) }}</span>
                     </button>
                   </template>
                 </div>
@@ -4676,12 +4733,20 @@ watch(
                     <label class="config-label">{{ t('buildingDetail.config.productType') }}</label>
                     <ProductPicker
                       :model-value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? null"
-                      :ranked-products="rankedProducts"
+                      :ranked-products="storageFilteredRankedProducts"
                       :loading="rankedProductsLoading"
                       :allow-none="true"
                       none-label-key="buildingDetail.config.anyProduct"
                       @update:model-value="updateSelectedUnitConfig('productTypeId', $event)"
                     />
+                    <p
+                      v-if="storageConnectedProductIds.size > 0"
+                      class="config-help"
+                    >{{ t('productPicker.helpText') }}</p>
+                    <p
+                      v-else
+                      class="config-help config-help-notice"
+                    >{{ t('productPicker.noConnectedProducts') }}</p>
                   </div>
                 </template>
 
@@ -6871,11 +6936,30 @@ watch(
 }
 
 .diagonal.state-tl-br .diag-line-primary,
+.diagonal.state-br-tl .diag-line-primary,
 .diagonal.state-tr-bl .diag-line-secondary,
+.diagonal.state-bl-tr .diag-line-secondary,
 .diagonal.state-cross .diag-line-primary,
 .diagonal.state-cross .diag-line-secondary {
   opacity: 1;
   background: var(--color-primary);
+}
+
+/* Arrow indicator overlay for diagonal link buttons */
+.diag-arrow {
+  position: absolute;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--color-primary);
+  pointer-events: none;
+  font-weight: 700;
+  z-index: 1;
+}
+
+/* config-help-notice is a softer variant of config-help for guidance messages */
+.config-help-notice {
+  color: var(--color-text-muted, #6b7280);
+  font-style: italic;
 }
 
 .readonly-grid .link-toggle.active,
