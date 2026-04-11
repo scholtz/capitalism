@@ -2003,8 +2003,8 @@ test.describe('Stock exchange — merge company flow', () => {
     await expect(targetRow).toBeVisible()
 
     // No merge button or chip
-    await expect(targetRow.locator('.listing-chip--merge')).not.toBeVisible()
-    await expect(targetRow.getByRole('button', { name: 'Merge' })).not.toBeVisible()
+    await expect(targetRow.locator('.listing-chip--merge')).toBeHidden()
+    await expect(targetRow.getByRole('button', { name: 'Merge' })).toBeHidden()
   })
 
   test('merge dialog opens, shows eligibility hint, and executes merge', async ({ page }) => {
@@ -2071,6 +2071,6 @@ test.describe('Stock exchange — merge company flow', () => {
     await closeBtn.click()
 
     // Dialog should close
-    await expect(page.locator('[role="dialog"]', { hasText: 'Merge Company' })).not.toBeVisible()
+    await expect(page.locator('[role="dialog"]', { hasText: 'Merge Company' })).toBeHidden()
   })
 })
