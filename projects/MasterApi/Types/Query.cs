@@ -140,9 +140,7 @@ public sealed class Query
                     .Build());
         }
 
-        var playerEmail = string.IsNullOrWhiteSpace(input.PlayerEmail)
-            ? null
-            : NormalizeEmail(input.PlayerEmail, "INVALID_PLAYER_EMAIL") ?? claimsPrincipal.Claims.Single(x => x.Type == ClaimTypes.Email).Value;
+        var playerEmail = claimsPrincipal.Claims.Single(x => x.Type == ClaimTypes.Email).Value;
         var limit = Math.Clamp(input.Limit, 1, 100);
 
         var entries = await db.GameNewsEntries
