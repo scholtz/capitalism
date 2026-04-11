@@ -2,20 +2,16 @@
  * Master Portal layout API client.
  *
  * Provides authenticated access to the BuildingLayoutTemplate endpoints on the
- * Master API.  Falls back silently to localStorage when no master-portal session
- * is active so the building editor always has a working save/load path.
- *
- * Auth token is stored under 'master_auth_token' / 'master_auth_expires' /
- * 'master_auth_email' in localStorage — separate from the game-server JWT
- * stored under 'auth_token'.
+ * Master API using the shared Capitalism session token. Falls back silently to
+ * localStorage when no authenticated session is active so the building editor
+ * always has a working save/load path.
  */
 
 const MASTER_GRAPHQL_URL =
   import.meta.env.VITE_MASTER_GRAPHQL_URL || 'http://localhost:44364/graphql'
 
-const MASTER_TOKEN_KEY = 'master_auth_token'
-const MASTER_EXPIRES_KEY = 'master_auth_expires'
-const MASTER_EMAIL_KEY = 'master_auth_email'
+const MASTER_TOKEN_KEY = 'auth_token'
+const MASTER_EXPIRES_KEY = 'auth_expires'
 
 // ── Local-storage layout key (fallback) ──────────────────────────────────────
 const LOCAL_LAYOUT_KEY = 'capitalism_building_layouts'
@@ -74,10 +70,6 @@ export function getMasterToken(): string | null {
   return token
 }
 
-export function getMasterEmail(): string | null {
-  return typeof localStorage !== 'undefined' ? localStorage.getItem(MASTER_EMAIL_KEY) : null
-}
-
 export function isMasterConnected(): boolean {
   return getMasterToken() !== null
 }
@@ -86,7 +78,6 @@ export function clearMasterSession(): void {
   if (typeof localStorage === 'undefined') return
   localStorage.removeItem(MASTER_TOKEN_KEY)
   localStorage.removeItem(MASTER_EXPIRES_KEY)
-  localStorage.removeItem(MASTER_EMAIL_KEY)
 }
 
 // ── Low-level GraphQL request to master API ──────────────────────────────────
@@ -94,10 +85,9 @@ export function clearMasterSession(): void {
 async function masterGql<T>(
   query: string,
   variables?: Record<string, unknown>,
-  token?: string | null,
 ): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  const tok = token ?? getMasterToken()
+  const tok = getMasterToken()
   if (tok) headers['Authorization'] = `Bearer ${tok}`
 
   const res = await fetch(MASTER_GRAPHQL_URL, {
@@ -113,52 +103,6 @@ async function masterGql<T>(
   }
   if (!json.data) throw new Error('No data returned from Master API')
   return json.data
-}
-
-// ── Master-API auth ──────────────────────────────────────────────────────────
-
-const LOGIN_MUTATION = `
-  mutation MasterLogin($input: LoginInput!) {
-    login(input: $input) {
-      token
-      expiresAtUtc
-      player { email }
-    }
-  }
-`
-
-const REGISTER_MUTATION = `
-  mutation MasterRegister($input: RegisterInput!) {
-    register(input: $input) {
-      token
-      expiresAtUtc
-      player { email }
-    }
-  }
-`
-
-export async function masterLogin(email: string, password: string): Promise<void> {
-  const data = await masterGql<{
-    login: { token: string; expiresAtUtc: string; player: { email: string } }
-  }>(LOGIN_MUTATION, { input: { email, password } }, null)
-
-  localStorage.setItem(MASTER_TOKEN_KEY, data.login.token)
-  localStorage.setItem(MASTER_EXPIRES_KEY, data.login.expiresAtUtc)
-  localStorage.setItem(MASTER_EMAIL_KEY, data.login.player.email)
-}
-
-export async function masterRegister(
-  email: string,
-  displayName: string,
-  password: string,
-): Promise<void> {
-  const data = await masterGql<{
-    register: { token: string; expiresAtUtc: string; player: { email: string } }
-  }>(REGISTER_MUTATION, { input: { email, displayName, password } }, null)
-
-  localStorage.setItem(MASTER_TOKEN_KEY, data.register.token)
-  localStorage.setItem(MASTER_EXPIRES_KEY, data.register.expiresAtUtc)
-  localStorage.setItem(MASTER_EMAIL_KEY, data.register.player.email)
 }
 
 // ── Layout CRUD via master API ────────────────────────────────────────────────

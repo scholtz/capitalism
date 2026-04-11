@@ -13,10 +13,10 @@ public sealed class JwtOptions
     public const string DefaultSigningKey = "ChangeThisSigningKeyBeforeProduction123!";
 
     [Required]
-    public string Issuer { get; init; } = "MasterApi";
+    public string Issuer { get; init; } = "Capitalism";
 
     [Required]
-    public string Audience { get; init; } = "MasterFrontend";
+    public string Audience { get; init; } = "Capitalism";
 
     [Required]
     [MinLength(32)]

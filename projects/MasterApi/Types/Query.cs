@@ -33,8 +33,7 @@ public sealed class Query
         ClaimsPrincipal claimsPrincipal,
         [Service] MasterDbContext db)
     {
-        var userId = GetCurrentUserId(claimsPrincipal);
-        var player = await db.PlayerAccounts.FirstOrDefaultAsync(p => p.Id == userId)
+        var player = await GetCurrentUserAsync(claimsPrincipal, db)
             ?? throw new GraphQLException(
                 ErrorBuilder.New()
                     .SetMessage("Player not found.")
@@ -49,7 +48,13 @@ public sealed class Query
         ClaimsPrincipal claimsPrincipal,
         [Service] MasterDbContext db)
     {
-        var userId = GetCurrentUserId(claimsPrincipal);
+        var player = await GetCurrentUserAsync(claimsPrincipal, db)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+        var userId = player.Id;
         var now = DateTime.UtcNow;
 
         // Return the most recent subscription regardless of DB status so that
@@ -210,16 +215,29 @@ public sealed class Query
         };
     }
 
-    internal static Guid GetCurrentUserId(ClaimsPrincipal principal)
+    internal static async Task<PlayerAccount?> GetCurrentUserAsync(ClaimsPrincipal principal, MasterDbContext db)
     {
-        var idClaim = principal.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage("Authenticated user identity is missing.")
-                    .SetCode("IDENTITY_MISSING")
-                    .Build());
+        var idClaim = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (Guid.TryParse(idClaim, out var userId))
+        {
+            var playerById = await db.PlayerAccounts.FirstOrDefaultAsync(candidate => candidate.Id == userId);
+            if (playerById is not null)
+            {
+                return playerById;
+            }
+        }
 
-        return Guid.Parse(idClaim);
+        var email = principal.FindFirstValue(ClaimTypes.Email)?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            return await db.PlayerAccounts.FirstOrDefaultAsync(candidate => candidate.Email.ToLower() == email);
+        }
+
+        throw new GraphQLException(
+            ErrorBuilder.New()
+                .SetMessage("Authenticated user identity is missing.")
+                .SetCode("IDENTITY_MISSING")
+                .Build());
     }
 
     internal static MasterPlayerProfile ToProfile(PlayerAccount player)
@@ -363,7 +381,13 @@ public sealed class Query
         ClaimsPrincipal claimsPrincipal,
         [Service] MasterDbContext db)
     {
-        var userId = GetCurrentUserId(claimsPrincipal);
+        var player = await GetCurrentUserAsync(claimsPrincipal, db)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+        var userId = player.Id;
 
         return await db.BuildingLayoutTemplates
             .AsNoTracking()

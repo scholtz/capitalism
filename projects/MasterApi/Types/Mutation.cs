@@ -141,7 +141,13 @@ public sealed class Mutation
                     .Build());
         }
 
-        var userId = Query.GetCurrentUserId(claimsPrincipal);
+        var player = await Query.GetCurrentUserAsync(claimsPrincipal, db)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+        var userId = player.Id;
         var now = DateTime.UtcNow;
 
         var latestSub = await GetLatestSubscriptionAsync(db, userId);
@@ -158,15 +164,14 @@ public sealed class Mutation
         ClaimsPrincipal claimsPrincipal,
         [Service] MasterDbContext db)
     {
-        var userId = Query.GetCurrentUserId(claimsPrincipal);
-        var now = DateTime.UtcNow;
-
-        var player = await db.PlayerAccounts.FirstOrDefaultAsync(candidate => candidate.Id == userId)
+        var player = await Query.GetCurrentUserAsync(claimsPrincipal, db)
             ?? throw new GraphQLException(
                 ErrorBuilder.New()
                     .SetMessage("Player not found.")
                     .SetCode("PLAYER_NOT_FOUND")
                     .Build());
+        var userId = player.Id;
+        var now = DateTime.UtcNow;
 
         var latestSub = await GetLatestSubscriptionAsync(db, userId);
 
@@ -656,7 +661,13 @@ public sealed class Mutation
         ClaimsPrincipal claimsPrincipal,
         [Service] MasterDbContext db)
     {
-        var userId = Query.GetCurrentUserId(claimsPrincipal);
+        var player = await Query.GetCurrentUserAsync(claimsPrincipal, db)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+        var userId = player.Id;
 
         if (string.IsNullOrWhiteSpace(input.Name))
         {
@@ -771,7 +782,13 @@ public sealed class Mutation
         ClaimsPrincipal claimsPrincipal,
         [Service] MasterDbContext db)
     {
-        var userId = Query.GetCurrentUserId(claimsPrincipal);
+        var player = await Query.GetCurrentUserAsync(claimsPrincipal, db)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+        var userId = player.Id;
 
         var layout = await db.BuildingLayoutTemplates
             .FirstOrDefaultAsync(l => l.Id == input.Id && l.PlayerAccountId == userId);

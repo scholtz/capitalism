@@ -70,6 +70,7 @@ public class Program
             }
         });
         builder.Services.AddScoped<AppDbInitializer>();
+        builder.Services.AddScoped<AuthenticatedPlayerClaimsSyncService>();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddHttpClient("push");
         builder.Services.AddHttpClient("master-server");
@@ -94,6 +95,17 @@ public class Program
                     ValidAudience = jwtOptions.Audience,
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey)),
                     ClockSkew = TimeSpan.FromMinutes(1),
+                };
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = async context =>
+                    {
+                        if (context.Principal?.Identity is ClaimsIdentity identity && identity.IsAuthenticated)
+                        {
+                            var synchronizer = context.HttpContext.RequestServices.GetRequiredService<AuthenticatedPlayerClaimsSyncService>();
+                            await synchronizer.SyncAsync(context.Principal, identity, context.HttpContext.RequestAborted);
+                        }
+                    }
                 };
             });
 

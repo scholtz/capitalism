@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -12,6 +13,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Api.Tests;
 
@@ -22,6 +24,9 @@ namespace Api.Tests;
 public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFactory>
 {
     private const decimal DefaultStarterCompanyCash = 600_000m;
+    private const string SharedJwtIssuer = "Capitalism";
+    private const string SharedJwtAudience = "Capitalism";
+    private const string SharedJwtSigningKey = "ChangeThisSigningKeyBeforeProduction123!";
 
     private readonly HttpClient _client;
     private readonly ApiWebApplicationFactory _factory;
@@ -75,6 +80,28 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             new { input = new { email, displayName, password } });
 
         return result.GetProperty("data").GetProperty("register").GetProperty("token").GetString()!;
+    }
+
+    private static string CreateSharedToken(string userId, string email, string displayName, params Claim[] extraClaims)
+    {
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SharedJwtSigningKey));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId),
+            new(ClaimTypes.Email, email),
+            new(ClaimTypes.Name, displayName),
+        };
+        claims.AddRange(extraClaims);
+
+        var token = new JwtSecurityToken(
+            issuer: SharedJwtIssuer,
+            audience: SharedJwtAudience,
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(30),
+            signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     private static async Task<string> RegisterAndGetTokenAsync(HttpClient client, string email = "test@example.com", string displayName = "Tester", string password = "TestPass123!")
@@ -1162,6 +1189,26 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var me = result.GetProperty("data").GetProperty("me");
         Assert.Equal("MeUser", me.GetProperty("displayName").GetString());
         Assert.Equal("me@test.com", me.GetProperty("email").GetString());
+    }
+
+    [Fact]
+    public async Task Me_MasterStyleToken_ProvisionsLocalPlayerAndUsesSameToken()
+    {
+        const string email = "shared-auth@test.com";
+        var token = CreateSharedToken(Guid.NewGuid().ToString(), email, "Shared Auth User");
+
+        var result = await ExecuteGraphQlAsync("{ me { displayName email role } }", token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var me = result.GetProperty("data").GetProperty("me");
+        Assert.Equal("Shared Auth User", me.GetProperty("displayName").GetString());
+        Assert.Equal(email, me.GetProperty("email").GetString());
+        Assert.Equal("PLAYER", me.GetProperty("role").GetString());
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var storedPlayer = await db.Players.SingleAsync(player => player.Email == email);
+        Assert.Equal("Shared Auth User", storedPlayer.DisplayName);
     }
 
     #endregion

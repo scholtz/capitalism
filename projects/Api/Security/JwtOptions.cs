@@ -7,10 +7,10 @@ public sealed class JwtOptions
     public const string SectionName = "Jwt";
 
     [Required]
-    public string Issuer { get; init; } = "Api";
+    public string Issuer { get; init; } = "Capitalism";
 
     [Required]
-    public string Audience { get; init; } = "EventsFrontend";
+    public string Audience { get; init; } = "Capitalism";
 
     [Required]
     [MinLength(32)]

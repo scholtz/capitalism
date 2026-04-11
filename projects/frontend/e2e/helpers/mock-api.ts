@@ -588,6 +588,16 @@ export type MockImpersonationSession = {
   effectiveCompanyId: string | null
 }
 
+export type MockBuildingLayoutTemplate = {
+  id: string
+  ownerPlayerId: string
+  name: string
+  description: string | null
+  buildingType: string
+  unitsJson: string
+  updatedAtUtc: string
+}
+
 export type MockState = {
   serverKey: string
   players: MockPlayer[]
@@ -635,6 +645,7 @@ export type MockState = {
   adminMultiAccountAlerts: MockGameAdminMultiAccountAlert[]
   adminAuditLogs: MockGameAdminAuditLog[]
   impersonationSession: MockImpersonationSession | null
+  buildingLayouts: MockBuildingLayoutTemplate[]
 }
 
 const mockStateByPage = new WeakMap<Page, MockState>()
@@ -1516,6 +1527,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     adminMultiAccountAlerts: [],
     adminAuditLogs: [],
     impersonationSession: null,
+    buildingLayouts: [],
     ...initial,
   }
 
@@ -1773,6 +1785,82 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           },
         }),
       })
+    }
+
+    if (query.includes('myBuildingLayouts')) {
+      if (!state.currentUserId) {
+        return routeJsonError('Not authenticated.')
+      }
+
+      return routeJson({
+        myBuildingLayouts: state.buildingLayouts
+          .filter((layout) => layout.ownerPlayerId === state.currentUserId)
+          .map((layout) => ({
+            id: layout.id,
+            name: layout.name,
+            description: layout.description,
+            buildingType: layout.buildingType,
+            unitsJson: layout.unitsJson,
+            updatedAtUtc: layout.updatedAtUtc,
+          })),
+      })
+    }
+
+    if (query.includes('saveBuildingLayout')) {
+      if (!state.currentUserId) {
+        return routeJsonError('Not authenticated.')
+      }
+
+      const input = body.variables?.input
+      const existingId = input?.existingId as string | null | undefined
+      const existingIndex = existingId
+        ? state.buildingLayouts.findIndex(
+            (layout) => layout.id === existingId && layout.ownerPlayerId === state.currentUserId,
+          )
+        : -1
+      const updatedAtUtc = new Date().toISOString()
+      const layout: MockBuildingLayoutTemplate = {
+        id:
+          existingIndex >= 0
+            ? state.buildingLayouts[existingIndex]!.id
+            : `layout-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ownerPlayerId: state.currentUserId,
+        name: input?.name ?? 'Untitled Layout',
+        description: input?.description ?? null,
+        buildingType: input?.buildingType ?? 'FACTORY',
+        unitsJson: input?.unitsJson ?? '[]',
+        updatedAtUtc,
+      }
+
+      if (existingIndex >= 0) {
+        state.buildingLayouts.splice(existingIndex, 1, layout)
+      } else {
+        state.buildingLayouts.unshift(layout)
+      }
+
+      return routeJson({
+        saveBuildingLayout: {
+          id: layout.id,
+          name: layout.name,
+          description: layout.description,
+          buildingType: layout.buildingType,
+          unitsJson: layout.unitsJson,
+          updatedAtUtc: layout.updatedAtUtc,
+        },
+      })
+    }
+
+    if (query.includes('deleteBuildingLayout')) {
+      if (!state.currentUserId) {
+        return routeJsonError('Not authenticated.')
+      }
+
+      const input = body.variables?.input
+      state.buildingLayouts = state.buildingLayouts.filter(
+        (layout) => !(layout.id === input?.id && layout.ownerPlayerId === state.currentUserId),
+      )
+
+      return routeJson({ deleteBuildingLayout: true })
     }
 
     if (query.includes('StartOnboardingCompany')) {

@@ -26,10 +26,6 @@ import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
 import {
   isMasterConnected,
-  getMasterEmail,
-  clearMasterSession,
-  masterLogin,
-  masterRegister,
   fetchMasterLayouts,
   saveMasterLayout,
   deleteMasterLayout,
@@ -301,14 +297,8 @@ const layoutSaveError = ref<string | null>(null)
 const layoutSaveSuccess = ref(false)
 const layoutDeleteError = ref<string | null>(null)
 const overwriteConfirmPending = ref<BuildingLayoutTemplate | null>(null)
-const masterEmail = ref('')
-const masterPassword = ref('')
-const masterDisplayName = ref('')
-const masterLoginError = ref<string | null>(null)
-const masterLoggingIn = ref(false)
-const showMasterRegisterForm = ref(false)
 const masterConnected = computed(() => isMasterConnected())
-const masterUserEmail = computed(() => getMasterEmail())
+const masterUserEmail = computed(() => auth.player?.email ?? '')
 const selectedHistoryItemKey = ref<string | null>(null)
 
 const { saveScrollPosition, restoreScrollPosition } = useScrollPreservation()
@@ -1827,7 +1817,10 @@ function refreshLocalLayouts(): void {
 
 /** Fetch cloud layouts from master API (no-op when not connected). */
 async function refreshMasterLayouts(): Promise<void> {
-  if (!masterConnected.value) return
+  if (!masterConnected.value) {
+    masterLayouts.value = []
+    return
+  }
   masterLayoutsLoading.value = true
   masterLayoutsError.value = null
   try {
@@ -1957,32 +1950,6 @@ async function deleteLayout(layout: BuildingLayoutTemplate): Promise<void> {
   } catch (err: unknown) {
     layoutDeleteError.value = err instanceof Error ? err.message : String(err)
   }
-}
-
-/** Log in to the master portal. */
-async function connectMaster(): Promise<void> {
-  masterLoginError.value = null
-  masterLoggingIn.value = true
-  try {
-    if (showMasterRegisterForm.value) {
-      await masterRegister(masterEmail.value, masterDisplayName.value, masterPassword.value)
-    } else {
-      await masterLogin(masterEmail.value, masterPassword.value)
-    }
-    masterEmail.value = ''
-    masterPassword.value = ''
-    masterDisplayName.value = ''
-    await refreshMasterLayouts()
-  } catch (err: unknown) {
-    masterLoginError.value = err instanceof Error ? err.message : t('buildingDetail.layouts.masterLoginError')
-  } finally {
-    masterLoggingIn.value = false
-  }
-}
-
-function disconnectMaster(): void {
-  clearMasterSession()
-  masterLayouts.value = []
 }
 
 // ── Unit config helpers ──
@@ -6040,7 +6007,6 @@ watch(
                   <div class="layout-cloud-header">
                     <span class="layout-cloud-badge">☁ {{ t('buildingDetail.layouts.cloudBadge') }}</span>
                     <span class="layout-connected-email">{{ t('buildingDetail.layouts.masterConnected', { email: masterUserEmail }) }}</span>
-                    <button class="btn btn-ghost btn-xs" @click="disconnectMaster">{{ t('buildingDetail.layouts.masterDisconnect') }}</button>
                   </div>
                   <p v-if="masterLayoutsLoading" class="layout-empty">{{ t('common.loading') }}</p>
                   <p v-else-if="masterLayoutsError" class="layout-save-error">{{ masterLayoutsError }}</p>
@@ -6061,53 +6027,13 @@ watch(
                   <p class="layout-sync-hint">{{ t('buildingDetail.layouts.cloudSyncHint') }}</p>
                 </template>
 
-                <!-- Connect to master portal form -->
+                <!-- Shared-session sign-in prompt -->
                 <template v-else>
                   <div class="layout-master-connect">
                     <p class="layout-connect-body">{{ t('buildingDetail.layouts.masterConnectBody') }}</p>
-                    <div class="layout-login-form">
-                      <input
-                        v-if="showMasterRegisterForm"
-                        type="text"
-                        class="form-input"
-                        v-model="masterDisplayName"
-                        :placeholder="t('buildingDetail.layouts.masterDisplayName')"
-                        autocomplete="name"
-                      />
-                      <input
-                        type="email"
-                        class="form-input"
-                        v-model="masterEmail"
-                        :placeholder="t('buildingDetail.layouts.masterEmail')"
-                        autocomplete="email"
-                      />
-                      <input
-                        type="password"
-                        class="form-input"
-                        v-model="masterPassword"
-                        :placeholder="t('buildingDetail.layouts.masterPassword')"
-                        autocomplete="current-password"
-                        @keyup.enter="connectMaster"
-                      />
-                      <button
-                        class="btn btn-secondary btn-sm"
-                        :disabled="!masterEmail.trim() || !masterPassword.trim() || masterLoggingIn"
-                        @click="connectMaster"
-                      >
-                        {{ masterLoggingIn ? t('buildingDetail.layouts.masterLoggingIn') : t('buildingDetail.layouts.masterConnect') }}
-                      </button>
-                      <p v-if="masterLoginError" class="layout-save-error">{{ masterLoginError }}</p>
-                      <p class="layout-form-toggle">
-                        <template v-if="showMasterRegisterForm">
-                          {{ t('buildingDetail.layouts.masterLoginPrompt') }}
-                          <button class="btn-link" @click="showMasterRegisterForm = false">{{ t('buildingDetail.layouts.masterLoginLink') }}</button>
-                        </template>
-                        <template v-else>
-                          {{ t('buildingDetail.layouts.masterRegisterPrompt') }}
-                          <button class="btn-link" @click="showMasterRegisterForm = true">{{ t('buildingDetail.layouts.masterRegisterLink') }}</button>
-                        </template>
-                      </p>
-                    </div>
+                    <button class="btn btn-secondary btn-sm" @click="router.push('/login')">
+                      {{ t('buildingDetail.layouts.masterConnect') }}
+                    </button>
                   </div>
 
                   <!-- Local-only fallback -->

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
+import { gqlRequest as gqlMasterRequest } from '@/lib/graphqlMasterServer'
 import { deepEqual } from '@/lib/utils'
 import type { AccountContextResult, AccountContextType, Player, AuthPayload } from '@/types'
 
@@ -29,6 +30,29 @@ const PLAYER_SELECTION = `
     cash
     foundedAtUtc
     foundedAtTick
+  }
+`
+
+interface MasterSessionPayload {
+  token: string
+  expiresAtUtc: string
+}
+
+const MASTER_REGISTER_MUTATION = `
+  mutation Register($input: RegisterInput!) {
+    register(input: $input) {
+      token
+      expiresAtUtc
+    }
+  }
+`
+
+const MASTER_LOGIN_MUTATION = `
+  mutation Login($input: LoginInput!) {
+    login(input: $input) {
+      token
+      expiresAtUtc
+    }
   }
 `
 
@@ -94,13 +118,24 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function setSession(auth: AuthPayload) {
-    token.value = auth.token
+    applyStoredSession(auth.token, auth.expiresAtUtc)
     player.value = auth.player
-    localStorage.setItem('auth_token', auth.token)
-    localStorage.setItem('auth_expires', auth.expiresAtUtc)
+  }
+
+  function applyStoredSession(tokenValue: string, expiresAtUtc: string) {
+    token.value = tokenValue
+    localStorage.setItem('auth_token', tokenValue)
+    localStorage.setItem('auth_expires', expiresAtUtc)
     if (typeof document !== 'undefined') {
-      document.cookie = `auth_token=${encodeURIComponent(auth.token)}; path=/`
-      document.cookie = `auth_expires=${encodeURIComponent(auth.expiresAtUtc)}; path=/`
+      document.cookie = `auth_token=${encodeURIComponent(tokenValue)}; path=/`
+      document.cookie = `auth_expires=${encodeURIComponent(expiresAtUtc)}; path=/`
+    }
+  }
+
+  async function fetchCurrentPlayer() {
+    const data = await gqlRequest<{ me: Player }>(`{ me {${PLAYER_SELECTION}} }`)
+    if (!deepEqual(player.value, data.me)) {
+      player.value = data.me
     }
   }
 
@@ -108,17 +143,13 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     error.value = null
     try {
-      const data = await gqlRequest<{ register: AuthPayload }>(
-        `mutation Register($input: RegisterInput!) {
-          register(input: $input) {
-            token
-            expiresAtUtc
-            player {${PLAYER_SELECTION}}
-          }
-        }`,
+      const data = await gqlMasterRequest<{ register: MasterSessionPayload }>(
+        MASTER_REGISTER_MUTATION,
         { input: { email, displayName, password } },
       )
-      setSession(data.register)
+      player.value = null
+      applyStoredSession(data.register.token, data.register.expiresAtUtc)
+      await fetchCurrentPlayer()
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Registration failed'
       throw e
@@ -131,17 +162,13 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     error.value = null
     try {
-      const data = await gqlRequest<{ login: AuthPayload }>(
-        `mutation Login($input: LoginInput!) {
-          login(input: $input) {
-            token
-            expiresAtUtc
-            player {${PLAYER_SELECTION}}
-          }
-        }`,
+      const data = await gqlMasterRequest<{ login: MasterSessionPayload }>(
+        MASTER_LOGIN_MUTATION,
         { input: { email, password } },
       )
-      setSession(data.login)
+      player.value = null
+      applyStoredSession(data.login.token, data.login.expiresAtUtc)
+      await fetchCurrentPlayer()
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Login failed'
       throw e
@@ -157,10 +184,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!token.value) return
     loading.value = true
     try {
-      const data = await gqlRequest<{ me: Player }>(`{ me {${PLAYER_SELECTION}} }`)
-      if (!deepEqual(player.value, data.me)) {
-        player.value = data.me
-      }
+      await fetchCurrentPlayer()
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to load account'
 

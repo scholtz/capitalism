@@ -21,18 +21,15 @@ vi.stubGlobal('localStorage', localStorageMock)
 
 import {
   getMasterToken,
-  getMasterEmail,
   isMasterConnected,
-  clearMasterSession,
   saveLocalLayout,
   deleteLocalLayout,
   getLocalLayoutsForType,
   type LayoutUnit,
 } from '../masterLayoutApi'
 
-const MASTER_TOKEN_KEY = 'master_auth_token'
-const MASTER_EXPIRES_KEY = 'master_auth_expires'
-const MASTER_EMAIL_KEY = 'master_auth_email'
+const MASTER_TOKEN_KEY = 'auth_token'
+const MASTER_EXPIRES_KEY = 'auth_expires'
 
 const mockUnit: LayoutUnit = {
   unitType: 'MANUFACTURING',
@@ -71,7 +68,6 @@ describe('masterLayoutApi — session helpers', () => {
   it('isMasterConnected returns false when token is expired', () => {
     localStorageMock.setItem(MASTER_TOKEN_KEY, 'tok')
     localStorageMock.setItem(MASTER_EXPIRES_KEY, new Date(Date.now() - 1000).toISOString())
-    localStorageMock.setItem(MASTER_EMAIL_KEY, 'user@example.com')
     expect(isMasterConnected()).toBe(false)
     // Expired token should be cleaned up
     expect(getMasterToken()).toBeNull()
@@ -80,20 +76,8 @@ describe('masterLayoutApi — session helpers', () => {
   it('isMasterConnected returns true for a valid future-expiry token', () => {
     localStorageMock.setItem(MASTER_TOKEN_KEY, 'tok')
     localStorageMock.setItem(MASTER_EXPIRES_KEY, new Date(Date.now() + 3600_000).toISOString())
-    localStorageMock.setItem(MASTER_EMAIL_KEY, 'user@example.com')
     expect(isMasterConnected()).toBe(true)
     expect(getMasterToken()).toBe('tok')
-    expect(getMasterEmail()).toBe('user@example.com')
-  })
-
-  it('clearMasterSession removes all master auth keys', () => {
-    localStorageMock.setItem(MASTER_TOKEN_KEY, 'tok')
-    localStorageMock.setItem(MASTER_EXPIRES_KEY, new Date(Date.now() + 3600_000).toISOString())
-    localStorageMock.setItem(MASTER_EMAIL_KEY, 'user@example.com')
-    clearMasterSession()
-    expect(getMasterToken()).toBeNull()
-    expect(getMasterEmail()).toBeNull()
-    expect(isMasterConnected()).toBe(false)
   })
 })
 

@@ -14572,7 +14572,7 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     await expect(page.getByRole('heading', { name: 'Building Layouts' })).toBeVisible()
   })
 
-  test('layout panel shows connect-to-master form and empty local state', async ({ page }) => {
+  test('layout panel reuses the shared game auth session for cloud layouts', async ({ page }) => {
     const player = makeLayoutTestPlayer()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
@@ -14587,15 +14587,14 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
 
     const panel = page.locator('[aria-label="Building Layouts"]')
     await expect(panel).toBeVisible()
-    // Master connect form shown when not connected
-    await expect(panel.locator('.layout-connect-body')).toBeVisible()
-    await expect(panel.locator('input[type="email"]')).toBeVisible()
-    await expect(panel.locator('input[type="password"]')).toBeVisible()
-    // Empty local section
+    await expect(panel.locator('.layout-connected-email')).toContainText(player.email)
+    await expect(panel.locator('.layout-connect-body')).toHaveCount(0)
+    await expect(panel.locator('input[type="email"]')).toHaveCount(0)
+    await expect(panel.locator('input[type="password"]')).toHaveCount(0)
     await expect(panel.locator('.layout-empty').first()).toBeVisible()
   })
 
-  test('save layout persists to localStorage and shows it in the list', async ({ page }) => {
+  test('save layout persists to the cloud library and shows it in the list', async ({ page }) => {
     const player = makeLayoutTestPlayer()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
@@ -14617,38 +14616,51 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
 
     // Success confirmation should appear
     await expect(panel.locator('.layout-save-success')).toBeVisible()
-    // Layout should appear in the local list
+    // Layout should appear in the cloud list
     await expect(panel.locator('.layout-item').filter({ hasText: 'My Production Layout' })).toBeVisible()
   })
 
-  test('load from localStorage applies to draft when draft is empty (no overwrite confirm)', async ({ page }) => {
-    await page.addInitScript(() => {
-      const layouts = [
-        {
-          name: 'Starter Chain',
-          description: 'Basic production chain',
-          buildingType: 'FACTORY',
-          units: [
-            {
-              unitType: 'PURCHASE',
-              gridX: 0, gridY: 0,
-              linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
-              linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false,
-              resourceTypeId: null, productTypeId: null, minPrice: null, maxPrice: null,
-              purchaseSource: null, saleVisibility: null, budget: null,
-              mediaHouseBuildingId: null, minQuality: null, brandScope: null,
-              vendorLockCompanyId: null,
-            },
-          ],
-        },
-      ]
-      localStorage.setItem('capitalism_building_layouts', JSON.stringify(layouts))
-    })
-
+  test('load from cloud library applies to draft when draft is empty (no overwrite confirm)', async ({ page }) => {
     const player = makeLayoutTestPlayer()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
     state.currentToken = `token-${player.id}`
+    state.buildingLayouts = [
+      {
+        id: 'layout-starter-chain',
+        ownerPlayerId: player.id,
+        name: 'Starter Chain',
+        description: 'Basic production chain',
+        buildingType: 'FACTORY',
+        unitsJson: JSON.stringify([
+          {
+            unitType: 'PURCHASE',
+            gridX: 0,
+            gridY: 0,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            resourceTypeId: null,
+            productTypeId: null,
+            minPrice: null,
+            maxPrice: null,
+            purchaseSource: null,
+            saleVisibility: null,
+            budget: null,
+            mediaHouseBuildingId: null,
+            minQuality: null,
+            brandScope: null,
+            vendorLockCompanyId: null,
+          },
+        ]),
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ]
     await page.addInitScript((token) => {
       localStorage.setItem('auth_token', token)
       localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
@@ -14674,33 +14686,46 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
   })
 
   test('loading into non-empty draft shows overwrite confirmation', async ({ page }) => {
-    await page.addInitScript(() => {
-      const layouts = [
-        {
-          name: 'Overwrite Me',
-          description: null,
-          buildingType: 'FACTORY',
-          units: [
-            {
-              unitType: 'MANUFACTURING',
-              gridX: 0, gridY: 0,
-              linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
-              linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false,
-              resourceTypeId: null, productTypeId: null, minPrice: null, maxPrice: null,
-              purchaseSource: null, saleVisibility: null, budget: null,
-              mediaHouseBuildingId: null, minQuality: null, brandScope: null,
-              vendorLockCompanyId: null,
-            },
-          ],
-        },
-      ]
-      localStorage.setItem('capitalism_building_layouts', JSON.stringify(layouts))
-    })
-
     const player = makeLayoutTestPlayer()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
     state.currentToken = `token-${player.id}`
+    state.buildingLayouts = [
+      {
+        id: 'layout-overwrite-me',
+        ownerPlayerId: player.id,
+        name: 'Overwrite Me',
+        description: null,
+        buildingType: 'FACTORY',
+        unitsJson: JSON.stringify([
+          {
+            unitType: 'MANUFACTURING',
+            gridX: 0,
+            gridY: 0,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            resourceTypeId: null,
+            productTypeId: null,
+            minPrice: null,
+            maxPrice: null,
+            purchaseSource: null,
+            saleVisibility: null,
+            budget: null,
+            mediaHouseBuildingId: null,
+            minQuality: null,
+            brandScope: null,
+            vendorLockCompanyId: null,
+          },
+        ]),
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ]
     await page.addInitScript((token) => {
       localStorage.setItem('auth_token', token)
       localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
@@ -14720,22 +14745,21 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
   })
 
   test('cancel overwrite dismisses confirm without changing draft', async ({ page }) => {
-    await page.addInitScript(() => {
-      const layouts = [
-        {
-          name: 'Cancel Test',
-          description: null,
-          buildingType: 'FACTORY',
-          units: [],
-        },
-      ]
-      localStorage.setItem('capitalism_building_layouts', JSON.stringify(layouts))
-    })
-
     const player = makeLayoutTestPlayer()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
     state.currentToken = `token-${player.id}`
+    state.buildingLayouts = [
+      {
+        id: 'layout-cancel-test',
+        ownerPlayerId: player.id,
+        name: 'Cancel Test',
+        description: null,
+        buildingType: 'FACTORY',
+        unitsJson: '[]',
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ]
     await page.addInitScript((token) => {
       localStorage.setItem('auth_token', token)
       localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
@@ -14761,19 +14785,31 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     await expect(planSection.locator('.grid-cell.occupied').first()).toBeVisible()
   })
 
-  test('delete layout removes it from the local list', async ({ page }) => {
-    await page.addInitScript(() => {
-      const layouts = [
-        { name: 'Delete Me', description: null, buildingType: 'FACTORY', units: [] },
-        { name: 'Keep Me', description: null, buildingType: 'FACTORY', units: [] },
-      ]
-      localStorage.setItem('capitalism_building_layouts', JSON.stringify(layouts))
-    })
-
+  test('delete layout removes it from the cloud list', async ({ page }) => {
     const player = makeLayoutTestPlayer()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
     state.currentToken = `token-${player.id}`
+    state.buildingLayouts = [
+      {
+        id: 'layout-delete-me',
+        ownerPlayerId: player.id,
+        name: 'Delete Me',
+        description: null,
+        buildingType: 'FACTORY',
+        unitsJson: '[]',
+        updatedAtUtc: new Date().toISOString(),
+      },
+      {
+        id: 'layout-keep-me',
+        ownerPlayerId: player.id,
+        name: 'Keep Me',
+        description: null,
+        buildingType: 'FACTORY',
+        unitsJson: '[]',
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ]
     await page.addInitScript((token) => {
       localStorage.setItem('auth_token', token)
       localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
@@ -14792,31 +14828,4 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     await expect(panel.locator('.layout-item').filter({ hasText: 'Keep Me' })).toBeVisible()
   })
 
-  test('master portal register/login toggle works', async ({ page }) => {
-    const player = makeLayoutTestPlayer()
-    const state = setupMockApi(page, { players: [player] })
-    state.currentUserId = player.id
-    state.currentToken = `token-${player.id}`
-    await page.addInitScript((token) => {
-      localStorage.setItem('auth_token', token)
-      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
-    }, `token-${player.id}`)
-
-    await page.goto('/building/building-lt')
-    await page.getByRole('button', { name: 'Edit Building' }).click()
-
-    const panel = page.locator('[aria-label="Building Layouts"]')
-    await expect(panel).toBeVisible()
-
-    // Initially shows login form (no display name field visible)
-    await expect(panel.locator('input[placeholder="Display name"]')).toHaveCount(0)
-
-    // Click "Create one" to switch to register form
-    await panel.getByRole('button', { name: 'Create one' }).click()
-    await expect(panel.locator('input[placeholder="Display name"]')).toBeVisible()
-
-    // Click "Log in" to switch back to login form
-    await panel.getByRole('button', { name: 'Log in' }).click()
-    await expect(panel.locator('input[placeholder="Display name"]')).toHaveCount(0)
-  })
 })

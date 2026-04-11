@@ -4,6 +4,7 @@ namespace Api.Security;
 
 public static class ClaimsPrincipalExtensions
 {
+    public const string AuthenticatedActorPlayerIdClaimType = "capitalism/authenticated-actor-player-id";
     public const string EffectivePlayerIdClaimType = "capitalism/effective-player-id";
     public const string EffectivePlayerEmailClaimType = "capitalism/effective-player-email";
     public const string EffectivePlayerNameClaimType = "capitalism/effective-player-name";
@@ -22,7 +23,8 @@ public static class ClaimsPrincipalExtensions
 
     public static Guid GetAuthenticatedActorUserId(this ClaimsPrincipal principal)
     {
-        var value = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+        var value = principal.FindFirstValue(AuthenticatedActorPlayerIdClaimType)
+            ?? principal.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? throw new InvalidOperationException("The current user is missing an identifier claim.");
 
         return Guid.Parse(value);
