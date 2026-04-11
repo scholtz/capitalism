@@ -511,14 +511,8 @@ function priceVsBaseClass(pricePerUnit: number, basePrice: number): string {
                   </div>
                   <div class="offer-metric">
                     <span class="metric-label">{{ t('globalExchange.transitCost') }}</span>
-                    <span
-                      :class="['metric-value transit-cost', { 'transit-free': offer.transitCostPerUnit === 0 }]"
-                    >
-                      {{
-                        offer.transitCostPerUnit === 0
-                          ? t('globalExchange.transitFree')
-                          : `+${formatPrice(offer.transitCostPerUnit)} · ${offer.distanceKm} km`
-                      }}
+                    <span class="metric-value transit-cost">
+                      +{{ formatPrice(offer.transitCostPerUnit) }} · {{ offer.distanceKm }} km
                     </span>
                   </div>
                   <div class="offer-metric delivered-metric">
@@ -1047,10 +1041,6 @@ function priceVsBaseClass(pricePerUnit: number, basePrice: number): string {
   font-size: 0.875rem;
   font-weight: 700;
   color: var(--color-primary);
-}
-
-.transit-free {
-  color: var(--color-success, #22c55e);
 }
 
 .no-offers-hint {

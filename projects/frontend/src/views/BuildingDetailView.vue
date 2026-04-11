@@ -2145,9 +2145,7 @@ function formatCurrency(value: number | null | undefined): string {
 }
 
 function getPurchaseVendorTransitLabel(transitCostPerUnit: number): string {
-  return transitCostPerUnit > 0
-    ? t('buildingDetail.purchaseSelector.vendorTransit', { price: formatCurrency(transitCostPerUnit) })
-    : t('buildingDetail.purchaseSelector.vendorTransitFree')
+  return t('buildingDetail.purchaseSelector.vendorTransit', { price: formatCurrency(transitCostPerUnit) })
 }
 
 function getCityName(cityId: string | null | undefined): string {
@@ -5324,8 +5322,8 @@ watch(
                             <span v-else>—</span>
                           </td>
                           <td class="sourcing-col-transit">
-                            <span v-if="candidate.transitCostPerUnit !== null && candidate.transitCostPerUnit > 0" class="transit-cost"> +${{ candidate.transitCostPerUnit.toFixed(2) }} </span>
-                            <span v-else class="transit-free">{{ t('buildingDetail.sourcingComparison.localFree') }}</span>
+                            <span v-if="candidate.transitCostPerUnit !== null" class="transit-cost"> +${{ candidate.transitCostPerUnit.toFixed(2) }} </span>
+                            <span v-else>—</span>
                           </td>
                           <td class="sourcing-col-landed col-landed">
                             <strong v-if="candidate.deliveredPricePerUnit !== null"> ${{ candidate.deliveredPricePerUnit.toFixed(2) }} </strong>
@@ -8824,11 +8822,6 @@ watch(
 .sourcing-col-transit .transit-cost {
   color: #f59e0b;
   font-weight: 500;
-}
-
-.sourcing-col-transit .transit-free {
-  font-size: 0.72rem;
-  color: #34d399;
 }
 
 .col-landed {

@@ -992,11 +992,8 @@ function computeMockExchangeQuality(abundance: number) {
 }
 
 function computeMockTransitCost(weightPerUnit: number, distanceKm: number) {
-  if (distanceKm <= 0) {
-    return 0
-  }
-
-  return Number(Math.max(distanceKm * Math.max(weightPerUnit, 0.1) * 0.0025, 0.05).toFixed(2))
+  const rawCost = distanceKm * Math.max(weightPerUnit, 0.1) * 0.0025
+  return Number(Math.max(rawCost, 0.01).toFixed(2))
 }
 
 function getMockUnitCapacity(unit: MockBuildingUnit) {
@@ -4197,8 +4194,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           sourceVendorCompanyId: null,
           sourceVendorName: null,
           exchangePricePerUnit: 8.5,
-          transitCostPerUnit: 0,
-          deliveredPricePerUnit: 8.5,
+          transitCostPerUnit: 0.01,
+          deliveredPricePerUnit: 8.51,
           estimatedQuality: 0.7,
           distanceKm: 0,
           isEligible: true,

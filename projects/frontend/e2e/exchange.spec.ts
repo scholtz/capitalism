@@ -58,21 +58,22 @@ test.describe('Global Exchange page', () => {
     await expect(firstCard.getByText('Quality')).toBeVisible()
   })
 
-  test('local city shows "Local — free" transit cost (same city, zero transit)', async ({
+  test('local city shows minimum transit cost (same city, distance zero)', async ({
     page,
   }) => {
     setupMockApi(page)
     await page.goto('/exchange')
     await expect(page.locator('.exchange-loading')).toHaveCount(0)
 
-    // Bratislava is the first city tab (selected by default). Its own exchange offer has 0 transit.
+    // Bratislava is the first city tab (selected by default). Same-city transit has minimum cost of $0.01.
     const bratislavaCard = page
       .locator('.city-offer-card')
       .filter({ hasText: 'Bratislava' })
       .first()
     await expect(bratislavaCard).toBeVisible()
-    await expect(bratislavaCard.locator('.transit-free')).toBeVisible()
-    await expect(bratislavaCard.getByText('Local — free')).toBeVisible()
+    await expect(bratislavaCard.locator('.transit-cost')).toBeVisible()
+    // Must show a positive transit cost (minimum $0.01 even for same-city)
+    await expect(bratislavaCard.locator('.transit-cost')).toContainText('+')
   })
 
   test('remote city shows positive transit cost with distance in km', async ({ page }) => {
@@ -148,8 +149,9 @@ test.describe('Global Exchange — city switching', () => {
       .filter({ hasText: 'Prague' })
       .first()
     await expect(pragueCard).toBeVisible()
-    // Prague→Prague transit must be free
-    await expect(pragueCard.getByText('Local — free')).toBeVisible()
+    // Prague→Prague transit must show minimum cost (non-zero)
+    await expect(pragueCard.locator('.transit-cost')).toBeVisible()
+    await expect(pragueCard.locator('.transit-cost')).toContainText('+')
   })
 
   test('at least two cities show different delivered prices for Wood, proving city differentiation', async ({
@@ -332,9 +334,9 @@ test.describe('Global Exchange — player journey', () => {
     const deliveredPrices = woodRow.locator('.delivered-price')
     await expect(deliveredPrices).toHaveCount(3)
 
-    // Step 5: One card is the best option and has transit-free (local)
-    const localCard = woodRow.locator('.city-offer-card').filter({ has: page.getByText('Local — free') })
-    await expect(localCard.first()).toBeVisible()
+    // Step 5: One card is the best option (lowest delivered price) – local card has minimum transit
+    const localCard = woodRow.locator('.city-offer-card').filter({ has: page.locator('.transit-cost') }).first()
+    await expect(localCard).toBeVisible()
 
     // Step 6: At least one remote card shows transit cost with distance
     const remoteCards = woodRow.locator('.city-offer-card').filter({ has: page.locator('.transit-cost').filter({ hasText: 'km' }) })
@@ -639,22 +641,22 @@ test.describe('Global Exchange — transit-reranking proof', () => {
     await page.goto('/exchange')
     await expect(page.locator('.exchange-loading')).toHaveCount(0)
 
-    // Default tab = Bratislava → Bratislava offer has "Local — free"
+    // Default tab = Bratislava → Bratislava offer has minimum transit cost
     const braLocalCard = page
       .locator('.city-offer-card')
       .filter({ hasText: 'Bratislava' })
-      .filter({ has: page.locator('.transit-free') })
+      .filter({ has: page.locator('.transit-cost') })
     await expect(braLocalCard.first()).toBeVisible()
 
     // Switch to Prague tab
     await page.getByRole('tab', { name: /Prague/ }).click()
     await expect(page.locator('.exchange-loading')).toHaveCount(0)
 
-    // Prague offer should now be "Local — free" (Prague is the destination)
+    // Prague offer should now show minimum transit (Prague is the destination)
     const pragueLocalCard = page
       .locator('.city-offer-card')
       .filter({ hasText: 'Prague' })
-      .filter({ has: page.locator('.transit-free') })
+      .filter({ has: page.locator('.transit-cost') })
     await expect(pragueLocalCard.first()).toBeVisible()
 
     // Bratislava is now remote → must show positive transit cost

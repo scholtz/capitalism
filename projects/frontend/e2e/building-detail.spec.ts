@@ -12946,8 +12946,8 @@ test.describe('Sourcing Comparison Panel', () => {
         sourceVendorCompanyId: null,
         sourceVendorName: null,
         exchangePricePerUnit: 9.0,
-        transitCostPerUnit: 0,
-        deliveredPricePerUnit: 9.0,
+        transitCostPerUnit: 0.01,
+        deliveredPricePerUnit: 9.01,
         estimatedQuality: 0.65,
         distanceKm: 0,
         isEligible: true,
@@ -13003,8 +13003,8 @@ test.describe('Sourcing Comparison Panel', () => {
     await expect(prRow).toContainText('Prague')
     await expect(prRow.locator('.transit-cost')).toBeVisible()
 
-    // Bratislava has zero transit → transit-free label
-    await expect(braRow.locator('.transit-free')).toBeVisible()
+    // Bratislava has minimum transit cost (never zero)
+    await expect(braRow.locator('.transit-cost')).toBeVisible()
   })
 
   test('sourcing comparison shows blocked candidates with reason explanation', async ({ page }) => {
