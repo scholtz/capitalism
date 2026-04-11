@@ -263,7 +263,9 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             CityId = city.Id,
             Type = BuildingType.Factory,
             Name = "Starter Factory",
-            Level = 1
+            Level = 1,
+            Latitude = city.Latitude,
+            Longitude = city.Longitude
         };
         db.Buildings.Add(factory);
 
@@ -324,7 +326,9 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             CityId = city.Id,
             Type = BuildingType.SalesShop,
             Name = "Starter Shop",
-            Level = 1
+            Level = 1,
+            Latitude = city.Latitude + 0.02,
+            Longitude = city.Longitude + 0.02
         };
         db.Buildings.Add(shop);
 
@@ -1282,6 +1286,39 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         Assert.True(
             publicSalesInventoryAfterFourthTick.Sum(entry => entry.Quantity) > 0m,
             "Products should advance to the public sales unit one hop per tick after the shop purchase unit is filled.");
+    }
+
+    [Fact]
+    public async Task PurchasingPhase_LocalB2BTransfer_RecordsShippingLedgerCost()
+    {
+        Guid companyId;
+        Guid shopPurchaseUnitId;
+
+        await using (var seedScope = _factory.Services.CreateAsyncScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (companyId, _, _, shopPurchaseUnitId, _) = await SeedFactoryToShopSupplyChainAsync(seedDb);
+        }
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var company = await db.Companies.FindAsync(companyId);
+        var cashBefore = company!.Cash;
+        var processor = await CreateProcessorAsync(scope);
+
+        await processor.ProcessTickAsync();
+        await processor.ProcessTickAsync();
+        await processor.ProcessTickAsync();
+
+        var shippingEntries = await db.LedgerEntries
+            .Where(entry => entry.CompanyId == companyId
+                && entry.BuildingUnitId == shopPurchaseUnitId
+                && entry.Category == LedgerCategory.ShippingCost)
+            .ToListAsync();
+
+        Assert.NotEmpty(shippingEntries);
+        Assert.All(shippingEntries, entry => Assert.True(entry.Amount < 0m));
+        Assert.True(company.Cash < cashBefore, "Shipping should reduce company cash even for inter-building transfers.");
     }
 
     [Fact]
@@ -2632,11 +2669,11 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         var processor = await CreateProcessorAsync(scope);
         await processor.ProcessTickAsync();
 
-        var ledgerEntry = await db.LedgerEntries
+        var ledgerEntries = await db.LedgerEntries
             .Where(entry => entry.CompanyId == companyId
                 && entry.BuildingUnitId == purchaseUnitId
-                && entry.Category == LedgerCategory.PurchasingCost)
-            .SingleAsync();
+                && (entry.Category == LedgerCategory.PurchasingCost || entry.Category == LedgerCategory.ShippingCost))
+            .ToListAsync();
 
         var inventories = await db.Inventories
             .Where(entry => entry.BuildingUnitId == purchaseUnitId && entry.Quantity > 0m)
@@ -2644,7 +2681,7 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
 
         Assert.NotEmpty(inventories);
         Assert.True(inventories.Sum(entry => entry.SourcingCostTotal) > 0m);
-        Assert.Equal(-ledgerEntry.Amount, inventories.Sum(entry => entry.SourcingCostTotal));
+        Assert.Equal(-ledgerEntries.Sum(entry => entry.Amount), inventories.Sum(entry => entry.SourcingCostTotal));
         Assert.True(inventories.Sum(entry => entry.SourcingCostTotal) / inventories.Sum(entry => entry.Quantity) > 0m);
     }
 

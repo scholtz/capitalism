@@ -58,6 +58,9 @@ public sealed class GlobalExchangeCalculatorUnitTests
     private static ResourceType MakeResource(decimal basePrice, decimal weightPerUnit) =>
         new ResourceType { Id = Guid.NewGuid(), Name = "TestRes", Slug = "test-res", BasePrice = basePrice, WeightPerUnit = weightPerUnit };
 
+    private static ProductType MakeProduct(decimal outputQuantity = 1m) =>
+        new ProductType { Id = Guid.NewGuid(), Name = "TestProduct", Slug = $"test-product-{Guid.NewGuid():N}", OutputQuantity = outputQuantity };
+
     [Fact]
     public void ComputeTransitCostPerUnit_SameCity_ReturnsZero()
     {
@@ -151,6 +154,53 @@ public sealed class GlobalExchangeCalculatorUnitTests
         var minCost = GlobalExchangeCalculator.ComputeTransitCostPerUnit(prague, bratislava, minWeightResource);
 
         Assert.Equal(negligibleCost, minCost);
+    }
+
+    [Fact]
+    public void ComputeTransitCostPerUnit_BuildingCoordinates_ReturnsPositiveCostWithinSameCity()
+    {
+        var cost = GlobalExchangeCalculator.ComputeTransitCostPerUnit(
+            48.1500, 17.1100,
+            48.1700, 17.1300,
+            1.0m);
+
+        Assert.True(cost > 0m);
+    }
+
+    [Fact]
+    public void ComputeItemWeightPerUnit_HeavierProductCostsMoreToShipThanLightProduct()
+    {
+        var wood = new ResourceType { Id = Guid.NewGuid(), Name = "Wood", Slug = "wood", BasePrice = 10m, WeightPerUnit = 8m };
+        var chemicals = new ResourceType { Id = Guid.NewGuid(), Name = "Chem", Slug = "chem", BasePrice = 10m, WeightPerUnit = 1m };
+        var bed = MakeProduct();
+        var medicine = MakeProduct();
+
+        var resources = new Dictionary<Guid, ResourceType>
+        {
+            [wood.Id] = wood,
+            [chemicals.Id] = chemicals,
+        };
+        var products = new Dictionary<Guid, ProductType>
+        {
+            [bed.Id] = bed,
+            [medicine.Id] = medicine,
+        };
+        var recipes = new Dictionary<Guid, List<ProductRecipe>>
+        {
+            [bed.Id] =
+            [
+                new ProductRecipe { ProductTypeId = bed.Id, ResourceTypeId = wood.Id, Quantity = 3m }
+            ],
+            [medicine.Id] =
+            [
+                new ProductRecipe { ProductTypeId = medicine.Id, ResourceTypeId = chemicals.Id, Quantity = 1m }
+            ],
+        };
+
+        var bedWeight = GlobalExchangeCalculator.ComputeItemWeightPerUnit(null, bed.Id, resources, products, recipes);
+        var medicineWeight = GlobalExchangeCalculator.ComputeItemWeightPerUnit(null, medicine.Id, resources, products, recipes);
+
+        Assert.True(bedWeight > medicineWeight);
     }
 
     // ---------------------------------------------------------------------------

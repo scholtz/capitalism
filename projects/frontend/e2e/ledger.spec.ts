@@ -140,6 +140,76 @@ test.describe('Company Ledger', () => {
     await expect(page.locator('.statement-row').filter({ hasText: 'Energy Costs' })).toContainText('-$750.00')
   })
 
+  test('ledger shows shipping costs and shipping drill-down entries', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, {
+      players: [player],
+      cities: makeDefaultCities(),
+      resourceTypes: makeDefaultResources(),
+      productTypes: makeDefaultProducts(),
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    const company = makeLedgerCompany(player.id)
+    player.companies = [company]
+    player.activeAccountType = 'COMPANY'
+    player.activeCompanyId = company.id
+    player.onboardingCompletedAtUtc = new Date().toISOString()
+
+    state.ledgerData[company.id] = {
+      companyId: company.id,
+      companyName: company.name,
+      currentCash: 280000,
+      totalRevenue: 50000,
+      totalPurchasingCosts: 18000,
+      totalShippingCosts: 320,
+      totalLaborCosts: 2500,
+      totalEnergyCosts: 750,
+      totalMarketingCosts: 0,
+      totalTaxPaid: 5000,
+      totalOtherCosts: 0,
+      netIncome: 23430,
+      buildingValue: 200000,
+      inventoryValue: 10000,
+      totalAssets: 490000,
+      totalPropertyPurchases: 150000,
+      cashFromOperations: 28430,
+      cashFromInvestments: -150000,
+      firstRecordedTick: 1,
+      lastRecordedTick: 42,
+      buildingSummaries: [],
+    }
+    state.drillDownData[`${company.id}:SHIPPING_COST`] = [
+      {
+        id: 'ship-1',
+        category: 'SHIPPING_COST',
+        description: 'Shipping: local product',
+        amount: -320,
+        recordedAtTick: 42,
+        buildingId: 'building-factory-1',
+        buildingName: 'Main Factory',
+        buildingUnitId: null,
+        productTypeId: 'prod-chair',
+        productName: 'Wooden Chair',
+        resourceTypeId: null,
+        resourceName: null,
+      },
+    ]
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto(`/ledger/${company.id}`)
+
+    await expect(page.locator('.statement-row').filter({ hasText: 'Shipping Costs' })).toContainText('-$320.00')
+    await page.getByRole('button', { name: 'Detail: Shipping Costs' }).click()
+    await expect(page.getByRole('heading', { name: 'Detail: Shipping' })).toBeVisible()
+    await expect(page.locator('.drill-table')).toContainText('Wooden Chair')
+  })
+
   test('drill-down shows entries when expanded', async ({ page }) => {
     const player = makePlayer()
     const state = setupMockApi(page, {

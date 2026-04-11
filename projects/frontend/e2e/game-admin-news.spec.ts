@@ -134,6 +134,41 @@ test.describe('Game news and administration', () => {
     await expect(page.locator('.impersonation-chip')).toContainText('Impersonating Target Tycoon via Target Tycoon')
   })
 
+  test('admin dashboard shows aggregated shipping costs and expands per-company detail', async ({ page }) => {
+    const admin = makeAdminPlayer({
+      id: 'local-admin-shipping',
+      email: 'local-admin-shipping@test.com',
+      displayName: 'Local Admin Shipping',
+    })
+    const player = makePlayer({
+      id: 'shipping-player',
+      email: 'shipping@test.com',
+      displayName: 'Shipping Tycoon',
+    })
+
+    setupMockApi(page, {
+      players: [admin, player],
+      currentUserId: admin.id,
+      currentToken: `token-${admin.id}`,
+      adminShippingCostSummaries: [
+        {
+          companyId: 'shipping-company',
+          companyName: 'Shipping Holdings',
+          amount: 2450,
+          entryCount: 7,
+        },
+      ],
+    })
+
+    await authenticate(page, `token-${admin.id}`)
+    await page.goto('/admin')
+
+    await expect(page.getByRole('button', { name: /Shipping costs \(100 ticks\)/i })).toContainText('$2,450')
+    await page.getByRole('button', { name: /Shipping costs \(100 ticks\)/i }).click()
+    await expect(page.getByText('Shipping Holdings')).toBeVisible()
+    await expect(page.getByText('7 shipping ledger entries')).toBeVisible()
+  })
+
   test('root admin can publish a news entry from the dashboard into the public feed', async ({ page }) => {
     const rootAdmin = makePlayer({
       id: 'root-admin',

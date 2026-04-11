@@ -27,7 +27,7 @@ const LEDGER_QUERY = `
   query GetCompanyLedger($companyId: UUID!, $gameYear: Int) {
     companyLedger(companyId: $companyId, gameYear: $gameYear) {
       companyId companyName gameYear isCurrentGameYear currentCash
-      totalRevenue totalPurchasingCosts totalLaborCosts totalEnergyCosts totalMarketingCosts totalTaxPaid totalOtherCosts taxableIncome estimatedIncomeTax netIncome
+      totalRevenue totalPurchasingCosts totalShippingCosts totalLaborCosts totalEnergyCosts totalMarketingCosts totalTaxPaid totalOtherCosts taxableIncome estimatedIncomeTax netIncome
       propertyValue propertyAppreciation buildingValue inventoryValue totalAssets totalPropertyPurchases
       totalStockPurchaseCashOut totalStockSaleCashIn cashFromOperations cashFromInvestments firstRecordedTick lastRecordedTick
       incomeTaxDueAtTick incomeTaxDueGameTimeUtc incomeTaxDueGameYear isIncomeTaxSettled
@@ -242,6 +242,13 @@ useTickRefresh(async () => {
                 @click="toggleDrill('PURCHASING_COST')"
               >
                 {{ drillCategory === 'PURCHASING_COST' ? '▲' : '▼' }}
+              </button>
+            </div>
+            <div v-if="ledger.totalShippingCosts > 0" class="statement-row cost-row">
+              <span class="row-label">{{ t('ledger.shippingCosts') }}</span>
+              <span class="amount-negative">{{ formatAmount(-ledger.totalShippingCosts) }}</span>
+              <button class="drill-btn" :class="{ active: drillCategory === 'SHIPPING_COST' }" :aria-label="t('ledger.drillDown') + ': ' + t('ledger.shippingCosts')" @click="toggleDrill('SHIPPING_COST')">
+                {{ drillCategory === 'SHIPPING_COST' ? '▲' : '▼' }}
               </button>
             </div>
             <div v-if="ledger.totalLaborCosts > 0" class="statement-row cost-row">

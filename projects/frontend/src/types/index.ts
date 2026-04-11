@@ -650,6 +650,7 @@ export interface CompanyLedgerSummary {
   currentCash: number
   totalRevenue: number
   totalPurchasingCosts: number
+  totalShippingCosts: number
   totalLaborCosts: number
   totalEnergyCosts: number
   totalMarketingCosts: number
@@ -1199,6 +1200,13 @@ export interface GameAdminMoneyInflowSummary {
   description: string
 }
 
+export interface GameAdminShippingCostSummary {
+  companyId: string
+  companyName: string
+  amount: number
+  entryCount: number
+}
+
 export interface GameAdminMultiAccountAlert {
   reason: string
   exposureAmount: number
@@ -1240,7 +1248,9 @@ export interface GameAdminDashboard {
   totalCompanyCash: number
   moneySupply: number
   externalMoneyInflowLast100Ticks: number
+  totalShippingCostsLast100Ticks: number
   inflowSummaries: GameAdminMoneyInflowSummary[]
+  shippingCostSummaries: GameAdminShippingCostSummary[]
   multiAccountAlerts: GameAdminMultiAccountAlert[]
   players: GameAdminPlayer[]
   invisiblePlayers: GameAdminPlayer[]

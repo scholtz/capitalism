@@ -4,11 +4,11 @@ import { ref } from 'vue'
 import { gqlRequest } from '@/lib/graphql'
 import type {
   AccountContextType,
-  AuthPayload,
-  GameAdminDashboard,
-  GameAdminPlayer,
-  GameAdminSession,
-  GameNewsEntry,
+    AuthPayload,
+    GameAdminDashboard,
+    GameAdminPlayer,
+    GameAdminSession,
+    GameNewsEntry,
   GameNewsLocalization,
   GlobalGameAdminGrant,
 } from '@/types'
@@ -53,10 +53,17 @@ const DASHBOARD_FIELDS = `
   totalCompanyCash
   moneySupply
   externalMoneyInflowLast100Ticks
+  totalShippingCostsLast100Ticks
   inflowSummaries {
     category
     amount
     description
+  }
+  shippingCostSummaries {
+    companyId
+    companyName
+    amount
+    entryCount
   }
   multiAccountAlerts {
     reason

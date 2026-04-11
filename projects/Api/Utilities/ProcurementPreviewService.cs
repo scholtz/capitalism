@@ -150,9 +150,11 @@ public static class ProcurementPreviewService
         // minQuality parameter is intentionally unused here – tick engine does not filter
         // exchange sell orders by quality because ExchangeOrder has no quality field.
         _ = minQuality;
+        var itemWeightPerUnit = await ComputeItemWeightPerUnitAsync(db, resourceId, productId);
 
         var query = db.ExchangeOrders
-            .Where(o => o.Side == "SELL" && o.IsActive && o.RemainingQuantity > 0m && o.PricePerUnit <= maxPrice)
+            .Where(o => o.Side == "SELL" && o.IsActive && o.RemainingQuantity > 0m)
+            .Include(o => o.ExchangeBuilding)
             .AsQueryable();
 
         if (resourceId.HasValue)
@@ -163,10 +165,16 @@ public static class ProcurementPreviewService
         if (unit.VendorLockCompanyId.HasValue)
             query = query.Where(o => o.CompanyId == unit.VendorLockCompanyId.Value);
 
-        var bestOrder = await query
-            .OrderBy(o => o.PricePerUnit)
+        var bestOrder = (await query
             .Include(o => o.Company)
-            .FirstOrDefaultAsync();
+            .ToListAsync())
+            .OrderBy(o => o.PricePerUnit + GlobalExchangeCalculator.ComputeTransitCostPerUnit(
+                o.ExchangeBuilding.Latitude,
+                o.ExchangeBuilding.Longitude,
+                building.Latitude,
+                building.Longitude,
+                itemWeightPerUnit))
+            .FirstOrDefault();
 
         if (bestOrder is null)
         {
@@ -179,12 +187,32 @@ public static class ProcurementPreviewService
             };
         }
 
+        var transitCost = GlobalExchangeCalculator.ComputeTransitCostPerUnit(
+            bestOrder.ExchangeBuilding.Latitude,
+            bestOrder.ExchangeBuilding.Longitude,
+            building.Latitude,
+            building.Longitude,
+            itemWeightPerUnit);
+        var deliveredPrice = bestOrder.PricePerUnit + transitCost;
+        if (deliveredPrice > maxPrice)
+        {
+            return new ProcurementPreview
+            {
+                SourceType = ProcurementSourceType.PlayerExchangeOrder,
+                CanExecute = false,
+                BlockReason = ProcurementBlockReason.MaxPriceExceeded,
+                BlockMessage = $"Delivered price (${deliveredPrice:F2}) exceeds your max price (${maxPrice:F2}).",
+            };
+        }
+
         return new ProcurementPreview
         {
             SourceType = ProcurementSourceType.PlayerExchangeOrder,
             SourceVendorCompanyId = bestOrder.CompanyId,
             SourceVendorName = bestOrder.Company?.Name ?? "Exchange seller",
-            DeliveredPricePerUnit = bestOrder.PricePerUnit,
+            ExchangePricePerUnit = bestOrder.PricePerUnit,
+            TransitCostPerUnit = transitCost,
+            DeliveredPricePerUnit = deliveredPrice,
             // Exchange orders have no quality field; 0.7m matches the tick engine's
             // weightedQualityTotal accumulation constant for exchange purchases.
             EstimatedQuality = 0.7m,
@@ -343,6 +371,7 @@ public static class ProcurementPreviewService
         decimal minQuality,
         Guid buyerCompanyId)
     {
+        var itemWeightPerUnit = await ComputeItemWeightPerUnitAsync(db, resourceId, productId);
         // Find same-city B2B supplies matching this purchase unit's configured item.
         var query = db.BuildingUnits
             .Where(u => u.UnitType == UnitType.B2BSales && u.Building.CityId == building.CityId && u.BuildingId != building.Id)
@@ -374,7 +403,14 @@ public static class ProcurementPreviewService
                 if (inv.Quality < minQuality) continue;
 
                 var price = salesUnit.MinPrice ?? 0m;
-                if (price <= 0m || price > maxPrice) continue;
+                var transitCost = GlobalExchangeCalculator.ComputeTransitCostPerUnit(
+                    salesUnit.Building.Latitude,
+                    salesUnit.Building.Longitude,
+                    building.Latitude,
+                    building.Longitude,
+                    itemWeightPerUnit);
+                var deliveredPrice = price + transitCost;
+                if (price <= 0m || deliveredPrice > maxPrice) continue;
 
                 string sourceName;
                 if (unit.VendorLockCompanyId.HasValue)
@@ -392,7 +428,9 @@ public static class ProcurementPreviewService
                     SourceType = unit.VendorLockCompanyId.HasValue ? ProcurementSourceType.LockedVendor : ProcurementSourceType.LocalB2B,
                     SourceVendorCompanyId = salesUnit.Building.CompanyId,
                     SourceVendorName = sourceName,
-                    DeliveredPricePerUnit = price,
+                    ExchangePricePerUnit = price,
+                    TransitCostPerUnit = transitCost,
+                    DeliveredPricePerUnit = deliveredPrice,
                     EstimatedQuality = inv.Quality,
                     CanExecute = true,
                 };
@@ -419,5 +457,28 @@ public static class ProcurementPreviewService
             BlockReason = ProcurementBlockReason.NoStock,
             BlockMessage = "No qualifying same-city B2B supply was found. Configure a B2B Sales unit with matching stock in another building, or select a vendor/company that already has inventory available at a qualifying price and quality.",
         };
+    }
+
+    private static async Task<decimal> ComputeItemWeightPerUnitAsync(
+        AppDbContext db,
+        Guid? resourceId,
+        Guid? productId)
+    {
+        var resources = await db.ResourceTypes.AsNoTracking().ToListAsync();
+        var products = await db.ProductTypes
+            .AsNoTracking()
+            .Include(product => product.Recipes)
+            .ToListAsync();
+
+        var resourceTypesById = resources.ToDictionary(resource => resource.Id);
+        var productTypesById = products.ToDictionary(product => product.Id);
+        var recipesByProduct = products.ToDictionary(product => product.Id, product => product.Recipes.ToList());
+
+        return GlobalExchangeCalculator.ComputeItemWeightPerUnit(
+            resourceId,
+            productId,
+            resourceTypesById,
+            productTypesById,
+            recipesByProduct);
     }
 }

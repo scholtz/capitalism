@@ -11,6 +11,7 @@ public sealed class CompanyLedgerSummary
     // Income Statement
     public decimal TotalRevenue { get; set; }
     public decimal TotalPurchasingCosts { get; set; }
+    public decimal TotalShippingCosts { get; set; }
     public decimal TotalLaborCosts { get; set; }
     public decimal TotalEnergyCosts { get; set; }
     public decimal TotalMarketingCosts { get; set; }

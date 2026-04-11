@@ -13,6 +13,7 @@ public static class LedgerCalculator
         LedgerCategory.LaborCost,
         LedgerCategory.EnergyCost,
         LedgerCategory.Marketing,
+        LedgerCategory.ShippingCost,
         LedgerCategory.Other,
         LedgerCategory.UnitUpgrade,
     ];
@@ -49,6 +50,13 @@ public static class LedgerCalculator
     {
         return Math.Abs(entries
             .Where(entry => entry.Category == LedgerCategory.EnergyCost)
+            .Sum(entry => entry.Amount));
+    }
+
+    public static decimal GetTotalShippingCosts(IEnumerable<LedgerEntry> entries)
+    {
+        return Math.Abs(entries
+            .Where(entry => entry.Category == LedgerCategory.ShippingCost)
             .Sum(entry => entry.Amount));
     }
 

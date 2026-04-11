@@ -69,6 +69,7 @@ export type MockLedgerSummary = {
   currentCash: number
   totalRevenue: number
   totalPurchasingCosts: number
+  totalShippingCosts?: number
   totalLaborCosts: number
   totalEnergyCosts: number
   totalMarketingCosts: number
@@ -546,6 +547,13 @@ export type MockGameAdminMoneyInflowSummary = {
   description: string
 }
 
+export type MockGameAdminShippingCostSummary = {
+  companyId: string
+  companyName: string
+  amount: number
+  entryCount: number
+}
+
 export type MockGameAdminMultiAccountAlert = {
   reason: string
   exposureAmount: number
@@ -623,6 +631,7 @@ export type MockState = {
   globalGameAdminGrants: MockGlobalGameAdminGrant[]
   gameNewsEntries: MockGameNewsEntry[]
   adminMoneyInflowSummaries: MockGameAdminMoneyInflowSummary[]
+  adminShippingCostSummaries: MockGameAdminShippingCostSummary[]
   adminMultiAccountAlerts: MockGameAdminMultiAccountAlert[]
   adminAuditLogs: MockGameAdminAuditLog[]
   impersonationSession: MockImpersonationSession | null
@@ -863,7 +872,7 @@ function buildMockLedgerHistoryYear(summary: MockLedgerSummary, currentGameYear:
   const gameYear = summary.gameYear ?? currentGameYear
   const taxableIncome =
     summary.taxableIncome ??
-    Math.max(summary.totalRevenue - summary.totalPurchasingCosts - summary.totalLaborCosts - summary.totalEnergyCosts - summary.totalMarketingCosts - summary.totalOtherCosts, 0)
+    Math.max(summary.totalRevenue - summary.totalPurchasingCosts - (summary.totalShippingCosts ?? 0) - summary.totalLaborCosts - summary.totalEnergyCosts - summary.totalMarketingCosts - summary.totalOtherCosts, 0)
 
   return {
     gameYear,
@@ -891,9 +900,10 @@ function buildMockLedgerSummaryPayload(summary: MockLedgerSummary, gameState: Mo
     isCurrentGameYear: summary.isCurrentGameYear ?? gameYear === currentGameYear,
     totalStockPurchaseCashOut: summary.totalStockPurchaseCashOut ?? 0,
     totalStockSaleCashIn: summary.totalStockSaleCashIn ?? 0,
+    totalShippingCosts: summary.totalShippingCosts ?? 0,
     taxableIncome:
       summary.taxableIncome ??
-      Math.max(summary.totalRevenue - summary.totalPurchasingCosts - summary.totalLaborCosts - summary.totalEnergyCosts - summary.totalMarketingCosts - summary.totalOtherCosts, 0),
+      Math.max(summary.totalRevenue - summary.totalPurchasingCosts - (summary.totalShippingCosts ?? 0) - summary.totalLaborCosts - summary.totalEnergyCosts - summary.totalMarketingCosts - summary.totalOtherCosts, 0),
     estimatedIncomeTax: summary.estimatedIncomeTax ?? summary.totalTaxPaid,
     incomeTaxDueAtTick,
     incomeTaxDueGameTimeUtc: summary.incomeTaxDueGameTimeUtc ?? computeMockInGameTimeUtc(incomeTaxDueAtTick),
@@ -1505,6 +1515,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     globalGameAdminGrants: [],
     gameNewsEntries: [],
     adminMoneyInflowSummaries: [],
+    adminShippingCostSummaries: [],
     adminMultiAccountAlerts: [],
     adminAuditLogs: [],
     impersonationSession: null,
@@ -4401,6 +4412,9 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
                 description: 'No exceptional money inflow is currently flagged.',
               },
             ]
+      const shippingCostSummaries = state.adminShippingCostSummaries
+        .map((summary) => ({ ...summary }))
+        .sort((left, right) => right.amount - left.amount || left.companyName.localeCompare(right.companyName))
 
       const multiAccountAlerts = state.adminMultiAccountAlerts
         .map((alert) => {
@@ -4430,7 +4444,9 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           totalCompanyCash,
           moneySupply: Number((totalPersonalCash + totalCompanyCash).toFixed(2)),
           externalMoneyInflowLast100Ticks: Number(inflowSummaries.reduce((total, summary) => total + summary.amount, 0).toFixed(2)),
+          totalShippingCostsLast100Ticks: Number(shippingCostSummaries.reduce((total, summary) => total + summary.amount, 0).toFixed(2)),
           inflowSummaries,
+          shippingCostSummaries,
           multiAccountAlerts,
           players: state.players.map(buildGameAdminPlayer).sort((left, right) => left.displayName.localeCompare(right.displayName)),
           invisiblePlayers: state.players.filter((player) => player.isInvisibleInChat).map(buildGameAdminPlayer),
@@ -4707,6 +4723,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           currentCash: company.cash,
           totalRevenue: 0,
           totalPurchasingCosts: 0,
+          totalShippingCosts: 0,
           totalLaborCosts: 0,
           totalEnergyCosts: 0,
           totalMarketingCosts: 0,

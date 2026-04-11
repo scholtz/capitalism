@@ -25,6 +25,7 @@ const adminFeedError = ref<string | null>(null)
 const globalAdminEmail = ref('')
 const actionError = ref<string | null>(null)
 const actionMessage = ref<string | null>(null)
+const showShippingCosts = ref(false)
 
 const canAccessDashboard = computed(() => adminStore.session?.canAccessAdminDashboard ?? false)
 const canManageRootFeatures = computed(() => adminStore.session?.isRootAdministrator ?? false)
@@ -272,6 +273,10 @@ onMounted(async () => {
           <span>{{ t('admin.externalInflow') }}</span>
           <strong>{{ formatCurrency(adminStore.dashboard.externalMoneyInflowLast100Ticks) }}</strong>
         </article>
+        <button type="button" class="admin-metric-card admin-metric-button" @click="showShippingCosts = !showShippingCosts">
+          <span>{{ t('admin.shippingCosts') }}</span>
+          <strong>{{ formatCurrency(adminStore.dashboard.totalShippingCostsLast100Ticks) }}</strong>
+        </button>
       </section>
 
       <section class="admin-grid">
@@ -287,6 +292,33 @@ onMounted(async () => {
               <div>
                 <strong>{{ summary.category }}</strong>
                 <p>{{ summary.description }}</p>
+              </div>
+              <span>{{ formatCurrency(summary.amount) }}</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card admin-panel">
+          <div class="admin-panel-header">
+            <div>
+              <h2>{{ t('admin.shippingTitle') }}</h2>
+              <p>{{ t('admin.shippingBody') }}</p>
+            </div>
+            <button type="button" class="btn btn-secondary" @click="showShippingCosts = !showShippingCosts">
+              {{ showShippingCosts ? t('common.close') : t('admin.viewShippingCosts') }}
+            </button>
+          </div>
+          <div v-if="!showShippingCosts" class="admin-empty-state">
+            {{ t('admin.shippingClosed') }}
+          </div>
+          <div v-else-if="(adminStore.dashboard?.shippingCostSummaries.length ?? 0) === 0" class="admin-empty-state">
+            {{ t('admin.shippingEmpty') }}
+          </div>
+          <div v-else class="admin-list">
+            <div v-for="summary in adminStore.dashboard?.shippingCostSummaries ?? []" :key="summary.companyId" class="admin-list-item">
+              <div>
+                <strong>{{ summary.companyName }}</strong>
+                <p>{{ t('admin.shippingEntryCount', { count: summary.entryCount }) }}</p>
               </div>
               <span>{{ formatCurrency(summary.amount) }}</span>
             </div>
@@ -576,6 +608,12 @@ onMounted(async () => {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0));
   display: grid;
   gap: 0.45rem;
+}
+
+.admin-metric-button {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
 }
 
 .admin-metric-card span {

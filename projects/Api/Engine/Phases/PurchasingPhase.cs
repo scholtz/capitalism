@@ -60,6 +60,12 @@ public sealed class PurchasingPhase : ITickPhase
         var maxPrice = unit.MaxPrice ?? decimal.MaxValue;
         var minQuality = unit.MinQuality ?? 0m;
         var purchaseSource = unit.PurchaseSource ?? "OPTIMAL";
+        var itemWeightPerUnit = GlobalExchangeCalculator.ComputeItemWeightPerUnit(
+            resourceId,
+            productId,
+            context.ResourceTypesById,
+            context.ProductTypesById,
+            context.RecipesByProduct);
 
         var totalBought = 0m;
         var totalSourcingCost = 0m;
@@ -72,10 +78,23 @@ public sealed class PurchasingPhase : ITickPhase
                 .Where(o => o.Side == "SELL"
                             && o.IsActive
                             && o.RemainingQuantity > 0m
-                            && o.PricePerUnit <= maxPrice
                             && (resourceId is null || o.ResourceTypeId == resourceId)
                             && (productId is null || o.ProductTypeId == productId))
-                .OrderBy(o => o.PricePerUnit)
+                .Where(o =>
+                {
+                    if (!context.BuildingsById.TryGetValue(o.ExchangeBuildingId, out var exchangeBuilding))
+                    {
+                        return false;
+                    }
+
+                    var deliveredPricePerUnit = o.PricePerUnit + ComputeBuildingTransitCostPerUnit(exchangeBuilding, building, itemWeightPerUnit);
+                    return deliveredPricePerUnit <= maxPrice;
+                })
+                .OrderBy(o =>
+                {
+                    var exchangeBuilding = context.BuildingsById[o.ExchangeBuildingId];
+                    return o.PricePerUnit + ComputeBuildingTransitCostPerUnit(exchangeBuilding, building, itemWeightPerUnit);
+                })
                 .ToList();
 
             if (unit.VendorLockCompanyId.HasValue)
@@ -92,13 +111,24 @@ public sealed class PurchasingPhase : ITickPhase
                 var want = maxBuy - totalBought;
                 var available = order.RemainingQuantity;
                 var fill = Math.Min(want, available);
-                var cost = fill * order.PricePerUnit;
-
-                if (company.Cash < cost)
+                if (!context.BuildingsById.TryGetValue(order.ExchangeBuildingId, out var exchangeBuilding))
                 {
-                    fill = company.Cash / order.PricePerUnit;
+                    continue;
+                }
+
+                var transitCostPerUnit = ComputeBuildingTransitCostPerUnit(exchangeBuilding, building, itemWeightPerUnit);
+                var goodsCost = fill * order.PricePerUnit;
+                var shippingCost = fill * transitCostPerUnit;
+                var totalDeliveredCost = goodsCost + shippingCost;
+
+                if (company.Cash < totalDeliveredCost)
+                {
+                    var deliveredPricePerUnit = order.PricePerUnit + transitCostPerUnit;
+                    fill = company.Cash / deliveredPricePerUnit;
                     fill = Math.Floor(fill * 10000m) / 10000m;
-                    cost = fill * order.PricePerUnit;
+                    goodsCost = fill * order.PricePerUnit;
+                    shippingCost = fill * transitCostPerUnit;
+                    totalDeliveredCost = goodsCost + shippingCost;
                 }
 
                 if (fill <= 0m) break;
@@ -106,7 +136,7 @@ public sealed class PurchasingPhase : ITickPhase
                 order.RemainingQuantity -= fill;
                 if (order.RemainingQuantity <= 0m) order.IsActive = false;
 
-                company.Cash -= cost;
+                company.Cash -= totalDeliveredCost;
 
                 context.Db.LedgerEntries.Add(new LedgerEntry
                 {
@@ -116,19 +146,37 @@ public sealed class PurchasingPhase : ITickPhase
                     BuildingUnitId = unit.Id,
                     Category = LedgerCategory.PurchasingCost,
                     Description = resourceId.HasValue ? "Purchase: raw material" : "Purchase: product",
-                    Amount = -cost,
+                    Amount = -goodsCost,
                     RecordedAtTick = context.CurrentTick,
                     RecordedAtUtc = DateTime.UtcNow,
                     ResourceTypeId = resourceId,
                     ProductTypeId = productId,
                 });
 
+                if (shippingCost > 0m)
+                {
+                    context.Db.LedgerEntries.Add(new LedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        CompanyId = company.Id,
+                        BuildingId = building.Id,
+                        BuildingUnitId = unit.Id,
+                        Category = LedgerCategory.ShippingCost,
+                        Description = resourceId.HasValue ? "Shipping: exchange order raw material" : "Shipping: exchange order product",
+                        Amount = -shippingCost,
+                        RecordedAtTick = context.CurrentTick,
+                        RecordedAtUtc = DateTime.UtcNow,
+                        ResourceTypeId = resourceId,
+                        ProductTypeId = productId,
+                    });
+                }
+
                 // Credit selling company.
                 if (context.CompaniesById.TryGetValue(order.CompanyId, out var seller))
-                    seller.Cash += cost;
+                    seller.Cash += goodsCost;
 
                 totalBought += fill;
-                totalSourcingCost += cost;
+                totalSourcingCost += totalDeliveredCost;
                 weightedQualityTotal += fill * 0.7m;
             }
         }
@@ -141,6 +189,7 @@ public sealed class PurchasingPhase : ITickPhase
                 unit,
                 resourceId,
                 productId,
+                itemWeightPerUnit,
                 maxPrice,
                 minQuality);
 
@@ -157,14 +206,27 @@ public sealed class PurchasingPhase : ITickPhase
                 if (fill <= 0m) continue;
 
                 var sellerIsSameCompany = supply.Building.CompanyId == company.Id;
-                decimal transferCost = fill * supply.PricePerUnit;
+                decimal goodsCost = fill * supply.PricePerUnit;
+                decimal shippingCost = fill * supply.TransitCostPerUnit;
+                decimal deliveredCost = goodsCost + shippingCost;
+                if (company.Cash < shippingCost)
+                {
+                    fill = company.Cash / Math.Max(supply.TransitCostPerUnit, 0.0001m);
+                    fill = Math.Floor(fill * 10000m) / 10000m;
+                    goodsCost = fill * supply.PricePerUnit;
+                    shippingCost = fill * supply.TransitCostPerUnit;
+                    deliveredCost = goodsCost + shippingCost;
+                }
+
                 if (!sellerIsSameCompany)
                 {
-                    if (company.Cash < transferCost)
+                    if (company.Cash < deliveredCost)
                     {
-                        fill = company.Cash / supply.PricePerUnit;
+                        fill = company.Cash / supply.DeliveredPricePerUnit;
                         fill = Math.Floor(fill * 10000m) / 10000m;
-                        transferCost = fill * supply.PricePerUnit;
+                        goodsCost = fill * supply.PricePerUnit;
+                        shippingCost = fill * supply.TransitCostPerUnit;
+                        deliveredCost = goodsCost + shippingCost;
                     }
                 }
 
@@ -194,7 +256,7 @@ public sealed class PurchasingPhase : ITickPhase
                         BuildingUnitId = supply.Unit.Id,
                         Category = LedgerCategory.Revenue,
                         Description = resourceId.HasValue ? "Internal sale: raw material" : "Internal sale: product",
-                        Amount = transferCost,
+                        Amount = goodsCost,
                         RecordedAtTick = context.CurrentTick,
                         RecordedAtUtc = DateTime.UtcNow,
                         ResourceTypeId = resourceId,
@@ -209,22 +271,43 @@ public sealed class PurchasingPhase : ITickPhase
                         BuildingUnitId = unit.Id,
                         Category = LedgerCategory.PurchasingCost,
                         Description = resourceId.HasValue ? "Internal purchase: raw material" : "Internal purchase: product",
-                        Amount = -transferCost,
+                        Amount = -goodsCost,
                         RecordedAtTick = context.CurrentTick,
                         RecordedAtUtc = DateTime.UtcNow,
                         ResourceTypeId = resourceId,
                         ProductTypeId = productId,
                     });
 
-                    totalSourcingCost += transferCost;
+                    if (shippingCost > 0m)
+                    {
+                        company.Cash -= shippingCost;
+                        context.Db.LedgerEntries.Add(new LedgerEntry
+                        {
+                            Id = Guid.NewGuid(),
+                            CompanyId = company.Id,
+                            BuildingId = building.Id,
+                            BuildingUnitId = unit.Id,
+                            Category = LedgerCategory.ShippingCost,
+                            Description = resourceId.HasValue ? "Shipping: internal raw material transfer" : "Shipping: internal product transfer",
+                            Amount = -shippingCost,
+                            RecordedAtTick = context.CurrentTick,
+                            RecordedAtUtc = DateTime.UtcNow,
+                            ResourceTypeId = resourceId,
+                            ProductTypeId = productId,
+                        });
+                    }
+
+                    totalSourcingCost += deliveredCost;
                 }
                 else
                 {
-                    transferCost = withdrawn.Quantity * supply.PricePerUnit;
-                    company.Cash -= transferCost;
+                    goodsCost = withdrawn.Quantity * supply.PricePerUnit;
+                    shippingCost = withdrawn.Quantity * supply.TransitCostPerUnit;
+                    deliveredCost = goodsCost + shippingCost;
+                    company.Cash -= deliveredCost;
 
                     if (context.CompaniesById.TryGetValue(supply.Building.CompanyId, out var seller))
-                        seller.Cash += transferCost;
+                        seller.Cash += goodsCost;
 
                     context.Db.LedgerEntries.Add(new LedgerEntry
                     {
@@ -234,14 +317,32 @@ public sealed class PurchasingPhase : ITickPhase
                         BuildingUnitId = unit.Id,
                         Category = LedgerCategory.PurchasingCost,
                         Description = resourceId.HasValue ? "Purchase: local raw material" : "Purchase: local product",
-                        Amount = -transferCost,
+                        Amount = -goodsCost,
                         RecordedAtTick = context.CurrentTick,
                         RecordedAtUtc = DateTime.UtcNow,
                         ResourceTypeId = resourceId,
                         ProductTypeId = productId,
                     });
 
-                    totalSourcingCost += transferCost;
+                    if (shippingCost > 0m)
+                    {
+                        context.Db.LedgerEntries.Add(new LedgerEntry
+                        {
+                            Id = Guid.NewGuid(),
+                            CompanyId = company.Id,
+                            BuildingId = building.Id,
+                            BuildingUnitId = unit.Id,
+                            Category = LedgerCategory.ShippingCost,
+                            Description = resourceId.HasValue ? "Shipping: local raw material" : "Shipping: local product",
+                            Amount = -shippingCost,
+                            RecordedAtTick = context.CurrentTick,
+                            RecordedAtUtc = DateTime.UtcNow,
+                            ResourceTypeId = resourceId,
+                            ProductTypeId = productId,
+                        });
+                    }
+
+                    totalSourcingCost += deliveredCost;
                 }
 
                 totalBought += withdrawn.Quantity;
@@ -281,16 +382,17 @@ public sealed class PurchasingPhase : ITickPhase
         }
     }
 
-    private static List<(Building Building, BuildingUnit Unit, Inventory Inventory, decimal PricePerUnit)> GetLocalB2BSupplies(
+    private static List<(Building Building, BuildingUnit Unit, Inventory Inventory, decimal PricePerUnit, decimal TransitCostPerUnit, decimal DeliveredPricePerUnit)> GetLocalB2BSupplies(
         TickContext context,
         Building destinationBuilding,
         BuildingUnit purchaseUnit,
         Guid? resourceId,
         Guid? productId,
+        decimal itemWeightPerUnit,
         decimal maxPrice,
         decimal minQuality)
     {
-        var matchingSupplies = new List<(Building Building, BuildingUnit Unit, Inventory Inventory, decimal PricePerUnit)>();
+        var matchingSupplies = new List<(Building Building, BuildingUnit Unit, Inventory Inventory, decimal PricePerUnit, decimal TransitCostPerUnit, decimal DeliveredPricePerUnit)>();
 
         foreach (var (buildingId, units) in context.UnitsByBuilding)
         {
@@ -324,16 +426,18 @@ public sealed class PurchasingPhase : ITickPhase
                         continue;
 
                     var price = unit.MinPrice ?? GetBasePrice(context, inventory.ResourceTypeId, inventory.ProductTypeId);
-                    if (price <= 0m || price > maxPrice)
+                    var transitCostPerUnit = ComputeBuildingTransitCostPerUnit(building, destinationBuilding, itemWeightPerUnit);
+                    var deliveredPricePerUnit = price + transitCostPerUnit;
+                    if (price <= 0m || deliveredPricePerUnit > maxPrice)
                         continue;
 
-                    matchingSupplies.Add((building, unit, inventory, price));
+                    matchingSupplies.Add((building, unit, inventory, price, transitCostPerUnit, deliveredPricePerUnit));
                 }
             }
         }
 
         return matchingSupplies
-            .OrderBy(supply => supply.PricePerUnit)
+            .OrderBy(supply => supply.DeliveredPricePerUnit)
             .ThenByDescending(supply => supply.Inventory.Quality)
             .ToList();
     }
@@ -347,6 +451,19 @@ public sealed class PurchasingPhase : ITickPhase
             return resourceType.BasePrice;
 
         return 0m;
+    }
+
+    private static decimal ComputeBuildingTransitCostPerUnit(
+        Building sourceBuilding,
+        Building destinationBuilding,
+        decimal itemWeightPerUnit)
+    {
+        return GlobalExchangeCalculator.ComputeTransitCostPerUnit(
+            sourceBuilding.Latitude,
+            sourceBuilding.Longitude,
+            destinationBuilding.Latitude,
+            destinationBuilding.Longitude,
+            itemWeightPerUnit);
     }
 
     /// <summary>
@@ -394,7 +511,7 @@ public sealed class PurchasingPhase : ITickPhase
                 var deliveredPrice = exchangePrice + transitCost;
                 var quality = GlobalExchangeCalculator.ComputeExchangeQuality(abundance);
 
-                return (sourceCity, deliveredPrice, quality);
+                return (sourceCity, exchangePrice, transitCost, deliveredPrice, quality);
             })
             .Where(o => o.deliveredPrice <= maxPrice && o.quality >= minQuality)
             .OrderBy(o => o.deliveredPrice)
@@ -417,6 +534,8 @@ public sealed class PurchasingPhase : ITickPhase
         if (amountToBuy <= 0m) return (0m, 0m, 0m);
 
         company.Cash -= totalCost;
+        var purchasingCost = amountToBuy * bestOffer.exchangePrice;
+        var shippingCost = amountToBuy * bestOffer.transitCost;
 
         context.Db.LedgerEntries.Add(new LedgerEntry
         {
@@ -426,11 +545,28 @@ public sealed class PurchasingPhase : ITickPhase
             BuildingUnitId = unit.Id,
             Category = LedgerCategory.PurchasingCost,
             Description = $"Global exchange purchase: {resource.Name} from {bestOffer.sourceCity.Name}",
-            Amount = -totalCost,
+            Amount = -purchasingCost,
             RecordedAtTick = context.CurrentTick,
             RecordedAtUtc = DateTime.UtcNow,
             ResourceTypeId = resourceId,
         });
+
+        if (shippingCost > 0m)
+        {
+            context.Db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = company.Id,
+                BuildingId = building.Id,
+                BuildingUnitId = unit.Id,
+                Category = LedgerCategory.ShippingCost,
+                Description = $"Shipping: {resource.Name} from {bestOffer.sourceCity.Name}",
+                Amount = -shippingCost,
+                RecordedAtTick = context.CurrentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+                ResourceTypeId = resourceId,
+            });
+        }
 
         return (amountToBuy, bestOffer.quality, totalCost);
     }

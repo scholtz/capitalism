@@ -163,6 +163,7 @@ public static class SourcingComparisonService
         decimal minQuality,
         Guid buyerCompanyId)
     {
+        var itemWeightPerUnit = await ComputeItemWeightPerUnitAsync(db, resourceId, productId);
         var query = db.BuildingUnits
             .Where(u => u.UnitType == UnitType.B2BSales
                      && u.Building.CityId == building.CityId
@@ -197,9 +198,21 @@ public static class SourcingComparisonService
 
                 var price = salesUnit.MinPrice ?? 0m;
                 if (price <= 0m) continue;
+                var distanceKm = GlobalExchangeCalculator.ComputeDistanceKm(
+                    salesUnit.Building.Latitude,
+                    salesUnit.Building.Longitude,
+                    building.Latitude,
+                    building.Longitude);
+                var transitCost = GlobalExchangeCalculator.ComputeTransitCostPerUnit(
+                    salesUnit.Building.Latitude,
+                    salesUnit.Building.Longitude,
+                    building.Latitude,
+                    building.Longitude,
+                    itemWeightPerUnit);
+                var deliveredPrice = price + transitCost;
 
                 var qualityOk = inv.Quality >= minQuality;
-                var priceOk = price <= maxPrice;
+                var priceOk = deliveredPrice <= maxPrice;
                 var eligible = qualityOk && priceOk;
 
                 string? blockReason = null;
@@ -207,7 +220,7 @@ public static class SourcingComparisonService
                 if (!priceOk)
                 {
                     blockReason = ProcurementBlockReason.MaxPriceExceeded;
-                    blockMessage = $"Asking price (${price:F2}) exceeds your max price (${maxPrice:F2}).";
+                    blockMessage = $"Delivered price (${deliveredPrice:F2}) exceeds your max price (${maxPrice:F2}).";
                 }
                 else if (!qualityOk)
                 {
@@ -222,9 +235,11 @@ public static class SourcingComparisonService
                         : ProcurementSourceType.LocalB2B,
                     SourceVendorCompanyId = salesUnit.Building.CompanyId,
                     SourceVendorName = salesUnit.Building.Company?.Name ?? "Local supplier",
-                    DeliveredPricePerUnit = price,
+                    ExchangePricePerUnit = price,
+                    TransitCostPerUnit = transitCost,
+                    DeliveredPricePerUnit = deliveredPrice,
                     EstimatedQuality = inv.Quality,
-                    DistanceKm = 0, // same city = no transit
+                    DistanceKm = distanceKm,
                     IsEligible = eligible,
                     BlockReason = blockReason,
                     BlockMessage = blockMessage,
@@ -233,6 +248,29 @@ public static class SourcingComparisonService
         }
 
         return candidates;
+    }
+
+    private static async Task<decimal> ComputeItemWeightPerUnitAsync(
+        AppDbContext db,
+        Guid? resourceId,
+        Guid? productId)
+    {
+        var resources = await db.ResourceTypes.AsNoTracking().ToListAsync();
+        var products = await db.ProductTypes
+            .AsNoTracking()
+            .Include(product => product.Recipes)
+            .ToListAsync();
+
+        var resourceTypesById = resources.ToDictionary(resource => resource.Id);
+        var productTypesById = products.ToDictionary(product => product.Id);
+        var recipesByProduct = products.ToDictionary(product => product.Id, product => product.Recipes.ToList());
+
+        return GlobalExchangeCalculator.ComputeItemWeightPerUnit(
+            resourceId,
+            productId,
+            resourceTypesById,
+            productTypesById,
+            recipesByProduct);
     }
 
     // ── Global city exchange offers ───────────────────────────────────────────

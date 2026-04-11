@@ -9,6 +9,10 @@ namespace Api.Utilities;
 public static class GlobalExchangeCalculator
 {
     public const decimal DefaultMissingAbundance = 0.05m;
+    public const decimal TransitCostRatePerKmPerWeightUnit = 0.0025m;
+    public const decimal MinimumTransitCostPerUnit = 0.01m;
+    public const decimal MinimumCityTransitCostPerUnit = 0.05m;
+    public const decimal MinimumWeightPerUnit = 0.1m;
 
     public static decimal ComputeExchangePrice(City city, ResourceType resourceType, decimal abundance)
     {
@@ -31,9 +35,105 @@ public static class GlobalExchangeCalculator
             return 0m;
         }
 
-        var distanceKm = ComputeDistanceKm(sourceCity.Latitude, sourceCity.Longitude, destinationCity.Latitude, destinationCity.Longitude);
-        var rawTransitCost = (decimal)distanceKm * Math.Max(resourceType.WeightPerUnit, 0.1m) * 0.0025m;
-        return decimal.Round(Math.Max(rawTransitCost, 0.05m), 2, MidpointRounding.AwayFromZero);
+        return Math.Max(
+            ComputeTransitCostPerUnit(
+            sourceCity.Latitude,
+            sourceCity.Longitude,
+            destinationCity.Latitude,
+            destinationCity.Longitude,
+            resourceType.WeightPerUnit),
+            MinimumCityTransitCostPerUnit);
+    }
+
+    public static decimal ComputeTransitCostPerUnit(
+        double latitudeA,
+        double longitudeA,
+        double latitudeB,
+        double longitudeB,
+        decimal weightPerUnit)
+    {
+        var distanceKm = ComputeDistanceKm(latitudeA, longitudeA, latitudeB, longitudeB);
+        var rawTransitCost = (decimal)distanceKm * Math.Max(weightPerUnit, MinimumWeightPerUnit) * TransitCostRatePerKmPerWeightUnit;
+        return decimal.Round(Math.Max(rawTransitCost, MinimumTransitCostPerUnit), 2, MidpointRounding.AwayFromZero);
+    }
+
+    public static decimal ComputeItemWeightPerUnit(
+        Guid? resourceTypeId,
+        Guid? productTypeId,
+        IReadOnlyDictionary<Guid, ResourceType> resourceTypesById,
+        IReadOnlyDictionary<Guid, ProductType> productTypesById,
+        IReadOnlyDictionary<Guid, List<ProductRecipe>> recipesByProduct)
+    {
+        if (resourceTypeId.HasValue && resourceTypesById.TryGetValue(resourceTypeId.Value, out var resourceType))
+        {
+            return Math.Max(resourceType.WeightPerUnit, MinimumWeightPerUnit);
+        }
+
+        if (!productTypeId.HasValue || !productTypesById.TryGetValue(productTypeId.Value, out var productType))
+        {
+            return MinimumWeightPerUnit;
+        }
+
+        return Math.Max(
+            ComputeProductWeightPerUnit(productType, resourceTypesById, productTypesById, recipesByProduct, [], []),
+            MinimumWeightPerUnit);
+    }
+
+    private static decimal ComputeProductWeightPerUnit(
+        ProductType productType,
+        IReadOnlyDictionary<Guid, ResourceType> resourceTypesById,
+        IReadOnlyDictionary<Guid, ProductType> productTypesById,
+        IReadOnlyDictionary<Guid, List<ProductRecipe>> recipesByProduct,
+        Dictionary<Guid, decimal> cache,
+        HashSet<Guid> visiting)
+    {
+        if (cache.TryGetValue(productType.Id, out var cachedWeight))
+        {
+            return cachedWeight;
+        }
+
+        if (!visiting.Add(productType.Id))
+        {
+            return MinimumWeightPerUnit;
+        }
+
+        var recipes = recipesByProduct.GetValueOrDefault(productType.Id) ?? productType.Recipes.ToList();
+        if (recipes.Count == 0)
+        {
+            cache[productType.Id] = MinimumWeightPerUnit;
+            visiting.Remove(productType.Id);
+            return MinimumWeightPerUnit;
+        }
+
+        var totalInputWeight = 0m;
+        foreach (var recipe in recipes)
+        {
+            if (recipe.ResourceTypeId.HasValue && resourceTypesById.TryGetValue(recipe.ResourceTypeId.Value, out var resource))
+            {
+                totalInputWeight += recipe.Quantity * Math.Max(resource.WeightPerUnit, MinimumWeightPerUnit);
+                continue;
+            }
+
+            if (recipe.InputProductTypeId.HasValue && productTypesById.TryGetValue(recipe.InputProductTypeId.Value, out var inputProduct))
+            {
+                totalInputWeight += recipe.Quantity * ComputeProductWeightPerUnit(
+                    inputProduct,
+                    resourceTypesById,
+                    productTypesById,
+                    recipesByProduct,
+                    cache,
+                    visiting);
+            }
+        }
+
+        visiting.Remove(productType.Id);
+
+        var outputQuantity = Math.Max(productType.OutputQuantity, 1m);
+        var weightPerUnit = totalInputWeight > 0m
+            ? totalInputWeight / outputQuantity
+            : MinimumWeightPerUnit;
+        cache[productType.Id] = weightPerUnit;
+        return weightPerUnit;
     }
 
     public static double ComputeDistanceKm(double latitudeA, double longitudeA, double latitudeB, double longitudeB)

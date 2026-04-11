@@ -236,6 +236,7 @@ public sealed partial class Query
             .ToListAsync(httpContextAccessor.HttpContext.RequestAborted);
 
         var inflowSummaries = BuildInflowSummaries(recentLedgerEntries);
+        var shippingCostSummaries = BuildShippingCostSummaries(recentLedgerEntries, companies);
         var globalAdminGrants = accessContext.IsRootAdministrator
             ? (await masterGameAdministrationService.GetGlobalGameAdminGrantsAsync(accessContext.ActorPlayer.Email, httpContextAccessor.HttpContext.RequestAborted)).ToList()
             : [];
@@ -250,7 +251,11 @@ public sealed partial class Query
                 .Where(entry => entry.Amount > 0m)
                 .Where(entry => entry.Category is LedgerCategory.Revenue or LedgerCategory.MediaHouseIncome or LedgerCategory.RentIncome)
                 .Sum(entry => entry.Amount),
+            TotalShippingCostsLast100Ticks = Math.Abs(recentLedgerEntries
+                .Where(entry => entry.Category == LedgerCategory.ShippingCost && entry.Amount < 0m)
+                .Sum(entry => entry.Amount)),
             InflowSummaries = inflowSummaries,
+            ShippingCostSummaries = shippingCostSummaries,
             MultiAccountAlerts = BuildMultiAccountAlerts(players, companies, loans, shareholdings),
             Players = players.Select(ToGameAdminPlayerSummary).ToList(),
             InvisiblePlayers = players.Where(player => player.IsInvisibleInChat).Select(ToGameAdminPlayerSummary).ToList(),
@@ -555,6 +560,27 @@ public sealed partial class Query
                 Description = descriptions[group.Key],
             })
             .OrderByDescending(summary => summary.Amount)
+            .ToList();
+    }
+
+    private static List<GameAdminShippingCostSummary> BuildShippingCostSummaries(
+        IReadOnlyCollection<LedgerEntry> recentLedgerEntries,
+        IReadOnlyCollection<Company> companies)
+    {
+        var companyNameById = companies.ToDictionary(company => company.Id, company => company.Name);
+
+        return recentLedgerEntries
+            .Where(entry => entry.Category == LedgerCategory.ShippingCost && entry.Amount < 0m)
+            .GroupBy(entry => entry.CompanyId)
+            .Select(group => new GameAdminShippingCostSummary
+            {
+                CompanyId = group.Key,
+                CompanyName = companyNameById.GetValueOrDefault(group.Key, "Unknown company"),
+                Amount = Math.Abs(group.Sum(entry => entry.Amount)),
+                EntryCount = group.Count(),
+            })
+            .OrderByDescending(summary => summary.Amount)
+            .ThenBy(summary => summary.CompanyName)
             .ToList();
     }
 
@@ -2157,6 +2183,7 @@ public sealed partial class Query
 
         var totalRevenue = LedgerCalculator.GetTotalRevenue(entries);
         var totalPurchasingCosts = LedgerCalculator.GetTotalPurchasingCosts(entries);
+        var totalShippingCosts = LedgerCalculator.GetTotalShippingCosts(entries);
         var totalLaborCosts = LedgerCalculator.GetTotalLaborCosts(entries);
         var totalEnergyCosts = LedgerCalculator.GetTotalEnergyCosts(entries);
         var totalMarketingCosts = LedgerCalculator.GetTotalMarketingCosts(entries);
@@ -2223,6 +2250,7 @@ public sealed partial class Query
             CurrentCash = company.Cash,
             TotalRevenue = totalRevenue,
             TotalPurchasingCosts = totalPurchasingCosts,
+            TotalShippingCosts = totalShippingCosts,
             TotalLaborCosts = totalLaborCosts,
             TotalEnergyCosts = totalEnergyCosts,
             TotalMarketingCosts = totalMarketingCosts,
@@ -2233,13 +2261,13 @@ public sealed partial class Query
             TotalPropertyPurchases = totalPropertyPurchases,
             TotalStockPurchaseCashOut = totalStockPurchaseCashOut,
             TotalStockSaleCashIn = totalStockSaleCashIn,
-            NetIncome = totalRevenue - totalPurchasingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts - totalTaxPaid - totalOtherCosts,
+            NetIncome = totalRevenue - totalPurchasingCosts - totalShippingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts - totalTaxPaid - totalOtherCosts,
             PropertyValue = propertyValue,
             PropertyAppreciation = propertyValue - totalPropertyPurchases,
             BuildingValue = buildingValue,
             InventoryValue = inventoryValue,
             TotalAssets = company.Cash + propertyValue + buildingValue + inventoryValue,
-            CashFromOperations = totalRevenue - totalPurchasingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts,
+            CashFromOperations = totalRevenue - totalPurchasingCosts - totalShippingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts,
             CashFromInvestments = totalStockSaleCashIn - totalPropertyPurchases - totalStockPurchaseCashOut,
             FirstRecordedTick = entries.Count > 0 ? entries.Min(e => e.RecordedAtTick) : 0,
             LastRecordedTick = entries.Count > 0 ? entries.Max(e => e.RecordedAtTick) : 0,
@@ -2321,6 +2349,7 @@ public sealed partial class Query
     {
         var totalRevenue = LedgerCalculator.GetTotalRevenue(entries);
         var totalPurchasingCosts = LedgerCalculator.GetTotalPurchasingCosts(entries);
+        var totalShippingCosts = LedgerCalculator.GetTotalShippingCosts(entries);
         var totalLaborCosts = LedgerCalculator.GetTotalLaborCosts(entries);
         var totalEnergyCosts = LedgerCalculator.GetTotalEnergyCosts(entries);
         var totalMarketingCosts = LedgerCalculator.GetTotalMarketingCosts(entries);
@@ -2338,7 +2367,7 @@ public sealed partial class Query
             TotalRevenue = totalRevenue,
             TotalLaborCosts = totalLaborCosts,
             TotalEnergyCosts = totalEnergyCosts,
-            NetIncome = totalRevenue - totalPurchasingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts - totalTaxPaid - totalOtherCosts,
+            NetIncome = totalRevenue - totalPurchasingCosts - totalShippingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts - totalTaxPaid - totalOtherCosts,
             TotalTaxPaid = totalTaxPaid,
             TaxableIncome = taxableIncome,
             EstimatedIncomeTax = estimatedIncomeTax,

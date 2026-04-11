@@ -77,6 +77,7 @@ type PurchaseVendorOption = {
   buildingId: string
   buildingName: string
   cityId: string
+  distanceKm: number
   pricePerUnit: number | null
   transitCostPerUnit: number
 }
@@ -88,6 +89,8 @@ type PurchaseVendorCompanyData = {
     id: string
     name: string
     cityId: string
+    latitude: number
+    longitude: number
     units: Array<{
       id: string
       unitType: string
@@ -721,12 +724,18 @@ const sameCityVendorItemKeys = computed(() =>
   ),
 )
 
+const resourceTypesById = computed(() => new Map(resourceTypes.value.map((resource) => [resource.id, resource])))
+const productTypesById = computed(() => new Map(productTypes.value.map((product) => [product.id, product])))
+
 const purchaseVendorOptions = computed<PurchaseVendorOption[]>(() => {
   return buildPurchaseVendorOptions(
     purchaseVendorCompanies.value,
     selectedPurchaseSelection.value,
     building.value?.cityId ?? null,
     building.value?.id ?? null,
+    building.value ? { latitude: building.value.latitude, longitude: building.value.longitude } : null,
+    resourceTypesById.value,
+    productTypesById.value,
   )
 })
 
@@ -3170,7 +3179,7 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
           description
           recipes {
             quantity
-            resourceType { id name slug unitName unitSymbol }
+            resourceType { id name slug unitName unitSymbol weightPerUnit }
             inputProductType { id name slug unitName unitSymbol }
           }
         }
@@ -3199,6 +3208,8 @@ async function loadBuilding(options: { preserveDraft?: boolean } = {}) {
         id: candidate.id,
         name: candidate.name,
         cityId: candidate.cityId,
+        latitude: candidate.latitude,
+        longitude: candidate.longitude,
         units: candidate.units.map((unit) => ({
           id: unit.id,
           unitType: unit.unitType,
@@ -3288,7 +3299,7 @@ async function fetchRankedProducts(unitType: string) {
             id name slug industry imageUrl basePrice baseCraftTicks outputQuantity
             energyConsumptionMwh basicLaborHours unitName unitSymbol isProOnly
             isUnlockedForCurrentPlayer description
-            recipes { quantity resourceType { id name slug unitName unitSymbol } inputProductType { id name slug unitName unitSymbol } }
+            recipes { quantity resourceType { id name slug unitName unitSymbol weightPerUnit } inputProductType { id name slug unitName unitSymbol } }
           }
         }
       }`,

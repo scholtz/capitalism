@@ -80,7 +80,11 @@ public sealed class GameAdminDashboardResult
 
     public decimal ExternalMoneyInflowLast100Ticks { get; set; }
 
+    public decimal TotalShippingCostsLast100Ticks { get; set; }
+
     public List<GameAdminMoneyInflowSummary> InflowSummaries { get; set; } = [];
+
+    public List<GameAdminShippingCostSummary> ShippingCostSummaries { get; set; } = [];
 
     public List<GameAdminMultiAccountAlert> MultiAccountAlerts { get; set; } = [];
 
@@ -91,6 +95,17 @@ public sealed class GameAdminDashboardResult
     public List<GlobalGameAdminGrantSummary> GlobalGameAdminGrants { get; set; } = [];
 
     public List<GameAdminAuditLogRecord> RecentAuditLogs { get; set; } = [];
+}
+
+public sealed class GameAdminShippingCostSummary
+{
+    public Guid CompanyId { get; set; }
+
+    public string CompanyName { get; set; } = string.Empty;
+
+    public decimal Amount { get; set; }
+
+    public int EntryCount { get; set; }
 }
 
 public sealed class GameAdminMoneyInflowSummary
