@@ -2757,6 +2757,314 @@ test.describe('Building detail upgrades', () => {
     await expect(page.locator('.config-warnings')).toContainText('Manufacturing unit at (1, 1) is not linked to a storage or sales output.')
   })
 
+  test('diagonal link editing: pre-configured diagonal state loaded and rendered correctly', async ({ page }) => {
+    // Verify that a building already persisted with a diagonal link flag shows the correct
+    // arrow state in the Current Configuration section without any editing needed.
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-prediag',
+      playerId: player.id,
+      name: 'PreDiag Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-prediag',
+          companyId: 'company-prediag',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'PreDiag Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'prediag-1',
+              buildingId: 'building-prediag',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: true, // tl-br: PURCHASE(0,0) → B2B_SALES(1,1)
+            },
+            {
+              id: 'prediag-2',
+              buildingId: 'building-prediag',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'prediag-3',
+              buildingId: 'building-prediag',
+              unitType: 'STORAGE',
+              gridX: 0,
+              gridY: 1,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'prediag-4',
+              buildingId: 'building-prediag',
+              unitType: 'B2B_SALES',
+              gridX: 1,
+              gridY: 1,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-prediag')
+    await expect(page.getByRole('heading', { name: 'PreDiag Factory' })).toBeVisible()
+
+    // The Current Configuration grid renders a diagonal toggle for each possible 2×2 block.
+    // The first diagonal button corresponds to the (0,0)–(1,1) block, which has tl-br pre-set.
+    const currentSection = getGridSection(page, 'Current Configuration')
+    const diagButton = currentSection.locator('.link-toggle.diagonal').first()
+    await expect(diagButton).toHaveClass(/state-tl-br/)
+
+    // Enter edit mode: the planned section should initialize from the current state
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    const plannedDiag = plannedSection.locator('.link-toggle.diagonal').first()
+    await expect(plannedDiag).toHaveClass(/state-tl-br/)
+
+    // Clicking once from tl-br advances to br-tl (↖)
+    await plannedDiag.click()
+    await expect(plannedDiag).toHaveClass(/state-br-tl/)
+  })
+
+  test('horizontal link editing: backward (right-to-left) cycle and reversal', async ({ page }) => {
+    // Tests the backward direction: clicking the H link button until it reaches "backward" (←)
+    // and verifies that the source unit gets linkLeft=true while the other has linkRight=false.
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-hbkwd',
+      playerId: player.id,
+      name: 'H Backward Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-hbkwd',
+          companyId: 'company-hbkwd',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'H Backward Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'hbkwd-1',
+              buildingId: 'building-hbkwd',
+              unitType: 'STORAGE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'hbkwd-2',
+              buildingId: 'building-hbkwd',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-hbkwd')
+    await expect(page.getByRole('heading', { name: 'H Backward Factory' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+
+    const hButton = plannedSection.locator('.link-toggle.horizontal').first()
+    await expect(hButton).toHaveClass(/state-none/)
+
+    // First click: forward (→) — STORAGE→MANUFACTURING
+    await hButton.click()
+    await expect(hButton).toHaveClass(/state-forward/)
+
+    // Second click: backward (←) — MANUFACTURING→STORAGE
+    await hButton.click()
+    await expect(hButton).toHaveClass(/state-backward/)
+
+    // Third click: back to none
+    await hButton.click()
+    await expect(hButton).toHaveClass(/state-none/)
+  })
+
+  test('vertical link editing: top-to-bottom and bottom-to-top directions', async ({ page }) => {
+    // Tests both vertical link directions: linkDown (top→bottom) and linkUp (bottom→top).
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-vert',
+      playerId: player.id,
+      name: 'Vertical Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-vert',
+          companyId: 'company-vert',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Vertical Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'vert-1',
+              buildingId: 'building-vert',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'vert-2',
+              buildingId: 'building-vert',
+              unitType: 'MANUFACTURING',
+              gridX: 0,
+              gridY: 1,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-vert')
+    await expect(page.getByRole('heading', { name: 'Vertical Factory' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+
+    const vButton = plannedSection.locator('.link-toggle.vertical').first()
+    await expect(vButton).toHaveClass(/state-none/)
+
+    // First click: forward (↓) — PURCHASE→MANUFACTURING (top to bottom)
+    await vButton.click()
+    await expect(vButton).toHaveClass(/state-forward/)
+
+    // Second click: backward (↑) — MANUFACTURING→PURCHASE (bottom to top)
+    await vButton.click()
+    await expect(vButton).toHaveClass(/state-backward/)
+
+    // Third click: back to none
+    await vButton.click()
+    await expect(vButton).toHaveClass(/state-none/)
+  })
+
   // ---------------------------------------------------------------------------
   // Grid tile metadata: resource / product labels, fill bars, price metrics
   // ---------------------------------------------------------------------------
