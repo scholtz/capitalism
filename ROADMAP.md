@@ -19,7 +19,6 @@ It will use real world map. The game will start in single city and later other c
 - Dashboard and ledger is loading slow, make sure to use the caching headers so that when user goes fast between the panels it does not have to load all information from the database again. Analyze the issue of the slow requests and if the database is missing an indexes make sure they are created.
 - In manufacturing output product selection show the product images
 - In b2b unit show the sale price, when creating b2b sale unit in factory make sure to set the competetive default price
-- Choose product and vendor does not show product icons and the top of the window is hidden by the navbar. Also make the own products to be at the top of the list.
 - Add bottom margin to building-header as the components touch the components below. Make sure not to make the design errors in the future.
 - Instead of ticks everywhere in the game show the tick time and show the tick only as a title for better debugging
 - In each building header right below the building name show chart of total costs, total revenue and total profit in the top building overview
@@ -305,6 +304,13 @@ In each city is one in game global exchange which serves as the hub between conn
 ## Transit costs
 
 When resource is sent between one unit to another (sale to purchase or exchange to purchase or b2b sale to exchange) the transit costs are calculated. The transit costs must be visible in the purchase unit when selecting the resource.
+
+Transit costs must never be zero. Every transit even between the player's buildings costs shipping money. Shipping costs are determined by the geo location distance - each building has the gps coordinates and distance between two gps coordinates can be calculated. Make sure that different products has different weight for example so the shipping costs between one unit of medicine will be different to one unit of bed.
+
+
+Shipping costs are visible in the company ledger.
+
+Game aggregated shipping costs are visible in the administrator dashboard, clickable and then overview of the shipping costs per company is displayed.
 
 ## Taxes
 
