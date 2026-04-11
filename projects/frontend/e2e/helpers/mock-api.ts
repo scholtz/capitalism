@@ -2696,6 +2696,44 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('mergeCompany')) {
+      const input = body.variables?.input
+      const player = state.players.find((p) => p.id === state.currentUserId)
+      if (!player) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Not authenticated', extensions: { code: 'UNAUTHORIZED' } }] }),
+        })
+      }
+      // Find target company across all players
+      const targetCompany = state.players.flatMap((p) => p.companies).find((c) => c.id === input.targetCompanyId)
+      const destCompany = player.companies.find((c) => c.id === input.destinationCompanyId)
+      if (!targetCompany || !destCompany) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Company not found', extensions: { code: 'COMPANY_NOT_FOUND' } }] }),
+        })
+      }
+      const cashTransferred = targetCompany.cash ?? 0
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            mergeCompany: {
+              destinationCompanyId: destCompany.id,
+              destinationCompanyName: destCompany.name,
+              absorbedCompanyName: targetCompany.name,
+              cashTransferred,
+              buildingsTransferred: targetCompany.buildings?.length ?? 0,
+            },
+          },
+        }),
+      })
+    }
+
     if (query.includes('PlaceBuilding')) {
       const input = body.variables?.input
       const player = state.players.find((p) => p.id === state.currentUserId)
@@ -3906,6 +3944,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
             controlledCompanyOwnedShares,
             combinedControlledOwnershipRatio,
             canClaimControl: combinedControlledOwnershipRatio >= 0.5,
+            canMerge: combinedControlledOwnershipRatio >= 0.9,
           }
         })
         .sort((left, right) => left.companyName.localeCompare(right.companyName))

@@ -516,6 +516,15 @@ export interface StockExchangeListing {
   controlledCompanyOwnedShares: number
   combinedControlledOwnershipRatio: number
   canClaimControl: boolean
+  canMerge: boolean
+}
+
+export interface MergeCompanyResult {
+  destinationCompanyId: string
+  destinationCompanyName: string
+  absorbedCompanyName: string
+  cashTransferred: number
+  buildingsTransferred: number
 }
 
 export interface StockExchangePriceHistoryPoint {

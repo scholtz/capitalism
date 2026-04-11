@@ -136,6 +136,16 @@ img {
   text-decoration: none;
 }
 
+.btn-warning {
+  background: var(--color-warning, #f59e0b);
+  color: #fff;
+}
+
+.btn-warning:hover {
+  opacity: 0.9;
+  text-decoration: none;
+}
+
 .form-group {
   margin-bottom: 1rem;
 }

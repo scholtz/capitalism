@@ -1907,3 +1907,170 @@ test.describe('Stock exchange — global account switcher hidden in nav', () => 
     await expect(page.locator('.account-switcher')).toBeVisible()
   })
 })
+
+test.describe('Stock exchange — merge company flow', () => {
+  test('merge button visible and labeled for eligible company', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 500000,
+      companies: [makeControlledCompany()],
+    })
+    // target company with low founder shares so acquirer can hold 90%+
+    const targetOwner = makePlayer({
+      id: 'player-target',
+      email: 'target@test.com',
+      displayName: 'Target Owner',
+      companies: [
+        {
+          id: 'company-target',
+          playerId: 'player-target',
+          name: 'Merge Target Co',
+          cash: 20000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.1,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 10,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, targetOwner],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        // Acquirer holds 9200 out of 10000 = 92% → canMerge=true
+        { companyId: 'company-target', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 9200 },
+        { companyId: 'company-target', ownerPlayerId: 'player-target', ownerCompanyId: null, shareCount: 800 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await restoreMockSession(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    const targetRow = page.locator('tr.listing-row', { hasText: 'Merge Target Co' })
+    await expect(targetRow).toBeVisible()
+
+    // Merge-eligible badge
+    await expect(targetRow.locator('.listing-chip--merge')).toBeVisible()
+
+    // Merge button in actions cell
+    const mergeBtn = targetRow.getByRole('button', { name: 'Merge' })
+    await expect(mergeBtn).toBeVisible()
+  })
+
+  test('merge button NOT visible when ownership below 90%', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 200000,
+      companies: [makeControlledCompany()],
+    })
+    const targetOwner = makePlayer({
+      id: 'player-target2',
+      email: 'target2@test.com',
+      displayName: 'Target Owner 2',
+      companies: [
+        {
+          id: 'company-target2',
+          playerId: 'player-target2',
+          name: 'Low Share Co',
+          cash: 10000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.1,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 10,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, targetOwner],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        // Acquirer holds only 50% → canMerge=false
+        { companyId: 'company-target2', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 5000 },
+        { companyId: 'company-target2', ownerPlayerId: 'player-target2', ownerCompanyId: null, shareCount: 5000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await restoreMockSession(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    const targetRow = page.locator('tr.listing-row', { hasText: 'Low Share Co' })
+    await expect(targetRow).toBeVisible()
+
+    // No merge button or chip
+    await expect(targetRow.locator('.listing-chip--merge')).not.toBeVisible()
+    await expect(targetRow.getByRole('button', { name: 'Merge' })).not.toBeVisible()
+  })
+
+  test('merge dialog opens, shows eligibility hint, and executes merge', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 500000,
+      companies: [makeControlledCompany()],
+    })
+    const targetOwner = makePlayer({
+      id: 'player-target3',
+      email: 'target3@test.com',
+      displayName: 'Target Owner 3',
+      companies: [
+        {
+          id: 'company-target3',
+          playerId: 'player-target3',
+          name: 'Absorb Me Co',
+          cash: 30000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.05,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 5,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, targetOwner],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-target3', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 9500 },
+        { companyId: 'company-target3', ownerPlayerId: 'player-target3', ownerCompanyId: null, shareCount: 500 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await restoreMockSession(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    const targetRow = page.locator('tr.listing-row', { hasText: 'Absorb Me Co' })
+    await targetRow.getByRole('button', { name: 'Merge' }).click()
+
+    // Dialog opens
+    const dialog = page.locator('[role="dialog"]', { hasText: 'Merge Company' })
+    await expect(dialog).toBeVisible()
+
+    // Eligibility hint is shown
+    await expect(dialog.locator('.merge-dialog__eligibility')).toBeVisible()
+
+    // Destination company select is shown
+    await expect(dialog.locator('select')).toBeVisible()
+
+    // Click Confirm Merge
+    await dialog.getByRole('button', { name: 'Confirm Merge' }).click()
+
+    // Success message appears
+    await expect(dialog.locator('.merge-dialog__success')).toBeVisible()
+    await expect(dialog.locator('.merge-dialog__success')).toContainText('Absorb Me Co')
+
+    // Close button becomes available
+    const closeBtn = dialog.getByRole('button', { name: 'Close' })
+    await expect(closeBtn).toBeVisible()
+    await closeBtn.click()
+
+    // Dialog should close
+    await expect(page.locator('[role="dialog"]', { hasText: 'Merge Company' })).not.toBeVisible()
+  })
+})

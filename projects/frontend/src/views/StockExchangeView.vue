@@ -8,6 +8,7 @@ import { useGameStateStore } from '@/stores/gameState'
 import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { deepEqual } from '@/lib/utils'
 import type {
+  MergeCompanyResult,
   PersonAccount,
   ShareTradeResult,
   StockExchangeListing,
@@ -46,6 +47,13 @@ const priceHistoryErrorByCompany = ref<Record<string, string | null>>({})
 
 // Per-listing trade account selection: "PERSON" or "COMPANY:<id>"
 const tradeAccountByCompany = ref<Record<string, string>>({})
+
+// Merge dialog state
+const mergeDialogCompanyId = ref<string | null>(null)
+const mergeDestinationCompanyId = ref<string>('')
+const mergeLoading = ref(false)
+const mergeError = ref<string | null>(null)
+const mergeSuccess = ref<MergeCompanyResult | null>(null)
 
 // Sort and filter state
 const filterText = ref('')
@@ -113,6 +121,7 @@ const LISTINGS_QUERY = `
       controlledCompanyOwnedShares
       combinedControlledOwnershipRatio
       canClaimControl
+      canMerge
     }
   }
 `
@@ -162,6 +171,18 @@ const PRICE_HISTORY_QUERY = `
       tick
       price
       recordedAtUtc
+    }
+  }
+`
+
+const MERGE_MUTATION = `
+  mutation MergeCompany($input: MergeCompanyInput!) {
+    mergeCompany(input: $input) {
+      destinationCompanyId
+      destinationCompanyName
+      absorbedCompanyName
+      cashTransferred
+      buildingsTransferred
     }
   }
 `
@@ -434,6 +455,43 @@ async function executeTrade(kind: 'buy' | 'sell', companyId: string) {
   }
 }
 
+function openMergeDialog(companyId: string) {
+  mergeDialogCompanyId.value = companyId
+  mergeDestinationCompanyId.value = controlledCompanies.value[0]?.id ?? ''
+  mergeError.value = null
+  mergeSuccess.value = null
+}
+
+function closeMergeDialog() {
+  mergeDialogCompanyId.value = null
+  mergeError.value = null
+  mergeSuccess.value = null
+}
+
+async function executeMerge() {
+  const targetCompanyId = mergeDialogCompanyId.value
+  if (!targetCompanyId || !mergeDestinationCompanyId.value) return
+
+  mergeLoading.value = true
+  mergeError.value = null
+  mergeSuccess.value = null
+
+  try {
+    const data = await gqlRequest<{ mergeCompany: MergeCompanyResult }>(MERGE_MUTATION, {
+      input: {
+        targetCompanyId,
+        destinationCompanyId: mergeDestinationCompanyId.value,
+      },
+    })
+    mergeSuccess.value = data.mergeCompany
+    await Promise.all([loadData(true), auth.fetchMe()])
+  } catch (reason: unknown) {
+    mergeError.value = reason instanceof Error ? reason.message : t('stockExchange.actionFailed')
+  } finally {
+    mergeLoading.value = false
+  }
+}
+
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat(locale.value, {
     style: 'currency',
@@ -586,6 +644,10 @@ useTickRefresh(async () => {
                         class="listing-chip listing-chip--control"
                       >{{ t('stockExchange.controlReady') }}</span>
                       <span
+                        v-if="listing.canMerge"
+                        class="listing-chip listing-chip--merge"
+                      >{{ t('stockExchange.mergeReady') }}</span>
+                      <span
                         v-else-if="listing.playerOwnedShares + listing.controlledCompanyOwnedShares > 0"
                         class="listing-chip listing-chip--owned"
                       >{{ t('stockExchange.ownedBadge') }}</span>
@@ -629,6 +691,13 @@ useTickRefresh(async () => {
                         @click="switchToCompanyAccount(listing.companyId)"
                       >
                         {{ t('stockExchange.claimControl') }}
+                      </button>
+                      <button
+                        v-if="listing.canMerge"
+                        class="btn btn-warning btn-sm"
+                        @click="openMergeDialog(listing.companyId)"
+                      >
+                        {{ t('stockExchange.mergeCompany') }}
                       </button>
                     </td>
                   </tr>
@@ -922,6 +991,59 @@ useTickRefresh(async () => {
       </template>
     </div>
   </div>
+
+  <!-- Merge company dialog -->
+  <Teleport to="body">
+    <div
+      v-if="mergeDialogCompanyId"
+      class="merge-overlay"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="t('stockExchange.mergeDialogTitle')"
+    >
+      <div class="merge-dialog">
+        <h2 class="merge-dialog__title">{{ t('stockExchange.mergeDialogTitle') }}</h2>
+        <template v-if="mergeSuccess">
+          <p class="merge-dialog__success" role="status">
+            {{ t('stockExchange.mergeSuccessMsg', {
+              absorbed: mergeSuccess.absorbedCompanyName,
+              destination: mergeSuccess.destinationCompanyName,
+              buildings: mergeSuccess.buildingsTransferred,
+              cash: formatCurrency(mergeSuccess.cashTransferred),
+            }) }}
+          </p>
+          <div class="merge-dialog__actions">
+            <button class="btn btn-primary" @click="closeMergeDialog">{{ t('common.close') }}</button>
+          </div>
+        </template>
+        <template v-else>
+          <p class="merge-dialog__desc">{{ t('stockExchange.mergeDialogDesc') }}</p>
+          <p class="merge-dialog__eligibility">{{ t('stockExchange.mergeEligibilityHint') }}</p>
+          <label class="trade-field">
+            <span>{{ t('stockExchange.mergeDestinationLabel') }}</span>
+            <select v-model="mergeDestinationCompanyId" class="trade-select" :aria-label="t('stockExchange.mergeDestinationLabel')">
+              <option v-for="company in controlledCompanies" :key="company.id" :value="company.id">
+                {{ company.name }}
+              </option>
+            </select>
+          </label>
+          <p v-if="mergeError" class="trade-feedback trade-feedback--error" role="alert">{{ mergeError }}</p>
+          <div class="merge-dialog__actions">
+            <button
+              class="btn btn-warning"
+              :disabled="mergeLoading || !mergeDestinationCompanyId"
+              @click="executeMerge"
+            >
+              {{ mergeLoading ? t('common.loading') : t('stockExchange.mergeConfirm') }}
+            </button>
+            <button class="btn btn-ghost" :disabled="mergeLoading" @click="closeMergeDialog">
+              {{ t('common.cancel') }}
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -1480,8 +1602,69 @@ useTickRefresh(async () => {
   background: color-mix(in srgb, var(--color-danger, #ef4444) 12%, var(--color-surface));
 }
 
-.market-note a {
-  margin-left: 0.35rem;
+.listing-chip--merge {
+  background: color-mix(in srgb, var(--color-warning, #f59e0b) 18%, var(--color-surface));
+  color: var(--color-warning, #f59e0b);
+  border: 1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 40%, transparent);
+}
+
+.merge-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.merge-dialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 480px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  box-shadow: var(--shadow-lg, 0 20px 40px rgba(0, 0, 0, 0.4));
+}
+
+.merge-dialog__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.merge-dialog__desc {
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.merge-dialog__eligibility {
+  background: color-mix(in srgb, var(--color-warning, #f59e0b) 10%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 30%, transparent);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.merge-dialog__success {
+  color: var(--color-success, #22c55e);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.merge-dialog__actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
 }
 
 @media (max-width: 720px) {

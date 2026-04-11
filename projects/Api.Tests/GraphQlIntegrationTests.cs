@@ -18298,6 +18298,179 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     private static async Task<Guid> GetProductGuidBySlugAsync(AppDbContext db, string slug)
         => await db.ProductTypes.Where(p => p.Slug == slug).Select(p => p.Id).FirstAsync();
 
+    #region MergeCompany
+
+    [Fact]
+    public async Task MergeCompany_TransfersAssetsAndRemovesTargetCompany()
+    {
+        // Target company owner
+        var targetOwnerToken = await RegisterAndGetTokenAsync($"merge-target-{Guid.NewGuid():N}@test.com", "Merge Target Owner");
+        var targetOwnerId = await GetCurrentPlayerIdAsync(targetOwnerToken);
+        var targetCompanyId = await SeedPublicCompanyAsync(targetOwnerId, name: "Merge Target Co", cash: 20_000m, totalShares: 10_000m, founderShares: 5_000m);
+
+        // Acquirer registers and creates their own destination company
+        var acquirerToken = await RegisterAndGetTokenAsync($"merge-acquirer-{Guid.NewGuid():N}@test.com", "Merge Acquirer");
+        var destResult = await ExecuteGraphQlAsync(
+            """
+            mutation CreateCompany($input: CreateCompanyInput!) {
+                createCompany(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "Destination Corp" } },
+            acquirerToken);
+        var destCompanyId = Guid.Parse(destResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!);
+
+        // Buy 4001 shares out of 5000 public float = 40.01% personal + 0% company = ~40% total — not enough
+        // Need 90% combined. Seed has 5000/10000 as founder shares, so 5000 are on market.
+        // Buying 4501 = 45.01% personal. Not enough since founder keeps 50%.
+        // Need total 90% from both founder (50%) and acquirer (40%) — can't merge since founder's shares don't count for acquirer.
+        // Instead: buy all 5000 public float shares = 50% personal ownership, which still < 90%.
+        // To get 90%: the target company needs fewer founder shares or we set it up with most public.
+        // Use totalShares=10000, founderShares=100 → 9900 public. Buy 8901+ = ≥90%.
+        var targetCompanyId2 = await SeedPublicCompanyAsync(targetOwnerId, name: "Merge High Float Co", cash: 50_000m, totalShares: 10_000m, founderShares: 100m);
+
+        // Buy 9001 shares (90.01% of 10000 total)
+        await ExecuteGraphQlAsync(
+            """
+            mutation BuyShares($input: BuySharesInput!) {
+                buyShares(input: $input) { ownedShareCount }
+            }
+            """,
+            new { input = new { companyId = targetCompanyId2, shareCount = 9_001m } },
+            acquirerToken);
+
+        // Verify canMerge is true on the listing
+        var listingsResult = await ExecuteGraphQlAsync(
+            """
+            { stockExchangeListings { companyId companyName combinedControlledOwnershipRatio canMerge } }
+            """,
+            token: acquirerToken);
+        var targetListing = listingsResult.GetProperty("data").GetProperty("stockExchangeListings")
+            .EnumerateArray()
+            .FirstOrDefault(l => l.GetProperty("companyId").GetString() == targetCompanyId2.ToString());
+        Assert.True(targetListing.GetProperty("canMerge").GetBoolean(), "canMerge should be true at 90%+ ownership");
+
+        // Execute the merge
+        var mergeResult = await ExecuteGraphQlAsync(
+            """
+            mutation MergeCompany($input: MergeCompanyInput!) {
+                mergeCompany(input: $input) {
+                    destinationCompanyId
+                    destinationCompanyName
+                    absorbedCompanyName
+                    cashTransferred
+                    buildingsTransferred
+                }
+            }
+            """,
+            new { input = new { targetCompanyId = targetCompanyId2, destinationCompanyId = destCompanyId } },
+            acquirerToken);
+
+        Assert.False(mergeResult.TryGetProperty("errors", out _), "merge should succeed");
+        var merged = mergeResult.GetProperty("data").GetProperty("mergeCompany");
+        Assert.Equal(destCompanyId.ToString(), merged.GetProperty("destinationCompanyId").GetString());
+        Assert.Equal("Destination Corp", merged.GetProperty("destinationCompanyName").GetString());
+        Assert.Equal("Merge High Float Co", merged.GetProperty("absorbedCompanyName").GetString());
+        Assert.True(merged.GetProperty("cashTransferred").GetDecimal() >= 0m);
+
+        // Verify target company no longer appears in listings
+        var afterListings = await ExecuteGraphQlAsync(
+            """{ stockExchangeListings { companyId companyName } }""",
+            token: acquirerToken);
+        var allIds = afterListings.GetProperty("data").GetProperty("stockExchangeListings")
+            .EnumerateArray()
+            .Select(l => l.GetProperty("companyId").GetString())
+            .ToList();
+        Assert.DoesNotContain(targetCompanyId2.ToString(), allIds);
+    }
+
+    [Fact]
+    public async Task MergeCompany_InsufficientOwnership_ReturnsError()
+    {
+        var targetOwnerToken = await RegisterAndGetTokenAsync($"merge-insuff-target-{Guid.NewGuid():N}@test.com", "Merge Insuff Target");
+        var targetOwnerId = await GetCurrentPlayerIdAsync(targetOwnerToken);
+        var targetCompanyId = await SeedPublicCompanyAsync(targetOwnerId, name: "Merge Insuff Target Co", cash: 10_000m);
+
+        var acquirerToken = await RegisterAndGetTokenAsync($"merge-insuff-acq-{Guid.NewGuid():N}@test.com", "Merge Insuff Acquirer");
+        var destResult = await ExecuteGraphQlAsync(
+            """
+            mutation CreateCompany($input: CreateCompanyInput!) {
+                createCompany(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "Insuff Dest Corp" } },
+            acquirerToken);
+        var destCompanyId = Guid.Parse(destResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!);
+
+        // Only buy 50% of public float — total will be 25% of company (50% owner keeps other 50%)
+        await ExecuteGraphQlAsync(
+            """
+            mutation BuyShares($input: BuySharesInput!) {
+                buyShares(input: $input) { ownedShareCount }
+            }
+            """,
+            new { input = new { companyId = targetCompanyId, shareCount = 2_500m } },
+            acquirerToken);
+
+        var mergeResult = await ExecuteGraphQlAsync(
+            """
+            mutation MergeCompany($input: MergeCompanyInput!) {
+                mergeCompany(input: $input) { destinationCompanyId }
+            }
+            """,
+            new { input = new { targetCompanyId, destinationCompanyId = destCompanyId } },
+            acquirerToken);
+
+        var errors = mergeResult.GetProperty("errors").EnumerateArray().ToList();
+        Assert.NotEmpty(errors);
+        Assert.Equal("INSUFFICIENT_OWNERSHIP_FOR_MERGE", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task MergeCompany_SameCompany_ReturnsError()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync($"merge-same-{Guid.NewGuid():N}@test.com", "Merge Same Owner");
+        var destResult = await ExecuteGraphQlAsync(
+            """
+            mutation CreateCompany($input: CreateCompanyInput!) {
+                createCompany(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "Same Corp" } },
+            ownerToken);
+        var companyId = Guid.Parse(destResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString()!);
+
+        var mergeResult = await ExecuteGraphQlAsync(
+            """
+            mutation MergeCompany($input: MergeCompanyInput!) {
+                mergeCompany(input: $input) { destinationCompanyId }
+            }
+            """,
+            new { input = new { targetCompanyId = companyId, destinationCompanyId = companyId } },
+            ownerToken);
+
+        var errors = mergeResult.GetProperty("errors").EnumerateArray().ToList();
+        Assert.NotEmpty(errors);
+        Assert.Equal("SAME_COMPANY", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task MergeCompany_RequiresAuthentication()
+    {
+        var mergeResult = await ExecuteGraphQlAsync(
+            """
+            mutation MergeCompany($input: MergeCompanyInput!) {
+                mergeCompany(input: $input) { destinationCompanyId }
+            }
+            """,
+            new { input = new { targetCompanyId = Guid.NewGuid(), destinationCompanyId = Guid.NewGuid() } });
+
+        var errors = mergeResult.GetProperty("errors").EnumerateArray().ToList();
+        Assert.NotEmpty(errors);
+    }
+
+    #endregion
+
 }
 
 /// <summary>
