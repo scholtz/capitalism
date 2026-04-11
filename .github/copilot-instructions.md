@@ -837,3 +837,16 @@ Root-cause of a quality gap (April 2026, PR #301 stock exchange):
 3. **When a stored memory says a higher test count than local, verify the actual count before trusting the memory.** Run `dotnet test projects/Api.Tests` and compare; if counts differ, the memory reflects a different branch state.
 4. **CI Docker failures (`Username and password required`) are infrastructure credential issues, NOT code failures.** Always distinguish between infrastructure CI failures and code test failures before reporting. Never change code to work around a Docker credential failure.
 5. **For portfolio empty state E2E tests, do NOT include a `company-home` shareholding in `state.shareholdings`.** A player who owns shares in their own company will see those shares in the portfolio. Only add a shareholding entry if you explicitly want the player to have shares.
+
+## Shared-auth regression prevention — impersonation claims and public service queries
+
+Root-cause of a quality failure (April 2026, PR #313 shared auth):
+- The shared-auth sync service added `capitalism/effective-player-id` to **every** authenticated game session, not just impersonated sessions or master-issued tokens that needed local-player mapping.
+- `ClaimsPrincipalExtensions.IsImpersonating()` only checked for the presence of that claim, so every normal authenticated session was treated as impersonation. `AdminAuditLoggingMiddleware` then ran on normal mutations and called `SaveChangesAsync()` after failed requests, which persisted stale tracked entities and broke onboarding conflict-retry tests.
+- On the master side, `gameNewsFeed` was accidentally left behind a GraphQL `[Authorize]` gate even though the service/public news-feed contract is intentionally queryable without a bearer token when the request uses the server/service input contract.
+
+**Rules to prevent recurrence:**
+1. **Never use the mere presence of `effective-*` claims as the impersonation check.** `IsImpersonating()` must compare the authenticated actor ID and the effective player ID; equal IDs mean a normal session, different IDs mean impersonation.
+2. **When a post-request middleware writes to EF Core after `await next(context)`, clear stale tracked state first or use a fresh context.** Otherwise a failed mutation can leave tracked entities behind and the middleware's later `SaveChangesAsync()` can accidentally persist or re-save them.
+3. **After changing token-validation or claim-sync code, rerun the full backend suites, not just auth-focused tests.** At minimum this means the full `Api.Tests` Release suite and the full `MasterApi.Tests` suite, because regressions can surface in unrelated flows like onboarding conflict recovery and news read-receipts.
+4. **MasterApi news-feed service endpoints are intentionally public/service callable unless the ROADMAP says otherwise.** Do not add `[Authorize]` to `gameNewsFeed`; draft visibility is controlled by `requesterEmail` + admin checks, not by bearer auth alone.

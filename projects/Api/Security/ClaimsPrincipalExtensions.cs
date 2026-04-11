@@ -41,7 +41,11 @@ public static class ClaimsPrincipalExtensions
     }
 
     public static bool IsImpersonating(this ClaimsPrincipal principal)
-        => principal.HasClaim(claim => claim.Type == EffectivePlayerIdClaimType);
+    {
+        var actorUserId = principal.GetAuthenticatedActorUserId();
+        var effectiveUserId = principal.GetRequiredUserId();
+        return actorUserId != effectiveUserId;
+    }
 
     public static string? GetEffectiveAccountType(this ClaimsPrincipal principal)
         => principal.FindFirstValue(EffectiveAccountTypeClaimType);

@@ -36,6 +36,8 @@ public sealed class AdminAuditLoggingMiddleware(RequestDelegate next)
 
         await next(context);
 
+        db.ChangeTracker.Clear();
+
         var adminActorId = context.User.GetAuthenticatedActorUserId();
         var effectivePlayerId = context.User.GetRequiredUserId();
         var effectiveCompanyId = context.User.GetEffectiveCompanyId();

@@ -112,7 +112,6 @@ public sealed class Query
             })
             .ToListAsync();
     }
-    [HotChocolate.Authorization.Authorize]
     public async Task<GameNewsFeedResult> GetGameNewsFeed(
         [Service] MasterDbContext db,
         [Service] IOptions<MasterServerOptions> masterServerOptions,

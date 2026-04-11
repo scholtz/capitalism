@@ -6,6 +6,7 @@ using System.Text.Json;
 using Api.Data;
 using Api.Data.Entities;
 using Api.Engine;
+using Api.Security;
 using Api.Types;
 using Api.Tests.Infrastructure;
 using Api.Utilities;
@@ -1209,6 +1210,20 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var storedPlayer = await db.Players.SingleAsync(player => player.Email == email);
         Assert.Equal("Shared Auth User", storedPlayer.DisplayName);
+    }
+
+    [Fact]
+    public void IsImpersonating_FalseWhenEffectiveAndActorIdsMatch()
+    {
+        var playerId = Guid.NewGuid();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimsPrincipalExtensions.AuthenticatedActorPlayerIdClaimType, playerId.ToString()),
+            new Claim(ClaimsPrincipalExtensions.EffectivePlayerIdClaimType, playerId.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, playerId.ToString()),
+        }, "test"));
+
+        Assert.False(principal.IsImpersonating());
     }
 
     #endregion
