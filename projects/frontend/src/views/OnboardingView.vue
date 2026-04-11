@@ -57,7 +57,7 @@ const hasAuthenticatedSession = computed(() => auth.isAuthenticated || !!auth.pl
 
 const PROGRESS_KEY = 'onboarding_progress'
 const PERSONAL_STARTING_CASH = 200_000
-const FOUNDER_CONTRIBUTION = 50_000
+const FOUNDER_CONTRIBUTION = 200_000
 const DEFAULT_IPO_RAISE_TARGET = 400_000
 
 const ipoOptions = [

@@ -27,7 +27,7 @@ namespace Api.Types;
 /// </summary>
 public sealed partial class Mutation
 {
-    private const decimal StarterFounderContribution = 50_000m;
+    private const decimal StarterFounderContribution = 200_000m;
     private const decimal DefaultDividendPayoutRatio = 0.2m;
     private const decimal DefaultCompanyShareCount = 10_000m;
 

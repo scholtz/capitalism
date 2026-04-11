@@ -21,7 +21,7 @@ namespace Api.Tests;
 /// </summary>
 public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFactory>
 {
-    private const decimal DefaultStarterCompanyCash = 450_000m;
+    private const decimal DefaultStarterCompanyCash = 600_000m;
 
     private readonly HttpClient _client;
     private readonly ApiWebApplicationFactory _factory;
@@ -249,12 +249,12 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             """,
             new { cityId });
 
-        // Filter to affordable lots (price within the default starter-company cash of $450,000) so that test lots
+        // Filter to affordable lots (price within the default starter-company cash of $600,000) so that test lots
         // intentionally priced above the starting cash do not interfere with other tests.
         return lotsResult.GetProperty("data").GetProperty("cityLots").EnumerateArray()
             .First(lot => lot.GetProperty("suitableTypes").GetString()!.Contains(suitableType)
                           && lot.GetProperty("ownerCompanyId").ValueKind == JsonValueKind.Null
-                  && lot.GetProperty("price").GetDecimal() < 450_000m)
+                  && lot.GetProperty("price").GetDecimal() < 600_000m)
             .GetProperty("id")
             .GetString()!;
     }
@@ -5164,7 +5164,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                 var (companyId, _, _, result) = await StartOnboardingCompanyAsync(token, "Starter Founder Co");
 
                 var data = result.GetProperty("data").GetProperty("startOnboardingCompany");
-                Assert.True(data.GetProperty("company").GetProperty("cash").GetDecimal() < 450_000m);
+                Assert.True(data.GetProperty("company").GetProperty("cash").GetDecimal() < 600_000m);
 
                 var personAccountResult = await ExecuteGraphQlAsync(
                         """
@@ -5184,7 +5184,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                         token: token);
 
                 var personAccount = personAccountResult.GetProperty("data").GetProperty("personAccount");
-                Assert.Equal(150_000m, personAccount.GetProperty("personalCash").GetDecimal());
+                Assert.Equal(0m, personAccount.GetProperty("personalCash").GetDecimal());
                 Assert.Equal("COMPANY", personAccount.GetProperty("activeAccountType").GetString());
                 Assert.Equal(companyId, personAccount.GetProperty("activeCompanyId").GetString());
 
@@ -5224,8 +5224,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
                 var company = result.GetProperty("data").GetProperty("startOnboardingCompany").GetProperty("company");
                 var companyId = company.GetProperty("id").GetString()!;
-                Assert.True(company.GetProperty("cash").GetDecimal() < 850_000m);
-                Assert.True(company.GetProperty("cash").GetDecimal() > 700_000m);
+                Assert.True(company.GetProperty("cash").GetDecimal() < 1_000_000m);
+                Assert.True(company.GetProperty("cash").GetDecimal() > 850_000m);
                 Assert.Equal(10_000m, company.GetProperty("totalSharesIssued").GetDecimal());
 
                 var personAccountResult = await ExecuteGraphQlAsync(
@@ -5244,7 +5244,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
                         token: token);
 
                 var personAccount = personAccountResult.GetProperty("data").GetProperty("personAccount");
-                Assert.Equal(150_000m, personAccount.GetProperty("personalCash").GetDecimal());
+                Assert.Equal(0m, personAccount.GetProperty("personalCash").GetDecimal());
                 var founderHolding = personAccount.GetProperty("shareholdings").EnumerateArray().Single();
                 Assert.Equal(companyId, founderHolding.GetProperty("companyId").GetString());
                 Assert.Equal(2_500m, founderHolding.GetProperty("shareCount").GetDecimal());
@@ -5261,7 +5261,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal("SHOP_SELECTION", data.GetProperty("nextStep").GetString());
         Assert.Equal("FACTORY", data.GetProperty("factory").GetProperty("type").GetString());
         Assert.Equal("Factory Founder Co", data.GetProperty("company").GetProperty("name").GetString());
-        Assert.True(data.GetProperty("company").GetProperty("cash").GetDecimal() < 450_000m);
+        Assert.True(data.GetProperty("company").GetProperty("cash").GetDecimal() < 600_000m);
 
         var meResult = await ExecuteGraphQlAsync(
             """
@@ -5285,6 +5285,34 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal("FURNITURE", me.GetProperty("onboardingIndustry").GetString());
         Assert.Equal(factoryLotId, me.GetProperty("onboardingFactoryLotId").GetString());
         Assert.Equal(1, me.GetProperty("companies").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task FinishOnboarding_PersonalCashIsZero_MatchesRoadmapRequirement()
+    {
+        // ROADMAP "Issues to work on": "After onboarding the person account should have no cash —
+        // He moves his initial cash to the company using the IPO process."
+        // This test explicitly proves that the full IPO contribution ($200k = all personal starting cash)
+        // reduces the player's personal account to exactly $0 after onboarding completes.
+        var token = await RegisterAndGetTokenAsync($"onboard-zero-cash-{Guid.NewGuid()}@test.com", "Zero Cash Founder");
+
+        // Verify initial personal cash is $200k before onboarding
+        var beforeResult = await ExecuteGraphQlAsync("{ personAccount { personalCash } }", token: token);
+        Assert.Equal(200_000m, beforeResult.GetProperty("data").GetProperty("personAccount").GetProperty("personalCash").GetDecimal());
+
+        // Complete full onboarding
+        var (_, _, _, startResult) = await StartOnboardingCompanyAsync(token, "Zero Cash Corp");
+        Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany must succeed");
+
+        var cityId = await GetCityIdByNameAsync();
+        var productId = await GetStarterProductIdAsync("FURNITURE", "wooden-chair");
+        var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Zero Cash High Street");
+        var finishResult = await FinishOnboardingAsync(token, productId, shopLotId);
+        Assert.False(finishResult.TryGetProperty("errors", out _), "FinishOnboarding must succeed");
+
+        // After onboarding personal cash must be exactly $0 — all $200k was contributed to the company
+        var afterResult = await ExecuteGraphQlAsync("{ personAccount { personalCash } }", token: token);
+        Assert.Equal(0m, afterResult.GetProperty("data").GetProperty("personAccount").GetProperty("personalCash").GetDecimal());
     }
 
         [Fact]
@@ -7253,11 +7281,11 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     public async Task StartOnboardingCompany_WhenFactoryLotCostsMoreThanStartingCash_Fails()
     {
         // ROADMAP: "The price to purchase the land includes also the base price for the raw material."
-        // Starting cash for a new onboarding company is $500,000. A factory lot priced above that
+        // Starting cash for a new onboarding company is $600,000. A factory lot priced above that
         // should be rejected with INSUFFICIENT_FUNDS before the company is persisted.
         var token = await RegisterAndGetTokenAsync($"onboard-map-broke-{Guid.NewGuid()}@test.com", "Broke Factory Player");
         var cityId = await GetCityIdByNameAsync();
-        var expensiveLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 600_000m, "Expensive Factory Lot");
+        var expensiveLotId = await CreateTestLotAsync(cityId, "FACTORY,MINE", "Industrial Zone", 700_000m, "Expensive Factory Lot");
 
         var result = await ExecuteGraphQlAsync(
             """
@@ -7273,7 +7301,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal("INSUFFICIENT_FUNDS", code);
         var message = errors[0].GetProperty("message").GetString();
         Assert.Contains("Insufficient funds", message);
-        Assert.Contains("600", message);
+        Assert.Contains("700", message);
 
         // Onboarding should NOT be in progress since the mutation failed
         var meResult = await ExecuteGraphQlAsync("{ me { onboardingCurrentStep onboardingCompanyId } }", token: token);
@@ -7868,9 +7896,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
             var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
             Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
-            // Cash starts at $500,000 and decreases by the factory lot price ($75,000 default)
+            // Cash starts at $600,000 and decreases by the factory lot price ($75,000 default)
             var cashAfterFactory = startData.GetProperty("company").GetProperty("cash").GetDecimal();
-            Assert.True(cashAfterFactory > 0 && cashAfterFactory < 500_000m, $"Unexpected cash after factory purchase: {cashAfterFactory}");
+            Assert.True(cashAfterFactory > 0 && cashAfterFactory < 600_000m, $"Unexpected cash after factory purchase: {cashAfterFactory}");
 
             var productId = await GetStarterProductIdAsync(industry, slug);
             var shopLotId = await CreateTestLotAsync(cityId, "SALES_SHOP,COMMERCIAL", "Commercial District", 90_000m);
@@ -8177,9 +8205,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(productId, selectedProduct.GetProperty("id").GetString());
         Assert.Equal("HEALTHCARE", selectedProduct.GetProperty("industry").GetString());
 
-        // Verify money was correctly deducted: $450,000 - $75,000 (factory) - $90,000 (shop) = $285,000
+        // Verify money was correctly deducted: $600,000 - $75,000 (factory) - $90,000 (shop) = $435,000
         var cashAfterMigration = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
-        Assert.Equal(285_000m, cashAfterMigration);
+        Assert.Equal(435_000m, cashAfterMigration);
 
         // Verify both buildings exist in the final state
         Assert.NotNull(finishData.GetProperty("factory").GetProperty("id").GetString());
@@ -8225,7 +8253,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     [Fact]
     public async Task GuestOnboardingPath_StartingCashAndBudgetDecisionAreConsistent()
     {
-        // Verifies that the starter-company cash ($450,000), factory lot price, and remaining cash
+        // Verifies that the starter-company cash ($600,000), factory lot price, and remaining cash
         // after purchase are all consistent — so the UI budget coaching panels show accurate data.
         var token = await RegisterAndGetTokenAsync($"budget-check-{Guid.NewGuid()}@test.com", "BudgetChecker");
         var cityId = await GetCityIdByNameAsync();
@@ -8249,7 +8277,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
         var cashAfterFactory = startData.GetProperty("company").GetProperty("cash").GetDecimal();
 
-        // Starter-company cash is $450,000; after buying the factory lot the balance should be exactly $375,000
+        // Starter-company cash is $600,000; after buying the factory lot the balance should be exactly $525,000
         Assert.Equal(DefaultStarterCompanyCash - factoryPrice, cashAfterFactory);
 
         // Finish onboarding with a shop lot and verify final cash is further reduced
@@ -8598,9 +8626,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(productId, selectedProduct.GetProperty("id").GetString());
         Assert.Equal("FURNITURE", selectedProduct.GetProperty("industry").GetString());
 
-        // Verify cash reduced by both lot purchases: $450,000 - $75,000 - $90,000 = $285,000
+        // Verify cash reduced by both lot purchases: $600,000 - $75,000 - $90,000 = $435,000
         var cashAfterMigration = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
-        Assert.Equal(285_000m, cashAfterMigration);
+        Assert.Equal(435_000m, cashAfterMigration);
 
         // Verify onboarding is marked complete
         var meResult = await ExecuteGraphQlAsync("query { me { onboardingCompletedAtUtc } }", null, token);
@@ -8649,9 +8677,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(productId, selectedProduct.GetProperty("id").GetString());
         Assert.Equal("FOOD_PROCESSING", selectedProduct.GetProperty("industry").GetString());
 
-        // Verify cash reduced by both lot purchases: $450,000 - $75,000 - $90,000 = $285,000
+        // Verify cash reduced by both lot purchases: $600,000 - $75,000 - $90,000 = $435,000
         var cashAfterMigration = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
-        Assert.Equal(285_000m, cashAfterMigration);
+        Assert.Equal(435_000m, cashAfterMigration);
 
         // Verify onboarding is marked complete
         var meResult = await ExecuteGraphQlAsync("query { me { onboardingCompletedAtUtc } }", null, token);
@@ -8702,9 +8730,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(productId, selectedProduct.GetProperty("id").GetString());
         Assert.Equal("HEALTHCARE", selectedProduct.GetProperty("industry").GetString());
 
-        // Verify cash reduced by both lot purchases: $450,000 - $75,000 - $90,000 = $285,000
+        // Verify cash reduced by both lot purchases: $600,000 - $75,000 - $90,000 = $435,000
         var cashAfterMigration = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
-        Assert.Equal(285_000m, cashAfterMigration);
+        Assert.Equal(435_000m, cashAfterMigration);
 
         // Verify onboarding is marked complete
         var meResult = await ExecuteGraphQlAsync("query { me { onboardingCompletedAtUtc } }", null, token);
@@ -9108,8 +9136,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
         Assert.Equal("SHOP_SELECTION", startData.GetProperty("nextStep").GetString());
 
-        // Company cash = $50k founder + $800k raise - factory price
-        var expansionStarterCash = 850_000m; // $50k + $800k
+        // Company cash = $200k founder + $800k raise - factory price
+        var expansionStarterCash = 1_000_000m; // $200k + $800k
         var cashAfterFactory = startData.GetProperty("company").GetProperty("cash").GetDecimal();
         Assert.Equal(expansionStarterCash - factoryPrice, cashAfterFactory);
 
@@ -9132,8 +9160,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             token: token);
 
         var personAccount = personAccountResult.GetProperty("data").GetProperty("personAccount");
-        // Personal cash = $200k starting - $50k founder contribution = $150k
-        Assert.Equal(150_000m, personAccount.GetProperty("personalCash").GetDecimal());
+        // Personal cash = $200k starting - $200k founder contribution = $0
+        Assert.Equal(0m, personAccount.GetProperty("personalCash").GetDecimal());
         var founderHolding = personAccount.GetProperty("shareholdings").EnumerateArray().Single();
         Assert.Equal(0.25m, founderHolding.GetProperty("ownershipRatio").GetDecimal());
         Assert.Equal(2_500m, founderHolding.GetProperty("shareCount").GetDecimal());
@@ -9146,7 +9174,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         var finishData = finishResult.GetProperty("data").GetProperty("finishOnboarding");
         var finalCash = finishData.GetProperty("company").GetProperty("cash").GetDecimal();
-        // $850k - $80k factory - $90k shop = $680k
+        // $1,000k - $80k factory - $90k shop = $830k
         Assert.Equal(expansionStarterCash - factoryPrice - shopPrice, finalCash);
     }
 
@@ -9185,8 +9213,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.False(startResult.TryGetProperty("errors", out _), "StartOnboardingCompany with Growth IPO must succeed");
         var startData = startResult.GetProperty("data").GetProperty("startOnboardingCompany");
 
-        // Growth IPO: $50k founder + $600k raise = $650k company starting cash - factory price
-        var growthStarterCash = 650_000m;
+        // Growth IPO: $200k founder + $600k raise = $800k company starting cash - factory price
+        var growthStarterCash = 800_000m;
         var cashAfterFactory = startData.GetProperty("company").GetProperty("cash").GetDecimal();
         Assert.Equal(growthStarterCash - factoryPrice, cashAfterFactory);
 
@@ -9194,7 +9222,7 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(10_000m, startData.GetProperty("company").GetProperty("totalSharesIssued").GetDecimal());
 
         // ROADMAP: "varying his own shares to be ... 33% in the company."
-        // Verify the founder's personal shareholding is 33.33% and personal cash is $150k.
+        // Verify the founder's personal shareholding is 33.33% and personal cash is $0.
         var companyId = startData.GetProperty("company").GetProperty("id").GetString()!;
         var personAccountResult = await ExecuteGraphQlAsync(
             """
@@ -9212,8 +9240,8 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
             token: token);
 
         var personAccount = personAccountResult.GetProperty("data").GetProperty("personAccount");
-        // Personal cash = $200k starting - $50k founder contribution = $150k (same for all IPO plans)
-        Assert.Equal(150_000m, personAccount.GetProperty("personalCash").GetDecimal());
+        // Personal cash = $200k starting - $200k founder contribution = $0 (all personal cash invested)
+        Assert.Equal(0m, personAccount.GetProperty("personalCash").GetDecimal());
 
         var founderHolding = personAccount.GetProperty("shareholdings").EnumerateArray().Single();
         Assert.Equal(companyId, founderHolding.GetProperty("companyId").GetString());

@@ -17,7 +17,7 @@ It will use real world map. The game will start in single city and later other c
 - In the stock exchange in company details, show list of all shareholders and the pie chart of their holdings.
 - In the stock exchange, "trade with" should not be visible, but in the navbar should be visible the company selectin as is visible on other pages
 - In the stock exchange the buy and sell buttons should be arranged with the share quantity input. Add caption above the buy and sell buttons so that the buttons are moved little bit down.
-- After onboarding the person account should have no cash - He moves his initial cash to the company using the IPO process. At the moment $150000 is present on the person account after the onboarding process.
+- After onboarding the person account should have no cash - He moves his initial cash to the company using the IPO process. ✓ Fixed: founder contribution is now $200k (all personal starting cash), so personal account has $0 after onboarding.
 - Dashboard and ledger is loading slow, make sure to use the caching headers so that when user goes fast between the panels it does not have to load all information from the database again. Analyze the issue of the slow requests and if the database is missing an indexes make sure they are created.
 - In manufacturing output product selection show the product images
 - In b2b unit show the sale price, when creating b2b sale unit in factory make sure to set the competetive default price
