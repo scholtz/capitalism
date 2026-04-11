@@ -20,7 +20,7 @@ type ControlledCompanyAccount = {
   cash: number | null
 }
 
-type SortField = 'name' | 'price' | 'marketValue' | 'ownership'
+type SortField = 'name' | 'price' | 'marketValue' | 'ownership' | 'dividend'
 type SortDir = 'asc' | 'desc'
 
 const { t, locale } = useI18n()
@@ -216,6 +216,8 @@ const filteredAndSortedListings = computed(() => {
       cmp = a.marketValue - b.marketValue
     } else if (sortField.value === 'ownership') {
       cmp = a.combinedControlledOwnershipRatio - b.combinedControlledOwnershipRatio
+    } else if (sortField.value === 'dividend') {
+      cmp = a.dividendPayoutRatio - b.dividendPayoutRatio
     }
     return sortDir.value === 'asc' ? cmp : -cmp
   })
@@ -278,6 +280,14 @@ function getQuantity(companyId: string): number {
 
 function updateQuantity(companyId: string, value: number) {
   quantityByCompany.value[companyId] = Math.max(Math.floor(Number.isFinite(value) ? value : 0), 1)
+}
+
+function estimatedBuyCost(listing: StockExchangeListing): number {
+  return getQuantity(listing.companyId) * listing.askPrice
+}
+
+function estimatedSellProceeds(listing: StockExchangeListing): number {
+  return getQuantity(listing.companyId) * listing.bidPrice
 }
 
 function resolveTradeAccount(companyId: string): { tradeAccountType: string; tradeAccountCompanyId: string | null } {
@@ -555,6 +565,11 @@ useTickRefresh(async () => {
                       {{ t('stockExchange.controlRatio') }} <span aria-hidden="true">{{ sortIcon('ownership') }}</span>
                     </button>
                   </th>
+                  <th>
+                    <button class="sort-btn" @click="toggleSort('dividend')">
+                      {{ t('stockExchange.dividendPayout') }} <span aria-hidden="true">{{ sortIcon('dividend') }}</span>
+                    </button>
+                  </th>
                   <th v-if="personAccount">{{ t('stockExchange.actions') }}</th>
                 </tr>
               </thead>
@@ -596,6 +611,9 @@ useTickRefresh(async () => {
                         </span>
                       </div>
                     </td>
+                    <td class="dividend-cell">
+                      <span class="dividend-badge">{{ formatPercent(listing.dividendPayoutRatio) }}</span>
+                    </td>
                     <td v-if="personAccount" class="actions-cell">
                       <button
                         class="btn btn-primary btn-sm"
@@ -616,8 +634,28 @@ useTickRefresh(async () => {
                   </tr>
 
                   <tr v-if="expandedCompany === listing.companyId" class="trade-panel-row">
-                    <td :colspan="personAccount ? 6 : 5">
+                    <td :colspan="personAccount ? 7 : 6">
                       <div class="trade-panel">
+                        <div class="company-snapshot">
+                          <dl class="snapshot-grid">
+                            <div class="snapshot-item">
+                              <dt>{{ t('stockExchange.totalSharesLabel') }}</dt>
+                              <dd>{{ formatShares(listing.totalSharesIssued) }}</dd>
+                            </div>
+                            <div class="snapshot-item">
+                              <dt>{{ t('stockExchange.publicFloatLabel') }}</dt>
+                              <dd>
+                                {{ formatShares(listing.publicFloatShares) }}
+                                <span class="snapshot-pct">({{ formatPercent(listing.publicFloatShares / listing.totalSharesIssued) }})</span>
+                              </dd>
+                            </div>
+                            <div class="snapshot-item">
+                              <dt>{{ t('stockExchange.dividendPayoutLabel') }}</dt>
+                              <dd>{{ formatPercent(listing.dividendPayoutRatio) }}</dd>
+                            </div>
+                          </dl>
+                        </div>
+
                         <div class="trade-price-context">
                           <div class="trade-price-item">
                             <span class="trade-price-label">{{ t('stockExchange.askPriceLabel') }}</span>
@@ -667,20 +705,30 @@ useTickRefresh(async () => {
                             </label>
 
                             <div class="trade-actions">
-                              <button
-                                class="btn btn-primary"
-                                :disabled="actionLoadingKey === `buy-${listing.companyId}`"
-                                @click="executeTrade('buy', listing.companyId)"
-                              >
-                                {{ t('stockExchange.buyAt', { price: formatCurrency(listing.askPrice) }) }}
-                              </button>
-                              <button
-                                class="btn btn-secondary"
-                                :disabled="actionLoadingKey === `sell-${listing.companyId}`"
-                                @click="executeTrade('sell', listing.companyId)"
-                              >
-                                {{ t('stockExchange.sellAt', { price: formatCurrency(listing.bidPrice) }) }}
-                              </button>
+                              <div class="trade-action-group">
+                                <button
+                                  class="btn btn-primary"
+                                  :disabled="actionLoadingKey === `buy-${listing.companyId}`"
+                                  @click="executeTrade('buy', listing.companyId)"
+                                >
+                                  {{ t('stockExchange.buyAt', { price: formatCurrency(listing.askPrice) }) }}
+                                </button>
+                                <span class="trade-est" aria-live="polite">
+                                  {{ t('stockExchange.estimatedCost', { total: formatCurrency(estimatedBuyCost(listing)) }) }}
+                                </span>
+                              </div>
+                              <div class="trade-action-group">
+                                <button
+                                  class="btn btn-secondary"
+                                  :disabled="actionLoadingKey === `sell-${listing.companyId}`"
+                                  @click="executeTrade('sell', listing.companyId)"
+                                >
+                                  {{ t('stockExchange.sellAt', { price: formatCurrency(listing.bidPrice) }) }}
+                                </button>
+                                <span class="trade-est" aria-live="polite">
+                                  {{ t('stockExchange.estimatedProceeds', { total: formatCurrency(estimatedSellProceeds(listing)) }) }}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1287,7 +1335,76 @@ useTickRefresh(async () => {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
+}
+
+.trade-action-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  align-items: flex-start;
+}
+
+.trade-est {
+  font-size: 0.78rem;
+  color: var(--color-text-muted, var(--color-text-secondary));
+  font-variant-numeric: tabular-nums;
+  padding-left: 0.15rem;
+}
+
+.company-snapshot {
+  background: var(--color-surface-secondary, var(--color-surface));
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.snapshot-grid {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.snapshot-item {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.snapshot-item dt {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted, var(--color-text-secondary));
+}
+
+.snapshot-item dd {
+  margin: 0;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.snapshot-pct {
+  font-size: 0.78rem;
+  color: var(--color-text-muted, var(--color-text-secondary));
+  margin-left: 0.25rem;
+}
+
+.dividend-cell {
+  white-space: nowrap;
+}
+
+.dividend-badge {
+  display: inline-block;
+  background: color-mix(in srgb, var(--color-success, #22c55e) 14%, transparent);
+  color: var(--color-success, #22c55e);
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .history-panel {
