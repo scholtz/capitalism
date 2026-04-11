@@ -1046,7 +1046,9 @@ function applyStarterLayout() {
   showUnitPicker.value = false
   refreshLocalLayouts()
   refreshMasterLayouts()
-} {
+}
+
+function applyShopStarterLayout() {
   const shopStarterUnits: EditableGridUnit[] = [
     {
       id: 'draft-shop-starter-0-0',
