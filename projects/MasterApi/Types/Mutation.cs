@@ -676,6 +676,29 @@ public sealed class Mutation
                     .Build());
         }
 
+        var unitsJson = input.UnitsJson ?? "[]";
+        if (unitsJson.Length > 32_768)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("UnitsJson payload exceeds the 32 KB limit.")
+                    .SetCode("UNITS_JSON_TOO_LARGE")
+                    .Build());
+        }
+
+        try
+        {
+            System.Text.Json.JsonDocument.Parse(unitsJson);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("UnitsJson must be valid JSON.")
+                    .SetCode("UNITS_JSON_INVALID")
+                    .Build());
+        }
+
         var now = DateTime.UtcNow;
 
         if (input.ExistingId.HasValue)
@@ -695,7 +718,7 @@ public sealed class Mutation
             existing.Name = input.Name.Trim();
             existing.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
             existing.BuildingType = input.BuildingType.Trim().ToUpperInvariant();
-            existing.UnitsJson = input.UnitsJson ?? "[]";
+            existing.UnitsJson = unitsJson;
             existing.UpdatedAtUtc = now;
 
             await db.SaveChangesAsync();
@@ -720,7 +743,7 @@ public sealed class Mutation
                 Name = input.Name.Trim(),
                 Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim(),
                 BuildingType = input.BuildingType.Trim().ToUpperInvariant(),
-                UnitsJson = input.UnitsJson ?? "[]",
+                UnitsJson = unitsJson,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
             };
