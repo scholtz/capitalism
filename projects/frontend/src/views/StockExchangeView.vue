@@ -848,7 +848,7 @@ useTickRefresh(async () => {
                 <tr>
                   <th>{{ t('stockExchange.company') }}</th>
                   <th>{{ t('stockExchange.tradeDirection') }}</th>
-                  <th>{{ t('stockExchange.ownedShares') }}</th>
+                  <th>{{ t('stockExchange.tradeQuantity') }}</th>
                   <th>{{ t('stockExchange.tradePrice') }}</th>
                   <th>{{ t('stockExchange.tradeTotal') }}</th>
                   <th>{{ t('stockExchange.recordedAt') }}</th>

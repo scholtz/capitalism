@@ -1480,6 +1480,7 @@ export default {
     tradeHistoryDesc: 'All stock exchange transactions executed from your personal account are visible here.',
     tradeHistoryEmpty: 'No personal account trades have been made yet.',
     tradeDirection: 'Direction',
+    tradeQuantity: 'Quantity',
     tradePrice: 'Price per share',
     tradeTotal: 'Total value',
     tradeBuy: 'BUY',

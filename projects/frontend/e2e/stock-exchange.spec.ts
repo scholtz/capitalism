@@ -908,7 +908,10 @@ test.describe('Stock exchange', () => {
     })
     await expect(tradeHistorySection).toBeVisible()
     await expect(tradeHistorySection.locator('.direction-badge--buy')).toBeVisible()
-    await expect(tradeHistorySection.locator('tr', { hasText: 'Track Corp' }).first()).toBeVisible()
+    const tradeRow = tradeHistorySection.locator('tr', { hasText: 'Track Corp' }).first()
+    await expect(tradeRow).toBeVisible()
+    // Verify the trade row accurately records the executed quantity
+    await expect(tradeRow).toContainText('25')
   })
 
   test('unauthenticated visitor sees market table but no trade buttons', async ({ page }) => {

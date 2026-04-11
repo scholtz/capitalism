@@ -1479,6 +1479,7 @@ export default {
     tradeHistoryDesc: 'Alle Börsentransaktionen, die von Ihrem persönlichen Konto aus durchgeführt wurden, sind hier sichtbar.',
     tradeHistoryEmpty: 'Es wurden noch keine Trades über das persönliche Konto durchgeführt.',
     tradeDirection: 'Richtung',
+    tradeQuantity: 'Menge',
     tradePrice: 'Preis pro Aktie',
     tradeTotal: 'Gesamtwert',
     tradeBuy: 'KAUF',

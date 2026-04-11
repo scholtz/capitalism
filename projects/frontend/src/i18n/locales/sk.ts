@@ -1473,6 +1473,7 @@ export default {
     tradeHistoryDesc: 'Všetky transakcie akciového trhu uskutočnené z vášho osobného účtu sú viditeľné tu.',
     tradeHistoryEmpty: 'Zatiaľ neboli uskutočnené žiadne obchody cez osobný účet.',
     tradeDirection: 'Smer',
+    tradeQuantity: 'Množstvo',
     tradePrice: 'Cena za akciu',
     tradeTotal: 'Celková hodnota',
     tradeBuy: 'KÚPA',

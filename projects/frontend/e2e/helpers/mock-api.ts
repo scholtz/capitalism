@@ -2555,7 +2555,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         holding.shareCount = Number((holding.shareCount + shareCount).toFixed(4))
         ownedShareCount = holding.shareCount
         player.stockTrades.unshift({
-          id: `trade-buy-${Date.now()}`,
+          id: `trade-buy-${Math.random().toString(36).slice(2)}`,
           companyId: company.id,
           companyName: company.name,
           direction: 'BUY',
@@ -2563,7 +2563,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           pricePerShare,
           totalValue,
           recordedAtTick: state.gameState.currentTick,
-          recordedAtUtc: new Date().toISOString(),
+          recordedAtUtc: '2026-01-10T12:00:00Z',
         })
       }
 
@@ -2658,7 +2658,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         player.personalCash = Number((player.personalCash + totalValue).toFixed(2))
         ownedShareCount = holding.shareCount
         player.stockTrades.unshift({
-          id: `trade-sell-${Date.now()}`,
+          id: `trade-sell-${Math.random().toString(36).slice(2)}`,
           companyId: company.id,
           companyName: company.name,
           direction: 'SELL',
@@ -2666,7 +2666,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           pricePerShare,
           totalValue,
           recordedAtTick: state.gameState.currentTick,
-          recordedAtUtc: new Date().toISOString(),
+          recordedAtUtc: '2026-01-10T12:00:00Z',
         })
       }
 
