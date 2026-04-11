@@ -1325,3 +1325,49 @@ test.describe('Stock exchange portfolio and dividend sections', () => {
     await expect(dividendSection.locator('.empty-state')).toContainText('No dividends have been paid')
   })
 })
+
+test.describe('Stock exchange — global account switcher hidden in nav', () => {
+  // Per ROADMAP: "Remove account switching from stock exchange as it is implemented
+  // now in the top navigation bar." The /stocks page has its own per-listing
+  // account selector in the inline trade panel.
+
+  test('account switcher is NOT shown in the nav bar on the /stocks page', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 100000,
+      companies: [makeControlledCompany()],
+    })
+    const state = setupMockApi(page, {
+      players: [player],
+      shareholdings: [{ companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 }],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await restoreMockSession(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    // The global account switcher must be absent on the /stocks page
+    await expect(page.locator('.account-switcher')).toHaveCount(0)
+    // But the page itself should be fully rendered
+    await expect(page.getByRole('heading', { name: 'Stock Exchange' })).toBeVisible()
+  })
+
+  test('account switcher IS shown in the nav bar on the /dashboard page', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 100000,
+      companies: [makeControlledCompany()],
+    })
+    const state = setupMockApi(page, {
+      players: [player],
+      shareholdings: [{ companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 }],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await restoreMockSession(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    // The global account switcher IS present on other pages
+    await expect(page.locator('.account-switcher')).toBeVisible()
+  })
+})

@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { formatInGameTime } from '@/lib/gameTime'
 import { useGameStateStore } from '@/stores/gameState'
 import { useNewsStore } from '@/stores/news'
@@ -14,10 +15,17 @@ const auth = useAuthStore()
 const gameStateStore = useGameStateStore()
 const newsStore = useNewsStore()
 const gameAdminStore = useGameAdminStore()
+const route = useRoute()
 const { gameState } = storeToRefs(gameStateStore)
 const { unreadCount } = storeToRefs(newsStore)
 const { session } = storeToRefs(gameAdminStore)
 const isMenuOpen = ref(false)
+
+// Per-ROADMAP: "Remove account switching from stock exchange as it is implemented
+// now in the top navigation bar." The /stocks page has its own per-listing account
+// selector inside the inline trade panel, so the global switcher is hidden there
+// to avoid confusion about which context applies.
+const showGlobalAccountSwitcher = computed(() => route.name !== 'stocks')
 
 const formattedGameTime = computed(() => {
   if (!gameState.value?.currentGameTimeUtc) {
@@ -98,7 +106,7 @@ const closeMenu = () => {
           {{ impersonationLabel }}
         </div>
         <template v-if="auth.isAuthenticated">
-          <AccountSwitcher @switched="closeMenu" />
+          <AccountSwitcher v-if="showGlobalAccountSwitcher" @switched="closeMenu" />
           <button
             class="btn btn-secondary"
             @click="
