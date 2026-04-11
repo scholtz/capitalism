@@ -1141,6 +1141,18 @@ public sealed partial class Mutation
             }
 
             player.PersonalCash -= totalValue;
+            db.PersonTradeRecords.Add(new PersonTradeRecord
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                CompanyId = targetCompany.Id,
+                Direction = TradeDirection.Buy,
+                ShareCount = shareCount,
+                PricePerShare = askPrice,
+                TotalValue = totalValue,
+                RecordedAtTick = currentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+            });
         }
         else
         {
@@ -1281,6 +1293,18 @@ public sealed partial class Mutation
         if (account.Company is null)
         {
             player.PersonalCash += totalValue;
+            db.PersonTradeRecords.Add(new PersonTradeRecord
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                CompanyId = targetCompany.Id,
+                Direction = TradeDirection.Sell,
+                ShareCount = shareCount,
+                PricePerShare = bidPrice,
+                TotalValue = totalValue,
+                RecordedAtTick = currentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+            });
         }
         else
         {

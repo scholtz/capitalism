@@ -33,6 +33,7 @@ export type MockPlayer = {
   onboardingFirstSaleCompletedAtUtc: string | null
   proSubscriptionEndsAtUtc: string | null
   dividendPayments: MockDividendPayment[]
+  stockTrades: MockPersonTradeRecord[]
   companies: MockCompany[]
 }
 
@@ -47,6 +48,18 @@ export type MockDividendPayment = {
   recordedAtTick: number
   recordedAtUtc: string
   description: string
+}
+
+export type MockPersonTradeRecord = {
+  id: string
+  companyId: string
+  companyName: string
+  direction: 'BUY' | 'SELL'
+  shareCount: number
+  pricePerShare: number
+  totalValue: number
+  recordedAtTick: number
+  recordedAtUtc: string
 }
 export type MockLedgerSummary = {
   companyId: string
@@ -1186,6 +1199,7 @@ export function makePlayer(overrides?: Partial<MockPlayer>): MockPlayer {
     onboardingFirstSaleCompletedAtUtc: null,
     proSubscriptionEndsAtUtc: null,
     dividendPayments: [],
+    stockTrades: [],
     companies: [],
     ...overrides,
   }
@@ -2540,6 +2554,17 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         const holding = getOrCreateShareholding(state, company.id, player.id, null)
         holding.shareCount = Number((holding.shareCount + shareCount).toFixed(4))
         ownedShareCount = holding.shareCount
+        player.stockTrades.unshift({
+          id: `trade-buy-${Date.now()}`,
+          companyId: company.id,
+          companyName: company.name,
+          direction: 'BUY',
+          shareCount,
+          pricePerShare,
+          totalValue,
+          recordedAtTick: state.gameState.currentTick,
+          recordedAtUtc: new Date().toISOString(),
+        })
       }
 
       appendMockStockPriceHistory(state, company.id, pricePerShare)
@@ -2632,6 +2657,17 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         holding.shareCount = Number((holding.shareCount - shareCount).toFixed(4))
         player.personalCash = Number((player.personalCash + totalValue).toFixed(2))
         ownedShareCount = holding.shareCount
+        player.stockTrades.unshift({
+          id: `trade-sell-${Date.now()}`,
+          companyId: company.id,
+          companyName: company.name,
+          direction: 'SELL',
+          shareCount,
+          pricePerShare,
+          totalValue,
+          recordedAtTick: state.gameState.currentTick,
+          recordedAtUtc: new Date().toISOString(),
+        })
       }
 
       appendMockStockPriceHistory(state, company.id, pricePerShare)
@@ -3831,6 +3867,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
               activeCompanyId: player.activeCompanyId,
               shareholdings,
               dividendPayments: player.dividendPayments,
+              stockTrades: player.stockTrades,
             },
           },
         }),

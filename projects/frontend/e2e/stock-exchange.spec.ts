@@ -785,6 +785,174 @@ test.describe('Stock exchange', () => {
     await expect(page.locator('.drill-table')).toContainText('Bought 100 shares in Ledger Target')
     await expect(page.locator('.drill-table')).toContainText('$6,060.00')
   })
+
+  test('personal trade history section shows BUY and SELL entries after trades', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 200000,
+      companies: [makeControlledCompany()],
+      stockTrades: [
+        {
+          id: 'trade-1',
+          companyId: 'company-history-target',
+          companyName: 'History Target',
+          direction: 'BUY',
+          shareCount: 50,
+          pricePerShare: 61.5,
+          totalValue: 3075,
+          recordedAtTick: 5,
+          recordedAtUtc: '2026-01-05T10:00:00Z',
+        },
+        {
+          id: 'trade-2',
+          companyId: 'company-history-target',
+          companyName: 'History Target',
+          direction: 'SELL',
+          shareCount: 20,
+          pricePerShare: 60.0,
+          totalValue: 1200,
+          recordedAtTick: 8,
+          recordedAtUtc: '2026-01-08T10:00:00Z',
+        },
+      ],
+    })
+    const rival = makePlayer({
+      id: 'player-hist',
+      email: 'hist@test.com',
+      displayName: 'Hist Owner',
+      companies: [
+        {
+          id: 'company-history-target',
+          playerId: 'player-hist',
+          name: 'History Target',
+          cash: 300000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-history-target', ownerPlayerId: 'player-hist', ownerCompanyId: null, shareCount: 10000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    const tradeHistorySection = page.locator('section').filter({
+      has: page.getByRole('heading', { name: 'Personal trade history' }),
+    })
+    await expect(tradeHistorySection).toBeVisible()
+
+    // Both trades should appear
+    await expect(tradeHistorySection.locator('tr', { hasText: 'History Target' }).first()).toBeVisible()
+    await expect(tradeHistorySection.locator('.direction-badge--buy')).toBeVisible()
+    await expect(tradeHistorySection.locator('.direction-badge--sell')).toBeVisible()
+  })
+
+  test('personal trade history records a buy after executing a person-account purchase', async ({ page }) => {
+    const player = makePlayer({ personalCash: 200000, companies: [makeControlledCompany()] })
+    const rival = makePlayer({
+      id: 'player-trk',
+      email: 'trk@test.com',
+      displayName: 'Track Owner',
+      companies: [
+        {
+          id: 'company-trk',
+          playerId: 'player-trk',
+          name: 'Track Corp',
+          cash: 400000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        // founder holds 5000 — public float is 5000 (available to buy)
+        { companyId: 'company-trk', ownerPlayerId: 'player-trk', ownerCompanyId: null, shareCount: 5000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    // Execute a personal-account buy
+    await openTradePanel(page, 'Track Corp')
+    const tradePanel = page.locator('.trade-panel')
+    await tradePanel.getByLabel(/Share quantity Track Corp/).fill('25')
+    await tradePanel.getByRole('button', { name: /Buy @ / }).click()
+    await expect(tradePanel.getByRole('status')).toContainText('Bought 25 shares in Track Corp.')
+
+    // Reload the page so the personAccount query re-runs with updated stockTrades
+    await page.goto('/stocks')
+
+    const tradeHistorySection = page.locator('section').filter({
+      has: page.getByRole('heading', { name: 'Personal trade history' }),
+    })
+    await expect(tradeHistorySection).toBeVisible()
+    await expect(tradeHistorySection.locator('.direction-badge--buy')).toBeVisible()
+    await expect(tradeHistorySection.locator('tr', { hasText: 'Track Corp' }).first()).toBeVisible()
+  })
+
+  test('unauthenticated visitor sees market table but no trade buttons', async ({ page }) => {
+    const rival = makePlayer({
+      id: 'player-public',
+      email: 'public@test.com',
+      displayName: 'Public Owner',
+      companies: [
+        {
+          id: 'company-public',
+          playerId: 'player-public',
+          name: 'Public Corp',
+          cash: 500000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [rival],
+      shareholdings: [
+        { companyId: 'company-public', ownerPlayerId: 'player-public', ownerCompanyId: null, shareCount: 5000 },
+      ],
+    })
+    // No currentUserId — unauthenticated
+    state.currentUserId = null
+    state.currentToken = null
+
+    await page.goto('/stocks')
+
+    // Market table should be visible
+    await expect(page.getByRole('heading', { name: 'Stock Exchange' })).toBeVisible()
+    await expect(page.locator('tr.listing-row', { hasText: 'Public Corp' })).toBeVisible()
+
+    // Trade column (Actions) should not be visible for unauthenticated users
+    await expect(page.locator('tr.listing-row', { hasText: 'Public Corp' }).getByRole('button')).toHaveCount(0)
+
+    // Sign-in prompt should be shown
+    await expect(page.locator('.market-note')).toBeVisible()
+  })
 })
 
 test.describe('Stock exchange live refresh', () => {

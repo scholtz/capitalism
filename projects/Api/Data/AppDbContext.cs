@@ -96,6 +96,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     /// <summary>Shared in-game chat messages authored by players.</summary>
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
 
+    /// <summary>Records stock-exchange buy/sell executions from the player's personal account.</summary>
+    public DbSet<PersonTradeRecord> PersonTradeRecords => Set<PersonTradeRecord>();
+
     /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -126,6 +129,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 .HasForeignKey(message => message.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(message => message.SentAtUtc);
+        });
+
+        // PersonTradeRecord
+        modelBuilder.Entity<PersonTradeRecord>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.Property(t => t.Direction).HasMaxLength(4);
+            e.Property(t => t.ShareCount).HasPrecision(18, 4);
+            e.Property(t => t.PricePerShare).HasPrecision(18, 4);
+            e.Property(t => t.TotalValue).HasPrecision(18, 4);
+            e.HasOne(t => t.Player).WithMany().HasForeignKey(t => t.PlayerId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(t => t.Company).WithMany().HasForeignKey(t => t.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(t => t.PlayerId);
+            e.HasIndex(t => t.RecordedAtTick);
         });
 
         // Company

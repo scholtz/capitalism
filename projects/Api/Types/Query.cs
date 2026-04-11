@@ -108,6 +108,14 @@ public sealed partial class Query
             .OrderByDescending(payment => payment.RecordedAtTick)
             .ToListAsync();
 
+        var stockTrades = await db.PersonTradeRecords
+            .AsNoTracking()
+            .Where(trade => trade.PlayerId == userId)
+            .OrderByDescending(trade => trade.RecordedAtTick)
+            .ThenByDescending(trade => trade.RecordedAtUtc)
+            .Take(100)
+            .ToListAsync();
+
         var result = new PersonAccountResult
         {
             PlayerId = player.Id,
@@ -129,6 +137,20 @@ public sealed partial class Query
                     RecordedAtTick = payment.RecordedAtTick,
                     RecordedAtUtc = payment.RecordedAtUtc,
                     Description = payment.Description,
+                })
+                .ToList(),
+            StockTrades = stockTrades
+                .Select(trade => new PersonTradeRecordResult
+                {
+                    Id = trade.Id,
+                    CompanyId = trade.CompanyId,
+                    CompanyName = companiesById.GetValueOrDefault(trade.CompanyId)?.Name ?? string.Empty,
+                    Direction = trade.Direction,
+                    ShareCount = trade.ShareCount,
+                    PricePerShare = trade.PricePerShare,
+                    TotalValue = trade.TotalValue,
+                    RecordedAtTick = trade.RecordedAtTick,
+                    RecordedAtUtc = trade.RecordedAtUtc,
                 })
                 .ToList(),
         };

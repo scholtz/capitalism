@@ -479,6 +479,18 @@ export interface DividendPayment {
   description: string
 }
 
+export interface PersonTradeRecord {
+  id: string
+  companyId: string
+  companyName: string
+  direction: 'BUY' | 'SELL'
+  shareCount: number
+  pricePerShare: number
+  totalValue: number
+  recordedAtTick: number
+  recordedAtUtc: string
+}
+
 export interface PersonAccount {
   playerId: string
   displayName: string
@@ -487,6 +499,7 @@ export interface PersonAccount {
   activeCompanyId: string | null
   shareholdings: PortfolioHolding[]
   dividendPayments: DividendPayment[]
+  stockTrades: PersonTradeRecord[]
 }
 
 export interface StockExchangeListing {

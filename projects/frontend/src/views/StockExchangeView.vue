@@ -82,6 +82,17 @@ const PERSON_ACCOUNT_QUERY = `
         recordedAtUtc
         description
       }
+      stockTrades {
+        id
+        companyId
+        companyName
+        direction
+        shareCount
+        pricePerShare
+        totalValue
+        recordedAtTick
+        recordedAtUtc
+      }
     }
   }
 `
@@ -818,6 +829,48 @@ useTickRefresh(async () => {
             </table>
           </div>
         </section>
+
+        <section v-if="personAccount" class="panel">
+          <div class="section-header">
+            <div>
+              <h2>{{ t('stockExchange.tradeHistoryTitle') }}</h2>
+              <p>{{ t('stockExchange.tradeHistoryDesc') }}</p>
+            </div>
+          </div>
+
+          <p v-if="personAccount.stockTrades.length === 0" class="empty-state">
+            {{ t('stockExchange.tradeHistoryEmpty') }}
+          </p>
+
+          <div v-else class="table-wrapper">
+            <table class="data-table" :aria-label="t('stockExchange.tradeHistoryTitle')">
+              <thead>
+                <tr>
+                  <th>{{ t('stockExchange.company') }}</th>
+                  <th>{{ t('stockExchange.tradeDirection') }}</th>
+                  <th>{{ t('stockExchange.ownedShares') }}</th>
+                  <th>{{ t('stockExchange.tradePrice') }}</th>
+                  <th>{{ t('stockExchange.tradeTotal') }}</th>
+                  <th>{{ t('stockExchange.recordedAt') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="trade in personAccount.stockTrades" :key="trade.id" class="trade-history-row">
+                  <td>{{ trade.companyName }}</td>
+                  <td>
+                    <span
+                      :class="trade.direction === 'BUY' ? 'direction-badge direction-badge--buy' : 'direction-badge direction-badge--sell'"
+                    >{{ trade.direction === 'BUY' ? t('stockExchange.tradeBuy') : t('stockExchange.tradeSell') }}</span>
+                  </td>
+                  <td>{{ formatShares(trade.shareCount) }}</td>
+                  <td>{{ formatCurrency(trade.pricePerShare) }}</td>
+                  <td>{{ formatCurrency(trade.totalValue) }}</td>
+                  <td>{{ formatDateTime(trade.recordedAtUtc) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </template>
     </div>
   </div>
@@ -1104,6 +1157,26 @@ useTickRefresh(async () => {
 .listing-chip--owned {
   background: color-mix(in srgb, var(--color-primary) 16%, transparent);
   color: var(--color-primary);
+}
+
+.direction-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.direction-badge--buy {
+  background: color-mix(in srgb, #22c55e 18%, transparent);
+  color: #16a34a;
+}
+
+.direction-badge--sell {
+  background: color-mix(in srgb, #ef4444 18%, transparent);
+  color: #dc2626;
 }
 
 .actions-cell {

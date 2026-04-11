@@ -16,6 +16,7 @@ public sealed class PersonAccountResult
     public Guid? ActiveCompanyId { get; set; }
     public List<PortfolioHoldingResult> Shareholdings { get; set; } = [];
     public List<DividendPaymentResult> DividendPayments { get; set; } = [];
+    public List<PersonTradeRecordResult> StockTrades { get; set; } = [];
 }
 
 public sealed class PortfolioHoldingResult
@@ -81,4 +82,17 @@ public sealed class ShareTradeResult
     public decimal PublicFloatShares { get; set; }
     public decimal PersonalCash { get; set; }
     public decimal? CompanyCash { get; set; }
+}
+
+public sealed class PersonTradeRecordResult
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public string CompanyName { get; set; } = string.Empty;
+    public string Direction { get; set; } = string.Empty;
+    public decimal ShareCount { get; set; }
+    public decimal PricePerShare { get; set; }
+    public decimal TotalValue { get; set; }
+    public long RecordedAtTick { get; set; }
+    public DateTime RecordedAtUtc { get; set; }
 }
