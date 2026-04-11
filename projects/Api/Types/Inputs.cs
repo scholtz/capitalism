@@ -485,3 +485,13 @@ public sealed class MarkGameNewsReadInput
     [Required]
     public List<Guid> EntryIds { get; set; } = [];
 }
+
+/// <summary>Input for merging a target company (≥90% ownership) into a company the player controls.</summary>
+public sealed class MergeCompanyInput
+{
+    /// <summary>The company to absorb (player must have ≥90% combined ownership).</summary>
+    public Guid TargetCompanyId { get; set; }
+
+    /// <summary>The company that receives all transferred assets (must be directly controlled by the player).</summary>
+    public Guid DestinationCompanyId { get; set; }
+}

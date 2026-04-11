@@ -1078,6 +1078,189 @@ public sealed partial class Mutation
         };
     }
 
+    /// <summary>
+    /// Merges a target company (where the player holds ≥90% combined ownership) into a destination
+    /// company that the player directly controls. All buildings, lots, cash, and owned shareholdings
+    /// are transferred to the destination company. Taxes are settled for the target company at the
+    /// time of merge. The target company is then permanently closed.
+    /// </summary>
+    [Authorize]
+    public async Task<MergeCompanyResult> MergeCompany(
+        MergeCompanyInput input,
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
+    {
+        var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
+
+        var companies = await db.Companies.ToListAsync();
+
+        var targetCompany = companies.FirstOrDefault(c => c.Id == input.TargetCompanyId)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Target company not found.")
+                    .SetCode("COMPANY_NOT_FOUND")
+                    .Build());
+
+        var destinationCompany = companies.FirstOrDefault(c => c.Id == input.DestinationCompanyId)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Destination company not found.")
+                    .SetCode("DESTINATION_COMPANY_NOT_FOUND")
+                    .Build());
+
+        if (destinationCompany.PlayerId != userId)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("You must directly control the destination company.")
+                    .SetCode("DESTINATION_NOT_CONTROLLED")
+                    .Build());
+        }
+
+        if (targetCompany.Id == destinationCompany.Id)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Target and destination companies must be different.")
+                    .SetCode("SAME_COMPANY")
+                    .Build());
+        }
+
+        var shareholdings = await db.Shareholdings
+            .Where(h => h.CompanyId == targetCompany.Id)
+            .ToListAsync();
+
+        var combinedRatio = ComputeControlledOwnershipRatio(userId, targetCompany, companies, shareholdings);
+        if (combinedRatio < 0.9m)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage($"You need at least 90% combined ownership to merge this company. Current: {combinedRatio:P1}")
+                    .SetCode("INSUFFICIENT_OWNERSHIP_FOR_MERGE")
+                    .Build());
+        }
+
+        var gameState = await db.GameStates.FirstOrDefaultAsync();
+        var currentTick = gameState?.CurrentTick ?? 0L;
+
+        // Settle taxes for the target company at merge time
+        var taxableEntries = await db.LedgerEntries
+            .Where(e => e.CompanyId == targetCompany.Id)
+            .ToListAsync();
+        var taxableIncome = LedgerCalculator.ComputeTaxableIncome(taxableEntries);
+        var taxRate = gameState?.TaxRate ?? 0m;
+        if (taxableIncome > 0m && taxRate > 0m)
+        {
+            var taxAmount = decimal.Round(taxableIncome * taxRate, 2, MidpointRounding.AwayFromZero);
+            targetCompany.Cash -= taxAmount;
+            db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = targetCompany.Id,
+                Category = LedgerCategory.Tax,
+                Description = $"Merger settlement tax",
+                Amount = -taxAmount,
+                RecordedAtTick = currentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+            });
+        }
+
+        // Transfer buildings
+        var buildings = await db.Buildings
+            .Where(b => b.CompanyId == targetCompany.Id)
+            .ToListAsync();
+        foreach (var building in buildings)
+        {
+            building.CompanyId = destinationCompany.Id;
+        }
+
+        // Transfer building lots
+        var lots = await db.BuildingLots
+            .Where(l => l.OwnerCompanyId == targetCompany.Id)
+            .ToListAsync();
+        foreach (var lot in lots)
+        {
+            lot.OwnerCompanyId = destinationCompany.Id;
+        }
+
+        // Transfer shareholdings owned BY the target company
+        var ownedShareholdings = await db.Shareholdings
+            .Where(h => h.OwnerCompanyId == targetCompany.Id)
+            .ToListAsync();
+        foreach (var holding in ownedShareholdings)
+        {
+            // Merge with existing holding in destination if present
+            var existingHolding = await db.Shareholdings.FirstOrDefaultAsync(h =>
+                h.CompanyId == holding.CompanyId && h.OwnerCompanyId == destinationCompany.Id);
+            if (existingHolding is not null)
+            {
+                existingHolding.ShareCount += holding.ShareCount;
+                db.Shareholdings.Remove(holding);
+            }
+            else
+            {
+                holding.OwnerCompanyId = destinationCompany.Id;
+            }
+        }
+
+        // Transfer target company's remaining cash to destination
+        var cashTransferred = Math.Max(targetCompany.Cash, 0m);
+        destinationCompany.Cash += cashTransferred;
+
+        // Record the merger as a ledger entry on destination
+        if (cashTransferred > 0m)
+        {
+            db.LedgerEntries.Add(new LedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = destinationCompany.Id,
+                Category = LedgerCategory.Other,
+                Description = $"Merger: cash received from {targetCompany.Name}",
+                Amount = cashTransferred,
+                RecordedAtTick = currentTick,
+                RecordedAtUtc = DateTime.UtcNow,
+            });
+        }
+
+        var buildingsTransferred = buildings.Count;
+        var absorbedName = targetCompany.Name;
+
+        // Remove all shareholdings IN the target company (shares become worthless)
+        var targetShareholdings = await db.Shareholdings
+            .Where(h => h.CompanyId == targetCompany.Id)
+            .ToListAsync();
+        db.Shareholdings.RemoveRange(targetShareholdings);
+
+        // Remove salary settings and any pending player active-company references
+        var salarySettings = await db.CompanyCitySalarySettings
+            .Where(s => s.CompanyId == targetCompany.Id)
+            .ToListAsync();
+        db.CompanyCitySalarySettings.RemoveRange(salarySettings);
+
+        // If any player is currently scoped to the target company, switch them back to person
+        var affectedPlayers = await db.Players
+            .Where(p => p.ActiveCompanyId == targetCompany.Id)
+            .ToListAsync();
+        foreach (var p in affectedPlayers)
+        {
+            p.ActiveAccountType = AccountContextType.Person;
+            p.ActiveCompanyId = null;
+        }
+
+        db.Companies.Remove(targetCompany);
+
+        await db.SaveChangesAsync();
+
+        return new MergeCompanyResult
+        {
+            DestinationCompanyId = destinationCompany.Id,
+            DestinationCompanyName = destinationCompany.Name,
+            AbsorbedCompanyName = absorbedName,
+            CashTransferred = cashTransferred,
+            BuildingsTransferred = buildingsTransferred,
+        };
+    }
+
     /// <summary>Purchases shares from public investors using either the personal account or the selected company account.</summary>
     [Authorize]
     public async Task<ShareTradeResult> BuyShares(

@@ -389,6 +389,7 @@ public sealed partial class Query
                     ControlledCompanyOwnedShares = controlledCompanyOwnedShares,
                     CombinedControlledOwnershipRatio = combinedRatio,
                     CanClaimControl = userId.HasValue && company.PlayerId != userId.Value && combinedRatio >= 0.5m,
+                    CanMerge = userId.HasValue && company.PlayerId != userId.Value && combinedRatio >= 0.9m,
                 };
             })
             .OrderByDescending(listing => listing.SharePrice)

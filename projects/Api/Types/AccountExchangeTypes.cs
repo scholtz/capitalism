@@ -58,6 +58,7 @@ public sealed class StockExchangeListingResult
     public decimal ControlledCompanyOwnedShares { get; set; }
     public decimal CombinedControlledOwnershipRatio { get; set; }
     public bool CanClaimControl { get; set; }
+    public bool CanMerge { get; set; }
 }
 
 public sealed class StockExchangePriceHistoryPointResult
@@ -95,4 +96,17 @@ public sealed class PersonTradeRecordResult
     public decimal TotalValue { get; set; }
     public long RecordedAtTick { get; set; }
     public DateTime RecordedAtUtc { get; set; }
+}
+
+public sealed class MergeCompanyResult
+{
+    /// <summary>The destination company that received all transferred assets.</summary>
+    public Guid DestinationCompanyId { get; set; }
+    public string DestinationCompanyName { get; set; } = string.Empty;
+    /// <summary>The name of the absorbed company (now closed).</summary>
+    public string AbsorbedCompanyName { get; set; } = string.Empty;
+    /// <summary>Cash transferred from the absorbed company to the destination company.</summary>
+    public decimal CashTransferred { get; set; }
+    /// <summary>Number of buildings transferred.</summary>
+    public int BuildingsTransferred { get; set; }
 }
