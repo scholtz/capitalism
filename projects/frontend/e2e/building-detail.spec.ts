@@ -3208,6 +3208,149 @@ test.describe('Building detail upgrades', () => {
     await expect(finalDiag).not.toHaveClass(/state-tl-br/)
   })
 
+  test('diagonal link reversal: tr-bl (↙) replaced by bl-tr (↗) — AC4 other axis', async ({ page }) => {
+    // Proves AC4 for the second diagonal axis: tr-bl (↙) can be replaced cleanly by bl-tr (↗).
+    // This completes the reversal coverage for both diagonal axes.
+    const player = makePlayer()
+    const buildingUnits: MockBuildingUnit[] = [
+      { id: 'ar2-1', buildingId: 'building-ar2', unitType: 'PURCHASE',      gridX: 0, gridY: 0, level: 1,
+        linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
+        linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+      { id: 'ar2-2', buildingId: 'building-ar2', unitType: 'MANUFACTURING', gridX: 1, gridY: 0, level: 1,
+        linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
+        linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+      { id: 'ar2-3', buildingId: 'building-ar2', unitType: 'STORAGE',       gridX: 0, gridY: 1, level: 1,
+        linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
+        linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+      { id: 'ar2-4', buildingId: 'building-ar2', unitType: 'B2B_SALES',     gridX: 1, gridY: 1, level: 1,
+        linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
+        linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+    ]
+    player.companies.push({
+      id: 'company-ar2', playerId: player.id, name: 'Axis2 Corp', cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{
+        id: 'building-ar2', companyId: 'company-ar2', cityId: 'city-ba', type: 'FACTORY',
+        name: 'Axis2 Factory', latitude: 48.15, longitude: 17.11, level: 1, powerConsumption: 2,
+        isForSale: false, builtAtUtc: '2026-01-01T00:00:00Z', pendingConfiguration: null,
+        units: buildingUnits,
+      }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-ar2')
+    await expect(page.getByRole('heading', { name: 'Axis2 Factory' })).toBeVisible()
+
+    // ── Plan 1: advance to tr-bl (↙) — requires 3 clicks from none ───────────
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    const diagButton = plannedSection.locator('.link-toggle.diagonal').first()
+    await expect(diagButton).toHaveClass(/state-none/)
+
+    await diagButton.click() // → tl-br
+    await diagButton.click() // → br-tl
+    await diagButton.click() // → tr-bl
+    await expect(diagButton).toHaveClass(/state-tr-bl/)
+
+    await page.getByRole('button', { name: 'Store Upgrade' }).click()
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+
+    // ── Verify queued shows tr-bl ─────────────────────────────────────────────
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const queuedSection = getGridSection(page, 'Queued Upgrade')
+    const queuedDiag = queuedSection.locator('.link-toggle.diagonal').first()
+    await expect(queuedDiag).toHaveClass(/state-tr-bl/)
+
+    // ── Plan 2: advance one more click to bl-tr (↗) — reversal ───────────────
+    await queuedDiag.click()
+    await expect(queuedDiag).toHaveClass(/state-bl-tr/)
+
+    await page.getByRole('button', { name: 'Store Upgrade' }).click()
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+
+    // ── Verify queued now shows only bl-tr (↗) — tr-bl is gone ───────────────
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const finalSection = getGridSection(page, 'Queued Upgrade')
+    const finalDiag = finalSection.locator('.link-toggle.diagonal').first()
+    await expect(finalDiag).toHaveClass(/state-bl-tr/)
+    await expect(finalDiag).not.toHaveClass(/state-tr-bl/)
+  })
+
+  test('diagonal direction arrows render correct Unicode glyphs for all 4 states — AC6 visual', async ({ page }) => {
+    // Verifies that the diag-arrow element shows the correct Unicode glyph (↘ ↖ ↙ ↗)
+    // for each of the four diagonal states, proving direction is visually unambiguous.
+    const player = makePlayer()
+    const buildingUnits: MockBuildingUnit[] = [
+      { id: 'glyph-1', buildingId: 'building-glyph', unitType: 'PURCHASE',      gridX: 0, gridY: 0, level: 1,
+        linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
+        linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+      { id: 'glyph-2', buildingId: 'building-glyph', unitType: 'MANUFACTURING', gridX: 1, gridY: 0, level: 1,
+        linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
+        linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+      { id: 'glyph-3', buildingId: 'building-glyph', unitType: 'STORAGE',       gridX: 0, gridY: 1, level: 1,
+        linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
+        linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+      { id: 'glyph-4', buildingId: 'building-glyph', unitType: 'B2B_SALES',     gridX: 1, gridY: 1, level: 1,
+        linkUp: false, linkDown: false, linkLeft: false, linkRight: false,
+        linkUpLeft: false, linkUpRight: false, linkDownLeft: false, linkDownRight: false },
+    ]
+    player.companies.push({
+      id: 'company-glyph', playerId: player.id, name: 'Glyph Corp', cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [{
+        id: 'building-glyph', companyId: 'company-glyph', cityId: 'city-ba', type: 'FACTORY',
+        name: 'Glyph Factory', latitude: 48.15, longitude: 17.11, level: 1, powerConsumption: 2,
+        isForSale: false, builtAtUtc: '2026-01-01T00:00:00Z', pendingConfiguration: null,
+        units: buildingUnits,
+      }],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-glyph')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    const diagButton = plannedSection.locator('.link-toggle.diagonal').first()
+
+    // State: tl-br → glyph ↘
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-tl-br/)
+    await expect(plannedSection.locator('.diag-arrow')).toContainText('↘')
+
+    // State: br-tl → glyph ↖
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-br-tl/)
+    await expect(plannedSection.locator('.diag-arrow')).toContainText('↖')
+
+    // State: tr-bl → glyph ↙
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-tr-bl/)
+    await expect(plannedSection.locator('.diag-arrow')).toContainText('↙')
+
+    // State: bl-tr → glyph ↗
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-bl-tr/)
+    await expect(plannedSection.locator('.diag-arrow')).toContainText('↗')
+
+    // State: none → no glyph arrow rendered
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-none/)
+    await expect(plannedSection.locator('.diag-arrow')).toHaveCount(0)
+  })
+
   // ---------------------------------------------------------------------------
   // Grid tile metadata: resource / product labels, fill bars, price metrics
   // ---------------------------------------------------------------------------
