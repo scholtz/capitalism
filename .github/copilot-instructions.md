@@ -43,6 +43,15 @@
 - Use `@/` path alias for imports from the `src` directory.
 - Default local development ports are: game frontend `5173`, master frontend `5174`, game API `5095`, master API `44364`.
 
+## File size and architecture guidelines
+- **No source file should exceed 500 lines.** When a file approaches or exceeds this limit, split it proactively.
+- **Backend C# classes**: use `partial class` to split large GraphQL Query/Mutation types by domain (e.g., `Query.Building.cs`, `Mutation.Lending.cs`). Each partial file should group related methods under a single domain.
+- **Frontend Vue components**: extract reusable logic into composables (`src/composables/`) and break large templates into child components (`src/components/<feature>/`). Keep view files focused on layout and composition, not business logic.
+- **Frontend types**: split `src/types/index.ts` into domain-specific files (e.g., `types/building.ts`, `types/market.ts`) with a barrel re-export from `index.ts`.
+- **E2E mock helpers**: split large mock-api files by domain (e.g., `mock-api-building.ts`, `mock-api-exchange.ts`).
+- **CSS/styles**: extract large `<style scoped>` blocks into co-located `.css` files or shared style modules when they exceed 300 lines.
+- When creating new features, plan the file structure upfront so files stay under the 500-line limit from the start.
+
 ## Multiple game servers infrastructure
 - The master website is the discovery and product-pitch surface. It lists active game servers and links players to the correct game frontend.
 - The master registry lives in `projects/MasterApi`. Core files are `Program.cs`, `Data/MasterDbContext.cs`, `Types/Query.cs`, and `Types/Mutation.cs`.
