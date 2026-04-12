@@ -1190,6 +1190,14 @@ function placeUnit(unitType: string) {
     lockedCityId: null,
   }
 
+  // Auto-fill competitive default price for B2B_SALES based on adjacent/building units
+  if (unitType === 'B2B_SALES') {
+    const suggestedPrice = getB2BSuggestedPrice(newUnit)
+    if (suggestedPrice !== null) {
+      newUnit.minPrice = suggestedPrice
+    }
+  }
+
   draftUnits.value = [...draftUnits.value.filter((unit) => !(unit.gridX === newUnit.gridX && unit.gridY === newUnit.gridY)), newUnit]
   selectedCell.value = null
   showUnitPicker.value = false
@@ -3105,12 +3113,13 @@ async function submitUnitUpgrade(unitId: string) {
 }
 
 /**
- * Returns a competitive price suggestion for a B2B_SALES unit based on
- * the product that a linked MANUFACTURING unit will produce.
- * Falls back to the product's base price if found, otherwise null.
+ * Returns a competitive price suggestion for a B2B_SALES unit.
+ * For factory buildings: uses the basePrice of the product from a linked (or any) MANUFACTURING unit.
+ * For mine buildings: uses the basePrice of the resource from a linked (or any) MINING unit.
+ * Returns null when no relevant configured unit is found in the current draft.
  */
 function getB2BSuggestedPrice(unit: EditableGridUnit): number | null {
-  // Find all units linked to this B2B_SALES unit (either direction)
+  // Find all adjacent units (not yet including the new unit being placed)
   const byPos = new Map(draftUnits.value.map((u) => [`${u.gridX},${u.gridY}`, u]))
   const neighbors: EditableGridUnit[] = []
   const directions = [
@@ -3124,18 +3133,29 @@ function getB2BSuggestedPrice(unit: EditableGridUnit): number | null {
     if (neighbor) neighbors.push(neighbor)
   }
 
-  // Look for a connected MANUFACTURING unit with a product set
+  // Factory path: look for a connected MANUFACTURING unit with a product set
   const mfgUnit = neighbors.find((n) => n.unitType === 'MANUFACTURING' && n.productTypeId)
-  if (!mfgUnit) {
-    // Also check the entire building for any MANUFACTURING unit with a product
-    const anyMfg = draftUnits.value.find((u) => u.unitType === 'MANUFACTURING' && u.productTypeId)
-    if (anyMfg?.productTypeId) {
-      return productTypes.value.find((p) => p.id === anyMfg.productTypeId)?.basePrice ?? null
-    }
-    return null
+  if (mfgUnit?.productTypeId) {
+    return productTypes.value.find((p) => p.id === mfgUnit.productTypeId)?.basePrice ?? null
+  }
+  // Fall back to any MANUFACTURING unit in the building with a product
+  const anyMfg = draftUnits.value.find((u) => u.unitType === 'MANUFACTURING' && u.productTypeId)
+  if (anyMfg?.productTypeId) {
+    return productTypes.value.find((p) => p.id === anyMfg.productTypeId)?.basePrice ?? null
   }
 
-  return productTypes.value.find((p) => p.id === mfgUnit.productTypeId)?.basePrice ?? null
+  // Mine path: look for a connected MINING unit with a resource type set
+  const miningUnit = neighbors.find((n) => n.unitType === 'MINING' && n.resourceTypeId)
+  if (miningUnit?.resourceTypeId) {
+    return resourceTypes.value.find((r) => r.id === miningUnit.resourceTypeId)?.basePrice ?? null
+  }
+  // Fall back to any MINING unit in the building with a resource type
+  const anyMining = draftUnits.value.find((u) => u.unitType === 'MINING' && u.resourceTypeId)
+  if (anyMining?.resourceTypeId) {
+    return resourceTypes.value.find((r) => r.id === anyMining.resourceTypeId)?.basePrice ?? null
+  }
+
+  return null
 }
 
 async function loadUnitOperationalStatuses(buildingId: string) {

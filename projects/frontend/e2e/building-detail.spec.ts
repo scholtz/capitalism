@@ -1249,6 +1249,286 @@ test.describe('Building detail upgrades', () => {
     await expect(plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(3)).toContainText('B2B Sales')
   })
 
+  test('new B2B_SALES unit auto-fills price from adjacent manufacturing unit (factory)', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-b2b-autofill',
+      playerId: player.id,
+      name: 'B2B Auto-Fill Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-b2b-autofill',
+          companyId: 'company-b2b-autofill',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Auto-Fill Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'autofill-purchase-1',
+              buildingId: 'building-b2b-autofill',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'autofill-mfg-1',
+              buildingId: 'building-b2b-autofill',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              productTypeId: 'prod-chair',
+            },
+            {
+              id: 'autofill-storage-1',
+              buildingId: 'building-b2b-autofill',
+              unitType: 'STORAGE',
+              gridX: 2,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            // No B2B_SALES unit – we will place one in the test
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-b2b-autofill')
+    await expect(page.getByRole('heading', { name: 'Auto-Fill Factory' })).toBeVisible()
+
+    // Enter edit mode
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+
+    // Click the empty cell at (3,0) to open the unit picker
+    await getGridCell(plannedSection, 3, 0).click()
+    await expect(page.getByRole('button', { name: 'B2B Sales' })).toBeVisible()
+
+    // Place a B2B_SALES unit
+    await page.getByRole('button', { name: 'B2B Sales' }).click()
+
+    // The unit should be placed; click the cell to open the config panel
+    await getGridCell(plannedSection, 3, 0).click()
+
+    // Min Price field should be auto-filled with the Wooden Chair base price (45)
+    const minPriceInput = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Min Price', { exact: true }) })
+      .locator('input[type="number"]')
+    await expect(minPriceInput).toHaveValue('45')
+
+    // The competitive price hint should still be visible as a reference
+    await expect(page.getByText(/Competitive base price/i)).toBeVisible()
+  })
+
+  test('new B2B_SALES unit auto-fills price from MINING unit (mine building)', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-mine-b2b',
+      playerId: player.id,
+      name: 'Mine B2B Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-mine-b2b',
+          companyId: 'company-mine-b2b',
+          cityId: 'city-ba',
+          type: 'MINE',
+          name: 'Wood Mine',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 1,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'mine-mining-1',
+              buildingId: 'building-mine-b2b',
+              unitType: 'MINING',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-wood',
+            },
+            {
+              id: 'mine-storage-1',
+              buildingId: 'building-mine-b2b',
+              unitType: 'STORAGE',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            // No B2B_SALES unit – we will place one in the test
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-mine-b2b')
+    await expect(page.getByRole('heading', { name: 'Wood Mine' })).toBeVisible()
+
+    // Enter edit mode
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+
+    // Click the empty cell at (2,0) to open the unit picker
+    await getGridCell(plannedSection, 2, 0).click()
+    await expect(page.getByRole('button', { name: 'B2B Sales' })).toBeVisible()
+
+    // Place a B2B_SALES unit
+    await page.getByRole('button', { name: 'B2B Sales' }).click()
+
+    // The unit should be placed; click the cell to open the config panel
+    await getGridCell(plannedSection, 2, 0).click()
+
+    // Min Price field should be auto-filled with the Wood resource base price (10)
+    const minPriceInput = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Min Price', { exact: true }) })
+      .locator('input[type="number"]')
+    await expect(minPriceInput).toHaveValue('10')
+
+    // The competitive price hint should still be visible
+    await expect(page.getByText(/Competitive base price/i)).toBeVisible()
+  })
+
+  test('B2B_SALES unit shows sale price in read-only detail panel', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-b2b-readonly',
+      playerId: player.id,
+      name: 'B2B ReadOnly Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-b2b-readonly',
+          companyId: 'company-b2b-readonly',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'B2B ReadOnly Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'readonly-b2b-1',
+              buildingId: 'building-b2b-readonly',
+              unitType: 'B2B_SALES',
+              gridX: 3,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              minPrice: 45,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-b2b-readonly')
+    await expect(page.getByRole('heading', { name: 'B2B ReadOnly Factory' })).toBeVisible()
+
+    // Click on the B2B_SALES unit cell in the current configuration
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 3, 0).click()
+
+    // The read-only detail panel should show the sale price
+    await expect(page.locator('.unit-config-readonly-details').getByText(/Min Price/i)).toBeVisible()
+    await expect(page.locator('.unit-config-readonly-details').getByText(/\$45/)).toBeVisible()
+
+    // The grid tile itself should also show "Sell from $45"
+    await expect(getGridCell(currentSection, 3, 0).locator('.cell-metric')).toContainText('$45')
+  })
+
   test('shows configured resource image, sourcing costs, and new-unit cost while planning', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({

@@ -4371,6 +4371,91 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task StoreBuildingConfiguration_B2BSalesWithMinPrice_PersistsCorrectly()
+    {
+        // A B2B_SALES unit submitted with an explicit minPrice should have that price persisted
+        // in the plan and later applied to the live unit.
+        var email = $"b2b-price-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "B2bPriceTest");
+
+        var companyResult = await ExecuteGraphQlAsync(isolatedClient, "mutation CC($i: CreateCompanyInput!){createCompany(input:$i){id}}", new { i = new { name = "B2bPriceCo" } }, token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+        var cityId = (await ExecuteGraphQlAsync(isolatedClient, "{cities{id}}", token: token)).GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+        var buildingId = (await ExecuteGraphQlAsync(isolatedClient, "mutation PB($i:PlaceBuildingInput!){placeBuilding(input:$i){id}}", new { i = new { companyId, cityId, type = "FACTORY", name = "PriceFactory" } }, token)).GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // Fetch a product to get its basePrice as the default competitive price
+        var productsResult = await ExecuteGraphQlAsync(isolatedClient, "{productTypes{id basePrice}}", token: token);
+        var chairProduct = productsResult.GetProperty("data").GetProperty("productTypes").EnumerateArray()
+            .FirstOrDefault(p => true);
+        var chairId = chairProduct.GetProperty("id").GetString();
+        var chairBasePrice = chairProduct.GetProperty("basePrice").GetDecimal();
+
+        var result = await ExecuteGraphQlAsync(isolatedClient,
+            """
+            mutation SBC($i:StoreBuildingConfigurationInput!){storeBuildingConfiguration(input:$i){
+                id
+                units { unitType gridX gridY minPrice isChanged }
+            }}
+            """,
+            new { i = new { buildingId, units = new object[] {
+                new { unitType="MANUFACTURING", gridX=0, gridY=0, linkRight=true, linkLeft=false, linkUp=false, linkDown=false, linkUpLeft=false, linkUpRight=false, linkDownLeft=false, linkDownRight=false, productTypeId=chairId },
+                new { unitType="B2B_SALES", gridX=1, gridY=0, linkRight=false, linkLeft=false, linkUp=false, linkDown=false, linkUpLeft=false, linkUpRight=false, linkDownLeft=false, linkDownRight=false, productTypeId=chairId, minPrice=chairBasePrice },
+            }}},
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "B2B_SALES with explicit minPrice should succeed");
+        var units = result.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units").EnumerateArray().ToList();
+        var b2bUnit = units.FirstOrDefault(u => u.GetProperty("unitType").GetString() == "B2B_SALES");
+        Assert.False(b2bUnit.ValueKind == System.Text.Json.JsonValueKind.Undefined, "B2B_SALES unit should be present in the plan");
+        Assert.Equal(chairBasePrice, b2bUnit.GetProperty("minPrice").GetDecimal(), precision: 2);
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_B2BSalesMine_WithResourceAndPrice_Succeeds()
+    {
+        // A B2B_SALES unit in a MINE building with a minPrice should persist correctly.
+        // This validates the mine-path competitive default price behavior.
+        var email = $"mine-b2b-price-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "MineB2bPrice");
+
+        var companyResult = await ExecuteGraphQlAsync(isolatedClient, "mutation CC($i: CreateCompanyInput!){createCompany(input:$i){id}}", new { i = new { name = "MineB2bPriceCo" } }, token);
+        var companyId = companyResult.GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+        var cityId = (await ExecuteGraphQlAsync(isolatedClient, "{cities{id}}", token: token)).GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+        var buildingId = (await ExecuteGraphQlAsync(isolatedClient, "mutation PB($i:PlaceBuildingInput!){placeBuilding(input:$i){id}}", new { i = new { companyId, cityId, type = "MINE", name = "Wood Mine" } }, token)).GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        // Get wood resource type id and base price
+        var resourcesResult = await ExecuteGraphQlAsync(isolatedClient, "{resourceTypes{id slug basePrice}}", token: token);
+        var woodResource = resourcesResult.GetProperty("data").GetProperty("resourceTypes").EnumerateArray()
+            .FirstOrDefault(r => r.GetProperty("slug").GetString() == "wood");
+        var woodId = woodResource.GetProperty("id").GetString();
+        var woodBasePrice = woodResource.GetProperty("basePrice").GetDecimal();
+
+        var result = await ExecuteGraphQlAsync(isolatedClient,
+            """
+            mutation SBC($i:StoreBuildingConfigurationInput!){storeBuildingConfiguration(input:$i){
+                id
+                units { unitType gridX gridY minPrice isChanged }
+            }}
+            """,
+            new { i = new { buildingId, units = new object[] {
+                new { unitType="MINING",   gridX=0, gridY=0, linkRight=true, linkLeft=false, linkUp=false, linkDown=false, linkUpLeft=false, linkUpRight=false, linkDownLeft=false, linkDownRight=false, resourceTypeId=woodId },
+                new { unitType="STORAGE",  gridX=1, gridY=0, linkRight=true, linkLeft=false, linkUp=false, linkDown=false, linkUpLeft=false, linkUpRight=false, linkDownLeft=false, linkDownRight=false },
+                new { unitType="B2B_SALES", gridX=2, gridY=0, linkRight=false, linkLeft=false, linkUp=false, linkDown=false, linkUpLeft=false, linkUpRight=false, linkDownLeft=false, linkDownRight=false, minPrice=woodBasePrice },
+            }}},
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _), "Mine B2B_SALES with minPrice should succeed");
+        var units = result.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units").EnumerateArray().ToList();
+        var b2bUnit = units.FirstOrDefault(u => u.GetProperty("unitType").GetString() == "B2B_SALES");
+        Assert.False(b2bUnit.ValueKind == System.Text.Json.JsonValueKind.Undefined, "B2B_SALES unit should be in plan");
+        Assert.Equal(woodBasePrice, b2bUnit.GetProperty("minPrice").GetDecimal(), precision: 2);
+    }
+
+    [Fact]
     public async Task StoreBuildingConfiguration_UnauthorizedPlayerCannotConfigureAnotherPlayersBuilding()
     {
         var token1 = await RegisterAndGetTokenAsync("owner-bldg@test.com", "Owner");
