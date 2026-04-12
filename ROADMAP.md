@@ -19,7 +19,7 @@ It will use real world map. The game will start in single city and later other c
 
 ### B2B Sales unit editation
 - In b2b unit show the sale price, when creating b2b sale unit in factory make sure to set the competetive default price
-- **Progress: 90% complete** — New B2B_SALES units now auto-fill a competitive default price based on the product's base price (factory) or resource base price (mine) at placement time. The configured price is visible in both the edit panel and read-only unit detail. The `getB2BSuggestedPrice` helper covers both factory and mine scenarios. Backend plan unit retains the submitted price, and the tick engine already falls back to base price when `minPrice` is null. Remaining: expose the auto-fill hint as a stronger guide when no adjacent manufacturing/mining unit is configured yet.
+- **Progress: 90% complete** — B2B sales units auto-fill competitive prices from linked products/resources at placement. Remaining: stronger visual hint when no source unit is configured yet.
 
 ### Basic unit definition
 - Make storage unit have 10x storage capacity then the purchase or sales units by default

@@ -3119,7 +3119,7 @@ async function submitUnitUpgrade(unitId: string) {
  * Returns null when no relevant configured unit is found in the current draft.
  */
 function getB2BSuggestedPrice(unit: EditableGridUnit): number | null {
-  // Find all adjacent units (not yet including the new unit being placed)
+  // Find adjacent units from the existing draft state (before the new unit is added at this position)
   const byPos = new Map(draftUnits.value.map((u) => [`${u.gridX},${u.gridY}`, u]))
   const neighbors: EditableGridUnit[] = []
   const directions = [
