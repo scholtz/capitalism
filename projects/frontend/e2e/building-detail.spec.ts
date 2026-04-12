@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { makeChairProduct, makePlayer, setupMockApi, type MockBuildingUnit, type MockPublicSalesAnalytics } from './helpers/mock-api'
+import { makeChairProduct, makeDefaultProducts, makePlayer, setupMockApi, type MockBuildingUnit, type MockPublicSalesAnalytics } from './helpers/mock-api'
 
 function getGridSection(page: Page, heading: string) {
   return page
@@ -38,6 +38,16 @@ async function selectPurchaseItem(page: Page, searchTerm: string, optionName: Re
   await dialog.getByRole('button', { name: optionName }).first().click()
   await dialog.getByRole('button', { name: 'Done' }).click()
   await expect(dialog).toBeHidden()
+}
+
+async function configureStarterShopPurchaseItem(
+  page: Page,
+  planningSection: ReturnType<typeof getGridSection>,
+  searchTerm: string,
+  optionName: RegExp,
+) {
+  await getGridCell(planningSection, 0, 0).click()
+  await selectPurchaseItem(page, searchTerm, optionName)
 }
 
 test.describe('Building detail upgrades', () => {
@@ -6341,6 +6351,8 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
       .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
       .first()
 
+    await configureStarterShopPurchaseItem(page, planningSection, 'chair', /Wooden Chair/i)
+
     const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await publicSalesCell.click()
 
@@ -6394,6 +6406,8 @@ test.describe('Sales shop PUBLIC_SALES price validation and persistence', () => 
       .locator('.grid-section')
       .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
       .first()
+
+    await configureStarterShopPurchaseItem(page, planningSection, 'chair', /Wooden Chair/i)
 
     const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await publicSalesCell.click()
@@ -6481,6 +6495,8 @@ test.describe('Product picker UX — collapsible trigger and dropdown', () => {
       .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
       .first()
 
+    await configureStarterShopPurchaseItem(page, planningSection, 'chair', /Wooden Chair/i)
+
     // Click on the PUBLIC_SALES cell
     const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await publicSalesCell.click()
@@ -6523,6 +6539,8 @@ test.describe('Product picker UX — collapsible trigger and dropdown', () => {
       .locator('.grid-section')
       .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
       .first()
+
+    await configureStarterShopPurchaseItem(page, planningSection, 'chair', /Wooden Chair/i)
 
     const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await publicSalesCell.click()
@@ -6600,6 +6618,8 @@ test.describe('Product picker UX — collapsible trigger and dropdown', () => {
       .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
       .first()
 
+    await configureStarterShopPurchaseItem(page, planningSection, 'chair', /Wooden Chair/i)
+
     const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await publicSalesCell.click()
 
@@ -6622,6 +6642,199 @@ test.describe('Product picker UX — collapsible trigger and dropdown', () => {
 
     // Product item should be interactable (visible and clickable)
     await expect(page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
+  })
+})
+
+test.describe('Link-aware product picker — PUBLIC_SALES unit', () => {
+  function makeSalesShopForContextAwarePicker(options: {
+    upstreamProductId?: string | null
+    unrelatedProductId?: string | null
+    salesUnitProductId?: string | null
+    salesInventoryProductIds?: string[]
+    purchaseLinked?: boolean
+  } = {}) {
+    const salesInventoryItems = (options.salesInventoryProductIds ?? []).map((productTypeId, index) => ({
+      id: `sales-stock-${index}`,
+      productTypeId,
+      resourceTypeId: null,
+      quantity: 5,
+      quality: 0.84,
+      sourcingCostTotal: 25,
+    }))
+
+    return makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-sales-picker',
+          playerId: 'player-1',
+          name: 'Sales Picker Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-sales-picker',
+              companyId: 'company-sales-picker',
+              cityId: 'city-ba',
+              type: 'SALES_SHOP',
+              name: 'Sales Picker Shop',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 2,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'sales-purchase-unit',
+                  buildingId: 'building-sales-picker',
+                  unitType: 'PURCHASE',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: options.purchaseLinked ?? true,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: options.upstreamProductId ?? 'prod-bread',
+                },
+                {
+                  id: 'sales-public-unit',
+                  buildingId: 'building-sales-picker',
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: options.salesUnitProductId ?? null,
+                  inventoryItems: salesInventoryItems,
+                },
+                {
+                  id: 'sales-other-purchase',
+                  buildingId: 'building-sales-picker',
+                  unitType: 'PURCHASE',
+                  gridX: 0,
+                  gridY: 1,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: options.unrelatedProductId ?? 'prod-chair',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+  }
+
+  async function loginIntoContextAwarePickerShop(page: Page, player = makeSalesShopForContextAwarePicker()) {
+    const state = setupMockApi(page, { players: [player], products: makeDefaultProducts() })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+    await page.goto('/building/building-sales-picker')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+    return getGridSection(page, 'Planned Upgrade')
+  }
+
+  test('PUBLIC_SALES picker shows only products from the connected upstream chain', async ({ page }) => {
+    const plannedSection = await loginIntoContextAwarePickerShop(page)
+
+    await getGridCell(plannedSection, 1, 0).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await expect(productTypeField.locator('.picker-help-text')).toContainText(
+      'Choose from products that can reach this sales unit through linked upstream units',
+    )
+    await productTypeField.locator('.picker-trigger').click()
+
+    const breadItem = page.locator('.product-picker-panel .picker-item').filter({
+      has: page.locator('.picker-item-name', { hasText: 'Bread' }),
+    })
+    await expect(breadItem).toBeVisible()
+    await expect(breadItem.locator('.picker-item-badge')).toContainText('Connected chain')
+    await expect(breadItem.locator('.picker-item-context')).toContainText('linked unit chain')
+    await expect(page.locator('.product-picker-panel .picker-item-name', { hasText: 'Wooden Chair' })).toHaveCount(0)
+  })
+
+  test('PUBLIC_SALES picker preserves stocked products after upstream links are removed', async ({ page }) => {
+    const plannedSection = await loginIntoContextAwarePickerShop(
+      page,
+      makeSalesShopForContextAwarePicker({
+        upstreamProductId: 'prod-bread',
+        purchaseLinked: false,
+        salesUnitProductId: 'prod-chair',
+        salesInventoryProductIds: ['prod-chair'],
+      }),
+    )
+
+    await getGridCell(plannedSection, 1, 0).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await expect(productTypeField.locator('.picker-trigger-selected-name')).toContainText('Wooden Chair')
+    await productTypeField.locator('.picker-trigger').click()
+
+    const chairItem = page.locator('.product-picker-panel .picker-item').filter({
+      has: page.locator('.picker-item-name', { hasText: 'Wooden Chair' }),
+    })
+    await expect(chairItem).toBeVisible()
+    await expect(chairItem.locator('.picker-item-badge')).toContainText('Current stock')
+    await expect(chairItem.locator('.picker-item-context')).toContainText('Already stocked in this unit')
+    await expect(page.locator('.product-picker-panel .picker-item-name', { hasText: 'Bread' })).toHaveCount(0)
+  })
+
+  test('PUBLIC_SALES picker shows an actionable empty state when no connected or stocked products exist', async ({ page }) => {
+    const plannedSection = await loginIntoContextAwarePickerShop(
+      page,
+      makeSalesShopForContextAwarePicker({
+        upstreamProductId: null,
+        unrelatedProductId: 'prod-chair',
+        purchaseLinked: false,
+      }),
+    )
+
+    await getGridCell(plannedSection, 1, 0).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await productTypeField.locator('.picker-trigger').click()
+
+    await expect(page.locator('.product-picker-panel .picker-empty-no-connected')).toContainText(
+      'Link a purchase, manufacturing, or storage chain into this unit, or restock the unit',
+    )
   })
 })
 
@@ -7602,6 +7815,8 @@ test.describe('Product picker — contextual ranking section headers', () => {
       .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
       .first()
 
+    await configureStarterShopPurchaseItem(page, planningSection, 'chair', /Wooden Chair/i)
+
     const publicSalesCell = planningSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1)
     await publicSalesCell.click()
 
@@ -7665,6 +7880,23 @@ test.describe('Product picker — contextual ranking section headers', () => {
                   linkDownLeft: false,
                   linkDownRight: false,
                   productTypeId: 'prod-unknown-deleted', // ID that is NOT in the products list
+                },
+                {
+                  id: 'stale-purchase-unit',
+                  buildingId: 'building-stale-shop',
+                  unitType: 'PURCHASE',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: true,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: 'prod-chair',
                 },
               ],
             },

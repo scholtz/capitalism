@@ -438,10 +438,13 @@ export interface OnboardingResult {
   selectedProduct: ProductType
 }
 
+export type ProductAvailabilityReason = 'connected_upstream' | 'current_stock' | 'connected_and_stock'
+
 export interface RankedProductResult {
   productType: ProductType
   rankingReason: 'connected' | 'used_by_company' | 'catalog'
   rankingScore: number
+  availabilityReason?: ProductAvailabilityReason
 }
 
 export interface OnboardingStartResult {

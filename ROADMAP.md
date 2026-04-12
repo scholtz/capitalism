@@ -11,7 +11,7 @@ It will use real world map. The game will start in single city and later other c
 - The cros directional link does not work. The diagonal links can be enabled or disabled from both sides. From top left to bottom right and from top right to bottom left is one of the options. Valid options if all 4 units are available are: TLBR (↘),TRBL (↙),BRTL (↖),BLTR (↗),TLBR+TRBL (⤩),TLBR+BLTR (⤨), BLTR+BRTL (⤧), and TRBL+BRTL (⤪). Valid options if all diagonal TLBR units are available while at least one of the diagonal unit TRBL is not available: TLBR (↘), BRTL (↖). Valid options if all diagonal TRBL units are available while at least one of the diagonal unit TLBR is not available: TRBL (↙), BLTR (↗). 
 - Make frontend arrows bigger, at the moment it is very small and does not show properly direction to the user. Diagonal arrows on frontend does not show direction at all at the moment. Make sure the direction is clearly visible.
 
-### Sale Unit editation
+### Sale Unit editation (100%)
 - Improve product selection in sales unit - select products only from connected units or current stock items
 
 ### Manufacturing unit editation
@@ -419,4 +419,3 @@ Master server Backend is .NET with graphql engine with data stored in postgresql
 Deployed to kubernetes.
 
 Players must receive near real time user experience.
-

@@ -17,6 +17,10 @@ const props = defineProps<{
   allowNone?: boolean
   /** Label for the none option. */
   noneLabelKey?: string
+  /** Optional help text override for context-aware pickers. */
+  helpTextKey?: string
+  /** Optional empty-state override for context-aware pickers. */
+  emptyStateKey?: string
 }>()
 
 const emit = defineEmits<{
@@ -130,6 +134,27 @@ function rankingReasonClass(reason: string): string {
   return ''
 }
 
+function availabilityReasonLabel(entry: RankedProductResult): string {
+  if (entry.availabilityReason === 'connected_upstream') return t('productPicker.reasonConnectedUpstream')
+  if (entry.availabilityReason === 'current_stock') return t('productPicker.reasonCurrentStock')
+  if (entry.availabilityReason === 'connected_and_stock') return t('productPicker.reasonConnectedAndStock')
+  return rankingReasonLabel(entry.rankingReason)
+}
+
+function availabilityReasonClass(entry: RankedProductResult): string {
+  if (entry.availabilityReason === 'connected_upstream') return 'badge-connected'
+  if (entry.availabilityReason === 'current_stock') return 'badge-stock'
+  if (entry.availabilityReason === 'connected_and_stock') return 'badge-connected-stock'
+  return rankingReasonClass(entry.rankingReason)
+}
+
+function availabilityReasonDetail(entry: RankedProductResult): string {
+  if (entry.availabilityReason === 'connected_upstream') return t('productPicker.contextConnectedUpstream')
+  if (entry.availabilityReason === 'current_stock') return t('productPicker.contextCurrentStock')
+  if (entry.availabilityReason === 'connected_and_stock') return t('productPicker.contextConnectedAndStock')
+  return ''
+}
+
 function productImage(r: RankedProductResult): string {
   return getProductImageUrl(r.productType)
 }
@@ -195,7 +220,7 @@ watch(
     </button>
 
     <!-- Help text -->
-    <p class="picker-help-text">{{ t('productPicker.helpText') }}</p>
+    <p class="picker-help-text">{{ t(props.helpTextKey ?? 'productPicker.helpText') }}</p>
 
     <!-- Dropdown panel teleported to body to escape overflow:hidden containers -->
     <Teleport to="body">
@@ -226,7 +251,7 @@ watch(
         </div>
 
         <div v-else-if="props.rankedProducts.length === 0" class="picker-empty picker-empty-no-connected">
-          {{ t('productPicker.noConnectedProducts') }}
+          {{ t(props.emptyStateKey ?? 'productPicker.noConnectedProducts') }}
         </div>
 
         <template v-else>
@@ -268,18 +293,20 @@ watch(
                 class="picker-item-img"
                 aria-hidden="true"
               />
-              <div class="picker-item-body">
-                <span class="picker-item-name">{{ r.productType.name }}</span>
-                <span class="picker-item-industry">{{ r.productType.industry }}</span>
-              </div>
-              <span
-                class="picker-item-badge"
-                :class="rankingReasonClass(r.rankingReason)"
-                :title="rankingReasonLabel(r.rankingReason)"
-              >{{ rankingReasonLabel(r.rankingReason) }}</span>
-              <span v-if="r.productType.isProOnly && !r.productType.isUnlockedForCurrentPlayer" class="picker-item-badge badge-pro">
-                {{ t('catalog.proBadge') }}
-              </span>
+               <div class="picker-item-body">
+                 <span class="picker-item-name">{{ r.productType.name }}</span>
+                 <span class="picker-item-industry">{{ r.productType.industry }}</span>
+                 <span v-if="availabilityReasonDetail(r)" class="picker-item-context">{{ availabilityReasonDetail(r) }}</span>
+               </div>
+               <span
+                 v-if="availabilityReasonLabel(r)"
+                 class="picker-item-badge"
+                 :class="availabilityReasonClass(r)"
+                 :title="availabilityReasonLabel(r)"
+               >{{ availabilityReasonLabel(r) }}</span>
+               <span v-if="r.productType.isProOnly && !r.productType.isUnlockedForCurrentPlayer" class="picker-item-badge badge-pro">
+                 {{ t('catalog.proBadge') }}
+               </span>
             </div>
           </template>
 
@@ -307,18 +334,20 @@ watch(
                 class="picker-item-img"
                 aria-hidden="true"
               />
-              <div class="picker-item-body">
-                <span class="picker-item-name">{{ r.productType.name }}</span>
-                <span class="picker-item-industry">{{ r.productType.industry }}</span>
-              </div>
-              <span
-                class="picker-item-badge"
-                :class="rankingReasonClass(r.rankingReason)"
-                :title="rankingReasonLabel(r.rankingReason)"
-              >{{ rankingReasonLabel(r.rankingReason) }}</span>
-              <span v-if="r.productType.isProOnly && !r.productType.isUnlockedForCurrentPlayer" class="picker-item-badge badge-pro">
-                {{ t('catalog.proBadge') }}
-              </span>
+               <div class="picker-item-body">
+                 <span class="picker-item-name">{{ r.productType.name }}</span>
+                 <span class="picker-item-industry">{{ r.productType.industry }}</span>
+                 <span v-if="availabilityReasonDetail(r)" class="picker-item-context">{{ availabilityReasonDetail(r) }}</span>
+               </div>
+               <span
+                 v-if="availabilityReasonLabel(r)"
+                 class="picker-item-badge"
+                 :class="availabilityReasonClass(r)"
+                 :title="availabilityReasonLabel(r)"
+               >{{ availabilityReasonLabel(r) }}</span>
+               <span v-if="r.productType.isProOnly && !r.productType.isUnlockedForCurrentPlayer" class="picker-item-badge badge-pro">
+                 {{ t('catalog.proBadge') }}
+               </span>
             </div>
           </template>
 
@@ -351,13 +380,20 @@ watch(
                 class="picker-item-img"
                 aria-hidden="true"
               />
-              <div class="picker-item-body">
-                <span class="picker-item-name">{{ r.productType.name }}</span>
-                <span class="picker-item-industry">{{ r.productType.industry }}</span>
-              </div>
-              <span v-if="r.productType.isProOnly && !r.productType.isUnlockedForCurrentPlayer" class="picker-item-badge badge-pro">
-                {{ t('catalog.proBadge') }}
-              </span>
+               <div class="picker-item-body">
+                 <span class="picker-item-name">{{ r.productType.name }}</span>
+                 <span class="picker-item-industry">{{ r.productType.industry }}</span>
+                 <span v-if="availabilityReasonDetail(r)" class="picker-item-context">{{ availabilityReasonDetail(r) }}</span>
+               </div>
+               <span
+                 v-if="availabilityReasonLabel(r)"
+                 class="picker-item-badge"
+                 :class="availabilityReasonClass(r)"
+                 :title="availabilityReasonLabel(r)"
+               >{{ availabilityReasonLabel(r) }}</span>
+               <span v-if="r.productType.isProOnly && !r.productType.isUnlockedForCurrentPlayer" class="picker-item-badge badge-pro">
+                 {{ t('catalog.proBadge') }}
+               </span>
             </div>
           </template>
         </template>
@@ -612,6 +648,12 @@ watch(
   letter-spacing: 0.04em;
 }
 
+.picker-item-context {
+  font-size: 0.72rem;
+  color: var(--color-text-muted, #6b7280);
+  line-height: 1.35;
+}
+
 .picker-item-badge {
   font-size: 0.7rem;
   font-weight: 600;
@@ -629,6 +671,16 @@ watch(
 .badge-used {
   background: #dbeafe;
   color: #1e40af;
+}
+
+.badge-stock {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-connected-stock {
+  background: #ede9fe;
+  color: #5b21b6;
 }
 
 .badge-pro {

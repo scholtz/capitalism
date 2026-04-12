@@ -43,6 +43,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useGameStateStore } from '@/stores/gameState'
 import { getUnitResourceHistoryItemKey, type UnitResourceHistoryItemOption } from '@/lib/unitResourceHistory'
 import { buildPurchaseVendorOptions, collectSameCityVendorItemKeys, getPurchaseSelectorItemKey, sortPurchaseSelectorItems } from '@/lib/purchaseSelector'
+import { getSalesUnitProductOptions } from '@/lib/salesUnitProductPicker'
 import ProductPicker from '@/components/buildings/ProductPicker.vue'
 import type {
   Building,
@@ -625,6 +626,11 @@ const selectedPurchaseUnit = computed(() => (selectedDisplayUnit.value?.unitType
 const selectedPublicSalesUnit = computed(() => (!isEditing.value && selectedDisplayUnit.value?.unitType === 'PUBLIC_SALES' ? selectedDisplayUnit.value : undefined))
 const selectedManufacturingUnit = computed(() => (!isEditing.value && selectedDisplayUnit.value?.unitType === 'MANUFACTURING' ? selectedDisplayUnit.value : undefined))
 const selectedDraftPurchaseUnit = computed(() => (isEditing.value && selectedDisplayUnit.value?.unitType === 'PURCHASE' ? (selectedDisplayUnit.value as EditableGridUnit) : undefined))
+const selectedDraftPublicSalesUnit = computed(() => {
+  if (!selectedCell.value || !isEditing.value) return undefined
+  const unit = getDraftUnitAt(selectedCell.value.x, selectedCell.value.y)
+  return unit?.unitType === 'PUBLIC_SALES' ? unit : undefined
+})
 
 /**
  * Returns the set of product type IDs that are valid selections for the currently
@@ -680,6 +686,15 @@ const storageFilteredRankedProducts = computed<import('@/types').RankedProductRe
   // If filtering left nothing (e.g. selected product not in connected), fall back to full list
   return filtered.length > 0 ? filtered : rankedProducts.value
 })
+
+const publicSalesFilteredRankedProducts = computed<RankedProductResult[]>(() =>
+  getSalesUnitProductOptions({
+    unit: selectedDraftPublicSalesUnit.value,
+    draftUnits: draftUnits.value,
+    rankedProducts: rankedProducts.value,
+    unitInventories: unitInventories.value,
+  }),
+)
 
 const selectedHistoryItemOptions = computed<UnitResourceHistoryItemOption[]>(() => getUnitResourceHistoryItemOptions(selectedDisplayUnit.value))
 const selectedUnitResourceHistory = computed(() => getSelectedUnitResourceHistory(selectedDisplayUnit.value))
@@ -4754,10 +4769,12 @@ watch(
                     <label class="config-label">{{ t('buildingDetail.config.productType') }}</label>
                     <ProductPicker
                       :model-value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? null"
-                      :ranked-products="rankedProducts"
+                      :ranked-products="publicSalesFilteredRankedProducts"
                       :loading="rankedProductsLoading"
                       :allow-none="true"
                       none-label-key="buildingDetail.config.none"
+                      help-text-key="buildingDetail.config.publicSalesProductPickerHelp"
+                      empty-state-key="buildingDetail.config.publicSalesProductPickerEmpty"
                       @update:model-value="updateSelectedUnitConfig('productTypeId', $event)"
                     />
                   </div>
@@ -4797,10 +4814,12 @@ watch(
                     <label class="config-label">{{ t('buildingDetail.config.productType') }}</label>
                     <ProductPicker
                       :model-value="getDraftUnitAt(selectedCell.x, selectedCell.y)!.productTypeId ?? null"
-                      :ranked-products="rankedProducts"
+                      :ranked-products="publicSalesFilteredRankedProducts"
                       :loading="rankedProductsLoading"
                       :allow-none="true"
                       none-label-key="buildingDetail.config.none"
+                      help-text-key="buildingDetail.config.publicSalesProductPickerHelp"
+                      empty-state-key="buildingDetail.config.publicSalesProductPickerEmpty"
                       @update:model-value="updateSelectedUnitConfig('productTypeId', $event)"
                     />
                   </div>
