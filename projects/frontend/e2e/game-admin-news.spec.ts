@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { makeAdminPlayer, makePlayer, setupMockApi } from './helpers/mock-api'
+import { makeAdminPlayer, makePlayer, setupMockApi, type MockGameNewsEntry } from './helpers/mock-api'
 
 async function authenticate(page: Page, token: string) {
   await page.addInitScript((value) => {
@@ -8,6 +8,31 @@ async function authenticate(page: Page, token: string) {
     localStorage.setItem('auth_expires', new Date(Date.now() + 7_200_000).toISOString())
   }, token)
 }
+
+const makeNewsEntry = (overrides: Partial<MockGameNewsEntry> = {}): MockGameNewsEntry => ({
+  id: `news-${Date.now()}-${Math.random()}`,
+  entryType: 'NEWS',
+  status: 'PUBLISHED',
+  targetServerKey: null,
+  createdByEmail: 'admin@test.com',
+  updatedByEmail: 'admin@test.com',
+  createdAtUtc: '2026-01-10T08:00:00Z',
+  updatedAtUtc: '2026-01-10T08:00:00Z',
+  publishedAtUtc: '2026-01-10T08:00:00Z',
+  readByPlayerIds: [],
+  localizations: [
+    {
+      locale: 'en',
+      title: 'Default News Title',
+      summary: 'Default summary text.',
+      htmlContent: '<p>Default HTML content.</p>',
+    },
+  ],
+  ...overrides,
+})
+
+const makeChangelogEntry = (overrides: Partial<MockGameNewsEntry> = {}): MockGameNewsEntry =>
+  makeNewsEntry({ entryType: 'CHANGELOG', ...overrides })
 
 test.describe('Game news and administration', () => {
   test('shows unread news badge and clears it after the news page is opened', async ({ page }) => {
@@ -53,6 +78,261 @@ test.describe('Game news and administration', () => {
     await expect(page).toHaveURL('/news')
     await expect(page.getByRole('heading', { name: 'Server Gazette' })).toBeVisible()
     await expect(page.locator('.news-badge')).toHaveCount(0)
+  })
+
+  test('unauthenticated visitor can browse the news page and see changelog entries', async ({ page }) => {
+    setupMockApi(page, {
+      players: [],
+      gameNewsEntries: [
+        makeChangelogEntry({
+          id: 'cl-1',
+          localizations: [
+            {
+              locale: 'en',
+              title: 'Version 1.0 released',
+              summary: 'Initial public release of the game.',
+              htmlContent: '<p>The game is now publicly available.</p>',
+            },
+          ],
+        }),
+      ],
+    })
+
+    await page.goto('/news')
+
+    await expect(page.getByRole('heading', { name: 'Newsroom & Changelog' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Version 1.0 released' })).toBeVisible()
+    await expect(page.getByText('Initial public release of the game.')).toBeVisible()
+    // Unauthenticated: no badge rendered
+    await expect(page.locator('.news-badge')).toHaveCount(0)
+  })
+
+  test('empty state is displayed with informative text when no entries exist', async ({ page }) => {
+    setupMockApi(page, {
+      players: [],
+      gameNewsEntries: [],
+    })
+
+    await page.goto('/news')
+
+    await expect(page.locator('.state-card')).toBeVisible()
+    await expect(page.getByText('No published entries yet')).toBeVisible()
+    await expect(page.getByText('When administrators publish news or changelog notes, they will appear here.')).toBeVisible()
+  })
+
+  test('error state is displayed with retry button when the feed fails to load', async ({ page }) => {
+    setupMockApi(page, {
+      players: [],
+      gameNewsEntries: [],
+    })
+
+    // Override the gameNewsFeed handler to return a server error response.
+    // Must be registered AFTER setupMockApi so it takes priority (LIFO ordering).
+    await page.route('**/graphql', (route) => {
+      const postData = route.request().postDataJSON() as { query?: string } | null
+      const query = postData?.query ?? ''
+      if (query.includes('gameNewsFeed')) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'News feed is temporarily unavailable' }] }),
+        })
+      }
+      return route.continue()
+    })
+
+    await page.goto('/news')
+
+    await expect(page.locator('.state-card-error')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible()
+  })
+
+  test('changelog filter shows only changelog entries', async ({ page }) => {
+    setupMockApi(page, {
+      players: [],
+      gameNewsEntries: [
+        makeNewsEntry({
+          id: 'news-only',
+          localizations: [
+            {
+              locale: 'en',
+              title: 'Market News Headline',
+              summary: 'News summary',
+              htmlContent: '<p>News body</p>',
+            },
+          ],
+        }),
+        makeChangelogEntry({
+          id: 'cl-only',
+          localizations: [
+            {
+              locale: 'en',
+              title: 'Changelog Update',
+              summary: 'Changelog summary',
+              htmlContent: '<p>Changelog body</p>',
+            },
+          ],
+        }),
+      ],
+    })
+
+    await page.goto('/news')
+
+    // All entries visible initially
+    await expect(page.getByRole('heading', { name: 'Market News Headline' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Changelog Update' })).toBeVisible()
+
+    // Click Changelog filter tab
+    await page.getByRole('button', { name: 'Changelog' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Changelog Update' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Market News Headline' })).toHaveCount(0)
+  })
+
+  test('newspaper filter shows only news entries', async ({ page }) => {
+    setupMockApi(page, {
+      players: [],
+      gameNewsEntries: [
+        makeNewsEntry({
+          id: 'news-only-2',
+          localizations: [
+            {
+              locale: 'en',
+              title: 'Breaking Economic News',
+              summary: 'News summary',
+              htmlContent: '<p>News body</p>',
+            },
+          ],
+        }),
+        makeChangelogEntry({
+          id: 'cl-only-2',
+          localizations: [
+            {
+              locale: 'en',
+              title: 'Patch Notes Entry',
+              summary: 'Changelog summary',
+              htmlContent: '<p>Changelog body</p>',
+            },
+          ],
+        }),
+      ],
+    })
+
+    await page.goto('/news')
+
+    // Click Newspaper filter tab
+    await page.getByRole('button', { name: 'Newspaper' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Breaking Economic News' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Patch Notes Entry' })).toHaveCount(0)
+  })
+
+  test('renders multiple entries with publication dates and html content', async ({ page }) => {
+    setupMockApi(page, {
+      players: [],
+      gameNewsEntries: [
+        makeChangelogEntry({
+          id: 'cl-multi-1',
+          publishedAtUtc: '2026-03-15T10:00:00Z',
+          localizations: [
+            {
+              locale: 'en',
+              title: 'March Changelog Entry',
+              summary: 'New buildings added to the city.',
+              htmlContent: '<p>Three new industrial buildings are now available in Prague.</p>',
+            },
+          ],
+        }),
+        makeChangelogEntry({
+          id: 'cl-multi-2',
+          publishedAtUtc: '2026-04-01T09:00:00Z',
+          localizations: [
+            {
+              locale: 'en',
+              title: 'April Changelog Entry',
+              summary: 'Tax system updated.',
+              htmlContent: '<p>The tax rate now applies to net profit rather than gross revenue.</p>',
+            },
+          ],
+        }),
+      ],
+    })
+
+    await page.goto('/news')
+
+    await expect(page.getByRole('heading', { name: 'March Changelog Entry' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'April Changelog Entry' })).toBeVisible()
+    await expect(page.getByText('New buildings added to the city.')).toBeVisible()
+    await expect(page.getByText('Tax system updated.')).toBeVisible()
+    // HTML content is rendered
+    await expect(page.getByText('Three new industrial buildings are now available in Prague.')).toBeVisible()
+    await expect(page.getByText('The tax rate now applies to net profit rather than gross revenue.')).toBeVisible()
+  })
+
+  test('global news entries are visible on all servers (null targetServerKey)', async ({ page }) => {
+    setupMockApi(page, {
+      players: [],
+      gameNewsEntries: [
+        makeChangelogEntry({
+          id: 'global-cl',
+          targetServerKey: null,
+          localizations: [
+            {
+              locale: 'en',
+              title: 'Global Announcement',
+              summary: 'This appears everywhere.',
+              htmlContent: '<p>Visible across all game servers.</p>',
+            },
+          ],
+        }),
+        makeNewsEntry({
+          id: 'other-server-news',
+          targetServerKey: 'other-server',
+          localizations: [
+            {
+              locale: 'en',
+              title: 'Hidden Server News',
+              summary: 'Only for other-server players.',
+              htmlContent: '<p>Server-specific news.</p>',
+            },
+          ],
+        }),
+      ],
+    })
+
+    await page.goto('/news')
+
+    await expect(page.getByRole('heading', { name: 'Global Announcement' })).toBeVisible()
+    // Entry for another server key should not be visible
+    await expect(page.getByRole('heading', { name: 'Hidden Server News' })).toHaveCount(0)
+  })
+
+  test('news entry badge pill is shown with correct label', async ({ page }) => {
+    setupMockApi(page, {
+      players: [],
+      gameNewsEntries: [
+        makeChangelogEntry({
+          id: 'pill-cl',
+          localizations: [
+            { locale: 'en', title: 'Changelog Pill Test', summary: '', htmlContent: '' },
+          ],
+        }),
+        makeNewsEntry({
+          id: 'pill-news',
+          localizations: [
+            { locale: 'en', title: 'News Pill Test', summary: '', htmlContent: '' },
+          ],
+        }),
+      ],
+    })
+
+    await page.goto('/news')
+
+    const changelogCard = page.locator('.news-card', { hasText: 'Changelog Pill Test' })
+    await expect(changelogCard.locator('.news-pill-changelog')).toContainText('Changelog')
+
+    const newsCard = page.locator('.news-card', { hasText: 'News Pill Test' })
+    await expect(newsCard.locator('.news-pill-news')).toContainText('Newspaper')
   })
 
   test('local admin can inspect the dashboard and impersonate a player', async ({ page }) => {

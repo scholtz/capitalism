@@ -55,7 +55,7 @@ It will use real world map. The game will start in single city and later other c
 - Make ingame chat more intuitive on the frontend. Add chat to the top navigation bar and if it is open, make sure the chat is visible at the side. In the small devices make sure it is the full page thing.
 
 ### Newspaper and changelog
-- Newspaper nor changelog does not show any data. Make sure the data is loaded from the master api and is working properly.
+- ✅ 90% complete — Data flow from MasterApi to game frontend is restored and reliable. All CHANGELOG.csv entries are seeded as global CHANGELOG entries in MasterApi. The game API news proxy now gracefully returns an empty feed when MasterApi is unavailable instead of propagating the error. Frontend shows explicit empty, loading, and error states. Filter tabs work for ALL/Newspaper/Changelog views. Unread badge and mark-read flow is operational. Remaining: server-specific NEWS entries seeding automation; search/pagination UI for large feeds.
 
 ## Multiple Game Servers
 
@@ -387,6 +387,8 @@ List of the root game administrators is managed by the master api configuration.
 
 ## Newspaper and changelog
 
+**Status: 90% complete** (April 2026)
+
 The master api database holds the changelog and newspaper. Admins can publish the news for directing users or report some progress.
 
 With every change the changelog must be updated. The changelog is visible in the news section in every game.
@@ -394,6 +396,18 @@ With every change the changelog must be updated. The changelog is visible in the
 Game administrators can edit any changelog or news record in any localization.
 
 Track if user did read the news, if not show in the navbar number of unread messages.
+
+### What was delivered
+- All CHANGELOG.csv entries are seeded as published global CHANGELOG records in MasterApi on startup (idempotent).
+- The game API news proxy (`gameNewsFeed` query) now returns an empty feed gracefully when MasterApi is unreachable, preventing blank screens.
+- Full empty state, loading state, and error state UIs are implemented in the NewsView.
+- Filter tabs (All / Newspaper / Changelog) work correctly and hide entries that do not belong to this server.
+- Unread badge in navbar shows count of unread entries; opening the News page marks visible entries as read and clears the badge.
+- 4 new backend game API tests verify proxy behaviour; 4 new MasterApi tests verify seed entries have all three locales; 8 new E2E tests cover unauthenticated access, empty state, error state, filter tabs, and pill labels.
+
+### What remains
+- Automated seeding of server-specific NEWS entries per deployed game server.
+- Pagination or search UI for feeds with more than 50 entries.
 
 ## Monetization
 

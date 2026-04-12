@@ -18,7 +18,8 @@ public sealed partial class Query
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor,
         [Service] IMasterGameAdministrationService masterGameAdministrationService,
-        [Service] GameAdminAuthorizationService gameAdminAuthorizationService)
+        [Service] GameAdminAuthorizationService gameAdminAuthorizationService,
+        [Service] ILogger<Query> logger)
     {
         var principal = httpContextAccessor.HttpContext?.User;
         string? playerEmail = null;
@@ -49,11 +50,21 @@ public sealed partial class Query
             requesterEmail = accessContext.ActorPlayer.Email;
         }
 
-        return await masterGameAdministrationService.GetGameNewsFeedAsync(
-            playerEmail,
-            includeDrafts,
-            requesterEmail,
-            httpContextAccessor.HttpContext?.RequestAborted ?? CancellationToken.None);
+        try
+        {
+            return await masterGameAdministrationService.GetGameNewsFeedAsync(
+                playerEmail,
+                includeDrafts,
+                requesterEmail,
+                httpContextAccessor.HttpContext?.RequestAborted ?? CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not GraphQLException)
+        {
+            // When the master API is temporarily unavailable, return an empty feed rather than
+            // propagating the error so the frontend can show its empty state gracefully.
+            logger.LogWarning(ex, "Failed to fetch news feed from master API; returning empty feed.");
+            return new GameNewsFeedResult();
+        }
     }
 
 }

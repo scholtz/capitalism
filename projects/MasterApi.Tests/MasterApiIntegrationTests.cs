@@ -593,6 +593,152 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
                 }
 
         [Fact]
+        public async Task GameNewsFeed_IncludesDirectionalLinksChangelogEntry()
+        {
+            var result = await GraphQlAsync("""
+                query Feed($input: GetGameNewsFeedInput!) {
+                    gameNewsFeed(input: $input) {
+                        items {
+                            entryType
+                            status
+                            localizations { locale title }
+                        }
+                    }
+                }
+                """,
+                new
+                {
+                    input = new
+                    {
+                        registrationKey = "test-registration-key",
+                        serverKey = "capitalism-local",
+                        includeDrafts = false,
+                        limit = 50,
+                    }
+                });
+
+            Assert.False(result.TryGetProperty("errors", out _));
+            var items = result.GetProperty("data").GetProperty("gameNewsFeed").GetProperty("items").EnumerateArray().ToList();
+            Assert.Contains(
+                items,
+                item => item.GetProperty("entryType").GetString() == "CHANGELOG"
+                    && item.GetProperty("status").GetString() == "PUBLISHED"
+                    && item.GetProperty("localizations").EnumerateArray().Any(localization =>
+                        localization.GetProperty("locale").GetString() == "en"
+                        && localization.GetProperty("title").GetString() == "Building unit directional links with diagonal support"));
+        }
+
+        [Fact]
+        public async Task GameNewsFeed_IncludesManufacturingProductSelectorChangelogEntry()
+        {
+            var result = await GraphQlAsync("""
+                query Feed($input: GetGameNewsFeedInput!) {
+                    gameNewsFeed(input: $input) {
+                        items {
+                            entryType
+                            status
+                            localizations { locale title }
+                        }
+                    }
+                }
+                """,
+                new
+                {
+                    input = new
+                    {
+                        registrationKey = "test-registration-key",
+                        serverKey = "capitalism-local",
+                        includeDrafts = false,
+                        limit = 50,
+                    }
+                });
+
+            Assert.False(result.TryGetProperty("errors", out _));
+            var items = result.GetProperty("data").GetProperty("gameNewsFeed").GetProperty("items").EnumerateArray().ToList();
+            Assert.Contains(
+                items,
+                item => item.GetProperty("entryType").GetString() == "CHANGELOG"
+                    && item.GetProperty("status").GetString() == "PUBLISHED"
+                    && item.GetProperty("localizations").EnumerateArray().Any(localization =>
+                        localization.GetProperty("locale").GetString() == "en"
+                        && localization.GetProperty("title").GetString() == "Manufacturing output product selector shows product images"));
+        }
+
+        [Fact]
+        public async Task GameNewsFeed_IncludesNewspaperChangelogRestoredEntry()
+        {
+            var result = await GraphQlAsync("""
+                query Feed($input: GetGameNewsFeedInput!) {
+                    gameNewsFeed(input: $input) {
+                        items {
+                            entryType
+                            status
+                            localizations { locale title }
+                        }
+                    }
+                }
+                """,
+                new
+                {
+                    input = new
+                    {
+                        registrationKey = "test-registration-key",
+                        serverKey = "capitalism-local",
+                        includeDrafts = false,
+                        limit = 50,
+                    }
+                });
+
+            Assert.False(result.TryGetProperty("errors", out _));
+            var items = result.GetProperty("data").GetProperty("gameNewsFeed").GetProperty("items").EnumerateArray().ToList();
+            Assert.Contains(
+                items,
+                item => item.GetProperty("entryType").GetString() == "CHANGELOG"
+                    && item.GetProperty("status").GetString() == "PUBLISHED"
+                    && item.GetProperty("localizations").EnumerateArray().Any(localization =>
+                        localization.GetProperty("locale").GetString() == "en"
+                        && localization.GetProperty("title").GetString() == "Newspaper and changelog data flow restored"));
+        }
+
+        [Fact]
+        public async Task GameNewsFeed_SeededEntriesHaveAllThreeLocales()
+        {
+            var result = await GraphQlAsync("""
+                query Feed($input: GetGameNewsFeedInput!) {
+                    gameNewsFeed(input: $input) {
+                        items {
+                            id
+                            localizations { locale title }
+                        }
+                    }
+                }
+                """,
+                new
+                {
+                    input = new
+                    {
+                        registrationKey = "test-registration-key",
+                        serverKey = "capitalism-local",
+                        includeDrafts = false,
+                        limit = 50,
+                    }
+                });
+
+            Assert.False(result.TryGetProperty("errors", out _));
+            var items = result.GetProperty("data").GetProperty("gameNewsFeed").GetProperty("items").EnumerateArray().ToList();
+            Assert.True(items.Count >= 4, $"Expected at least 4 seeded entries, got {items.Count}");
+            foreach (var item in items)
+            {
+                var locales = item.GetProperty("localizations").EnumerateArray()
+                    .Select(localization => localization.GetProperty("locale").GetString())
+                    .ToHashSet();
+                Assert.Contains("en", locales);
+                Assert.Contains("sk", locales);
+                Assert.Contains("de", locales);
+            }
+        }
+
+        [Fact]
         public async Task GameNewsFeed_AllowsAnonymousPublicRequests()
         {
             var result = await GraphQlAsync("""
