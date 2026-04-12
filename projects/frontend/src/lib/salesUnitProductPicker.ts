@@ -16,6 +16,16 @@ export type SalesUnitProductPickerUnit = {
   linkDownRight: boolean
 }
 
+type LinkFlag =
+  | 'linkUp'
+  | 'linkDown'
+  | 'linkLeft'
+  | 'linkRight'
+  | 'linkUpLeft'
+  | 'linkUpRight'
+  | 'linkDownLeft'
+  | 'linkDownRight'
+
 const salesSourceUnitTypes = new Set(['PURCHASE', 'MANUFACTURING', 'STORAGE', 'B2B_SALES'])
 const availabilityPriority: Record<ProductAvailabilityReason, number> = {
   connected_and_stock: 120,
@@ -23,36 +33,38 @@ const availabilityPriority: Record<ProductAvailabilityReason, number> = {
   current_stock: 100,
 }
 
+const adjacencyChecks: Array<{
+  deltaX: number
+  deltaY: number
+  unitFlag: LinkFlag
+  candidateFlag: LinkFlag
+}> = [
+  { deltaX: 0, deltaY: -1, unitFlag: 'linkUp', candidateFlag: 'linkDown' },
+  { deltaX: 0, deltaY: 1, unitFlag: 'linkDown', candidateFlag: 'linkUp' },
+  { deltaX: -1, deltaY: 0, unitFlag: 'linkLeft', candidateFlag: 'linkRight' },
+  { deltaX: 1, deltaY: 0, unitFlag: 'linkRight', candidateFlag: 'linkLeft' },
+  { deltaX: -1, deltaY: -1, unitFlag: 'linkUpLeft', candidateFlag: 'linkDownRight' },
+  { deltaX: 1, deltaY: -1, unitFlag: 'linkUpRight', candidateFlag: 'linkDownLeft' },
+  { deltaX: -1, deltaY: 1, unitFlag: 'linkDownLeft', candidateFlag: 'linkUpRight' },
+  { deltaX: 1, deltaY: 1, unitFlag: 'linkDownRight', candidateFlag: 'linkUpLeft' },
+]
+
+function isConnectedNeighbor(
+  unit: SalesUnitProductPickerUnit,
+  candidate: SalesUnitProductPickerUnit,
+  adjacency: (typeof adjacencyChecks)[number],
+): boolean {
+  return (
+    candidate.gridX === unit.gridX + adjacency.deltaX &&
+    candidate.gridY === unit.gridY + adjacency.deltaY &&
+    (unit[adjacency.unitFlag] || candidate[adjacency.candidateFlag])
+  )
+}
+
 function getDirectlyConnectedUnits(unit: SalesUnitProductPickerUnit, units: SalesUnitProductPickerUnit[]): SalesUnitProductPickerUnit[] {
   return units.filter((candidate) => {
     if (candidate.id === unit.id) return false
-
-    if (candidate.gridX === unit.gridX && candidate.gridY === unit.gridY - 1) {
-      return unit.linkUp || candidate.linkDown
-    }
-    if (candidate.gridX === unit.gridX && candidate.gridY === unit.gridY + 1) {
-      return unit.linkDown || candidate.linkUp
-    }
-    if (candidate.gridX === unit.gridX - 1 && candidate.gridY === unit.gridY) {
-      return unit.linkLeft || candidate.linkRight
-    }
-    if (candidate.gridX === unit.gridX + 1 && candidate.gridY === unit.gridY) {
-      return unit.linkRight || candidate.linkLeft
-    }
-    if (candidate.gridX === unit.gridX - 1 && candidate.gridY === unit.gridY - 1) {
-      return unit.linkUpLeft || candidate.linkDownRight
-    }
-    if (candidate.gridX === unit.gridX + 1 && candidate.gridY === unit.gridY - 1) {
-      return unit.linkUpRight || candidate.linkDownLeft
-    }
-    if (candidate.gridX === unit.gridX - 1 && candidate.gridY === unit.gridY + 1) {
-      return unit.linkDownLeft || candidate.linkUpRight
-    }
-    if (candidate.gridX === unit.gridX + 1 && candidate.gridY === unit.gridY + 1) {
-      return unit.linkDownRight || candidate.linkUpLeft
-    }
-
-    return false
+    return adjacencyChecks.some((adjacency) => isConnectedNeighbor(unit, candidate, adjacency))
   })
 }
 
@@ -60,10 +72,11 @@ function getConnectedProductIds(unit: SalesUnitProductPickerUnit, units: SalesUn
   const productIds = new Set<string>()
   const queue = [unit]
   const visited = new Set<string>()
+  let readIndex = 0
 
-  while (queue.length > 0) {
-    const current = queue.shift()
-    if (!current) continue
+  while (readIndex < queue.length) {
+    const current = queue[readIndex]
+    readIndex += 1
 
     const key = `${current.gridX},${current.gridY}`
     if (visited.has(key)) continue

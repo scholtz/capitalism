@@ -6660,6 +6660,7 @@ test.describe('Link-aware product picker — PUBLIC_SALES unit', () => {
       quantity: 5,
       quality: 0.84,
       sourcingCostTotal: 25,
+      sourcingCostPerUnit: 5,
     }))
 
     return makePlayer({

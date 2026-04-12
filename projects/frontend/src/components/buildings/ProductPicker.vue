@@ -134,24 +134,43 @@ function rankingReasonClass(reason: string): string {
   return ''
 }
 
+const availabilityReasonMeta = {
+  connected_upstream: {
+    labelKey: 'productPicker.reasonConnectedUpstream',
+    detailKey: 'productPicker.contextConnectedUpstream',
+    className: 'badge-connected',
+  },
+  current_stock: {
+    labelKey: 'productPicker.reasonCurrentStock',
+    detailKey: 'productPicker.contextCurrentStock',
+    className: 'badge-stock',
+  },
+  connected_and_stock: {
+    labelKey: 'productPicker.reasonConnectedAndStock',
+    detailKey: 'productPicker.contextConnectedAndStock',
+    className: 'badge-connected-stock',
+  },
+} as const
+
+function getAvailabilityMeta(entry: RankedProductResult) {
+  return entry.availabilityReason ? availabilityReasonMeta[entry.availabilityReason] : null
+}
+
 function availabilityReasonLabel(entry: RankedProductResult): string {
-  if (entry.availabilityReason === 'connected_upstream') return t('productPicker.reasonConnectedUpstream')
-  if (entry.availabilityReason === 'current_stock') return t('productPicker.reasonCurrentStock')
-  if (entry.availabilityReason === 'connected_and_stock') return t('productPicker.reasonConnectedAndStock')
+  const meta = getAvailabilityMeta(entry)
+  if (meta) return t(meta.labelKey)
   return rankingReasonLabel(entry.rankingReason)
 }
 
 function availabilityReasonClass(entry: RankedProductResult): string {
-  if (entry.availabilityReason === 'connected_upstream') return 'badge-connected'
-  if (entry.availabilityReason === 'current_stock') return 'badge-stock'
-  if (entry.availabilityReason === 'connected_and_stock') return 'badge-connected-stock'
+  const meta = getAvailabilityMeta(entry)
+  if (meta) return meta.className
   return rankingReasonClass(entry.rankingReason)
 }
 
 function availabilityReasonDetail(entry: RankedProductResult): string {
-  if (entry.availabilityReason === 'connected_upstream') return t('productPicker.contextConnectedUpstream')
-  if (entry.availabilityReason === 'current_stock') return t('productPicker.contextCurrentStock')
-  if (entry.availabilityReason === 'connected_and_stock') return t('productPicker.contextConnectedAndStock')
+  const meta = getAvailabilityMeta(entry)
+  if (meta) return t(meta.detailKey)
   return ''
 }
 
