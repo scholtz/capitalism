@@ -45,6 +45,14 @@ const SUPPLY_ORIGIN_TYPES = ['PURCHASE', 'MINING']
 /** Unit types that are terminal sinks – resources flow INTO these by default. */
 const SINK_TYPES = ['PUBLIC_SALES', 'B2B_SALES']
 
+/**
+ * Shared role-based heuristic for the first-click link direction between any two units.
+ *
+ * @param firstType  Unit type treated as the "forward" source side of the pair.
+ * @param secondType Unit type treated as the "forward" destination side of the pair.
+ * @returns `forward` when flow should default from the first unit to the second,
+ *          otherwise `backward` when the second unit should send to the first.
+ */
 function inferDirectionalDefault(firstType?: string, secondType?: string): 'forward' | 'backward' {
   if (firstType && SUPPLY_ORIGIN_TYPES.includes(firstType)) return 'forward'
   if (secondType && SUPPLY_ORIGIN_TYPES.includes(secondType)) return 'backward'
@@ -131,6 +139,10 @@ export function getVerticalLinkState<T extends LinkFlagSource>(
   return 'none'
 }
 
+/**
+ * Maps the forward/backward flag presence for a single neighboring pair into the
+ * public directed-pair state enum, retaining `both` for legacy contradictory data.
+ */
 function getDirectedPairState(hasForward: boolean, hasBackward: boolean): DirectedPairLinkState {
   if (hasForward && hasBackward) return 'both'
   if (hasForward) return 'forward'
