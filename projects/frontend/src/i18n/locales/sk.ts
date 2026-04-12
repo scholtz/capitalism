@@ -1170,6 +1170,7 @@ export default {
       cloudBadge: 'Cloud',
       localBadge: 'Lokálne',
       cloudSyncHint: 'Cloudové rozloženia sú dostupné naprieč všetkými hernými servermi.',
+      hasLinks: 'so smermi',
     },
     productionChain: {
       title: 'Výrobný reťazec',

@@ -1172,6 +1172,7 @@ export default {
       cloudBadge: 'Cloud',
       localBadge: 'Local',
       cloudSyncHint: 'Cloud layouts are available across all game servers.',
+      hasLinks: 'with links',
     },
     productionChain: {
       title: 'Production Chain',

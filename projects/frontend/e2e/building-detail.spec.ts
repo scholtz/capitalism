@@ -15502,7 +15502,7 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     await expect(planSection.locator('.link-arrow').first()).toBeVisible()
   })
 
-  test('layout item shows unit count in metadata', async ({ page }) => {
+  test('layout item shows structural unit summary in metadata', async ({ page }) => {
     const player = makeLayoutTestPlayer()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
@@ -15536,8 +15536,15 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     const layoutItem = panel.locator('.layout-item').filter({ hasText: 'Three Unit Layout' })
     await expect(layoutItem).toBeVisible()
 
-    // The unit count meta should show '3 units'
-    await expect(layoutItem.locator('.layout-meta')).toContainText('3')
+    // The structural summary should show each unit type name (not just a raw count)
+    await expect(layoutItem.locator('.layout-meta')).toContainText('Purchase')
+    await expect(layoutItem.locator('.layout-meta')).toContainText('Manufacturing')
+    await expect(layoutItem.locator('.layout-meta')).toContainText('Storage')
+
+    // The mini 4×4 preview grid must be present
+    await expect(layoutItem.locator('.layout-mini-grid')).toBeVisible()
+    // All three occupied cells should be colored (layout-mini-cell-occupied class)
+    await expect(layoutItem.locator('.layout-mini-cell-occupied')).toHaveCount(3)
   })
 
 })

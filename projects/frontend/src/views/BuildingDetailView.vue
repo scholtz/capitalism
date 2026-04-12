@@ -841,6 +841,33 @@ function getUnitAtFrom(units: GridUnit[], x: number, y: number): GridUnit | unde
   return units.find((unit) => unit.gridX === x && unit.gridY === y)
 }
 
+/** Returns the unitType at (x, y) in a BuildingLayoutTemplate, or null if empty. */
+function getLayoutCellType(layout: BuildingLayoutTemplate, x: number, y: number): string | null {
+  return layout.units.find((u) => u.gridX === x && u.gridY === y)?.unitType ?? null
+}
+
+/**
+ * Returns a compact human-readable structural summary for a BuildingLayoutTemplate.
+ * e.g. "1× Purchase · 2× Manufacturing · 1× Storage · with links"
+ */
+function layoutStructureSummary(layout: BuildingLayoutTemplate): string {
+  if (!layout.units.length) return `0 ${t('buildingDetail.layouts.units')}`
+  const counts: Record<string, number> = {}
+  let hasLinks = false
+  for (const u of layout.units) {
+    counts[u.unitType] = (counts[u.unitType] ?? 0) + 1
+    if (u.linkUp || u.linkDown || u.linkLeft || u.linkRight ||
+      u.linkUpLeft || u.linkUpRight || u.linkDownLeft || u.linkDownRight) {
+      hasLinks = true
+    }
+  }
+  const parts = Object.entries(counts).map(([type, count]) =>
+    `${count}× ${t(`buildingDetail.unitTypes.${type}`)}`
+  )
+  if (hasLinks) parts.push(t('buildingDetail.layouts.hasLinks'))
+  return parts.join(' · ')
+}
+
 function getDraftUnitAt(x: number, y: number): EditableGridUnit | undefined {
   return draftUnits.value.find((unit) => unit.gridX === x && unit.gridY === y)
 }
@@ -5967,6 +5994,8 @@ watch(
 
                 <!-- Overwrite confirmation dialog -->
                 <div v-if="overwriteConfirmPending" class="layout-overwrite-confirm" role="alertdialog" aria-modal="true">
+                  <p class="layout-confirm-title">{{ overwriteConfirmPending.name }}</p>
+                  <p class="layout-confirm-summary">{{ layoutStructureSummary(overwriteConfirmPending) }}</p>
                   <p class="layout-confirm-text">{{ t('buildingDetail.layouts.overwriteConfirm') }}</p>
                   <div class="layout-confirm-actions">
                     <button class="btn btn-danger btn-sm" @click="confirmOverwrite">{{ t('common.confirm') }}</button>
@@ -6012,10 +6041,23 @@ watch(
                   <p v-else-if="masterLayoutsError" class="layout-save-error">{{ masterLayoutsError }}</p>
                   <div v-else-if="masterLayouts.length > 0" class="layout-list">
                     <div v-for="layout in masterLayouts" :key="layout.id ?? layout.name" class="layout-item">
+                      <!-- Mini 4×4 grid preview -->
+                      <div class="layout-mini-grid" aria-hidden="true">
+                        <template v-for="row in 4" :key="row">
+                          <template v-for="col in 4" :key="`${row}-${col}`">
+                            <div
+                              class="layout-mini-cell"
+                              :class="{ 'layout-mini-cell-occupied': getLayoutCellType(layout, col - 1, row - 1) !== null }"
+                              :style="getLayoutCellType(layout, col - 1, row - 1) ? { background: getUnitColor(getLayoutCellType(layout, col - 1, row - 1)!) } : {}"
+                              :title="getLayoutCellType(layout, col - 1, row - 1) ? t(`buildingDetail.unitTypes.${getLayoutCellType(layout, col - 1, row - 1)}`) : ''"
+                            />
+                          </template>
+                        </template>
+                      </div>
                       <div class="layout-item-info">
                         <span class="layout-name">{{ layout.name }}</span>
                         <span v-if="layout.description" class="layout-desc">{{ layout.description }}</span>
-                        <span class="layout-meta">{{ layout.units.length }} {{ t('buildingDetail.layouts.units') }}</span>
+                        <span class="layout-meta">{{ layoutStructureSummary(layout) }}</span>
                       </div>
                       <div class="layout-item-actions">
                         <button class="btn btn-ghost btn-sm" @click="requestLoadLayout(layout)">{{ t('buildingDetail.layouts.load') }}</button>
@@ -6043,10 +6085,23 @@ watch(
                     </div>
                     <div v-if="localLayouts.length > 0" class="layout-list">
                       <div v-for="layout in localLayouts" :key="layout.name" class="layout-item">
+                        <!-- Mini 4×4 grid preview -->
+                        <div class="layout-mini-grid" aria-hidden="true">
+                          <template v-for="row in 4" :key="row">
+                            <template v-for="col in 4" :key="`${row}-${col}`">
+                              <div
+                                class="layout-mini-cell"
+                                :class="{ 'layout-mini-cell-occupied': getLayoutCellType(layout, col - 1, row - 1) !== null }"
+                                :style="getLayoutCellType(layout, col - 1, row - 1) ? { background: getUnitColor(getLayoutCellType(layout, col - 1, row - 1)!) } : {}"
+                                :title="getLayoutCellType(layout, col - 1, row - 1) ? t(`buildingDetail.unitTypes.${getLayoutCellType(layout, col - 1, row - 1)}`) : ''"
+                              />
+                            </template>
+                          </template>
+                        </div>
                         <div class="layout-item-info">
                           <span class="layout-name">{{ layout.name }}</span>
                           <span v-if="layout.description" class="layout-desc">{{ layout.description }}</span>
-                          <span class="layout-meta">{{ layout.units.length }} {{ t('buildingDetail.layouts.units') }}</span>
+                          <span class="layout-meta">{{ layoutStructureSummary(layout) }}</span>
                         </div>
                         <div class="layout-item-actions">
                           <button class="btn btn-ghost btn-sm" @click="requestLoadLayout(layout)">{{ t('buildingDetail.layouts.load') }}</button>
@@ -8048,6 +8103,27 @@ watch(
   gap: 0.5rem;
 }
 
+/* Mini 4×4 layout preview grid */
+.layout-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 10px);
+  grid-template-rows: repeat(4, 10px);
+  gap: 2px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.layout-mini-cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-border) 30%, transparent);
+}
+
+.layout-mini-cell-occupied {
+  opacity: 0.85;
+}
+
 .layout-item-info {
   display: flex;
   flex-direction: column;
@@ -8100,6 +8176,18 @@ watch(
   border-radius: var(--radius-md, 8px);
   padding: 0.75rem;
   margin-bottom: 0.75rem;
+}
+
+.layout-confirm-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.layout-confirm-summary {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.5rem;
 }
 
 .layout-confirm-text {

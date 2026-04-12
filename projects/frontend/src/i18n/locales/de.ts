@@ -1175,6 +1175,7 @@ export default {
       cloudBadge: 'Cloud',
       localBadge: 'Lokal',
       cloudSyncHint: 'Cloud-Layouts sind auf allen Spielservern verfügbar.',
+      hasLinks: 'mit Verbindungen',
     },
     productionChain: {
       title: 'Produktionskette',
