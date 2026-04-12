@@ -12,6 +12,15 @@ function getGridCell(section: ReturnType<typeof getGridSection>, x: number, y: n
   return section.locator('.unit-row').nth(y).locator('.grid-cell').nth(x)
 }
 
+function getDiagonalToggle(
+  section: ReturnType<typeof getGridSection>,
+  x: number,
+  y: number,
+  axis: 'primary' | 'secondary',
+) {
+  return section.locator(`.link-toggle.diagonal[data-diagonal-root="${x},${y}"][data-diagonal-axis="${axis}"]`)
+}
+
 async function openPurchaseSelector(page: Page) {
   await page.getByRole('button', { name: /product and vendor/i }).click()
   const dialog = page.getByRole('dialog', { name: 'Choose product and vendor' })
@@ -134,17 +143,19 @@ test.describe('Building detail upgrades', () => {
     await expect(page.getByRole('heading', { name: 'Planned Upgrade' })).toHaveCount(0)
 
     const currentSection = getGridSection(page, 'Current Configuration')
-    const currentDiagonal = currentSection.locator('.link-toggle.diagonal').first()
+    const currentPrimaryDiagonal = getDiagonalToggle(currentSection, 0, 0, 'primary')
+    const currentSecondaryDiagonal = getDiagonalToggle(currentSection, 0, 0, 'secondary')
 
-    await expect(currentDiagonal).toHaveClass(/state-none/)
+    await expect(currentPrimaryDiagonal).toHaveClass(/link-state-none/)
+    await expect(currentSecondaryDiagonal).toHaveClass(/link-state-none/)
 
     await page.getByRole('button', { name: 'Edit Building' }).click()
 
     const plannedSection = getGridSection(page, 'Planned Upgrade')
-    const plannedDiagonal = plannedSection.locator('.link-toggle.diagonal').first()
+    const plannedSecondaryDiagonal = getDiagonalToggle(plannedSection, 0, 0, 'secondary')
     const plannedTopLeftCell = getGridCell(plannedSection, 0, 0)
 
-    await expect(plannedDiagonal).toHaveClass(/state-none/)
+    await expect(plannedSecondaryDiagonal).toHaveClass(/link-state-none/)
     await expect(plannedSection.getByText('Upgrade time: 0 ticks')).toBeVisible()
 
     await plannedTopLeftCell.click()
@@ -160,20 +171,18 @@ test.describe('Building detail upgrades', () => {
 
     await expect(page.getByRole('status')).toContainText('The current building keeps running until the queued layout activates in 3 ticks.')
     await expect(page.getByRole('heading', { name: 'Queued Upgrade' })).toHaveCount(0)
-    await expect(currentDiagonal).toHaveClass(/state-none/)
+    await expect(currentPrimaryDiagonal).toHaveClass(/link-state-none/)
+    await expect(currentSecondaryDiagonal).toHaveClass(/link-state-none/)
 
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const queuedSection = getGridSection(page, 'Queued Upgrade')
     const queuedTopLeftCell = getGridCell(queuedSection, 0, 0)
-    const queuedDiagonal = queuedSection.locator('.link-toggle.diagonal').first()
+    const queuedSecondaryDiagonal = getDiagonalToggle(queuedSection, 0, 0, 'secondary')
 
     await expect(queuedTopLeftCell).toContainText('Branding')
 
-    await queuedDiagonal.click()
-    await queuedDiagonal.click()
-    await queuedDiagonal.click()
-
-    await expect(queuedDiagonal).toHaveClass(/state-tr-bl/)
+    await queuedSecondaryDiagonal.click()
+    await expect(queuedSecondaryDiagonal).toHaveClass(/link-state-forward/)
     await expect(queuedSection.getByText('Upgrade time: 3 ticks')).toBeVisible()
 
     await page.getByRole('button', { name: 'Store Upgrade' }).click()
@@ -190,21 +199,21 @@ test.describe('Building detail upgrades', () => {
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const refreshedQueuedSection = getGridSection(page, 'Queued Upgrade')
     await expect(getGridCell(refreshedQueuedSection, 0, 0)).toContainText('Branding')
-    await expect(refreshedQueuedSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-tr-bl/)
+    await expect(getDiagonalToggle(refreshedQueuedSection, 0, 0, 'secondary')).toHaveClass(/link-state-forward/)
 
     state.gameState.currentTick += 2
     await page.reload()
 
     await expect(page.getByText('Building upgrade in progress')).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Planned Upgrade' })).toHaveCount(0)
-    await expect(refreshedCurrentSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-tr-bl/)
+    await expect(getDiagonalToggle(refreshedCurrentSection, 0, 0, 'secondary')).toHaveClass(/link-state-forward/)
 
     const finalCurrentSection = getGridSection(page, 'Current Configuration')
     await expect(getGridCell(finalCurrentSection, 0, 0)).toContainText('Branding')
 
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const refreshedPlannedSection = getGridSection(page, 'Planned Upgrade')
-    await expect(refreshedPlannedSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-tr-bl/)
+    await expect(getDiagonalToggle(refreshedPlannedSection, 0, 0, 'secondary')).toHaveClass(/link-state-forward/)
     await getGridCell(refreshedPlannedSection, 0, 0).click()
     // In tr-bl state only topRight (1,0) has linkDownLeft; topLeft (0,0) has no active diagonal flag
     await expect(page.getByText('Down-Right')).toHaveCount(0)
@@ -2583,13 +2592,14 @@ test.describe('Building detail upgrades', () => {
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const plannedSection = getGridSection(page, 'Planned Upgrade')
 
-    // The diagonal button between (0,0)-(1,1) starts as none
-    const diagButton = plannedSection.locator('.link-toggle.diagonal').first()
-    await expect(diagButton).toHaveClass(/state-none/)
+    const primaryDiagonal = getDiagonalToggle(plannedSection, 0, 0, 'primary')
+    const secondaryDiagonal = getDiagonalToggle(plannedSection, 0, 0, 'secondary')
+    await expect(primaryDiagonal).toHaveClass(/link-state-none/)
+    await expect(secondaryDiagonal).toHaveClass(/link-state-none/)
 
-    // First click: tl-br (↘ direction)
-    await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-tl-br/)
+    // Primary axis (\): tl-br (↘) then br-tl (↖) then none
+    await primaryDiagonal.click()
+    await expect(primaryDiagonal).toHaveClass(/link-state-forward/)
 
     // Link changes summary should show added diagonal link
     const summary = plannedSection.locator('.link-changes-summary')
@@ -2597,27 +2607,27 @@ test.describe('Building detail upgrades', () => {
     await expect(summary).toContainText('Link changes')
     await expect(summary.locator('.link-change-added')).toHaveCount(1) // only tl has linkDownRight (unidirectional)
 
-    // Second click: br-tl (↖ direction)
-    await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-br-tl/)
+    await primaryDiagonal.click()
+    await expect(primaryDiagonal).toHaveClass(/link-state-backward/)
 
-    // Third click: tr-bl (↙ direction)
-    await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-tr-bl/)
-
-    // Fourth click: bl-tr (↗ direction)
-    await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-bl-tr/)
-
-    // Fifth click: back to none
-    await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-none/)
+    await primaryDiagonal.click()
+    await expect(primaryDiagonal).toHaveClass(/link-state-none/)
     // No changes → summary should disappear
     await expect(summary).toHaveCount(0)
 
-    // Click twice more to reach tl-br, then submit
-    await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-tl-br/)
+    // Secondary axis (/): tr-bl (↙) then bl-tr (↗) then none
+    await secondaryDiagonal.click()
+    await expect(secondaryDiagonal).toHaveClass(/link-state-forward/)
+    await secondaryDiagonal.click()
+    await expect(secondaryDiagonal).toHaveClass(/link-state-backward/)
+    await secondaryDiagonal.click()
+    await expect(secondaryDiagonal).toHaveClass(/link-state-none/)
+
+    // Enable both diagonal axes at once (valid cross-directional combination)
+    await primaryDiagonal.click()
+    await secondaryDiagonal.click()
+    await expect(primaryDiagonal).toHaveClass(/link-state-forward/)
+    await expect(secondaryDiagonal).toHaveClass(/link-state-forward/)
     await page.getByRole('button', { name: 'Store Upgrade' }).click()
 
     // After submit: upgrade-in-progress banner appears
@@ -2626,7 +2636,8 @@ test.describe('Building detail upgrades', () => {
     // Re-enter edit mode and verify the queued plan shows the diagonal state
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const queuedSection = getGridSection(page, 'Queued Upgrade')
-    await expect(queuedSection.locator('.link-toggle.diagonal').first()).toHaveClass(/state-tl-br/)
+    await expect(getDiagonalToggle(queuedSection, 0, 0, 'primary')).toHaveClass(/link-state-forward/)
+    await expect(getDiagonalToggle(queuedSection, 0, 0, 'secondary')).toHaveClass(/link-state-forward/)
   })
 
   test('diagonal link editing: flow diagnostics — warnings shown for disconnected layout, resolved after linking', async ({ page }) => {
@@ -2743,12 +2754,12 @@ test.describe('Building detail upgrades', () => {
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const plannedSection = getGridSection(page, 'Planned Upgrade')
 
-    // The diagonal button covering the 2×2 block (0,0)-(1,1) is enabled (all 4 cells occupied)
-    const diagButton = plannedSection.locator('.link-toggle.diagonal').first()
+    // The primary diagonal button (\) between PURCHASE(0,0) and MANUFACTURING(1,1) is enabled.
+    const diagButton = getDiagonalToggle(plannedSection, 0, 0, 'primary')
     await expect(diagButton).toBeEnabled()
     await diagButton.click()
     // tl-br: PURCHASE(0,0).linkDownRight → MANUFACTURING(1,1)
-    await expect(diagButton).toHaveClass(/state-tl-br/)
+    await expect(diagButton).toHaveClass(/link-state-forward/)
 
     // Purchase warning should be gone — PURCHASE now links diagonally to MANUFACTURING
     await expect(page.locator('.config-warnings')).not.toContainText('Purchase unit at (0, 0) is not linked to a consumer unit.')
@@ -2863,21 +2874,112 @@ test.describe('Building detail upgrades', () => {
     await page.goto('/building/building-prediag')
     await expect(page.getByRole('heading', { name: 'PreDiag Factory' })).toBeVisible()
 
-    // The Current Configuration grid renders a diagonal toggle for each possible 2×2 block.
-    // The first diagonal button corresponds to the (0,0)–(1,1) block, which has tl-br pre-set.
     const currentSection = getGridSection(page, 'Current Configuration')
-    const diagButton = currentSection.locator('.link-toggle.diagonal').first()
-    await expect(diagButton).toHaveClass(/state-tl-br/)
+    const diagButton = getDiagonalToggle(currentSection, 0, 0, 'primary')
+    await expect(diagButton).toHaveClass(/link-state-forward/)
 
     // Enter edit mode: the planned section should initialize from the current state
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const plannedSection = getGridSection(page, 'Planned Upgrade')
-    const plannedDiag = plannedSection.locator('.link-toggle.diagonal').first()
-    await expect(plannedDiag).toHaveClass(/state-tl-br/)
+    const plannedDiag = getDiagonalToggle(plannedSection, 0, 0, 'primary')
+    await expect(plannedDiag).toHaveClass(/link-state-forward/)
 
     // Clicking once from tl-br advances to br-tl (↖)
     await plannedDiag.click()
-    await expect(plannedDiag).toHaveClass(/state-br-tl/)
+    await expect(plannedDiag).toHaveClass(/link-state-backward/)
+  })
+
+  test('diagonal link editing: storage at (1,1) can link to sales at (2,0) even when (2,1) is empty', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-sparse-diag',
+      playerId: player.id,
+      name: 'Sparse Diagonal Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-sparse-diag',
+          companyId: 'company-sparse-diag',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Sparse Diagonal Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'sdiag-top-right',
+              buildingId: 'building-sparse-diag',
+              unitType: 'PUBLIC_SALES',
+              gridX: 2,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'sdiag-bottom-left',
+              buildingId: 'building-sparse-diag',
+              unitType: 'STORAGE',
+              gridX: 1,
+              gridY: 1,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-sparse-diag')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    const sparseSecondary = getDiagonalToggle(plannedSection, 1, 0, 'secondary')
+
+    // Only the / pair exists for the root square (1,0): topRight=(2,0), bottomLeft=(1,1).
+    await expect(sparseSecondary).toBeVisible()
+    await expect(getDiagonalToggle(plannedSection, 1, 0, 'primary')).toHaveCount(0)
+    await expect(sparseSecondary).toHaveClass(/link-state-none/)
+
+    // Default direction should be STORAGE → PUBLIC_SALES (↗) on the first click.
+    await sparseSecondary.click()
+    await expect(sparseSecondary).toHaveClass(/link-state-backward/)
+    await expect(sparseSecondary.locator('.diag-arrow')).toContainText('↗')
+
+    await page.getByRole('button', { name: 'Store Upgrade' }).click()
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const queuedSection = getGridSection(page, 'Queued Upgrade')
+    await expect(getDiagonalToggle(queuedSection, 1, 0, 'secondary')).toHaveClass(/link-state-backward/)
   })
 
   test('horizontal link editing: backward (right-to-left) cycle and reversal', async ({ page }) => {
@@ -2958,19 +3060,19 @@ test.describe('Building detail upgrades', () => {
     const plannedSection = getGridSection(page, 'Planned Upgrade')
 
     const hButton = plannedSection.locator('.link-toggle.horizontal').first()
-    await expect(hButton).toHaveClass(/state-none/)
+    await expect(hButton).toHaveClass(/link-state-none/)
 
     // First click: forward (→) — STORAGE→MANUFACTURING
     await hButton.click()
-    await expect(hButton).toHaveClass(/state-forward/)
+    await expect(hButton).toHaveClass(/link-state-forward/)
 
     // Second click: backward (←) — MANUFACTURING→STORAGE
     await hButton.click()
-    await expect(hButton).toHaveClass(/state-backward/)
+    await expect(hButton).toHaveClass(/link-state-backward/)
 
     // Third click: back to none
     await hButton.click()
-    await expect(hButton).toHaveClass(/state-none/)
+    await expect(hButton).toHaveClass(/link-state-none/)
   })
 
   test('vertical link editing: top-to-bottom and bottom-to-top directions', async ({ page }) => {
@@ -3050,19 +3152,19 @@ test.describe('Building detail upgrades', () => {
     const plannedSection = getGridSection(page, 'Planned Upgrade')
 
     const vButton = plannedSection.locator('.link-toggle.vertical').first()
-    await expect(vButton).toHaveClass(/state-none/)
+    await expect(vButton).toHaveClass(/link-state-none/)
 
     // First click: forward (↓) — PURCHASE→MANUFACTURING (top to bottom)
     await vButton.click()
-    await expect(vButton).toHaveClass(/state-forward/)
+    await expect(vButton).toHaveClass(/link-state-forward/)
 
     // Second click: backward (↑) — MANUFACTURING→PURCHASE (bottom to top)
     await vButton.click()
-    await expect(vButton).toHaveClass(/state-backward/)
+    await expect(vButton).toHaveClass(/link-state-backward/)
 
     // Third click: back to none
     await vButton.click()
-    await expect(vButton).toHaveClass(/state-none/)
+    await expect(vButton).toHaveClass(/link-state-none/)
   })
 
   test('diagonal link reversal: second plan replaces direction — AC4', async ({ page }) => {
@@ -3177,11 +3279,11 @@ test.describe('Building detail upgrades', () => {
     // ── Step 1: Create tl-br (↘) diagonal and submit ──────────────────────────
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const plannedSection = getGridSection(page, 'Planned Upgrade')
-    const diagButton = plannedSection.locator('.link-toggle.diagonal').first()
+    const diagButton = getDiagonalToggle(plannedSection, 0, 0, 'primary')
 
-    await expect(diagButton).toHaveClass(/state-none/)
+    await expect(diagButton).toHaveClass(/link-state-none/)
     await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-tl-br/)
+    await expect(diagButton).toHaveClass(/link-state-forward/)
 
     await page.getByRole('button', { name: 'Store Upgrade' }).click()
     await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
@@ -3189,12 +3291,12 @@ test.describe('Building detail upgrades', () => {
     // ── Step 2: Re-enter edit mode and verify queued plan shows tl-br ────────
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const queuedSection = getGridSection(page, 'Queued Upgrade')
-    const queuedDiag = queuedSection.locator('.link-toggle.diagonal').first()
-    await expect(queuedDiag).toHaveClass(/state-tl-br/)
+    const queuedDiag = getDiagonalToggle(queuedSection, 0, 0, 'primary')
+    await expect(queuedDiag).toHaveClass(/link-state-forward/)
 
     // ── Step 3: Advance one click to br-tl (↖) and submit ────────────────────
     await queuedDiag.click()
-    await expect(queuedDiag).toHaveClass(/state-br-tl/)
+    await expect(queuedDiag).toHaveClass(/link-state-backward/)
 
     await page.getByRole('button', { name: 'Store Upgrade' }).click()
     await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
@@ -3202,10 +3304,10 @@ test.describe('Building detail upgrades', () => {
     // ── Step 4: Verify the queued plan now shows only br-tl (↖) ──────────────
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const finalQueuedSection = getGridSection(page, 'Queued Upgrade')
-    const finalDiag = finalQueuedSection.locator('.link-toggle.diagonal').first()
+    const finalDiag = getDiagonalToggle(finalQueuedSection, 0, 0, 'primary')
     // The new plan has only br-tl; tl-br must be gone.
-    await expect(finalDiag).toHaveClass(/state-br-tl/)
-    await expect(finalDiag).not.toHaveClass(/state-tl-br/)
+    await expect(finalDiag).toHaveClass(/link-state-backward/)
+    await expect(finalDiag).not.toHaveClass(/link-state-forward/)
   })
 
   test('diagonal link reversal: tr-bl (↙) replaced by bl-tr (↗) — AC4 other axis', async ({ page }) => {
@@ -3251,13 +3353,11 @@ test.describe('Building detail upgrades', () => {
     // ── Plan 1: advance to tr-bl (↙) — requires 3 clicks from none ───────────
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const plannedSection = getGridSection(page, 'Planned Upgrade')
-    const diagButton = plannedSection.locator('.link-toggle.diagonal').first()
-    await expect(diagButton).toHaveClass(/state-none/)
+    const diagButton = getDiagonalToggle(plannedSection, 0, 0, 'secondary')
+    await expect(diagButton).toHaveClass(/link-state-none/)
 
-    await diagButton.click() // → tl-br
-    await diagButton.click() // → br-tl
     await diagButton.click() // → tr-bl
-    await expect(diagButton).toHaveClass(/state-tr-bl/)
+    await expect(diagButton).toHaveClass(/link-state-forward/)
 
     await page.getByRole('button', { name: 'Store Upgrade' }).click()
     await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
@@ -3265,12 +3365,12 @@ test.describe('Building detail upgrades', () => {
     // ── Verify queued shows tr-bl ─────────────────────────────────────────────
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const queuedSection = getGridSection(page, 'Queued Upgrade')
-    const queuedDiag = queuedSection.locator('.link-toggle.diagonal').first()
-    await expect(queuedDiag).toHaveClass(/state-tr-bl/)
+    const queuedDiag = getDiagonalToggle(queuedSection, 0, 0, 'secondary')
+    await expect(queuedDiag).toHaveClass(/link-state-forward/)
 
     // ── Plan 2: advance one more click to bl-tr (↗) — reversal ───────────────
     await queuedDiag.click()
-    await expect(queuedDiag).toHaveClass(/state-bl-tr/)
+    await expect(queuedDiag).toHaveClass(/link-state-backward/)
 
     await page.getByRole('button', { name: 'Store Upgrade' }).click()
     await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
@@ -3278,9 +3378,9 @@ test.describe('Building detail upgrades', () => {
     // ── Verify queued now shows only bl-tr (↗) — tr-bl is gone ───────────────
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const finalSection = getGridSection(page, 'Queued Upgrade')
-    const finalDiag = finalSection.locator('.link-toggle.diagonal').first()
-    await expect(finalDiag).toHaveClass(/state-bl-tr/)
-    await expect(finalDiag).not.toHaveClass(/state-tr-bl/)
+    const finalDiag = getDiagonalToggle(finalSection, 0, 0, 'secondary')
+    await expect(finalDiag).toHaveClass(/link-state-backward/)
+    await expect(finalDiag).not.toHaveClass(/link-state-forward/)
   })
 
   test('diagonal direction arrows render correct Unicode glyphs for all 4 states — AC6 visual', async ({ page }) => {
@@ -3323,32 +3423,33 @@ test.describe('Building detail upgrades', () => {
     await page.goto('/building/building-glyph')
     await page.getByRole('button', { name: 'Edit Building' }).click()
     const plannedSection = getGridSection(page, 'Planned Upgrade')
-    const diagButton = plannedSection.locator('.link-toggle.diagonal').first()
+    const primaryDiagButton = getDiagonalToggle(plannedSection, 0, 0, 'primary')
+    const secondaryDiagButton = getDiagonalToggle(plannedSection, 0, 0, 'secondary')
 
-    // State: tl-br → glyph ↘
-    await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-tl-br/)
-    await expect(plannedSection.locator('.diag-arrow')).toContainText('↘')
+    // Primary axis (\): ↘ then ↖
+    await primaryDiagButton.click()
+    await expect(primaryDiagButton).toHaveClass(/link-state-forward/)
+    await expect(primaryDiagButton.locator('.diag-arrow')).toContainText('↘')
 
-    // State: br-tl → glyph ↖
-    await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-br-tl/)
-    await expect(plannedSection.locator('.diag-arrow')).toContainText('↖')
+    await primaryDiagButton.click()
+    await expect(primaryDiagButton).toHaveClass(/link-state-backward/)
+    await expect(primaryDiagButton.locator('.diag-arrow')).toContainText('↖')
 
-    // State: tr-bl → glyph ↙
-    await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-tr-bl/)
-    await expect(plannedSection.locator('.diag-arrow')).toContainText('↙')
+    await primaryDiagButton.click()
+    await expect(primaryDiagButton).toHaveClass(/link-state-none/)
+    await expect(primaryDiagButton.locator('.diag-arrow')).toHaveCount(0)
 
-    // State: bl-tr → glyph ↗
-    await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-bl-tr/)
-    await expect(plannedSection.locator('.diag-arrow')).toContainText('↗')
+    // Secondary axis (/): ↙ then ↗
+    await secondaryDiagButton.click()
+    await expect(secondaryDiagButton).toHaveClass(/link-state-forward/)
+    await expect(secondaryDiagButton.locator('.diag-arrow')).toContainText('↙')
 
-    // State: none → no glyph arrow rendered
-    await diagButton.click()
-    await expect(diagButton).toHaveClass(/state-none/)
-    await expect(plannedSection.locator('.diag-arrow')).toHaveCount(0)
+    await secondaryDiagButton.click()
+    await expect(secondaryDiagButton).toHaveClass(/link-state-backward/)
+    await expect(secondaryDiagButton.locator('.diag-arrow')).toContainText('↗')
+
+    // Larger arrow glyph should remain clearly visible after the redesign
+    await expect(secondaryDiagButton.locator('.diag-arrow')).toHaveCSS('font-size', '16px')
   })
 
   // ---------------------------------------------------------------------------
@@ -16083,9 +16184,9 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
       .first()
     await expect(planSection.locator('.grid-cell.occupied').first()).toBeVisible()
 
-    // The diagonal toggle for the (0,0)–(1,1) block must show state-tl-br (diagonal flag preserved)
-    const diagButton = planSection.locator('.link-toggle.diagonal').first()
-    await expect(diagButton).toHaveClass(/state-tl-br/)
+    // The primary diagonal toggle for the (0,0)–(1,1) pair must preserve tl-br.
+    const diagButton = getDiagonalToggle(planSection, 0, 0, 'primary')
+    await expect(diagButton).toHaveClass(/link-state-forward/)
   })
 
   test('layout item shows structural unit summary in metadata', async ({ page }) => {

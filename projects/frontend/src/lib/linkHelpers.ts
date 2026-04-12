@@ -32,6 +32,9 @@ export interface LinkFlagSource {
   linkUpLeft?: boolean
 }
 
+/** Shared directional state for a single neighboring pair. */
+export type DirectedPairLinkState = 'none' | 'forward' | 'backward' | 'both'
+
 // ---------------------------------------------------------------------------
 // Unit-type role constants used for smart direction defaults
 // ---------------------------------------------------------------------------
@@ -42,21 +45,20 @@ const SUPPLY_ORIGIN_TYPES = ['PURCHASE', 'MINING']
 /** Unit types that are terminal sinks – resources flow INTO these by default. */
 const SINK_TYPES = ['PUBLIC_SALES', 'B2B_SALES']
 
+function inferDirectionalDefault(firstType?: string, secondType?: string): 'forward' | 'backward' {
+  if (firstType && SUPPLY_ORIGIN_TYPES.includes(firstType)) return 'forward'
+  if (secondType && SUPPLY_ORIGIN_TYPES.includes(secondType)) return 'backward'
+  if (secondType && SINK_TYPES.includes(secondType)) return 'forward'
+  if (firstType && SINK_TYPES.includes(firstType)) return 'backward'
+  return 'forward'
+}
+
 /**
  * Infers the natural direction when first creating a horizontal link.
  * Returns 'forward' (left→right) or 'backward' (right→left).
  */
 export function inferHorizontalDefault(leftType?: string, rightType?: string): 'forward' | 'backward' {
-  // Purchase/mining units push outward → 'forward' if on the left, 'backward' if on the right
-  if (leftType && SUPPLY_ORIGIN_TYPES.includes(leftType)) return 'forward'
-  if (rightType && SUPPLY_ORIGIN_TYPES.includes(rightType)) return 'backward'
-  // Sales units pull inward → resources flow *into* them
-  if (rightType && SINK_TYPES.includes(rightType)) return 'forward'
-  if (leftType && SINK_TYPES.includes(leftType)) return 'backward'
-  // Manufacturing/storage positioned left of sales-like units
-  if (rightType === 'PUBLIC_SALES' || rightType === 'B2B_SALES') return 'forward'
-  if (leftType === 'PUBLIC_SALES' || leftType === 'B2B_SALES') return 'backward'
-  return 'forward'
+  return inferDirectionalDefault(leftType, rightType)
 }
 
 /**
@@ -64,11 +66,17 @@ export function inferHorizontalDefault(leftType?: string, rightType?: string): '
  * Returns 'forward' (top→bottom) or 'backward' (bottom→top).
  */
 export function inferVerticalDefault(topType?: string, bottomType?: string): 'forward' | 'backward' {
-  if (topType && SUPPLY_ORIGIN_TYPES.includes(topType)) return 'forward'
-  if (bottomType && SUPPLY_ORIGIN_TYPES.includes(bottomType)) return 'backward'
-  if (bottomType && SINK_TYPES.includes(bottomType)) return 'forward'
-  if (topType && SINK_TYPES.includes(topType)) return 'backward'
-  return 'forward'
+  return inferDirectionalDefault(topType, bottomType)
+}
+
+/** Smart default for the \ diagonal pair: top-left ↔ bottom-right. */
+export function inferPrimaryDiagonalDefault(topLeftType?: string, bottomRightType?: string): 'forward' | 'backward' {
+  return inferDirectionalDefault(topLeftType, bottomRightType)
+}
+
+/** Smart default for the / diagonal pair: top-right ↔ bottom-left. */
+export function inferSecondaryDiagonalDefault(topRightType?: string, bottomLeftType?: string): 'forward' | 'backward' {
+  return inferDirectionalDefault(topRightType, bottomLeftType)
 }
 
 function unitAt<T extends LinkFlagSource>(
@@ -123,6 +131,41 @@ export function getVerticalLinkState<T extends LinkFlagSource>(
   return 'none'
 }
 
+function getDirectedPairState(hasForward: boolean, hasBackward: boolean): DirectedPairLinkState {
+  if (hasForward && hasBackward) return 'both'
+  if (hasForward) return 'forward'
+  if (hasBackward) return 'backward'
+  return 'none'
+}
+
+/**
+ * Returns the directional state for the \ diagonal pair rooted at (x,y):
+ * top-left (x,y) ↔ bottom-right (x+1,y+1).
+ */
+export function getPrimaryDiagonalLinkState<T extends LinkFlagSource>(
+  units: T[],
+  x: number,
+  y: number,
+): DirectedPairLinkState {
+  const topLeft = unitAt(units, x, y)
+  const bottomRight = unitAt(units, x + 1, y + 1)
+  return getDirectedPairState(!!topLeft?.linkDownRight, !!bottomRight?.linkUpLeft)
+}
+
+/**
+ * Returns the directional state for the / diagonal pair rooted at (x,y):
+ * top-right (x+1,y) ↔ bottom-left (x,y+1).
+ */
+export function getSecondaryDiagonalLinkState<T extends LinkFlagSource>(
+  units: T[],
+  x: number,
+  y: number,
+): DirectedPairLinkState {
+  const topRight = unitAt(units, x + 1, y)
+  const bottomLeft = unitAt(units, x, y + 1)
+  return getDirectedPairState(!!topRight?.linkDownLeft, !!bottomLeft?.linkUpRight)
+}
+
 /** Unicode arrow character representing horizontal directional state. */
 export function getHorizontalLinkArrow(state: HorizontalLinkState): string {
   if (state === 'forward') return '▶'
@@ -136,6 +179,20 @@ export function getVerticalLinkArrow(state: VerticalLinkState): string {
   if (state === 'forward') return '▼'
   if (state === 'backward') return '▲'
   if (state === 'both') return '↕'
+  return ''
+}
+
+export function getPrimaryDiagonalLinkArrow(state: DirectedPairLinkState): string {
+  if (state === 'forward') return '↘'
+  if (state === 'backward') return '↖'
+  if (state === 'both') return '⤡'
+  return ''
+}
+
+export function getSecondaryDiagonalLinkArrow(state: DirectedPairLinkState): string {
+  if (state === 'forward') return '↙'
+  if (state === 'backward') return '↗'
+  if (state === 'both') return '⤢'
   return ''
 }
 
@@ -199,6 +256,54 @@ export function applyVerticalLinkCycle<T extends LinkFlagSource>(
     // Third click (or legacy 'both'): clear
     top.linkDown = false
     bottom.linkUp = false
+  }
+}
+
+/**
+ * Applies the 3-state cycle for the \ diagonal pair:
+ * none → smart default → reverse direction → none.
+ */
+export function applyPrimaryDiagonalLinkCycle<T extends LinkFlagSource>(
+  topLeft: T,
+  bottomRight: T,
+  current: DirectedPairLinkState,
+): void {
+  const defaultDir = inferPrimaryDiagonalDefault(topLeft.unitType, bottomRight.unitType)
+  const altDir = defaultDir === 'forward' ? 'backward' : 'forward'
+
+  if (current === 'none') {
+    topLeft.linkDownRight = defaultDir === 'forward'
+    bottomRight.linkUpLeft = defaultDir === 'backward'
+  } else if (current === defaultDir) {
+    topLeft.linkDownRight = altDir === 'forward'
+    bottomRight.linkUpLeft = altDir === 'backward'
+  } else {
+    topLeft.linkDownRight = false
+    bottomRight.linkUpLeft = false
+  }
+}
+
+/**
+ * Applies the 3-state cycle for the / diagonal pair:
+ * none → smart default → reverse direction → none.
+ */
+export function applySecondaryDiagonalLinkCycle<T extends LinkFlagSource>(
+  topRight: T,
+  bottomLeft: T,
+  current: DirectedPairLinkState,
+): void {
+  const defaultDir = inferSecondaryDiagonalDefault(topRight.unitType, bottomLeft.unitType)
+  const altDir = defaultDir === 'forward' ? 'backward' : 'forward'
+
+  if (current === 'none') {
+    topRight.linkDownLeft = defaultDir === 'forward'
+    bottomLeft.linkUpRight = defaultDir === 'backward'
+  } else if (current === defaultDir) {
+    topRight.linkDownLeft = altDir === 'forward'
+    bottomLeft.linkUpRight = altDir === 'backward'
+  } else {
+    topRight.linkDownLeft = false
+    bottomLeft.linkUpRight = false
   }
 }
 

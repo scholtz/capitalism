@@ -9,14 +9,22 @@ import { describe, expect, it } from 'vitest'
 import {
   applyDiagonalLinkCycle,
   applyHorizontalLinkCycle,
+  applyPrimaryDiagonalLinkCycle,
+  applySecondaryDiagonalLinkCycle,
   applyVerticalLinkCycle,
   getDiagonalLinkLabel,
   getDiagonalLinkState,
   getHorizontalLinkArrow,
   getHorizontalLinkState,
+  getPrimaryDiagonalLinkArrow,
+  getPrimaryDiagonalLinkState,
+  getSecondaryDiagonalLinkArrow,
+  getSecondaryDiagonalLinkState,
   getVerticalLinkArrow,
   getVerticalLinkState,
   inferHorizontalDefault,
+  inferPrimaryDiagonalDefault,
+  inferSecondaryDiagonalDefault,
   inferVerticalDefault,
   type LinkFlagSource,
 } from '../linkHelpers'
@@ -268,6 +276,91 @@ describe('applyVerticalLinkCycle', () => {
     expect(getState()).toBe('backward')
     applyVerticalLinkCycle(top, bottom, getState())
     expect(getState()).toBe('none')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Independent diagonal-pair helpers
+// ---------------------------------------------------------------------------
+
+describe('primary and secondary diagonal pair state helpers', () => {
+  it('reads the primary diagonal pair (\\) independently', () => {
+    const units = [
+      makeUnit(0, 0, { linkDownRight: true }),
+      makeUnit(1, 0),
+      makeUnit(0, 1),
+      makeUnit(1, 1),
+    ]
+    expect(getPrimaryDiagonalLinkState(units, 0, 0)).toBe('forward')
+    expect(getSecondaryDiagonalLinkState(units, 0, 0)).toBe('none')
+  })
+
+  it('reads the secondary diagonal pair (/) independently', () => {
+    const units = [
+      makeUnit(0, 0),
+      makeUnit(1, 0, { linkDownLeft: true }),
+      makeUnit(0, 1),
+      makeUnit(1, 1),
+    ]
+    expect(getPrimaryDiagonalLinkState(units, 0, 0)).toBe('none')
+    expect(getSecondaryDiagonalLinkState(units, 0, 0)).toBe('forward')
+  })
+
+  it('allows both diagonal axes to be active at the same time without collapsing state', () => {
+    const units = [
+      makeUnit(0, 0, { linkDownRight: true }),
+      makeUnit(1, 0, { linkDownLeft: true }),
+      makeUnit(0, 1),
+      makeUnit(1, 1),
+    ]
+    expect(getPrimaryDiagonalLinkState(units, 0, 0)).toBe('forward')
+    expect(getSecondaryDiagonalLinkState(units, 0, 0)).toBe('forward')
+  })
+
+  it('returns the correct arrows for each diagonal pair direction', () => {
+    expect(getPrimaryDiagonalLinkArrow('forward')).toBe('↘')
+    expect(getPrimaryDiagonalLinkArrow('backward')).toBe('↖')
+    expect(getSecondaryDiagonalLinkArrow('forward')).toBe('↙')
+    expect(getSecondaryDiagonalLinkArrow('backward')).toBe('↗')
+  })
+
+  it('uses smart defaults for sparse storage → sales diagonal pairs', () => {
+    expect(inferPrimaryDiagonalDefault('STORAGE', 'PUBLIC_SALES')).toBe('forward')
+    expect(inferSecondaryDiagonalDefault('PUBLIC_SALES', 'STORAGE')).toBe('backward')
+  })
+
+  it('cycles the primary diagonal pair through forward → backward → none', () => {
+    const topLeft = makeUnit(0, 0, { unitType: 'PURCHASE' })
+    const bottomRight = makeUnit(1, 1, { unitType: 'STORAGE' })
+
+    applyPrimaryDiagonalLinkCycle(topLeft, bottomRight, 'none')
+    expect(topLeft.linkDownRight).toBe(true)
+    expect(bottomRight.linkUpLeft).toBe(false)
+
+    applyPrimaryDiagonalLinkCycle(topLeft, bottomRight, 'forward')
+    expect(topLeft.linkDownRight).toBe(false)
+    expect(bottomRight.linkUpLeft).toBe(true)
+
+    applyPrimaryDiagonalLinkCycle(topLeft, bottomRight, 'backward')
+    expect(topLeft.linkDownRight).toBe(false)
+    expect(bottomRight.linkUpLeft).toBe(false)
+  })
+
+  it('cycles the secondary diagonal pair through storage → sales by default', () => {
+    const topRight = makeUnit(2, 0, { unitType: 'PUBLIC_SALES' })
+    const bottomLeft = makeUnit(1, 1, { unitType: 'STORAGE' })
+
+    applySecondaryDiagonalLinkCycle(topRight, bottomLeft, 'none')
+    expect(topRight.linkDownLeft).toBe(false)
+    expect(bottomLeft.linkUpRight).toBe(true)
+
+    applySecondaryDiagonalLinkCycle(topRight, bottomLeft, 'backward')
+    expect(topRight.linkDownLeft).toBe(true)
+    expect(bottomLeft.linkUpRight).toBe(false)
+
+    applySecondaryDiagonalLinkCycle(topRight, bottomLeft, 'forward')
+    expect(topRight.linkDownLeft).toBe(false)
+    expect(bottomLeft.linkUpRight).toBe(false)
   })
 })
 
