@@ -12,6 +12,10 @@ function getGridCell(section: ReturnType<typeof getGridSection>, x: number, y: n
   return section.locator('.unit-row').nth(y).locator('.grid-cell').nth(x)
 }
 
+/**
+ * Finds one of the two independent diagonal controls rendered inside a connector square.
+ * `primary` = \ axis (top-left ↔ bottom-right), `secondary` = / axis (top-right ↔ bottom-left).
+ */
 function getDiagonalToggle(
   section: ReturnType<typeof getGridSection>,
   x: number,

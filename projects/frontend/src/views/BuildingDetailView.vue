@@ -7158,9 +7158,11 @@ watch(
 }
 
 .diagonal-link-group {
+  --diagonal-link-group-size: 36px;
+  --diagonal-link-toggle-width: 18px;
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: var(--diagonal-link-group-size);
+  height: var(--diagonal-link-group-size);
 }
 
 .diagonal-link-group.disabled {
@@ -7171,7 +7173,7 @@ watch(
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 18px;
+  width: var(--diagonal-link-toggle-width);
   border-radius: 10px;
   overflow: visible;
 }

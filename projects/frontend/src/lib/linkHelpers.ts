@@ -52,6 +52,10 @@ const SINK_TYPES = ['PUBLIC_SALES', 'B2B_SALES']
  * @param secondType Unit type treated as the "forward" destination side of the pair.
  * @returns `forward` when flow should default from the first unit to the second,
  *          otherwise `backward` when the second unit should send to the first.
+ *
+ * Using the same helper for horizontal, vertical, and diagonal pairs keeps the
+ * source/sink behavior consistent regardless of where the neighbor happens to be
+ * on the 4×4 grid.
  */
 function inferDirectionalDefault(firstType?: string, secondType?: string): 'forward' | 'backward' {
   if (firstType && SUPPLY_ORIGIN_TYPES.includes(firstType)) return 'forward'
