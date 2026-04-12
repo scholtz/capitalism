@@ -15723,11 +15723,11 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     await expect(panel).toBeVisible()
 
     // Empty state message should be visible with specific educational copy
-    const emptyMsg = panel.locator('.layout-empty').first()
+    const emptyMsg = panel.locator('.layout-empty')
     await expect(emptyMsg).toBeVisible()
     // The message must explain that saving a layout allows reuse in compatible buildings
     // (exact phrase from i18n en.ts: "Save your current configuration to reuse it in any compatible building.")
-    await expect(emptyMsg).toContainText('reuse it')
+    await expect(emptyMsg).toContainText('reuse it in any compatible building')
   })
 
   test('confirm overwrite applies the template and replaces draft units', async ({ page }) => {
@@ -15810,7 +15810,7 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     // Exactly one occupied cell in the planned grid (the single MANUFACTURING unit)
     await expect(planSection.locator('.grid-cell.occupied')).toHaveCount(1)
     // Verify the occupied cell contains the MANUFACTURING unit type label (not just any unit)
-    await expect(planSection.locator('.grid-cell.occupied .cell-type')).toContainText('Manufacturing')
+    await expect(planSection.locator('.grid-cell.occupied').locator('.cell-type').first()).toContainText('Manufacturing')
   })
 
   test('AC4: full tick-based workflow — load template, Store Upgrade, pending config is created', async ({
