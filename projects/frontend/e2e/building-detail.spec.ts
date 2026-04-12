@@ -15702,4 +15702,224 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     await expect(layoutItem.locator('.layout-mini-cell-occupied')).toHaveCount(3)
   })
 
+  test('empty state shows educational copy when no layouts saved', async ({ page }) => {
+    // Player with no saved layouts and empty state should show helpful educational message
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // No layouts in state — empty starting state
+    state.buildingLayouts = []
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+
+    // Empty state message should be visible with helpful copy
+    const emptyMsg = panel.locator('.layout-empty').first()
+    await expect(emptyMsg).toBeVisible()
+    // The message should reference saving a layout for reuse (educational purpose)
+    await expect(emptyMsg).toContainText('Save')
+  })
+
+  test('confirm overwrite applies the template and replaces draft units (AC4)', async ({ page }) => {
+    // When the user confirms overwrite, the old draft should be replaced by the template units
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Template has only a single MANUFACTURING unit (distinct from the 4-unit starter layout)
+    state.buildingLayouts = [
+      {
+        id: 'layout-confirm-test',
+        ownerPlayerId: player.id,
+        name: 'Single Unit Template',
+        description: null,
+        buildingType: 'FACTORY',
+        unitsJson: JSON.stringify([
+          {
+            unitType: 'MANUFACTURING',
+            gridX: 2,
+            gridY: 2,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            resourceTypeId: null,
+            productTypeId: null,
+            minPrice: null,
+            maxPrice: null,
+            purchaseSource: null,
+            saleVisibility: null,
+            budget: null,
+            mediaHouseBuildingId: null,
+            minQuality: null,
+            brandScope: null,
+            vendorLockCompanyId: null,
+          },
+        ]),
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ]
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    // Apply starter layout to get a non-empty draft (4 units: PURCHASE+MFG+STORAGE+B2B_SALES)
+    await page.getByRole('button', { name: /Apply Starter Layout/i }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+    await expect(panel.locator('.layout-item').filter({ hasText: 'Single Unit Template' })).toBeVisible()
+
+    // Draft is non-empty → click Load should trigger overwrite confirm
+    await panel
+      .locator('.layout-item')
+      .filter({ hasText: 'Single Unit Template' })
+      .getByRole('button', { name: 'Load' })
+      .click()
+    await expect(page.locator('.layout-overwrite-confirm')).toBeVisible()
+    // Confirm dialog should show the template name
+    await expect(page.locator('.layout-confirm-title')).toContainText('Single Unit Template')
+
+    // ── Confirm the overwrite ──
+    await page.locator('.layout-overwrite-confirm').getByRole('button', { name: 'Confirm' }).click()
+
+    // Confirm dialog should disappear
+    await expect(page.locator('.layout-overwrite-confirm')).toHaveCount(0)
+
+    // The planning grid should now reflect the template (MANUFACTURING at row 3, col 3)
+    const planSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    // Exactly one occupied cell in the planned grid (the single MANUFACTURING unit)
+    await expect(planSection.locator('.grid-cell.occupied')).toHaveCount(1)
+  })
+
+  test('AC4: full tick-based workflow — load template, Store Upgrade, pending config is created', async ({
+    page,
+  }) => {
+    // Proves AC4: applying a template flows through the normal tick-based building modification
+    // workflow and does NOT bypass game rules. The result is a pending configuration, not an
+    // instant state change.
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.buildingLayouts = [
+      {
+        id: 'layout-ac4-test',
+        ownerPlayerId: player.id,
+        name: 'AC4 Blueprint',
+        description: 'Template for tick-workflow test',
+        buildingType: 'FACTORY',
+        unitsJson: JSON.stringify([
+          {
+            unitType: 'PURCHASE',
+            gridX: 0,
+            gridY: 0,
+            linkRight: true,
+            linkDown: false,
+            linkLeft: false,
+            linkUp: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            resourceTypeId: null,
+            productTypeId: null,
+            minPrice: null,
+            maxPrice: null,
+            purchaseSource: null,
+            saleVisibility: null,
+            budget: null,
+            mediaHouseBuildingId: null,
+            minQuality: null,
+            brandScope: null,
+            vendorLockCompanyId: null,
+          },
+          {
+            unitType: 'MANUFACTURING',
+            gridX: 1,
+            gridY: 0,
+            linkRight: false,
+            linkDown: false,
+            linkLeft: false,
+            linkUp: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            resourceTypeId: null,
+            productTypeId: null,
+            minPrice: null,
+            maxPrice: null,
+            purchaseSource: null,
+            saleVisibility: null,
+            budget: null,
+            mediaHouseBuildingId: null,
+            minQuality: null,
+            brandScope: null,
+            vendorLockCompanyId: null,
+          },
+        ]),
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ]
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    // Enter edit mode — building is empty so the "Edit Building" button is visible
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    // ── Step 1: Load template from the library ──
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+    await expect(panel.locator('.layout-item').filter({ hasText: 'AC4 Blueprint' })).toBeVisible()
+
+    // Draft is empty → Load directly (no overwrite confirm)
+    await panel
+      .locator('.layout-item')
+      .filter({ hasText: 'AC4 Blueprint' })
+      .getByRole('button', { name: 'Load' })
+      .click()
+    await expect(page.locator('.layout-overwrite-confirm')).toHaveCount(0)
+
+    // ── Step 2: Planning grid should show the template units ──
+    const planSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(planSection.locator('.grid-cell.occupied').first()).toBeVisible()
+
+    // ── Step 3: Submit via the normal tick-based mutation (Store Upgrade) ──
+    const storeBtn = page.getByRole('button', { name: /Store Upgrade/i })
+    await expect(storeBtn).toBeVisible()
+    await expect(storeBtn).toBeEnabled()
+    await storeBtn.click()
+
+    // ── Step 4: Verify pending configuration was created (upgrade-in-progress banner) ──
+    // The upgrade banner proves the modification is scheduled through the tick engine,
+    // not applied instantly — AC4 compliance.
+    await expect(page.locator('.upgrade-banner')).toBeVisible()
+  })
+
 })
