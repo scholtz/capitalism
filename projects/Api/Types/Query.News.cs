@@ -58,10 +58,12 @@ public sealed partial class Query
                 requesterEmail,
                 httpContextAccessor.HttpContext?.RequestAborted ?? CancellationToken.None);
         }
-        catch (Exception ex) when (ex is not GraphQLException)
+        catch (Exception ex) when (ex is not GraphQLException and not OperationCanceledException)
         {
             // When the master API is temporarily unavailable, return an empty feed rather than
             // propagating the error so the frontend can show its empty state gracefully.
+            // OperationCanceledException is intentionally re-thrown so that request cancellation
+            // (browser tab closed, client timeout, navigation away) propagates correctly.
             logger.LogWarning(ex, "Failed to fetch news feed from master API; returning empty feed.");
             return new GameNewsFeedResult();
         }

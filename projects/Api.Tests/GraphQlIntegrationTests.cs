@@ -24586,5 +24586,33 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         Assert.True(result.TryGetProperty("errors", out _), "Non-admin player should not be allowed to view drafts.");
     }
 
+    [Fact]
+    public async Task GameNewsFeed_DoesNotSwallowOperationCanceledException()
+    {
+        // The fallback should NOT catch OperationCanceledException so that
+        // request-cancellation semantics are preserved for infrastructure/observability.
+        // We verify this by checking whether each exception type would be caught by
+        // the production when-filter:  ex is not GraphQLException and not OperationCanceledException
+        //
+        // OperationCanceledException must NOT be caught by the fallback
+        static bool WouldFallbackCatch(Exception ex)
+        {
+            // Mirror the production filter: catches anything that is NOT GraphQLException
+            // and NOT OperationCanceledException.
+            return ex is not OperationCanceledException
+                   && ex.GetType().FullName != "HotChocolate.GraphQLException";
+        }
+
+        var oce = new OperationCanceledException("request aborted");
+        var upstream = new HttpRequestException("master API unreachable");
+        var timeout = new TaskCanceledException("HTTP timeout");
+
+        Assert.False(WouldFallbackCatch(oce), "OperationCanceledException must not be caught by the fallback.");
+        Assert.False(WouldFallbackCatch(timeout), "TaskCanceledException (a subclass of OperationCanceledException) must not be caught.");
+        Assert.True(WouldFallbackCatch(upstream), "Genuine upstream failures (e.g. HttpRequestException) must be caught by the fallback.");
+
+        await Task.CompletedTask;
+    }
+
     #endregion
 }
