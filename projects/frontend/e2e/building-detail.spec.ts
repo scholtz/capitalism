@@ -14828,4 +14828,169 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     await expect(panel.locator('.layout-item').filter({ hasText: 'Keep Me' })).toBeVisible()
   })
 
+  test('layout panel only shows layouts compatible with the current building type', async ({ page }) => {
+    // A MINE building — only MINE layouts should appear; FACTORY layouts must be hidden
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-mine',
+          playerId: 'player-1',
+          name: 'Mine Co',
+          cash: 200000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-mine',
+              companyId: 'company-mine',
+              cityId: 'city-ba',
+              type: 'MINE',
+              name: 'Test Mine',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 0,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Put both a FACTORY layout (incompatible) and a MINE layout (compatible)
+    state.buildingLayouts = [
+      {
+        id: 'layout-factory-item',
+        ownerPlayerId: player.id,
+        name: 'Factory Blueprint',
+        description: 'A factory layout',
+        buildingType: 'FACTORY',
+        unitsJson: '[]',
+        updatedAtUtc: new Date().toISOString(),
+      },
+      {
+        id: 'layout-mine-item',
+        ownerPlayerId: player.id,
+        name: 'Mining Chain',
+        description: 'A mine layout',
+        buildingType: 'MINE',
+        unitsJson: '[]',
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ]
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-mine')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+
+    // Only the MINE-type layout should be shown (AC7: clear communication of compatibility)
+    await expect(panel.locator('.layout-item').filter({ hasText: 'Mining Chain' })).toBeVisible()
+    // FACTORY layout must NOT appear — it is incompatible with the MINE building
+    await expect(panel.locator('.layout-item').filter({ hasText: 'Factory Blueprint' })).toHaveCount(0)
+  })
+
+  test('layout saved in one building is available and loadable in another compatible building (AC11)', async ({ page }) => {
+    // Two FACTORY buildings owned by the same player
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-cross',
+          playerId: 'player-1',
+          name: 'Cross-Building Co',
+          cash: 1000000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-cross-a',
+              companyId: 'company-cross',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Factory A',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 0,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [],
+              pendingConfiguration: null,
+            },
+            {
+              id: 'building-cross-b',
+              companyId: 'company-cross',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Factory B',
+              latitude: 48.16,
+              longitude: 17.12,
+              level: 1,
+              powerConsumption: 0,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              units: [],
+              pendingConfiguration: null,
+            },
+          ],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    // ── Step 1: Open Factory A, apply starter layout and save it ──
+    await page.goto('/building/building-cross-a')
+    await page.getByRole('button', { name: /Apply Starter Layout/i }).click()
+    // Now in edit mode with the starter layout draft
+    const panelA = page.locator('[aria-label="Building Layouts"]')
+    await expect(panelA).toBeVisible()
+    await panelA.locator('[aria-label="Layout name"]').fill('Cross-Game Blueprint')
+    await panelA.getByRole('button', { name: 'Save Layout' }).click()
+    await expect(panelA.locator('.layout-save-success')).toBeVisible()
+    await expect(panelA.locator('.layout-item').filter({ hasText: 'Cross-Game Blueprint' })).toBeVisible()
+
+    // ── Step 2: Navigate to Factory B ──
+    await page.goto('/building/building-cross-b')
+    await expect(page.getByRole('heading', { name: 'Building Overview' })).toBeVisible()
+
+    // ── Step 3: Enter edit mode in Factory B ──
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    // ── Step 4: Layout saved from Factory A should appear in the panel ──
+    const panelB = page.locator('[aria-label="Building Layouts"]')
+    await expect(panelB).toBeVisible()
+    await expect(panelB.locator('.layout-item').filter({ hasText: 'Cross-Game Blueprint' })).toBeVisible()
+
+    // ── Step 5: Load the layout — draft is empty so no overwrite confirm ──
+    await panelB.locator('.layout-item').filter({ hasText: 'Cross-Game Blueprint' }).getByRole('button', { name: 'Load' }).click()
+    await expect(page.locator('.layout-overwrite-confirm')).toHaveCount(0)
+
+    // ── Step 6: Planning grid should show the loaded units ──
+    const planSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(planSection.locator('.grid-cell.occupied').first()).toBeVisible()
+
+    // ── Step 7: Building still requires Store Upgrade — normal confirmation flow ──
+    await expect(page.getByRole('button', { name: 'Store Upgrade' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Cancel Editing' })).toBeVisible()
+  })
+
 })
