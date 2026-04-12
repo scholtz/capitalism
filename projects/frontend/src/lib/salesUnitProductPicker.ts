@@ -75,7 +75,7 @@ function getConnectedProductIds(unit: SalesUnitProductPickerUnit, units: SalesUn
   let readIndex = 0
 
   while (readIndex < queue.length) {
-    const current = queue[readIndex]
+    const current = queue[readIndex]!
     readIndex += 1
 
     const key = `${current.gridX},${current.gridY}`

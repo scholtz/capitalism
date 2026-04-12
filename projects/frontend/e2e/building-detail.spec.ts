@@ -6837,6 +6837,41 @@ test.describe('Link-aware product picker — PUBLIC_SALES unit', () => {
       'Link a purchase, manufacturing, or storage chain into this unit, or restock the unit',
     )
   })
+
+  test('PUBLIC_SALES picker shows mixed connected and stocked reasons in one workflow', async ({ page }) => {
+    const plannedSection = await loginIntoContextAwarePickerShop(
+      page,
+      makeSalesShopForContextAwarePicker({
+        upstreamProductId: 'prod-bread',
+        salesUnitProductId: 'prod-chair',
+        salesInventoryProductIds: ['prod-chair'],
+      }),
+    )
+
+    await getGridCell(plannedSection, 1, 0).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await productTypeField.locator('.picker-trigger').click()
+
+    const breadItem = page.locator('.product-picker-panel .picker-item').filter({
+      has: page.locator('.picker-item-name', { hasText: 'Bread' }),
+    })
+    const chairItem = page.locator('.product-picker-panel .picker-item').filter({
+      has: page.locator('.picker-item-name', { hasText: 'Wooden Chair' }),
+    })
+
+    await expect(breadItem).toBeVisible()
+    await expect(breadItem.locator('.picker-item-badge')).toContainText('Connected chain')
+    await expect(chairItem).toBeVisible()
+    await expect(chairItem.locator('.picker-item-badge')).toContainText('Current stock')
+    await expect(page.locator('.product-picker-panel .picker-item-name', { hasText: 'Basic Medicine' })).toHaveCount(
+      0,
+    )
+  })
 })
 
 // ── Link-aware product picker — STORAGE and B2B_SALES ─────────────────────────

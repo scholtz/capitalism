@@ -426,6 +426,19 @@ Root-cause of a recurring CI failure (March 2026, PRs #89):
 - After resolving conflicts, `git add` the file and run `GIT_EDITOR=true git merge --continue` to complete the merge without opening an editor.
 - Always re-run lint + `npm run build` + tests after any merge to confirm no regressions.
 
+## Context-aware picker quality — rerun the full affected spec and respect `noUncheckedIndexedAccess`
+
+Root-cause of a quality failure (April 2026, PR #336 / public sales product picker):
+- A follow-up refactor changed the sales-picker BFS queue from `shift()` to indexed access (`const current = queue[readIndex]`) but did not narrow or assert the indexed value. `frontend-ci-cd` correctly failed with `TS18048: 'current' is possibly 'undefined'` under the repository's strict TypeScript settings.
+- The new public-sales picker correctly filtered options to connected upstream products or current stock, but several older `building-detail.spec.ts` tests still assumed a starter shop could open the `PUBLIC_SALES` picker and see any product without first configuring the upstream `PURCHASE` unit.
+- Only the new targeted picker tests were rerun before pushing. The full `building-detail` Playwright spec later exposed the stale assumptions in price-validation and generic picker UX tests.
+
+**Rules to prevent recurrence:**
+1. **After changing any context-aware picker/filtering rule, rerun the full affected spec file, not just the new tests.** For public-sales picker changes this means at least `CI=true npx playwright test --project=chromium e2e/building-detail.spec.ts`.
+2. **When a `PUBLIC_SALES` picker test expects a product to be selectable in a starter shop, configure the upstream `PURCHASE` unit first unless the test is explicitly validating the empty state.** The context-aware picker is correct to hide unrelated products otherwise.
+3. **For connectivity-aware selectors, add coverage for all three states:** connected-only, stock-preserved-only, and mixed connected-plus-stocked. Do not stop at a single happy path.
+4. **With `noUncheckedIndexedAccess`, `const current = arr[index]` is nullable even inside a guarded loop.** Narrow it explicitly (`if (!current) break`) or use a justified non-null assertion after the loop condition proves the index is valid.
+
 ## E2E test quality — preventing selector failures
 
 Root-cause of a quality failure (March 2026, PR #48 / global exchange):
