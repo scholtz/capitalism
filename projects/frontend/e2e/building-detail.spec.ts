@@ -15502,6 +15502,161 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     await expect(planSection.locator('.link-arrow').first()).toBeVisible()
   })
 
+  test('loading a template with diagonal link flags preserves diagonal state in planned grid (AC6)', async ({
+    page,
+  }) => {
+    // Verifies that a template saved with a diagonal linkDownRight flag (tl-br direction)
+    // round-trips through save/load and shows the correct state-tl-br class in the planned grid.
+    // This proves the ROADMAP requirement: "Saved layouts and loaded layouts preserve all
+    // directional-link flags, including diagonal links."
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    // Layout with 4 units and a diagonal tl-br link: PURCHASE(0,0).linkDownRight → B2B_SALES(1,1)
+    state.buildingLayouts = [
+      {
+        id: 'layout-with-diagonal',
+        ownerPlayerId: player.id,
+        name: 'Diagonal Chain Template',
+        description: 'PURCHASE→B2B_SALES via diagonal tl-br link',
+        buildingType: 'FACTORY',
+        unitsJson: JSON.stringify([
+          {
+            unitType: 'PURCHASE',
+            gridX: 0,
+            gridY: 0,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: true, // <-- diagonal tl-br flag
+            resourceTypeId: null,
+            productTypeId: null,
+            minPrice: null,
+            maxPrice: null,
+            purchaseSource: null,
+            saleVisibility: null,
+            budget: null,
+            mediaHouseBuildingId: null,
+            minQuality: null,
+            brandScope: null,
+            vendorLockCompanyId: null,
+          },
+          {
+            unitType: 'MANUFACTURING',
+            gridX: 1,
+            gridY: 0,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            resourceTypeId: null,
+            productTypeId: null,
+            minPrice: null,
+            maxPrice: null,
+            purchaseSource: null,
+            saleVisibility: null,
+            budget: null,
+            mediaHouseBuildingId: null,
+            minQuality: null,
+            brandScope: null,
+            vendorLockCompanyId: null,
+          },
+          {
+            unitType: 'STORAGE',
+            gridX: 0,
+            gridY: 1,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            resourceTypeId: null,
+            productTypeId: null,
+            minPrice: null,
+            maxPrice: null,
+            purchaseSource: null,
+            saleVisibility: null,
+            budget: null,
+            mediaHouseBuildingId: null,
+            minQuality: null,
+            brandScope: null,
+            vendorLockCompanyId: null,
+          },
+          {
+            unitType: 'B2B_SALES',
+            gridX: 1,
+            gridY: 1,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            resourceTypeId: null,
+            productTypeId: null,
+            minPrice: null,
+            maxPrice: null,
+            purchaseSource: null,
+            saleVisibility: null,
+            budget: null,
+            mediaHouseBuildingId: null,
+            minQuality: null,
+            brandScope: null,
+            vendorLockCompanyId: null,
+          },
+        ]),
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ]
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+    await expect(
+      panel.locator('.layout-item').filter({ hasText: 'Diagonal Chain Template' }),
+    ).toBeVisible()
+
+    // Load the diagonal template — draft is empty, no overwrite confirm needed
+    await panel
+      .locator('.layout-item')
+      .filter({ hasText: 'Diagonal Chain Template' })
+      .getByRole('button', { name: 'Load' })
+      .click()
+    await expect(page.locator('.layout-overwrite-confirm')).toHaveCount(0)
+
+    // Planned grid should show four occupied cells
+    const planSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(planSection.locator('.grid-cell.occupied').first()).toBeVisible()
+
+    // The diagonal toggle for the (0,0)–(1,1) block must show state-tl-br (diagonal flag preserved)
+    const diagButton = planSection.locator('.link-toggle.diagonal').first()
+    await expect(diagButton).toHaveClass(/state-tl-br/)
+  })
+
   test('layout item shows structural unit summary in metadata', async ({ page }) => {
     const player = makeLayoutTestPlayer()
     const state = setupMockApi(page, { players: [player] })
