@@ -6411,6 +6411,125 @@ test.describe('Link-aware product picker — STORAGE unit', () => {
       timeout: 10000,
     })
   })
+
+  test('STORAGE picker shows current-stock product in Connected section when no producers are linked', async ({
+    page,
+  }) => {
+    // Scenario 4 from the issue: Storage unit has products in its current inventory
+    // but no newly connected producer. The picker must surface the stock product.
+    const chair = makeChairProduct()
+    const bread = { ...chair, id: 'prod-bread', name: 'Bread', slug: 'bread', industry: 'FOOD_PROCESSING' as const, basePrice: 3 }
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-stock-only',
+          playerId: 'player-1',
+          name: 'Stock Only Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-stock-only',
+              companyId: 'company-stock-only',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Stock Only Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 2,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'stock-storage-unit',
+                  buildingId: 'building-stock-only',
+                  unitType: 'STORAGE',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkRight: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: null,
+                  inventoryItems: [
+                    {
+                      id: 'inv-stock-chair',
+                      resourceTypeId: null,
+                      productTypeId: 'prod-chair',
+                      quantity: 25,
+                      quality: 0.8,
+                      sourcingCostTotal: 250,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player], products: [chair, bread] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-stock-only')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    // Click on the STORAGE cell at (0,0)
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(0).click()
+
+    // Help text confirms filtering is active (stock product found)
+    await expect(
+      page.locator('.config-help', { hasText: 'Only products from connected units or current stock are shown first.' }),
+    ).toBeVisible()
+
+    // Open the picker
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await productTypeField.locator('.picker-trigger').click()
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+
+    // Connected section must appear based on current stock (no linked producers)
+    await expect(
+      page.locator('.product-picker-panel .picker-section-header', {
+        hasText: 'Connected to this building',
+      }),
+    ).toBeVisible()
+
+    // Wooden Chair must be in the connected section
+    const chairItem = page
+      .locator('.product-picker-panel .picker-item')
+      .filter({ has: page.locator('.picker-item-name', { hasText: 'Wooden Chair' }) })
+    await expect(chairItem.locator('.badge-connected')).toBeVisible()
+
+    // Bread should NOT appear (no link to a Bread producer and no Bread in stock)
+    const breadItem = page
+      .locator('.product-picker-panel .picker-item')
+      .filter({ has: page.locator('.picker-item-name', { hasText: 'Bread' }) })
+    await expect(breadItem).toHaveCount(0)
+  })
+
 })
 
 test.describe('Link-aware product picker — B2B_SALES unit', () => {
@@ -7045,6 +7164,274 @@ test.describe('Product picker — contextual ranking section headers', () => {
         .locator('.picker-stale-warning'),
     ).toBeVisible({ timeout: 10000 })
   })
+
+  test('STORAGE to B2B_SALES direct chain: B2B_SALES picker shows STORAGE product as connected', async ({
+    page,
+  }) => {
+    // Scenario 2 from the issue: STORAGE is directly linked to B2B_SALES with no MFG.
+    // The B2B_SALES picker must surface the STORAGE unit's configured product.
+    const chair = makeChairProduct()
+    const bread = { ...chair, id: 'prod-bread', name: 'Bread', slug: 'bread', industry: 'FOOD_PROCESSING' as const, basePrice: 3 }
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-storage-b2b',
+          playerId: 'player-1',
+          name: 'Storage B2B Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-storage-b2b',
+              companyId: 'company-storage-b2b',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Storage B2B Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 2,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'sb2b-storage',
+                  buildingId: 'building-storage-b2b',
+                  unitType: 'STORAGE',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: true,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: 'prod-chair',
+                },
+                {
+                  id: 'sb2b-sales',
+                  buildingId: 'building-storage-b2b',
+                  unitType: 'B2B_SALES',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player], products: [chair, bread] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-storage-b2b')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    // Click on the B2B_SALES cell at column 1 (gridX=1)
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await productTypeField.locator('.picker-trigger').click()
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+
+    // Connected section must appear because STORAGE(0,0) has prod-chair
+    await expect(
+      page.locator('.product-picker-panel .picker-section-header', {
+        hasText: 'Connected to this building',
+      }),
+    ).toBeVisible()
+
+    const chairItem = page
+      .locator('.product-picker-panel .picker-item')
+      .filter({ has: page.locator('.picker-item-name', { hasText: 'Wooden Chair' }) })
+    await expect(chairItem.locator('.badge-connected')).toBeVisible()
+  })
+
+  test('full PURCHASE to MFG to STORAGE to PUBLIC_SALES chain: STORAGE picker filters to linked MFG product', async ({
+    page,
+  }) => {
+    // Scenario 1 from the issue: four-unit chain with directional links.
+    // STORAGE is linked upstream to MFG and downstream to PUBLIC_SALES.
+    // The STORAGE picker must show only the MFG-linked product (Wooden Chair).
+    const chair = makeChairProduct()
+    const bread = { ...chair, id: 'prod-bread', name: 'Bread', slug: 'bread', industry: 'FOOD_PROCESSING' as const, basePrice: 3 }
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-full-chain',
+          playerId: 'player-1',
+          name: 'Full Chain Co',
+          cash: 500000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-full-chain',
+              companyId: 'company-full-chain',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Full Chain Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 2,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'fc-purchase',
+                  buildingId: 'building-full-chain',
+                  unitType: 'PURCHASE',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: true,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                },
+                {
+                  id: 'fc-mfg',
+                  buildingId: 'building-full-chain',
+                  unitType: 'MANUFACTURING',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: true,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: 'prod-chair',
+                },
+                {
+                  id: 'fc-storage',
+                  buildingId: 'building-full-chain',
+                  unitType: 'STORAGE',
+                  gridX: 2,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: true,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: null,
+                },
+                {
+                  id: 'fc-public-sales',
+                  buildingId: 'building-full-chain',
+                  unitType: 'PUBLIC_SALES',
+                  gridX: 3,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkLeft: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player], products: [chair, bread] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-full-chain')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    // Click on the STORAGE cell at column 2 (gridX=2)
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(2).click()
+
+    // Help text confirms filtering is active (MFG is connected to STORAGE)
+    await expect(
+      page.locator('.config-help', { hasText: 'Only products from connected units or current stock are shown first.' }),
+    ).toBeVisible()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+
+    await productTypeField.locator('.picker-trigger').click()
+    await expect(page.locator('.product-picker-panel')).toBeVisible()
+
+    // Connected section shows Wooden Chair from the MFG unit upstream
+    await expect(
+      page.locator('.product-picker-panel .picker-section-header', {
+        hasText: 'Connected to this building',
+      }),
+    ).toBeVisible()
+
+    const chairItem = page
+      .locator('.product-picker-panel .picker-item')
+      .filter({ has: page.locator('.picker-item-name', { hasText: 'Wooden Chair' }) })
+    await expect(chairItem.locator('.badge-connected')).toBeVisible()
+
+    // Bread should NOT appear (no Bread in the chain)
+    const breadItem = page
+      .locator('.product-picker-panel .picker-item')
+      .filter({ has: page.locator('.picker-item-name', { hasText: 'Bread' }) })
+    await expect(breadItem).toHaveCount(0)
+  })
+
 })
 
 // ── Purchase selector dialog — z-index and navbar visibility ─────────────────
