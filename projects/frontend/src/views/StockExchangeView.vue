@@ -615,6 +615,7 @@ function buildPieSlices(ownership: CompanyOwnership): PieSlice[] {
     slices.push({
       label: holder.holderName,
       ratio: holder.ownershipRatio,
+      // ?? fallback needed for TypeScript strict noUncheckedIndexedAccess, never reached at runtime
       color: PIE_COLORS[namedSliceCount % PIE_COLORS.length] ?? '#808080',
     })
     namedSliceCount++
@@ -626,6 +627,7 @@ function buildPieSlices(ownership: CompanyOwnership): PieSlice[] {
     slices.push({
       label: t('stockExchange.shareholdersOther'),
       ratio: otherNamedRatio,
+      // ?? fallback needed for TypeScript strict noUncheckedIndexedAccess, never reached at runtime
       color: PIE_COLORS[namedSliceCount % PIE_COLORS.length] ?? '#808080',
       isOther: true,
     })
@@ -1037,7 +1039,7 @@ useTickRefresh(async () => {
                             {{ shareholdersErrorByCompany[listing.companyId] }}
                           </p>
                           <template v-else-if="shareholdersByCompany[listing.companyId]">
-                            <div v-for="ow in [shareholdersByCompany[listing.companyId]]" :key="listing.companyId">
+                            <div v-for="ow in [shareholdersByCompany[listing.companyId]]" :key="ow ? ow.companyId : listing.companyId">
                             <template v-if="ow">
                             <div class="shareholders-summary">
                               <span class="shareholders-summary__item">
@@ -1047,10 +1049,10 @@ useTickRefresh(async () => {
                               <span class="shareholders-summary__item">
                                 {{ t('stockExchange.shareholdersCountLabel', { count: ow.shareholderCount }) }}
                               </span>
-                              <span v-if="ow.shareholders[0]" class="shareholders-summary__item">
+                              <span v-if="ow.shareholders.length > 0" class="shareholders-summary__item">
                                 {{ t('stockExchange.shareholdersLargestHolder') }}:
-                                <strong>{{ ow.shareholders[0].holderName }}</strong>
-                                ({{ formatPercent(ow.shareholders[0].ownershipRatio) }})
+                                <strong>{{ ow.shareholders[0]!.holderName }}</strong>
+                                ({{ formatPercent(ow.shareholders[0]!.ownershipRatio) }})
                               </span>
                             </div>
 
