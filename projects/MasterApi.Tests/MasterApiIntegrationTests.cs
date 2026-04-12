@@ -1559,6 +1559,428 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
     }
 
     #endregion
+
+    #region Building layout templates
+
+    [Fact]
+    public async Task MyBuildingLayouts_Unauthenticated_ReturnsAuthError()
+    {
+        var result = await GraphQlAsync("""
+            query { myBuildingLayouts { id name } }
+            """);
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task MyBuildingLayouts_Authenticated_ReturnsEmptyListInitially()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-empty@example.com");
+
+        var result = await GraphQlAsync("""
+            query { myBuildingLayouts { id name buildingType updatedAtUtc } }
+            """,
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var list = result.GetProperty("data").GetProperty("myBuildingLayouts");
+        Assert.Equal(0, list.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_Unauthenticated_ReturnsAuthError()
+    {
+        var result = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id name }
+            }
+            """,
+            new { input = new { name = "Test", buildingType = "FACTORY", unitsJson = "[]" } });
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_CreatesNewLayout_AndAppearsInMyLayouts()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-create@example.com");
+
+        const string units = """[{"unitType":"PURCHASE","gridX":0,"gridY":0}]""";
+
+        var saveResult = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) {
+                id name description buildingType unitsJson updatedAtUtc
+              }
+            }
+            """,
+            new { input = new { name = "My Factory Layout", description = "Test desc", buildingType = "FACTORY", unitsJson = units } },
+            token: token);
+
+        Assert.False(saveResult.TryGetProperty("errors", out _));
+        var saved = saveResult.GetProperty("data").GetProperty("saveBuildingLayout");
+        Assert.Equal("My Factory Layout", saved.GetProperty("name").GetString());
+        Assert.Equal("Test desc", saved.GetProperty("description").GetString());
+        Assert.Equal("FACTORY", saved.GetProperty("buildingType").GetString());
+        Assert.Equal(units, saved.GetProperty("unitsJson").GetString());
+        var savedId = saved.GetProperty("id").GetString();
+        Assert.False(string.IsNullOrEmpty(savedId));
+
+        // Verify it appears in myBuildingLayouts
+        var listResult = await GraphQlAsync("""
+            query { myBuildingLayouts { id name buildingType unitsJson } }
+            """,
+            token: token);
+        var list = listResult.GetProperty("data").GetProperty("myBuildingLayouts");
+        Assert.Equal(1, list.GetArrayLength());
+        Assert.Equal("My Factory Layout", list[0].GetProperty("name").GetString());
+        Assert.Equal(units, list[0].GetProperty("unitsJson").GetString());
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_UpdatesExistingLayout_WhenExistingIdProvided()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-update@example.com");
+
+        // Create initial layout
+        var createResult = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id name unitsJson }
+            }
+            """,
+            new { input = new { name = "Original Name", buildingType = "MINE", unitsJson = """[{"unitType":"MINING","gridX":0,"gridY":0}]""" } },
+            token: token);
+
+        var savedId = createResult.GetProperty("data").GetProperty("saveBuildingLayout").GetProperty("id").GetString()!;
+
+        // Update the layout
+        const string updatedUnits = """[{"unitType":"STORAGE","gridX":1,"gridY":0}]""";
+        var updateResult = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id name unitsJson }
+            }
+            """,
+            new { input = new { name = "Updated Name", buildingType = "MINE", unitsJson = updatedUnits, existingId = savedId } },
+            token: token);
+
+        Assert.False(updateResult.TryGetProperty("errors", out _));
+        var updated = updateResult.GetProperty("data").GetProperty("saveBuildingLayout");
+        Assert.Equal(savedId, updated.GetProperty("id").GetString());
+        Assert.Equal("Updated Name", updated.GetProperty("name").GetString());
+        Assert.Equal(updatedUnits, updated.GetProperty("unitsJson").GetString());
+
+        // Verify only one entry exists (no duplicates)
+        var listResult = await GraphQlAsync("""
+            query { myBuildingLayouts { id name } }
+            """,
+            token: token);
+        var list = listResult.GetProperty("data").GetProperty("myBuildingLayouts");
+        Assert.Equal(1, list.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_CannotUpdateAnotherUsersLayout()
+    {
+        var (token1, _) = await RegisterAndGetTokenAsync("layouts-owner@example.com");
+        var (token2, _) = await RegisterAndGetTokenAsync("layouts-attacker@example.com");
+
+        // User 1 creates a layout
+        var createResult = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "User1 Layout", buildingType = "FACTORY", unitsJson = "[]" } },
+            token: token1);
+        var layoutId = createResult.GetProperty("data").GetProperty("saveBuildingLayout").GetProperty("id").GetString()!;
+
+        // User 2 tries to update User 1's layout
+        var attackResult = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id name }
+            }
+            """,
+            new { input = new { name = "Hijacked", buildingType = "FACTORY", unitsJson = "[]", existingId = layoutId } },
+            token: token2);
+
+        Assert.True(attackResult.TryGetProperty("errors", out var errors));
+        Assert.Equal("LAYOUT_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task DeleteBuildingLayout_RemovesLayout_AndDisappearsFromList()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-delete@example.com");
+
+        // Create a layout
+        var createResult = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "To Delete", buildingType = "SALES_SHOP", unitsJson = "[]" } },
+            token: token);
+        var layoutId = createResult.GetProperty("data").GetProperty("saveBuildingLayout").GetProperty("id").GetString()!;
+
+        // Delete it
+        var deleteResult = await GraphQlAsync("""
+            mutation Del($input: DeleteBuildingLayoutInput!) {
+              deleteBuildingLayout(input: $input)
+            }
+            """,
+            new { input = new { id = layoutId } },
+            token: token);
+
+        Assert.False(deleteResult.TryGetProperty("errors", out _));
+        Assert.True(deleteResult.GetProperty("data").GetProperty("deleteBuildingLayout").GetBoolean());
+
+        // Verify it's gone
+        var listResult = await GraphQlAsync("""
+            query { myBuildingLayouts { id } }
+            """,
+            token: token);
+        var list = listResult.GetProperty("data").GetProperty("myBuildingLayouts");
+        Assert.Equal(0, list.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task DeleteBuildingLayout_Unauthenticated_ReturnsAuthError()
+    {
+        var result = await GraphQlAsync("""
+            mutation Del($input: DeleteBuildingLayoutInput!) {
+              deleteBuildingLayout(input: $input)
+            }
+            """,
+            new { input = new { id = Guid.NewGuid().ToString() } });
+
+        Assert.True(result.TryGetProperty("errors", out _));
+    }
+
+    [Fact]
+    public async Task DeleteBuildingLayout_CannotDeleteAnotherUsersLayout()
+    {
+        var (token1, _) = await RegisterAndGetTokenAsync("layouts-del-owner@example.com");
+        var (token2, _) = await RegisterAndGetTokenAsync("layouts-del-attacker@example.com");
+
+        // User 1 creates a layout
+        var createResult = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "Victim Layout", buildingType = "FACTORY", unitsJson = "[]" } },
+            token: token1);
+        var layoutId = createResult.GetProperty("data").GetProperty("saveBuildingLayout").GetProperty("id").GetString()!;
+
+        // User 2 tries to delete User 1's layout
+        var attackResult = await GraphQlAsync("""
+            mutation Del($input: DeleteBuildingLayoutInput!) {
+              deleteBuildingLayout(input: $input)
+            }
+            """,
+            new { input = new { id = layoutId } },
+            token: token2);
+
+        Assert.True(attackResult.TryGetProperty("errors", out var errors));
+        Assert.Equal("LAYOUT_NOT_FOUND", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+
+        // Confirm layout still exists for User 1
+        var listResult = await GraphQlAsync("""
+            query { myBuildingLayouts { id } }
+            """,
+            token: token1);
+        Assert.Equal(1, listResult.GetProperty("data").GetProperty("myBuildingLayouts").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_EmptyName_ReturnsValidationError()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-val-name@example.com");
+
+        var result = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "", buildingType = "FACTORY", unitsJson = "[]" } },
+            token: token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("LAYOUT_NAME_REQUIRED", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_EmptyBuildingType_ReturnsValidationError()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-val-type@example.com");
+
+        var result = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "My Layout", buildingType = "", unitsJson = "[]" } },
+            token: token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("BUILDING_TYPE_REQUIRED", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_InvalidJson_ReturnsValidationError()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-val-json@example.com");
+
+        var result = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "My Layout", buildingType = "FACTORY", unitsJson = "not-valid-json{{{" } },
+            token: token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("UNITS_JSON_INVALID", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_OversizedJson_ReturnsValidationError()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-val-size@example.com");
+
+        // Generate a JSON payload larger than 32 KB
+        var bigJson = "[" + string.Join(",", Enumerable.Range(0, 5000).Select(i => $"\"unit{i}\"")) + "]";
+        Assert.True(bigJson.Length > 32_768);
+
+        var result = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "Big Layout", buildingType = "FACTORY", unitsJson = bigJson } },
+            token: token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Equal("UNITS_JSON_TOO_LARGE", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task MyBuildingLayouts_OnlyReturnsCurrentUsersLayouts()
+    {
+        var (token1, _) = await RegisterAndGetTokenAsync("layouts-isolation-a@example.com");
+        var (token2, _) = await RegisterAndGetTokenAsync("layouts-isolation-b@example.com");
+
+        // User 1 saves 2 layouts, User 2 saves 1
+        await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "User1 Layout A", buildingType = "FACTORY", unitsJson = "[]" } },
+            token: token1);
+        await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "User1 Layout B", buildingType = "MINE", unitsJson = "[]" } },
+            token: token1);
+        await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id }
+            }
+            """,
+            new { input = new { name = "User2 Layout", buildingType = "SALES_SHOP", unitsJson = "[]" } },
+            token: token2);
+
+        // Each user sees only their own layouts
+        var list1 = (await GraphQlAsync("""query { myBuildingLayouts { name } }""", token: token1))
+            .GetProperty("data").GetProperty("myBuildingLayouts");
+        var list2 = (await GraphQlAsync("""query { myBuildingLayouts { name } }""", token: token2))
+            .GetProperty("data").GetProperty("myBuildingLayouts");
+
+        Assert.Equal(2, list1.GetArrayLength());
+        Assert.Equal(1, list2.GetArrayLength());
+
+        // Verify User 2 doesn't see User 1's layouts
+        var names2 = Enumerable.Range(0, list2.GetArrayLength()).Select(i => list2[i].GetProperty("name").GetString()).ToArray();
+        Assert.DoesNotContain("User1 Layout A", names2);
+        Assert.DoesNotContain("User1 Layout B", names2);
+        Assert.Contains("User2 Layout", names2);
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_NullDescription_IsStoredAsNull()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-nulldesc@example.com");
+
+        var result = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id name description }
+            }
+            """,
+            new { input = new { name = "No Desc", buildingType = "FACTORY", unitsJson = "[]", description = (string?)null } },
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var saved = result.GetProperty("data").GetProperty("saveBuildingLayout");
+        Assert.Equal("No Desc", saved.GetProperty("name").GetString());
+        Assert.Equal(JsonValueKind.Null, saved.GetProperty("description").ValueKind);
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_BuildingTypeIsNormalisedToUppercase()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-uppercase@example.com");
+
+        var result = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { buildingType }
+            }
+            """,
+            new { input = new { name = "Normalise Me", buildingType = "factory", unitsJson = "[]" } },
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        Assert.Equal("FACTORY", result.GetProperty("data").GetProperty("saveBuildingLayout").GetProperty("buildingType").GetString());
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_DirectionalLinksAndPositionsRoundTrip()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-roundtrip@example.com");
+
+        const string units = """
+            [
+              {"unitType":"PURCHASE","gridX":0,"gridY":0,"linkRight":true,"resourceTypeId":"res-wood"},
+              {"unitType":"MANUFACTURING","gridX":1,"gridY":0,"linkRight":true},
+              {"unitType":"STORAGE","gridX":2,"gridY":0}
+            ]
+            """;
+
+        var result = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id unitsJson }
+            }
+            """,
+            new { input = new { name = "Chain Layout", buildingType = "FACTORY", unitsJson = units } },
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var savedJson = result.GetProperty("data").GetProperty("saveBuildingLayout").GetProperty("unitsJson").GetString()!;
+
+        // Verify JSON round-trips correctly (parse both and compare)
+        var savedUnits = JsonDocument.Parse(savedJson).RootElement;
+        Assert.Equal(3, savedUnits.GetArrayLength());
+        Assert.Equal("PURCHASE", savedUnits[0].GetProperty("unitType").GetString());
+        Assert.True(savedUnits[0].GetProperty("linkRight").GetBoolean());
+        Assert.Equal("res-wood", savedUnits[0].GetProperty("resourceTypeId").GetString());
+        Assert.Equal(1, savedUnits[1].GetProperty("gridX").GetInt32());
+        Assert.True(savedUnits[1].GetProperty("linkRight").GetBoolean());
+        Assert.Equal(2, savedUnits[2].GetProperty("gridX").GetInt32());
+    }
+
+    #endregion
 }
 
 // ── Startup guard test ────────────────────────────────────────────────────────
