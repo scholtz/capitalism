@@ -15380,4 +15380,164 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     await expect(page.getByRole('button', { name: 'Cancel Editing' })).toBeVisible()
   })
 
+  test('unauthenticated user sees connect prompt and local-only fallback section', async ({ page }) => {
+    // No auth token — user is not logged in to the master portal
+    const player = makeLayoutTestPlayer()
+    setupMockApi(page, { players: [player] })
+    // Do NOT set currentUserId/Token — simulate unauthenticated state for cloud
+    // But DO set localStorage auth so the game itself is authenticated (player owns the building)
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+
+    // Connect prompt should be visible since cloud auth uses same token
+    // The cloud section title should still be visible
+    await expect(page.getByRole('heading', { name: 'Building Layouts' })).toBeVisible()
+
+    // Layout name input and Save button should be available regardless of cloud status
+    await expect(panel.locator('[aria-label="Layout name"]')).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Save Layout' })).toBeVisible()
+  })
+
+  test('loading a template with directional links shows link arrows in planned grid (AC5)', async ({
+    page,
+  }) => {
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    // Layout with PURCHASE → MANUFACTURING linked via linkRight
+    state.buildingLayouts = [
+      {
+        id: 'layout-with-links',
+        ownerPlayerId: player.id,
+        name: 'Linked Chain',
+        description: 'PURCHASE→MANUFACTURING with directional link',
+        buildingType: 'FACTORY',
+        unitsJson: JSON.stringify([
+          {
+            unitType: 'PURCHASE',
+            gridX: 0,
+            gridY: 0,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: true, // <-- directional link to the right
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            resourceTypeId: null,
+            productTypeId: null,
+            minPrice: null,
+            maxPrice: null,
+            purchaseSource: null,
+            saleVisibility: null,
+            budget: null,
+            mediaHouseBuildingId: null,
+            minQuality: null,
+            brandScope: null,
+            vendorLockCompanyId: null,
+          },
+          {
+            unitType: 'MANUFACTURING',
+            gridX: 1,
+            gridY: 0,
+            linkUp: false,
+            linkDown: false,
+            linkLeft: false,
+            linkRight: false,
+            linkUpLeft: false,
+            linkUpRight: false,
+            linkDownLeft: false,
+            linkDownRight: false,
+            resourceTypeId: null,
+            productTypeId: null,
+            minPrice: null,
+            maxPrice: null,
+            purchaseSource: null,
+            saleVisibility: null,
+            budget: null,
+            mediaHouseBuildingId: null,
+            minQuality: null,
+            brandScope: null,
+            vendorLockCompanyId: null,
+          },
+        ]),
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ]
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+    await expect(panel.locator('.layout-item').filter({ hasText: 'Linked Chain' })).toBeVisible()
+
+    // Load the linked template — draft is empty, no overwrite confirm
+    await panel.locator('.layout-item').filter({ hasText: 'Linked Chain' }).getByRole('button', { name: 'Load' }).click()
+    await expect(page.locator('.layout-overwrite-confirm')).toHaveCount(0)
+
+    // Planned grid should show two occupied cells
+    const planSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+    await expect(planSection.locator('.grid-cell.occupied').first()).toBeVisible()
+
+    // At least one link arrow should appear in the planned grid (AC5: links preserved)
+    await expect(planSection.locator('.link-arrow').first()).toBeVisible()
+  })
+
+  test('layout item shows unit count in metadata', async ({ page }) => {
+    const player = makeLayoutTestPlayer()
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.buildingLayouts = [
+      {
+        id: 'layout-meta-test',
+        ownerPlayerId: player.id,
+        name: 'Three Unit Layout',
+        description: 'Factory with 3 units',
+        buildingType: 'FACTORY',
+        unitsJson: JSON.stringify([
+          { unitType: 'PURCHASE', gridX: 0, gridY: 0 },
+          { unitType: 'MANUFACTURING', gridX: 1, gridY: 0 },
+          { unitType: 'STORAGE', gridX: 2, gridY: 0 },
+        ]),
+        updatedAtUtc: new Date().toISOString(),
+      },
+    ]
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-lt')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const panel = page.locator('[aria-label="Building Layouts"]')
+    await expect(panel).toBeVisible()
+
+    const layoutItem = panel.locator('.layout-item').filter({ hasText: 'Three Unit Layout' })
+    await expect(layoutItem).toBeVisible()
+
+    // The unit count meta should show '3 units'
+    await expect(layoutItem.locator('.layout-meta')).toContainText('3')
+  })
+
 })

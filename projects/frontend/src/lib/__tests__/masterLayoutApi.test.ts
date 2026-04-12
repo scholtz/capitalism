@@ -148,4 +148,105 @@ describe('masterLayoutApi — localStorage fallback', () => {
     localStorageMock.setItem('capitalism_building_layouts', 'not-valid-json')
     expect(getLocalLayoutsForType('FACTORY')).toEqual([])
   })
+
+  it('saveLocalLayout preserves all directional link flags', () => {
+    const linkedUnit: LayoutUnit = {
+      unitType: 'PURCHASE',
+      gridX: 0,
+      gridY: 0,
+      linkUp: true,
+      linkDown: false,
+      linkLeft: false,
+      linkRight: true,
+      linkUpLeft: false,
+      linkUpRight: false,
+      linkDownLeft: false,
+      linkDownRight: false,
+      resourceTypeId: null,
+      productTypeId: null,
+      minPrice: null,
+      maxPrice: null,
+      purchaseSource: null,
+      saleVisibility: null,
+      budget: null,
+      mediaHouseBuildingId: null,
+      minQuality: null,
+      brandScope: null,
+      vendorLockCompanyId: null,
+    }
+    saveLocalLayout('Linked Factory', null, 'FACTORY', [linkedUnit])
+    const layouts = getLocalLayoutsForType('FACTORY')
+    const savedUnit = layouts[0]?.units[0]
+    expect(savedUnit?.linkRight).toBe(true)
+    expect(savedUnit?.linkUp).toBe(true)
+    expect(savedUnit?.linkDown).toBe(false)
+    expect(savedUnit?.linkLeft).toBe(false)
+  })
+
+  it('saveLocalLayout preserves diagonal link flags', () => {
+    const diagonalUnit: LayoutUnit = {
+      unitType: 'MANUFACTURING',
+      gridX: 1,
+      gridY: 1,
+      linkUp: false,
+      linkDown: false,
+      linkLeft: false,
+      linkRight: false,
+      linkUpLeft: false,
+      linkUpRight: true,
+      linkDownLeft: false,
+      linkDownRight: false,
+      resourceTypeId: null,
+      productTypeId: null,
+      minPrice: null,
+      maxPrice: null,
+      purchaseSource: null,
+      saleVisibility: null,
+      budget: null,
+      mediaHouseBuildingId: null,
+      minQuality: null,
+      brandScope: null,
+      vendorLockCompanyId: null,
+    }
+    saveLocalLayout('Diagonal Chain', 'Has diagonal link', 'FACTORY', [diagonalUnit])
+    const layouts = getLocalLayoutsForType('FACTORY')
+    const savedUnit = layouts[0]?.units[0]
+    expect(savedUnit?.linkUpRight).toBe(true)
+    expect(savedUnit?.linkDownLeft).toBe(false)
+  })
+
+  it('saveLocalLayout preserves resourceTypeId and productTypeId', () => {
+    const configuredUnit: LayoutUnit = {
+      unitType: 'PURCHASE',
+      gridX: 0,
+      gridY: 0,
+      linkUp: false,
+      linkDown: false,
+      linkLeft: false,
+      linkRight: true,
+      linkUpLeft: false,
+      linkUpRight: false,
+      linkDownLeft: false,
+      linkDownRight: false,
+      resourceTypeId: 'resource-wood',
+      productTypeId: null,
+      minPrice: 10,
+      maxPrice: 50,
+      purchaseSource: null,
+      saleVisibility: null,
+      budget: 1000,
+      mediaHouseBuildingId: null,
+      minQuality: null,
+      brandScope: null,
+      vendorLockCompanyId: null,
+    }
+    saveLocalLayout('Wood Buyer', null, 'FACTORY', [configuredUnit])
+    const layouts = getLocalLayoutsForType('FACTORY')
+    const saved = layouts[0]?.units[0]
+    expect(saved?.resourceTypeId).toBe('resource-wood')
+    expect(saved?.minPrice).toBe(10)
+    expect(saved?.maxPrice).toBe(50)
+    expect(saved?.budget).toBe(1000)
+    expect(saved?.linkRight).toBe(true)
+  })
 })

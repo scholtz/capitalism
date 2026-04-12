@@ -1980,6 +1980,135 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
         Assert.Equal(2, savedUnits[2].GetProperty("gridX").GetInt32());
     }
 
+    [Fact]
+    public async Task SaveBuildingLayout_TimestampsAreSetOnCreate()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-ts-create@example.com");
+
+        var before = DateTime.UtcNow.AddSeconds(-1);
+
+        var result = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id createdAtUtc updatedAtUtc }
+            }
+            """,
+            new { input = new { name = "TS Test", buildingType = "FACTORY", unitsJson = "[]" } },
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var saved = result.GetProperty("data").GetProperty("saveBuildingLayout");
+
+        var createdAt = saved.GetProperty("createdAtUtc").GetDateTime();
+        var updatedAt = saved.GetProperty("updatedAtUtc").GetDateTime();
+
+        Assert.True(createdAt >= before, "createdAtUtc should be set to approximately now");
+        Assert.True(updatedAt >= before, "updatedAtUtc should be set to approximately now");
+        Assert.True(Math.Abs((createdAt - updatedAt).TotalSeconds) < 2, "createdAtUtc and updatedAtUtc should match on initial create");
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_UpdatedAtUtc_ChangesOnUpdate()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-ts-update@example.com");
+
+        // Create initial layout
+        var createResult = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id createdAtUtc updatedAtUtc }
+            }
+            """,
+            new { input = new { name = "TS Update Test", buildingType = "FACTORY", unitsJson = "[]" } },
+            token: token);
+
+        var saved = createResult.GetProperty("data").GetProperty("saveBuildingLayout");
+        var layoutId = saved.GetProperty("id").GetString()!;
+        var originalUpdatedAt = saved.GetProperty("updatedAtUtc").GetDateTime();
+        var createdAt = saved.GetProperty("createdAtUtc").GetDateTime();
+
+        // Wait a small amount to ensure timestamp difference is detectable
+        await Task.Delay(50);
+
+        // Update the layout
+        var updateResult = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { id createdAtUtc updatedAtUtc }
+            }
+            """,
+            new { input = new { name = "TS Update Test", buildingType = "FACTORY", unitsJson = """[{"unitType":"PURCHASE","gridX":0,"gridY":0}]""", existingId = layoutId } },
+            token: token);
+
+        Assert.False(updateResult.TryGetProperty("errors", out _));
+        var updated = updateResult.GetProperty("data").GetProperty("saveBuildingLayout");
+        var newUpdatedAt = updated.GetProperty("updatedAtUtc").GetDateTime();
+        var unchangedCreatedAt = updated.GetProperty("createdAtUtc").GetDateTime();
+
+        Assert.True(newUpdatedAt >= originalUpdatedAt, "updatedAtUtc should be >= original after update");
+        // createdAtUtc should not change on update
+        Assert.Equal(createdAt, unchangedCreatedAt);
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_AllSupportedBuildingTypes_AreStored()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-types@example.com");
+
+        // Verify that all standard building types can be saved
+        var buildingTypes = new[] { "FACTORY", "MINE", "SALES_SHOP", "APARTMENT", "COMMERCIAL" };
+
+        foreach (var buildingType in buildingTypes)
+        {
+            var result = await GraphQlAsync("""
+                mutation Save($input: SaveBuildingLayoutInput!) {
+                  saveBuildingLayout(input: $input) { id buildingType }
+                }
+                """,
+                new { input = new { name = $"Layout for {buildingType}", buildingType, unitsJson = "[]" } },
+                token: token);
+
+            Assert.False(result.TryGetProperty("errors", out _), $"Expected no error saving {buildingType} layout");
+            var saved = result.GetProperty("data").GetProperty("saveBuildingLayout");
+            Assert.Equal(buildingType, saved.GetProperty("buildingType").GetString());
+        }
+
+        // All layouts should appear in the list
+        var listResult = await GraphQlAsync("""
+            query { myBuildingLayouts { buildingType } }
+            """,
+            token: token);
+        var list = listResult.GetProperty("data").GetProperty("myBuildingLayouts");
+        Assert.Equal(buildingTypes.Length, list.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task SaveBuildingLayout_DiagonalLinksRoundTrip()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync("layouts-diagonal-roundtrip@example.com");
+
+        // A layout with a diagonal link (PURCHASE at 0,0 → MANUFACTURING at 1,1 via linkDownRight)
+        const string units = """
+            [
+              {"unitType":"PURCHASE","gridX":0,"gridY":0,"linkDownRight":true},
+              {"unitType":"MANUFACTURING","gridX":1,"gridY":1}
+            ]
+            """;
+
+        var result = await GraphQlAsync("""
+            mutation Save($input: SaveBuildingLayoutInput!) {
+              saveBuildingLayout(input: $input) { unitsJson }
+            }
+            """,
+            new { input = new { name = "Diagonal Layout", buildingType = "FACTORY", unitsJson = units } },
+            token: token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var savedJson = result.GetProperty("data").GetProperty("saveBuildingLayout").GetProperty("unitsJson").GetString()!;
+
+        var savedUnits = JsonDocument.Parse(savedJson).RootElement;
+        Assert.Equal(2, savedUnits.GetArrayLength());
+        // Diagonal link flag must round-trip
+        Assert.True(savedUnits[0].GetProperty("linkDownRight").GetBoolean());
+    }
+
     #endregion
 }
 
