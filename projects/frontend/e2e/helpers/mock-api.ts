@@ -646,6 +646,8 @@ export type MockState = {
   adminAuditLogs: MockGameAdminAuditLog[]
   impersonationSession: MockImpersonationSession | null
   buildingLayouts: MockBuildingLayoutTemplate[]
+  /** When set, the next StoreBuildingConfiguration call returns this string as a CONTRADICTORY_LINK error. */
+  forceBuildingConfigError: string | null
 }
 
 const mockStateByPage = new WeakMap<Page, MockState>()
@@ -1528,6 +1530,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     adminAuditLogs: [],
     impersonationSession: null,
     buildingLayouts: [],
+    forceBuildingConfigError: null,
     ...initial,
   }
 
@@ -2874,6 +2877,18 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
 
       if (!building) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ errors: [{ message: 'Building not found' }] }) })
+      }
+
+      // Allow tests to force a CONTRADICTORY_LINK error (or any other config error) to verify
+      // the frontend correctly displays backend validation errors in the save-error-banner.
+      if (state.forceBuildingConfigError) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            errors: [{ message: state.forceBuildingConfigError, extensions: { code: 'CONTRADICTORY_LINK' } }],
+          }),
+        })
       }
 
       const activePlayer = state.players.find((candidate) => candidate.id === state.currentUserId)

@@ -6816,6 +6816,151 @@ test.describe('Link-aware product picker — STORAGE unit', () => {
     await expect(breadItem).toHaveCount(0)
   })
 
+  test('STORAGE picker keeps stocked product visible after upstream link is removed — AC7 inventory edge case', async ({
+    page,
+  }) => {
+    // Issue AC7: "If inventory already exists, preserve visibility of stocked items so the player
+    // can manage them even if a link changes."
+    // Setup: MFG (linkRight→STORAGE) has Wooden Chair. STORAGE has Bread in inventory.
+    // storageConnectedProductIds initially includes Chair (from MFG link) + Bread (from inventory).
+    // After removing the MFG→STORAGE link, only Bread remains visible via inventory.
+    const chair = makeChairProduct()
+    const bread = {
+      ...chair,
+      id: 'prod-bread',
+      name: 'Bread',
+      slug: 'bread',
+      industry: 'FOOD_PROCESSING' as const,
+      basePrice: 3,
+    }
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'company-inv-persist',
+          playerId: 'player-1',
+          name: 'Inventory Persist Co',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [
+            {
+              id: 'building-inv-persist',
+              companyId: 'company-inv-persist',
+              cityId: 'city-ba',
+              type: 'FACTORY',
+              name: 'Inventory Persist Factory',
+              latitude: 48.15,
+              longitude: 17.11,
+              level: 1,
+              powerConsumption: 2,
+              isForSale: false,
+              builtAtUtc: '2026-01-01T00:00:00Z',
+              pendingConfiguration: null,
+              units: [
+                {
+                  id: 'invp-mfg',
+                  buildingId: 'building-inv-persist',
+                  unitType: 'MANUFACTURING',
+                  gridX: 0,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: true, // MFG → STORAGE (forward)
+                  linkLeft: false,
+                  linkUp: false,
+                  linkDown: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: 'prod-chair',
+                },
+                {
+                  id: 'invp-storage',
+                  buildingId: 'building-inv-persist',
+                  unitType: 'STORAGE',
+                  gridX: 1,
+                  gridY: 0,
+                  level: 1,
+                  linkRight: false,
+                  linkLeft: false, // No contradictory back-link; connectivity via MFG.linkRight
+                  linkUp: false,
+                  linkDown: false,
+                  linkUpLeft: false,
+                  linkUpRight: false,
+                  linkDownLeft: false,
+                  linkDownRight: false,
+                  productTypeId: null,
+                  inventoryItems: [
+                    { id: 'inv-bread', productTypeId: 'prod-bread', quantity: 20, quality: 0.7 },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player], products: [chair, bread] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-inv-persist')
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    // ── Step 1: Open STORAGE picker while MFG link is present ──────────────────
+    // Click STORAGE cell at column 1
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+
+    const productTypeField = page
+      .locator('.config-field')
+      .filter({ has: page.getByText('Product Type', { exact: true }) })
+      .first()
+    await productTypeField.locator('.picker-trigger').click()
+
+    const picker = page.locator('.product-picker-panel')
+    await expect(picker).toBeVisible()
+
+    // Both Chair (from MFG link) and Bread (from inventory) must appear
+    await expect(picker.locator('.picker-item-name', { hasText: 'Wooden Chair' })).toBeVisible()
+    await expect(picker.locator('.picker-item-name', { hasText: 'Bread' })).toBeVisible()
+
+    // ── Step 2: Remove the MFG→STORAGE link ────────────────────────────────────
+    // Clicking the H link toggle while the picker is open: the mousedown event on
+    // the toggle button is outside the picker panel, which closes the picker via the
+    // click-outside handler. The click event then cycles the link state.
+    // Initial state is 'forward'. Cycle: forward → backward → none (2 clicks).
+    const hLink = plannedSection.locator('.link-toggle.horizontal').first()
+    await hLink.click() // forward → backward  (picker closes on mousedown)
+    await hLink.click() // backward → none  (link fully removed)
+    await expect(hLink).toHaveClass(/link-state-none/)
+
+    // ── Step 3: Re-open STORAGE picker after link removal ───────────────────────
+    // STORAGE cell should still be selected; re-click to be certain
+    await plannedSection.locator('.unit-row').nth(0).locator('.grid-cell').nth(1).click()
+    await productTypeField.locator('.picker-trigger').click()
+    await expect(picker).toBeVisible()
+
+    // Bread must still appear — inventory preservation guarantees this (AC7)
+    await expect(picker.locator('.picker-item-name', { hasText: 'Bread' })).toBeVisible()
+
+    // Chair must NOT appear — no longer connected via any draft link
+    await expect(
+      picker.locator('.product-picker-panel .picker-item').filter({
+        has: picker.locator('.picker-item-name', { hasText: 'Wooden Chair' }),
+      }),
+    ).toHaveCount(0)
+  })
+
 })
 
 test.describe('Link-aware product picker — B2B_SALES unit', () => {
@@ -16211,4 +16356,119 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     await expect(page.locator('.upgrade-banner')).toBeVisible()
   })
 
+})
+
+// ---------------------------------------------------------------------------
+// Link validation error display — AC3 + AC9
+// ---------------------------------------------------------------------------
+
+test.describe('Building link validation errors — backend error display', () => {
+  test('CONTRADICTORY_LINK error from backend shown in save-error-banner — AC3 + AC9', async ({ page }) => {
+    // AC3: "The backend rejects contradictory or impossible states with explicit validation."
+    // AC9: "The building editor provides clear visual feedback for invalid actions."
+    //
+    // This test proves that when the backend returns a CONTRADICTORY_LINK validation error
+    // (e.g. because the submitted plan has A→B and B→A between the same unit pair),
+    // the save-error-banner appears with the error message and the player remains in edit mode
+    // so they can correct the layout without losing their work.
+    //
+    // The frontend 3-state cycle normally prevents contradictory states from being created
+    // through normal UI interaction. The backend validation is a safety net for direct API
+    // submissions. The forceBuildingConfigError flag simulates the backend rejecting a plan.
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-clink',
+      playerId: player.id,
+      name: 'Contradictory Link Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-clink',
+          companyId: 'company-clink',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Contradictory Link Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'clink-pu',
+              buildingId: 'building-clink',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkRight: false,
+              linkLeft: false,
+              linkUp: false,
+              linkDown: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'clink-mfg',
+              buildingId: 'building-clink',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkRight: false,
+              linkLeft: false,
+              linkUp: false,
+              linkDown: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-clink')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+
+    const plannedSection = page
+      .locator('.grid-section')
+      .filter({ has: page.getByRole('heading', { name: 'Planned Upgrade' }) })
+      .first()
+
+    // Create a forward link so the plan has a change (enabling "Store Upgrade" button)
+    const hLink = plannedSection.locator('.link-toggle.horizontal').first()
+    await hLink.click()
+    await expect(hLink).toHaveClass(/link-state-forward/)
+    await expect(page.getByRole('button', { name: 'Store Upgrade' })).toBeEnabled()
+
+    // Force the mock to return CONTRADICTORY_LINK on the next StoreBuildingConfiguration call.
+    // This simulates the backend rejecting a plan with bidirectional flow on the same pair.
+    state.forceBuildingConfigError =
+      'Contradictory bidirectional horizontal link between units at (0, 0) and (1, 0). A link can only flow in one direction between the same pair of units.'
+
+    await page.getByRole('button', { name: 'Store Upgrade' }).click()
+
+    // The save-error-banner must appear with the error message
+    await expect(page.locator('.save-error-banner')).toBeVisible()
+    await expect(page.locator('.save-error-banner')).toContainText(/Contradictory|bidirectional|CONTRADICTORY/i)
+
+    // The player must remain in edit mode so they can correct the layout (not silently lost)
+    await expect(plannedSection).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Store Upgrade' })).toBeVisible()
+  })
 })
