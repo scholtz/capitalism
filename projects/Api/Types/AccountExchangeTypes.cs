@@ -110,3 +110,44 @@ public sealed class MergeCompanyResult
     /// <summary>Number of buildings transferred.</summary>
     public int BuildingsTransferred { get; set; }
 }
+
+/// <summary>A single shareholder row for a company's ownership breakdown.</summary>
+public sealed class CompanyShareholderResult
+{
+    /// <summary>Display name of the shareholder (player display name or company name).</summary>
+    public string HolderName { get; set; } = string.Empty;
+
+    /// <summary>"PERSON" for a player's personal account, "COMPANY" for a company account.</summary>
+    public string HolderType { get; set; } = string.Empty;
+
+    /// <summary>Player ID if this is a personal holding.</summary>
+    public Guid? HolderPlayerId { get; set; }
+
+    /// <summary>Company ID if this is a company holding.</summary>
+    public Guid? HolderCompanyId { get; set; }
+
+    /// <summary>Number of shares owned by this holder.</summary>
+    public decimal ShareCount { get; set; }
+
+    /// <summary>Ownership percentage as a decimal fraction (e.g. 0.25 = 25%).</summary>
+    public decimal OwnershipRatio { get; set; }
+}
+
+/// <summary>Full ownership breakdown for a listed company.</summary>
+public sealed class CompanyOwnershipResult
+{
+    public Guid CompanyId { get; set; }
+    public string CompanyName { get; set; } = string.Empty;
+
+    /// <summary>Total shares issued by the company.</summary>
+    public decimal TotalSharesIssued { get; set; }
+
+    /// <summary>Shares not held by any named account (available public float).</summary>
+    public decimal PublicFloatShares { get; set; }
+
+    /// <summary>Number of distinct named shareholders.</summary>
+    public int ShareholderCount { get; set; }
+
+    /// <summary>Named shareholders ordered by ownership descending.</summary>
+    public List<CompanyShareholderResult> Shareholders { get; set; } = [];
+}

@@ -6966,6 +6966,222 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
     }
 
     [Fact]
+    public async Task CompanyShareholders_SingleOwner_ReturnsSingleShareholderRow()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync($"shareholders-single-{Guid.NewGuid():N}@test.com", "Single Owner");
+        var ownerId = await GetCurrentPlayerIdAsync(ownerToken);
+        var companyId = await SeedPublicCompanyAsync(ownerId, name: "Solo Corp", cash: 100_000m, totalShares: 5_000m, founderShares: 5_000m);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetShareholders($companyId: UUID!) {
+                companyShareholders(companyId: $companyId) {
+                    companyId
+                    companyName
+                    totalSharesIssued
+                    publicFloatShares
+                    shareholderCount
+                    shareholders {
+                        holderName
+                        holderType
+                        holderPlayerId
+                        holderCompanyId
+                        shareCount
+                        ownershipRatio
+                    }
+                }
+            }
+            """,
+            new { companyId });
+
+        var data = result.GetProperty("data").GetProperty("companyShareholders");
+        Assert.Equal(5_000m, data.GetProperty("totalSharesIssued").GetDecimal());
+        Assert.Equal(0m, data.GetProperty("publicFloatShares").GetDecimal());
+        Assert.Equal(1, data.GetProperty("shareholderCount").GetInt32());
+
+        var shareholders = data.GetProperty("shareholders").EnumerateArray().ToList();
+        Assert.Single(shareholders);
+        var sh = shareholders[0];
+        Assert.Equal("Single Owner", sh.GetProperty("holderName").GetString());
+        Assert.Equal("PERSON", sh.GetProperty("holderType").GetString());
+        Assert.Equal(ownerId, Guid.Parse(sh.GetProperty("holderPlayerId").GetString()!));
+        Assert.Equal(5_000m, sh.GetProperty("shareCount").GetDecimal());
+        Assert.Equal(1.0m, sh.GetProperty("ownershipRatio").GetDecimal());
+    }
+
+    [Fact]
+    public async Task CompanyShareholders_MultipleOwners_ReturnsAllSortedByOwnershipDescending()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync($"shareholders-multi-owner-{Guid.NewGuid():N}@test.com", "Major Owner");
+        var ownerId = await GetCurrentPlayerIdAsync(ownerToken);
+        var investorToken = await RegisterAndGetTokenAsync($"shareholders-multi-inv-{Guid.NewGuid():N}@test.com", "Minor Investor");
+        var investorId = await GetCurrentPlayerIdAsync(investorToken);
+
+        // 10,000 total: owner has 6000, investor buys 1000, float = 3000
+        var companyId = await SeedPublicCompanyAsync(ownerId, name: "Multi Owner Corp", cash: 200_000m, totalShares: 10_000m, founderShares: 6_000m);
+
+        // Investor buys 1000 from the 4000 float
+        await ExecuteGraphQlAsync(
+            """
+            mutation BuyShares($input: BuySharesInput!) {
+                buyShares(input: $input) { shareCount }
+            }
+            """,
+            new { input = new { companyId, shareCount = 1_000m, tradeAccountType = "PERSON", tradeAccountCompanyId = (string?)null } },
+            token: investorToken);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetShareholders($companyId: UUID!) {
+                companyShareholders(companyId: $companyId) {
+                    totalSharesIssued
+                    publicFloatShares
+                    shareholderCount
+                    shareholders {
+                        holderName
+                        holderType
+                        shareCount
+                        ownershipRatio
+                    }
+                }
+            }
+            """,
+            new { companyId });
+
+        var data = result.GetProperty("data").GetProperty("companyShareholders");
+        Assert.Equal(10_000m, data.GetProperty("totalSharesIssued").GetDecimal());
+        Assert.Equal(3_000m, data.GetProperty("publicFloatShares").GetDecimal());
+        Assert.Equal(2, data.GetProperty("shareholderCount").GetInt32());
+
+        var shareholders = data.GetProperty("shareholders").EnumerateArray().ToList();
+        Assert.Equal(2, shareholders.Count);
+
+        // First row should be the majority holder (owner with 6000)
+        Assert.Equal(6_000m, shareholders[0].GetProperty("shareCount").GetDecimal());
+        Assert.Equal(0.6m, shareholders[0].GetProperty("ownershipRatio").GetDecimal());
+
+        // Second row is the investor with 1000
+        Assert.Equal(1_000m, shareholders[1].GetProperty("shareCount").GetDecimal());
+        Assert.Equal(0.1m, shareholders[1].GetProperty("ownershipRatio").GetDecimal());
+
+        // Ownership percentages sum: 0.6 + 0.1 + float(0.3) = 1.0
+        var floatRatio = data.GetProperty("publicFloatShares").GetDecimal() / data.GetProperty("totalSharesIssued").GetDecimal();
+        Assert.Equal(1.0m, shareholders[0].GetProperty("ownershipRatio").GetDecimal() +
+                           shareholders[1].GetProperty("ownershipRatio").GetDecimal() +
+                           floatRatio);
+    }
+
+    [Fact]
+    public async Task CompanyShareholders_CompanyHolder_ReturnsCompanyTypeAndName()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync($"shareholders-co-owner-{Guid.NewGuid():N}@test.com", "Corp Owner");
+        var ownerId = await GetCurrentPlayerIdAsync(ownerToken);
+        var targetCompanyId = await SeedPublicCompanyAsync(ownerId, name: "Target Co", cash: 100_000m, totalShares: 10_000m, founderShares: 5_000m);
+
+        var buyerToken = await RegisterAndGetTokenAsync($"shareholders-co-buyer-{Guid.NewGuid():N}@test.com", "Corp Buyer");
+        var buyerCompanyId = await SeedPublicCompanyAsync(await GetCurrentPlayerIdAsync(buyerToken), name: "Buyer Corp", cash: 1_000_000m);
+
+        // Company buys shares in the target company
+        await ExecuteGraphQlAsync(
+            """
+            mutation BuyShares($input: BuySharesInput!) {
+                buyShares(input: $input) { shareCount }
+            }
+            """,
+            new { input = new { companyId = targetCompanyId, shareCount = 500m, tradeAccountType = "COMPANY", tradeAccountCompanyId = buyerCompanyId } },
+            token: buyerToken);
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetShareholders($companyId: UUID!) {
+                companyShareholders(companyId: $companyId) {
+                    shareholders {
+                        holderName
+                        holderType
+                        holderPlayerId
+                        holderCompanyId
+                        shareCount
+                    }
+                }
+            }
+            """,
+            new { companyId = targetCompanyId });
+
+        var shareholders = result.GetProperty("data").GetProperty("companyShareholders").GetProperty("shareholders").EnumerateArray().ToList();
+        var companyHolder = shareholders.Single(s => s.GetProperty("holderType").GetString() == "COMPANY");
+        Assert.Equal("Buyer Corp", companyHolder.GetProperty("holderName").GetString());
+        Assert.Equal(JsonValueKind.Null, companyHolder.GetProperty("holderPlayerId").ValueKind);
+        Assert.Equal(buyerCompanyId, Guid.Parse(companyHolder.GetProperty("holderCompanyId").GetString()!));
+        Assert.Equal(500m, companyHolder.GetProperty("shareCount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task CompanyShareholders_NonExistentCompany_ReturnsNull()
+    {
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetShareholders($companyId: UUID!) {
+                companyShareholders(companyId: $companyId) {
+                    companyId
+                }
+            }
+            """,
+            new { companyId = Guid.NewGuid() });
+
+        var data = result.GetProperty("data").GetProperty("companyShareholders");
+        Assert.Equal(JsonValueKind.Null, data.ValueKind);
+    }
+
+    [Fact]
+    public async Task CompanyShareholders_OwnershipRatiosRoundCorrectly()
+    {
+        var ownerToken = await RegisterAndGetTokenAsync($"shareholders-rounding-{Guid.NewGuid():N}@test.com", "Rounding Owner");
+        var ownerId = await GetCurrentPlayerIdAsync(ownerToken);
+
+        // Use 3 shares total so owner has 1/3 each = 0.3333 which should round to 0.3333
+        var companyId = await SeedPublicCompanyAsync(ownerId, name: "Rounding Corp", cash: 100_000m, totalShares: 3m, founderShares: 1m);
+
+        // Manually add another shareholding (1 more share to owner to test rounding on 2/3)
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var existing = await db.Shareholdings.FirstOrDefaultAsync(s => s.CompanyId == companyId && s.OwnerPlayerId == ownerId);
+            if (existing is not null)
+            {
+                existing.ShareCount = 2m; // 2/3 ownership
+                await db.SaveChangesAsync();
+            }
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query GetShareholders($companyId: UUID!) {
+                companyShareholders(companyId: $companyId) {
+                    totalSharesIssued
+                    publicFloatShares
+                    shareholders {
+                        shareCount
+                        ownershipRatio
+                    }
+                }
+            }
+            """,
+            new { companyId });
+
+        var data = result.GetProperty("data").GetProperty("companyShareholders");
+        var shareholders = data.GetProperty("shareholders").EnumerateArray().ToList();
+        Assert.Single(shareholders);
+
+        var ratio = shareholders[0].GetProperty("ownershipRatio").GetDecimal();
+        // 2/3 = 0.6667 rounded to 4dp AwayFromZero
+        Assert.Equal(0.6667m, ratio);
+
+        // Float is 1 share = 1/3 = 0.3333
+        var floatShares = data.GetProperty("publicFloatShares").GetDecimal();
+        Assert.Equal(1m, floatShares);
+    }
+
+    [Fact]
     public async Task FinishOnboarding_UsesAuthoritativeLotValidation_AndCompletesFlow()
     {
         var token = await RegisterAndGetTokenAsync($"onboard-map-finish-{Guid.NewGuid()}@test.com", "Retail Founder");

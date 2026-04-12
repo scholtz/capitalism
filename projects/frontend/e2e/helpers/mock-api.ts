@@ -4097,6 +4097,57 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
+    if (query.includes('companyShareholders')) {
+      const companyId = body.variables?.companyId
+      const company = state.players.flatMap((candidate) => candidate.companies).find((candidate) => candidate.id === companyId)
+      if (!company) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: { companyShareholders: null } }),
+        })
+      }
+
+      const totalShares = getCompanyTotalShares(company)
+      const companyShareholdings = state.shareholdings.filter((h) => h.companyId === companyId && h.shareCount > 0)
+      const namedSharesTotal = companyShareholdings.reduce((sum, h) => sum + h.shareCount, 0)
+      const publicFloatShares = Math.max(0, totalShares - namedSharesTotal)
+
+      const shareholders = companyShareholdings.map((h) => {
+        const ownerPlayer = h.ownerPlayerId ? state.players.find((p) => p.id === h.ownerPlayerId) : null
+        const ownerCompany = h.ownerCompanyId ? state.players.flatMap((p) => p.companies).find((c) => c.id === h.ownerCompanyId) : null
+        const holderName = ownerPlayer?.displayName ?? ownerCompany?.name ?? 'Unknown'
+        const holderType = h.ownerPlayerId ? 'PERSON' : 'COMPANY'
+        const ownershipRatio = totalShares > 0 ? Number((h.shareCount / totalShares).toFixed(4)) : 0
+
+        return {
+          holderName,
+          holderType,
+          holderPlayerId: h.ownerPlayerId ?? null,
+          holderCompanyId: h.ownerCompanyId ?? null,
+          shareCount: h.shareCount,
+          ownershipRatio,
+        }
+      }).sort((a, b) => b.ownershipRatio - a.ownershipRatio)
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            companyShareholders: {
+              companyId: company.id,
+              companyName: company.name,
+              totalSharesIssued: totalShares,
+              publicFloatShares,
+              shareholderCount: shareholders.length,
+              shareholders,
+            },
+          },
+        }),
+      })
+    }
+
     if (query.includes('stockExchangePriceHistory')) {
       const companyId = body.variables?.companyId
       const company = state.players.flatMap((candidate) => candidate.companies).find((candidate) => candidate.id === companyId)

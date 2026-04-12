@@ -519,6 +519,24 @@ export interface StockExchangeListing {
   canMerge: boolean
 }
 
+export interface CompanyShareholder {
+  holderName: string
+  holderType: 'PERSON' | 'COMPANY'
+  holderPlayerId: string | null
+  holderCompanyId: string | null
+  shareCount: number
+  ownershipRatio: number
+}
+
+export interface CompanyOwnership {
+  companyId: string
+  companyName: string
+  totalSharesIssued: number
+  publicFloatShares: number
+  shareholderCount: number
+  shareholders: CompanyShareholder[]
+}
+
 export interface MergeCompanyResult {
   destinationCompanyId: string
   destinationCompanyName: string

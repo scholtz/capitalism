@@ -2073,4 +2073,184 @@ test.describe('Stock exchange — merge company flow', () => {
     // Dialog should close
     await expect(page.locator('[role="dialog"]', { hasText: 'Merge Company' })).toBeHidden()
   })
+
+  test('trade panel shows shareholders section with single owner', async ({ page }) => {
+    const owner = makePlayer({
+      personalCash: 100000,
+      companies: [makeControlledCompany()],
+    })
+
+    const state = setupMockApi(page, {
+      players: [owner],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+      ],
+    })
+    state.currentUserId = owner.id
+    state.currentToken = `token-${owner.id}`
+
+    await authenticateViaLocalStorage(page, `token-${owner.id}`)
+    await page.goto('/stocks')
+
+    await openTradePanel(page, 'Home Holdings')
+
+    // Shareholders section heading should be visible
+    await expect(page.getByRole('heading', { name: 'Shareholders' }).first()).toBeVisible()
+
+    // Summary metrics
+    await expect(page.locator('.shareholders-summary')).toContainText('10,000')
+    await expect(page.locator('.shareholders-summary')).toContainText('Largest holder')
+    await expect(page.locator('.shareholders-summary')).toContainText('Test Player')
+
+    // Single owner message
+    await expect(page.locator('.shareholders-single-owner')).toBeVisible()
+  })
+
+  test('trade panel shows shareholders table and pie chart for multi-owner company', async ({ page }) => {
+    const founder = makePlayer({
+      id: 'founder-1',
+      email: 'founder@test.com',
+      displayName: 'The Founder',
+      personalCash: 100000,
+      companies: [
+        {
+          id: 'company-multi',
+          playerId: 'founder-1',
+          name: 'Multi Owner Corp',
+          cash: 500000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+    const investor = makePlayer({
+      id: 'investor-1',
+      email: 'investor@test.com',
+      displayName: 'The Investor',
+      personalCash: 200000,
+      companies: [],
+    })
+
+    const state = setupMockApi(page, {
+      players: [founder, investor],
+      shareholdings: [
+        { companyId: 'company-multi', ownerPlayerId: 'founder-1', ownerCompanyId: null, shareCount: 6000 },
+        { companyId: 'company-multi', ownerPlayerId: 'investor-1', ownerCompanyId: null, shareCount: 1000 },
+      ],
+    })
+    state.currentUserId = founder.id
+    state.currentToken = `token-${founder.id}`
+
+    await authenticateViaLocalStorage(page, `token-${founder.id}`)
+    await page.goto('/stocks')
+
+    await openTradePanel(page, 'Multi Owner Corp')
+
+    // Shareholders section heading should be visible
+    await expect(page.getByRole('heading', { name: 'Shareholders' }).first()).toBeVisible()
+
+    // Summary shows count
+    await expect(page.locator('.shareholders-summary')).toContainText('2 shareholder')
+
+    // Shareholders table with both holders
+    const table = page.locator('table.shareholders-table').first()
+    await expect(table).toBeVisible()
+    await expect(table).toContainText('The Founder')
+    await expect(table).toContainText('The Investor')
+
+    // Ownership percentages
+    await expect(table).toContainText('60.0%')
+    await expect(table).toContainText('10.0%')
+
+    // Public float row
+    await expect(table.locator('.shareholder-row--float')).toBeVisible()
+    await expect(table.locator('.shareholder-row--float')).toContainText('Public float')
+
+    // Pie chart SVG should render
+    const chart = page.locator('svg.ownership-donut').first()
+    await expect(chart).toBeVisible()
+
+    // Legend should list shareholders
+    const legend = page.locator('.ownership-legend').first()
+    await expect(legend).toBeVisible()
+    await expect(legend).toContainText('The Founder')
+    await expect(legend).toContainText('The Investor')
+  })
+
+  test('trade panel shows shareholders empty state when no named shareholders', async ({ page }) => {
+    const player = makePlayer({ personalCash: 100000, companies: [makeControlledCompany()] })
+
+    const state = setupMockApi(page, {
+      players: [player],
+      shareholdings: [], // No shareholdings at all for this company
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    await openTradePanel(page, 'Home Holdings')
+
+    await expect(page.getByRole('heading', { name: 'Shareholders' }).first()).toBeVisible()
+    // Empty state message
+    await expect(page.locator('.shareholders-panel')).toContainText('no named shareholders')
+  })
+
+  test('shareholders section works after switching between companies', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 100000,
+      companies: [
+        makeControlledCompany({ id: 'company-home', name: 'Alpha Corp' }),
+      ],
+    })
+    const other = makePlayer({
+      id: 'player-2',
+      email: 'other@test.com',
+      displayName: 'Other Owner',
+      personalCash: 50000,
+      companies: [
+        {
+          id: 'company-beta',
+          playerId: 'player-2',
+          name: 'Beta Corp',
+          cash: 100000,
+          totalSharesIssued: 5000,
+          dividendPayoutRatio: 0.1,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 5,
+          buildings: [],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player, other],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-beta', ownerPlayerId: 'player-2', ownerCompanyId: null, shareCount: 5000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    // Open first company
+    await openTradePanel(page, 'Alpha Corp')
+    await expect(page.locator('.shareholders-panel').first()).toBeVisible()
+    await expect(page.locator('.shareholders-panel').first()).toContainText('Test Player')
+
+    // Close first, open second
+    const row = page.locator('tr.listing-row', { hasText: 'Alpha Corp' })
+    await row.getByRole('button', { name: 'Close' }).click()
+
+    await openTradePanel(page, 'Beta Corp')
+    await expect(page.locator('.shareholders-panel').first()).toBeVisible()
+    await expect(page.locator('.shareholders-panel').first()).toContainText('Other Owner')
+  })
 })

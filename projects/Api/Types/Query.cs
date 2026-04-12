@@ -474,6 +474,68 @@ public sealed partial class Query
             .ToList();
     }
 
+    /// <summary>Returns the ownership breakdown (shareholders list) for a single company.</summary>
+    public async Task<CompanyOwnershipResult?> GetCompanyShareholders(
+        Guid companyId,
+        [Service] AppDbContext db)
+    {
+        var company = await db.Companies
+            .AsNoTracking()
+            .FirstOrDefaultAsync(candidate => candidate.Id == companyId);
+
+        if (company is null)
+        {
+            return null;
+        }
+
+        var shareholdings = await db.Shareholdings
+            .AsNoTracking()
+            .Where(holding => holding.CompanyId == companyId && holding.ShareCount > 0m)
+            .Include(holding => holding.OwnerPlayer)
+            .Include(holding => holding.OwnerCompany)
+            .ToListAsync();
+
+        var shareholders = shareholdings
+            .Select(holding =>
+            {
+                var holderName = holding.OwnerPlayer?.DisplayName
+                    ?? holding.OwnerCompany?.Name
+                    ?? "Unknown";
+                var holderType = holding.OwnerPlayerId.HasValue ? "PERSON" : "COMPANY";
+                var ownershipRatio = company.TotalSharesIssued > 0m
+                    ? decimal.Round(holding.ShareCount / company.TotalSharesIssued, 4, MidpointRounding.AwayFromZero)
+                    : 0m;
+
+                return new CompanyShareholderResult
+                {
+                    HolderName = holderName,
+                    HolderType = holderType,
+                    HolderPlayerId = holding.OwnerPlayerId,
+                    HolderCompanyId = holding.OwnerCompanyId,
+                    ShareCount = holding.ShareCount,
+                    OwnershipRatio = ownershipRatio,
+                };
+            })
+            .OrderByDescending(shareholder => shareholder.OwnershipRatio)
+            .ThenBy(shareholder => shareholder.HolderName)
+            .ToList();
+
+        var namedSharesTotal = shareholdings.Sum(holding => holding.ShareCount);
+        var publicFloat = company.TotalSharesIssued > namedSharesTotal
+            ? company.TotalSharesIssued - namedSharesTotal
+            : 0m;
+
+        return new CompanyOwnershipResult
+        {
+            CompanyId = company.Id,
+            CompanyName = company.Name,
+            TotalSharesIssued = company.TotalSharesIssued,
+            PublicFloatShares = publicFloat,
+            ShareholderCount = shareholders.Count,
+            Shareholders = shareholders,
+        };
+    }
+
     private static Dictionary<Guid, decimal> BuildQuotedSharePriceLookup(
         IReadOnlyCollection<Company> companies,
         IReadOnlyCollection<Building> buildings,
