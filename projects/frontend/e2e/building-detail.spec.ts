@@ -1849,6 +1849,122 @@ test.describe('Building detail upgrades', () => {
     await expect(page.locator('.selected-chip')).toContainText('Bread')
   })
 
+  test('manufacturing selector shows product images in options and selected chip', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-img',
+      playerId: player.id,
+      name: 'Image Test Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-img',
+          companyId: 'company-img',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Image Test Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'img-purchase',
+              buildingId: 'building-img',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              resourceTypeId: 'res-grain-img',
+            },
+            {
+              id: 'img-manufacturing',
+              buildingId: 'building-img',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: true,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, {
+      players: [player],
+      resourceTypes: [
+        { id: 'res-grain-img', name: 'Grain', slug: 'grain', category: 'ORGANIC', basePrice: 5, weightPerUnit: 2, unitName: 'Ton', unitSymbol: 't', description: 'Grain', imageUrl: null },
+      ],
+      productTypes: [
+        {
+          id: 'prod-bread-img',
+          name: 'Bread',
+          slug: 'bread',
+          industry: 'FOOD_PROCESSING',
+          basePrice: 3,
+          baseCraftTicks: 1,
+          outputQuantity: 12,
+          energyConsumptionMwh: 0.5,
+          unitName: 'Loaf',
+          unitSymbol: 'loaves',
+          isProOnly: false,
+          description: 'Bread from grain.',
+          recipes: [{ resourceType: { id: 'res-grain-img', name: 'Grain', slug: 'grain', unitName: 'Ton', unitSymbol: 't' }, inputProductType: null, quantity: 1 }],
+        },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-img')
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 1, 0).click()
+
+    // The manufacturing selector should show the Bread option with a product image
+    await expect(page.getByText('Output Product')).toBeVisible()
+    const breadOption = page.getByRole('button', { name: /Bread/ })
+    await expect(breadOption).toBeVisible()
+    // Product image should be rendered inside the option button as an <img> tag with a data URL
+    const optionImg = breadOption.locator('.selector-option-img')
+    await expect(optionImg).toBeVisible()
+    const imgSrc = await optionImg.getAttribute('src')
+    expect(imgSrc).toMatch(/^data:image\/svg\+xml/)
+
+    // After selecting, the selected chip should also show the image
+    await breadOption.click()
+    const selectedChip = page.locator('.selected-chip')
+    await expect(selectedChip).toContainText('Bread')
+    const chipImg = selectedChip.locator('.selected-chip-img')
+    await expect(chipImg).toBeVisible()
+    const chipImgSrc = await chipImg.getAttribute('src')
+    expect(chipImgSrc).toMatch(/^data:image\/svg\+xml/)
+  })
+
   test('locks pro manufacturing outputs until pro access becomes active', async ({ page }) => {
     const player = makePlayer()
     player.companies.push({

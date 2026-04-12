@@ -14,8 +14,8 @@ It will use real world map. The game will start in single city and later other c
 ### Sale Unit editation (100%)
 - Improve product selection in sales unit - select products only from connected units or current stock items
 
-### Manufacturing unit editation
-- In manufacturing output product selection show the product images
+### Manufacturing unit editation (100%)
+- In manufacturing output product selection show the product images ✅
 
 ### B2B Sales unit editation
 - In b2b unit show the sale price, when creating b2b sale unit in factory make sure to set the competetive default price

@@ -2160,6 +2160,7 @@ function getManufacturingSelectableItems(unit: EditableGridUnit | undefined): Se
       kind: 'product' as const,
       id: product.id,
       name: getLocalizedProductName(product, locale.value),
+      imageUrl: getProductImageUrl(product),
       description: getLocalizedProductDescription(product, locale.value),
       helperText: isProductLocked(product) ? t('catalog.proDetail') : null,
       groupLabel: t('buildingDetail.selector.availableOutputs'),
