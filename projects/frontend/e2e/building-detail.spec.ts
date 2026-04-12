@@ -15722,14 +15722,15 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
     const panel = page.locator('[aria-label="Building Layouts"]')
     await expect(panel).toBeVisible()
 
-    // Empty state message should be visible with helpful copy
+    // Empty state message should be visible with specific educational copy
     const emptyMsg = panel.locator('.layout-empty').first()
     await expect(emptyMsg).toBeVisible()
-    // The message should reference saving a layout for reuse (educational purpose)
-    await expect(emptyMsg).toContainText('Save')
+    // The message must explain that saving a layout allows reuse in compatible buildings
+    // (exact phrase from i18n en.ts: "Save your current configuration to reuse it in any compatible building.")
+    await expect(emptyMsg).toContainText('reuse it')
   })
 
-  test('confirm overwrite applies the template and replaces draft units (AC4)', async ({ page }) => {
+  test('confirm overwrite applies the template and replaces draft units', async ({ page }) => {
     // When the user confirms overwrite, the old draft should be replaced by the template units
     const player = makeLayoutTestPlayer()
     const state = setupMockApi(page, { players: [player] })
@@ -15808,6 +15809,8 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
       .first()
     // Exactly one occupied cell in the planned grid (the single MANUFACTURING unit)
     await expect(planSection.locator('.grid-cell.occupied')).toHaveCount(1)
+    // Verify the occupied cell contains the MANUFACTURING unit type label (not just any unit)
+    await expect(planSection.locator('.grid-cell.occupied .cell-type')).toContainText('Manufacturing')
   })
 
   test('AC4: full tick-based workflow — load template, Store Upgrade, pending config is created', async ({
