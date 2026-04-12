@@ -24262,4 +24262,231 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         Assert.Equal("CONTRADICTORY_LINK", errors[0].GetProperty("extensions").GetProperty("code").GetString());
     }
 
+    // ── Upward diagonal directions (↖ and ↗) stored and read back correctly ─────────────────────
+    // Complements the existing StoreBuildingConfiguration_DiagonalLink_StoredAndReadBackCorrectly test
+    // which covers ↘ (linkDownRight) and ↙ (linkDownLeft). These tests cover the two remaining
+    // diagonal directions so all four are verified against the persistence layer.
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_DiagonalLinkBrTl_StoredAndReadBackCorrectly()
+    {
+        // B2B_SALES at (1,1) has linkUpLeft=true → flows toward PURCHASE at (0,0). Direction: ↖ (br-tl).
+        var token = await RegisterAndGetTokenAsync($"diagbrtl-{Guid.NewGuid()}@test.com", "DiagBrTlTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "BrTl Diag Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "BrTl Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var configResult = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) {
+                    units { gridX gridY unitType linkUpLeft linkUpRight linkDownLeft linkDownRight }
+                }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "STORAGE",       gridX = 0, gridY = 1,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "B2B_SALES",     gridX = 1, gridY = 1,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = true, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(configResult.TryGetProperty("errors", out _));
+        var planUnits = configResult.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units");
+
+        // Only B2B_SALES (1,1) should have linkUpLeft=true; all other diagonal flags must be false.
+        var b2bUnit = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "B2B_SALES");
+        Assert.True(b2bUnit.GetProperty("linkUpLeft").GetBoolean(),  "B2B_SALES.linkUpLeft (↖) should be true");
+        Assert.False(b2bUnit.GetProperty("linkUpRight").GetBoolean(), "B2B_SALES.linkUpRight should be false");
+        Assert.False(b2bUnit.GetProperty("linkDownLeft").GetBoolean(), "B2B_SALES.linkDownLeft should be false");
+        Assert.False(b2bUnit.GetProperty("linkDownRight").GetBoolean(), "B2B_SALES.linkDownRight should be false");
+
+        var purchaseUnit = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "PURCHASE");
+        Assert.False(purchaseUnit.GetProperty("linkDownRight").GetBoolean(), "PURCHASE.linkDownRight should be false (no reverse flag)");
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_DiagonalLinkBlTr_StoredAndReadBackCorrectly()
+    {
+        // STORAGE at (0,1) has linkUpRight=true → flows toward MANUFACTURING at (1,0). Direction: ↗ (bl-tr).
+        var token = await RegisterAndGetTokenAsync($"diagbltr-{Guid.NewGuid()}@test.com", "DiagBlTrTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "BlTr Diag Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "BlTr Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var configResult = await ExecuteGraphQlAsync(
+            """
+            mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) {
+                storeBuildingConfiguration(input: $input) {
+                    units { gridX gridY unitType linkUpLeft linkUpRight linkDownLeft linkDownRight }
+                }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    buildingId,
+                    units = new[]
+                    {
+                        new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "MANUFACTURING", gridX = 1, gridY = 0,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "STORAGE",       gridX = 0, gridY = 1,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = true, linkDownLeft = false, linkDownRight = false },
+                        new { unitType = "B2B_SALES",     gridX = 1, gridY = 1,
+                              linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                              linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+                    }
+                }
+            },
+            token);
+
+        Assert.False(configResult.TryGetProperty("errors", out _));
+        var planUnits = configResult.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units");
+
+        // Only STORAGE (0,1) should have linkUpRight=true; all other diagonal flags must be false.
+        var storageUnit = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "STORAGE");
+        Assert.True(storageUnit.GetProperty("linkUpRight").GetBoolean(),  "STORAGE.linkUpRight (↗) should be true");
+        Assert.False(storageUnit.GetProperty("linkUpLeft").GetBoolean(),  "STORAGE.linkUpLeft should be false");
+        Assert.False(storageUnit.GetProperty("linkDownLeft").GetBoolean(), "STORAGE.linkDownLeft should be false");
+        Assert.False(storageUnit.GetProperty("linkDownRight").GetBoolean(), "STORAGE.linkDownRight should be false");
+
+        var mfgUnit = planUnits.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "MANUFACTURING");
+        Assert.False(mfgUnit.GetProperty("linkDownLeft").GetBoolean(), "MANUFACTURING.linkDownLeft should be false (no reverse flag)");
+    }
+
+    [Fact]
+    public async Task StoreBuildingConfiguration_DiagonalLinkReversal_SecondPlanReplacesFirstDirection()
+    {
+        // AC4: Reversing a link direction replaces the previous direction cleanly.
+        // First plan: PURCHASE(0,0).linkDownRight=true (↘ toward B2B_SALES at 1,1).
+        // Second plan: B2B_SALES(1,1).linkUpLeft=true, PURCHASE(0,0).linkDownRight=false (↖ toward PURCHASE).
+        // The pending configuration must reflect only the second direction.
+        var token = await RegisterAndGetTokenAsync($"diagrev-{Guid.NewGuid()}@test.com", "DiagRevTester");
+        var companyId = (await ExecuteGraphQlAsync(
+            "mutation CreateCompany($input: CreateCompanyInput!) { createCompany(input: $input) { id } }",
+            new { input = new { name = "Reversal Corp" } }, token))
+            .GetProperty("data").GetProperty("createCompany").GetProperty("id").GetString();
+        var cityId = (await ExecuteGraphQlAsync("{ cities { id } }"))
+            .GetProperty("data").GetProperty("cities")[0].GetProperty("id").GetString();
+        var buildingId = (await ExecuteGraphQlAsync(
+            "mutation PlaceBuilding($input: PlaceBuildingInput!) { placeBuilding(input: $input) { id } }",
+            new { input = new { companyId, cityId, type = "FACTORY", name = "Reversal Factory" } }, token))
+            .GetProperty("data").GetProperty("placeBuilding").GetProperty("id").GetString();
+
+        var unitTemplate = new[]
+        {
+            new { unitType = "PURCHASE",      gridX = 0, gridY = 0,
+                  linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+            new { unitType = "MANUFACTURING", gridX = 1, gridY = 0,
+                  linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+            new { unitType = "STORAGE",       gridX = 0, gridY = 1,
+                  linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false },
+            new { unitType = "B2B_SALES",     gridX = 1, gridY = 1,
+                  linkUp = false, linkDown = false, linkLeft = false, linkRight = false,
+                  linkUpLeft = false, linkUpRight = false, linkDownLeft = false, linkDownRight = false }
+        };
+
+        // ── Plan 1: PURCHASE(0,0) → B2B_SALES(1,1) via ↘ (linkDownRight) ──────────────────────
+        var plan1Units = unitTemplate.Select((u, i) => i == 0
+            ? new { u.unitType, u.gridX, u.gridY, u.linkUp, u.linkDown, u.linkLeft, u.linkRight,
+                    u.linkUpLeft, u.linkUpRight, u.linkDownLeft, linkDownRight = true }
+            : u).ToArray();
+
+        var plan1Result = await ExecuteGraphQlAsync(
+            "mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) { storeBuildingConfiguration(input: $input) { units { unitType linkDownRight linkUpLeft } } }",
+            new { input = new { buildingId, units = plan1Units } }, token);
+
+        Assert.False(plan1Result.TryGetProperty("errors", out _));
+        var plan1Units2 = plan1Result.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units");
+        Assert.True(plan1Units2.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "PURCHASE").GetProperty("linkDownRight").GetBoolean(),
+            "Plan 1: PURCHASE.linkDownRight should be true (↘)");
+        Assert.False(plan1Units2.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "B2B_SALES").GetProperty("linkUpLeft").GetBoolean(),
+            "Plan 1: B2B_SALES.linkUpLeft should be false");
+
+        // ── Plan 2: B2B_SALES(1,1) → PURCHASE(0,0) via ↖ (linkUpLeft) — reversal ──────────────
+        var plan2Units = unitTemplate.Select((u, i) => i == 3
+            ? new { u.unitType, u.gridX, u.gridY, u.linkUp, u.linkDown, u.linkLeft, u.linkRight,
+                    linkUpLeft = true, u.linkUpRight, u.linkDownLeft, u.linkDownRight }
+            : u).ToArray();
+
+        var plan2Result = await ExecuteGraphQlAsync(
+            "mutation StoreBuildingConfiguration($input: StoreBuildingConfigurationInput!) { storeBuildingConfiguration(input: $input) { units { unitType linkDownRight linkUpLeft } } }",
+            new { input = new { buildingId, units = plan2Units } }, token);
+
+        Assert.False(plan2Result.TryGetProperty("errors", out _));
+        var plan2Units2 = plan2Result.GetProperty("data").GetProperty("storeBuildingConfiguration").GetProperty("units");
+
+        // After reversal: B2B_SALES has linkUpLeft=true; PURCHASE.linkDownRight must be false.
+        Assert.True(plan2Units2.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "B2B_SALES").GetProperty("linkUpLeft").GetBoolean(),
+            "Plan 2 (reversed): B2B_SALES.linkUpLeft should be true (↖)");
+        Assert.False(plan2Units2.EnumerateArray().Single(u => u.GetProperty("unitType").GetString() == "PURCHASE").GetProperty("linkDownRight").GetBoolean(),
+            "Plan 2 (reversed): PURCHASE.linkDownRight must be false — reversal replaced previous direction");
+
+        // Verify via myCompanies that the persisted pending config reflects plan 2 only.
+        var companiesResult = await ExecuteGraphQlAsync(
+            """
+            {
+                myCompanies {
+                    buildings {
+                        id
+                        pendingConfiguration {
+                            units { unitType linkDownRight linkUpLeft }
+                        }
+                    }
+                }
+            }
+            """,
+            token: token);
+
+        var building = companiesResult.GetProperty("data").GetProperty("myCompanies")[0]
+            .GetProperty("buildings").EnumerateArray()
+            .Single(b => b.GetProperty("id").GetString() == buildingId);
+        var pendingUnits = building.GetProperty("pendingConfiguration").GetProperty("units").EnumerateArray().ToList();
+
+        Assert.False(pendingUnits.Single(u => u.GetProperty("unitType").GetString() == "PURCHASE").GetProperty("linkDownRight").GetBoolean(),
+            "Persisted pending config: PURCHASE.linkDownRight must be false after reversal");
+        Assert.True(pendingUnits.Single(u => u.GetProperty("unitType").GetString() == "B2B_SALES").GetProperty("linkUpLeft").GetBoolean(),
+            "Persisted pending config: B2B_SALES.linkUpLeft must be true (only reversed direction persists)");
+    }
+
 }

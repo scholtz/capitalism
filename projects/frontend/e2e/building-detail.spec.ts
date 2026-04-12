@@ -3065,6 +3065,149 @@ test.describe('Building detail upgrades', () => {
     await expect(vButton).toHaveClass(/state-none/)
   })
 
+  test('diagonal link reversal: second plan replaces direction — AC4', async ({ page }) => {
+    // AC4: Reversing a link direction replaces the previous direction cleanly.
+    // Step 1: Submit plan with tl-br (↘) diagonal.
+    // Step 2: Re-enter edit mode; the queued plan shows tl-br.
+    // Step 3: Advance to br-tl (↖) by clicking the diagonal button once.
+    // Step 4: Submit again; the queued plan must show only br-tl, not tl-br.
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-rev',
+      playerId: player.id,
+      name: 'Reversal Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-rev',
+          companyId: 'company-rev',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'Reversal Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'rev-1',
+              buildingId: 'building-rev',
+              unitType: 'PURCHASE',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'rev-2',
+              buildingId: 'building-rev',
+              unitType: 'MANUFACTURING',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'rev-3',
+              buildingId: 'building-rev',
+              unitType: 'STORAGE',
+              gridX: 0,
+              gridY: 1,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+            {
+              id: 'rev-4',
+              buildingId: 'building-rev',
+              unitType: 'B2B_SALES',
+              gridX: 1,
+              gridY: 1,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-rev')
+    await expect(page.getByRole('heading', { name: 'Reversal Factory' })).toBeVisible()
+
+    // ── Step 1: Create tl-br (↘) diagonal and submit ──────────────────────────
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    const diagButton = plannedSection.locator('.link-toggle.diagonal').first()
+
+    await expect(diagButton).toHaveClass(/state-none/)
+    await diagButton.click()
+    await expect(diagButton).toHaveClass(/state-tl-br/)
+
+    await page.getByRole('button', { name: 'Store Upgrade' }).click()
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+
+    // ── Step 2: Re-enter edit mode and verify queued plan shows tl-br ────────
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const queuedSection = getGridSection(page, 'Queued Upgrade')
+    const queuedDiag = queuedSection.locator('.link-toggle.diagonal').first()
+    await expect(queuedDiag).toHaveClass(/state-tl-br/)
+
+    // ── Step 3: Advance one click to br-tl (↖) and submit ────────────────────
+    await queuedDiag.click()
+    await expect(queuedDiag).toHaveClass(/state-br-tl/)
+
+    await page.getByRole('button', { name: 'Store Upgrade' }).click()
+    await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
+
+    // ── Step 4: Verify the queued plan now shows only br-tl (↖) ──────────────
+    await page.getByRole('button', { name: 'Edit Building' }).click()
+    const finalQueuedSection = getGridSection(page, 'Queued Upgrade')
+    const finalDiag = finalQueuedSection.locator('.link-toggle.diagonal').first()
+    // The new plan has only br-tl; tl-br must be gone.
+    await expect(finalDiag).toHaveClass(/state-br-tl/)
+    await expect(finalDiag).not.toHaveClass(/state-tl-br/)
+  })
+
   // ---------------------------------------------------------------------------
   // Grid tile metadata: resource / product labels, fill bars, price metrics
   // ---------------------------------------------------------------------------
