@@ -2367,8 +2367,10 @@ function isCellUnderUpgrade(x: number, y: number): boolean {
   if (!planUnit) return false
   const activeUnit = getUnitAtFrom(activeUnits.value, x, y)
   if (!activeUnit) return false
-  // Upgrade is in progress when the plan applies in the future and the level is increasing
-  return planUnit.appliesAtTick > tick && planUnit.level > activeUnit.level
+  // Upgrade is in progress when the plan applies this tick or later and the level is increasing.
+  // Using >= matches the backend rule: BuildingUpgradePhase runs at order 100 (after operational
+  // phases), so a unit due on the current tick is still offline during purchasing/sales/etc.
+  return planUnit.appliesAtTick >= tick && planUnit.level > activeUnit.level
 }
 
 /** Upgrade info for the currently selected cell unit (cached from last fetch). */
@@ -2391,7 +2393,7 @@ const allUnitsUnderUpgrade = computed<
   const plan = building.value.pendingConfiguration
   const tick = gameStateStore.gameState?.currentTick ?? currentTick.value
   return plan.units
-    .filter((pu) => pu.isChanged && pu.ticksRequired > 0 && pu.appliesAtTick > tick)
+    .filter((pu) => pu.isChanged && pu.ticksRequired > 0 && pu.appliesAtTick >= tick)
     .flatMap((pu) => {
       const activeUnit = getUnitAtFrom(activeUnits.value, pu.gridX, pu.gridY)
       if (!activeUnit || pu.level <= activeUnit.level) return []

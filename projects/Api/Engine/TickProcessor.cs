@@ -147,8 +147,10 @@ public sealed class TickProcessor(
 
         // Build a position-keyed unit map and derive which units are currently under upgrade.
         // A unit is "under upgrade" when its building has a pending configuration plan containing
-        // an IsChanged entry with TicksRequired > 0 whose AppliesAtTick is still in the future.
-        // These units must not produce, purchase, sell, mine, or move inventory this tick.
+        // an IsChanged entry with TicksRequired > 0 whose AppliesAtTick is still in the future OR
+        // equal to the current tick (because BuildingUpgradePhase runs at order 100, after all
+        // operational phases — so a unit scheduled to apply this tick must still be offline for
+        // purchasing, manufacturing, movement, mining, and sales in the same tick cycle).
         var unitsByBuildingPosition = buildings.ToDictionary(
             b => b.Id,
             b => b.Units.DistinctBy(u => (u.GridX, u.GridY)).ToDictionary(u => (u.GridX, u.GridY)));
@@ -160,7 +162,7 @@ public sealed class TickProcessor(
             foreach (var planUnit in building.PendingConfiguration.Units)
             {
                 if (!planUnit.IsChanged || planUnit.TicksRequired <= 0) continue;
-                if (planUnit.AppliesAtTick <= gameState.CurrentTick) continue;
+                if (planUnit.AppliesAtTick < gameState.CurrentTick) continue;
                 if (!unitsByBuildingPosition.TryGetValue(building.Id, out var posMap)) continue;
                 if (posMap.TryGetValue((planUnit.GridX, planUnit.GridY), out var activeUnit))
                     unitsUnderUpgrade.Add(activeUnit.Id);

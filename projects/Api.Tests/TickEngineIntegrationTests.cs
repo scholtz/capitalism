@@ -5804,5 +5804,77 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         Assert.False(storageInSet);
     }
 
+    [Fact]
+    public async Task PublicSalesPhase_UnitUnderUpgrade_StillSuspendedWhenCurrentTickEqualsAppliesAtTick()
+    {
+        // Regression for off-by-one: ProcessTickAsync increments GameState.CurrentTick BEFORE
+        // calling BuildContextAsync. So "currentTick" inside BuildContextAsync is one higher than
+        // the value stored in the DB before the call.
+        //
+        // The boundary case is: planUnit.AppliesAtTick == gameState.CurrentTick (after ++).
+        // In this state BuildingUpgradePhase (order 100) will apply the plan in the same tick.
+        // But per the product promise, the unit must be offline for the FULL upgrade window,
+        // including the application tick — the unit should NOT sell before the upgrade runs.
+        // The correct guard is `< gameState.CurrentTick` (not `<=`) so the unit IS suspended
+        // when AppliesAtTick equals the new current tick.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var product = await db.ProductTypes.FirstAsync(p => p.Slug == "wooden-chair");
+        var city = CreatePublicSalesTestCity("BoundarySuspend", 100_000);
+        db.Cities.Add(city);
+
+        var (_, buildingId, unitId) = AddPublicSalesSeller(db, city, product, "BoundarySuspend", stockQuantity: 50m);
+        await db.SaveChangesAsync();
+
+        var gameState = await db.GameStates.FirstAsync();
+        var currentTick = gameState.CurrentTick;  // ProcessTickAsync will increment this by 1
+
+        // The upgrade plan's AppliesAtTick is set to currentTick + 1, which equals
+        // gameState.CurrentTick AFTER the tick increment inside ProcessTickAsync.
+        // This is the exact boundary: AppliesAtTick == gameState.CurrentTick.
+        // With the old `<=` guard this unit would NOT be suspended (plan skipped);
+        // with the correct `<` guard it IS suspended even on the application tick.
+        var planId = Guid.NewGuid();
+        db.BuildingConfigurationPlans.Add(new BuildingConfigurationPlan
+        {
+            Id = planId,
+            BuildingId = buildingId,
+            SubmittedAtTick = currentTick - 9,
+            AppliesAtTick = currentTick + 1,  // == gameState.CurrentTick after ++ in ProcessTickAsync
+            TotalTicksRequired = 10,
+        });
+        db.BuildingConfigurationPlanUnits.Add(new BuildingConfigurationPlanUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingConfigurationPlanId = planId,
+            UnitType = UnitType.PublicSales,
+            GridX = 0,
+            GridY = 0,
+            Level = 2,
+            IsChanged = true,
+            TicksRequired = 10,
+            StartedAtTick = currentTick - 9,
+            AppliesAtTick = currentTick + 1,  // boundary: equals new currentTick after ++
+            ProductTypeId = product.Id,
+            MinPrice = product.BasePrice,
+        });
+        await db.SaveChangesAsync();
+
+        var processor = await CreateProcessorAsync(scope);
+        await processor.ProcessTickAsync();
+
+        // ProcessTickAsync increments tick to currentTick+1 == AppliesAtTick.
+        // The unit must still be offline — no sales record and unchanged inventory.
+        var salesRecord = await db.PublicSalesRecords
+            .FirstOrDefaultAsync(r => r.BuildingUnitId == unitId);
+        Assert.Null(salesRecord);
+
+        var remainingQty = await db.Inventories
+            .Where(i => i.BuildingUnitId == unitId)
+            .SumAsync(i => i.Quantity);
+        Assert.Equal(50m, remainingQty);
+    }
+
     #endregion
 }
