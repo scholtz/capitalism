@@ -921,6 +921,11 @@ export default {
       visibilityGroup: 'Group',
       b2bSuggestedPrice: 'Competitive base price: ${price}',
       b2bUseSuggested: 'Use this price',
+      b2bPriceFromMfg: 'From Manufacturing ({item}) — base price ${price}',
+      b2bPriceFromMining: 'From Mining unit ({item}) — base price ${price}',
+      b2bNoSourceTitle: 'No Upstream Source Configured',
+      b2bNoSourceBody:
+        'This B2B Sales unit cannot derive a competitive price yet. Configure a Manufacturing unit with an output product, or a Mining unit with a resource type, in this building first.',
       scopeProduct: 'Product',
       scopeCategory: 'Category',
       scopeCompany: 'Company',

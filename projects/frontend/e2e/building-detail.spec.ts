@@ -1196,8 +1196,9 @@ test.describe('Building detail upgrades', () => {
     // B2B_SALES config panel should show Min Price field
     await expect(page.getByText('Min Price')).toBeVisible()
 
-    // Should show competitive price suggestion since manufacturing unit has Wooden Chair (basePrice=45)
-    await expect(page.getByText(/Competitive base price/i)).toBeVisible()
+    // Should show price source hint from Manufacturing unit (Wooden Chair basePrice=45)
+    await expect(page.locator('.config-price-hint').getByText(/From Manufacturing/i)).toBeVisible()
+    await expect(page.locator('.config-price-hint').getByText(/Wooden Chair/i)).toBeVisible()
     await expect(page.getByRole('button', { name: /Use this price/i })).toBeVisible()
 
     // Click "Use this price" should populate the min price field
@@ -1359,8 +1360,8 @@ test.describe('Building detail upgrades', () => {
       .locator('input[type="number"]')
     await expect(minPriceInput).toHaveValue('45')
 
-    // The competitive price hint should still be visible as a reference
-    await expect(page.getByText(/Competitive base price/i)).toBeVisible()
+    // The price source hint should show the Manufacturing unit source
+    await expect(page.getByText(/From Manufacturing/i)).toBeVisible()
   })
 
   test('new B2B_SALES unit auto-fills price from MINING unit (mine building)', async ({ page }) => {
@@ -1457,8 +1458,8 @@ test.describe('Building detail upgrades', () => {
       .locator('input[type="number"]')
     await expect(minPriceInput).toHaveValue('10')
 
-    // The competitive price hint should still be visible
-    await expect(page.getByText(/Competitive base price/i)).toBeVisible()
+    // The price source hint should show the Mining unit source
+    await expect(page.getByText(/From Mining unit/i)).toBeVisible()
   })
 
   test('B2B_SALES unit shows sale price in read-only detail panel', async ({ page }) => {
@@ -1527,6 +1528,163 @@ test.describe('Building detail upgrades', () => {
 
     // The grid tile itself should also show "Sell from $45"
     await expect(getGridCell(currentSection, 3, 0).locator('.cell-metric')).toContainText('$45')
+  })
+
+  test('B2B_SALES unit shows no-source warning when no manufacturing or mining unit is configured', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-b2b-nosource',
+      playerId: player.id,
+      name: 'No Source Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-b2b-nosource',
+          companyId: 'company-b2b-nosource',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'No Source Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'nosource-b2b-1',
+              buildingId: 'building-b2b-nosource',
+              unitType: 'B2B_SALES',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-b2b-nosource')
+    await expect(page.getByRole('heading', { name: 'No Source Factory' })).toBeVisible()
+
+    // Enter edit mode and click the B2B_SALES unit
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 0, 0).click()
+
+    // Should show the no-source warning with prominent title and guidance
+    await expect(page.getByRole('alert', { name: 'No upstream source' })).toBeVisible()
+    await expect(page.getByText('No Upstream Source Configured')).toBeVisible()
+    await expect(page.getByText(/Manufacturing.*Mining/i)).toBeVisible()
+
+    // Should NOT show the price source hint (no source to derive from)
+    await expect(page.getByText(/From Manufacturing/i)).toBeHidden()
+    await expect(page.getByText(/From Mining unit/i)).toBeHidden()
+  })
+
+  test('B2B_SALES no-source warning disappears when manufacturing unit with product is present', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-b2b-withsource',
+      playerId: player.id,
+      name: 'With Source Co',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [
+        {
+          id: 'building-b2b-withsource',
+          companyId: 'company-b2b-withsource',
+          cityId: 'city-ba',
+          type: 'FACTORY',
+          name: 'With Source Factory',
+          latitude: 48.15,
+          longitude: 17.11,
+          level: 1,
+          powerConsumption: 2,
+          isForSale: false,
+          builtAtUtc: '2026-01-01T00:00:00Z',
+          pendingConfiguration: null,
+          units: [
+            {
+              id: 'withsource-mfg-1',
+              buildingId: 'building-b2b-withsource',
+              unitType: 'MANUFACTURING',
+              gridX: 0,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: true,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+              productTypeId: 'prod-chair',
+            },
+            {
+              id: 'withsource-b2b-1',
+              buildingId: 'building-b2b-withsource',
+              unitType: 'B2B_SALES',
+              gridX: 1,
+              gridY: 0,
+              level: 1,
+              linkUp: false,
+              linkDown: false,
+              linkLeft: false,
+              linkRight: false,
+              linkUpLeft: false,
+              linkUpRight: false,
+              linkDownLeft: false,
+              linkDownRight: false,
+            },
+          ],
+        },
+      ],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-b2b-withsource')
+    await expect(page.getByRole('heading', { name: 'With Source Factory' })).toBeVisible()
+
+    // Enter edit mode and click the B2B_SALES unit
+    await page.getByRole('button', { name: /Edit Building/i }).click()
+    const plannedSection = getGridSection(page, 'Planned Upgrade')
+    await getGridCell(plannedSection, 1, 0).click()
+
+    // No-source warning should NOT be visible (manufacturing unit with product is present)
+    await expect(page.getByRole('alert', { name: 'No upstream source' })).toBeHidden()
+
+    // Price source hint from Manufacturing should be visible
+    await expect(page.locator('.config-price-hint').getByText(/From Manufacturing/i)).toBeVisible()
+    await expect(page.locator('.config-price-hint').getByText(/Wooden Chair/i)).toBeVisible()
   })
 
   test('shows configured resource image, sourcing costs, and new-unit cost while planning', async ({ page }) => {

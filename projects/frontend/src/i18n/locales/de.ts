@@ -923,6 +923,11 @@ export default {
       visibilityGroup: 'Gruppe',
       b2bSuggestedPrice: 'Wettbewerbsfähiger Grundpreis: ${price}',
       b2bUseSuggested: 'Diesen Preis verwenden',
+      b2bPriceFromMfg: 'Von Fertigung ({item}) — Grundpreis ${price}',
+      b2bPriceFromMining: 'Von Abbaueinheit ({item}) — Grundpreis ${price}',
+      b2bNoSourceTitle: 'Keine Upstream-Quelle konfiguriert',
+      b2bNoSourceBody:
+        'Diese B2B-Verkaufseinheit kann noch keinen Wettbewerbspreis ableiten. Konfigurieren Sie zuerst eine Fertigungseinheit mit einem Ausgabeprodukt oder eine Abbaueinheit mit einem Ressourcentyp in diesem Gebäude.',
       scopeProduct: 'Produkt',
       scopeCategory: 'Kategorie',
       scopeCompany: 'Unternehmen',

@@ -19,7 +19,7 @@ It will use real world map. The game will start in single city and later other c
 
 ### B2B Sales unit editation
 - In b2b unit show the sale price, when creating b2b sale unit in factory make sure to set the competetive default price
-- **Progress: 90% complete** — B2B sales units auto-fill competitive prices from linked products/resources at placement. Remaining: stronger visual hint when no source unit is configured yet.
+- **Progress: 100% complete** ✅ — B2B sales units auto-fill competitive prices from linked products/resources at placement. The edit panel now shows a prominent no-source warning (with explanation and required next action) when no Manufacturing or Mining unit has an item configured. When a price is auto-derived, the hint clearly names the source unit type and item (e.g., "From Manufacturing (Wooden Chair) — base price $45.00") so players understand where the price came from and can accept or override it.
 
 ### Basic unit definition
 - ✅ 100% — Make storage unit have 10x storage capacity then the purchase or sales units by default. Implemented: STORAGE units hold 1000/2500/5000/10000 units at levels 1–4 vs 100/250/500/1000 for purchase/sales units. The upgrade info panel, inventory fill bar, and capacity stat all reflect the 10× difference so players can immediately see the storage advantage when planning layouts.

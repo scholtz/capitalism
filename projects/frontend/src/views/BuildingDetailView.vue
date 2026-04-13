@@ -712,12 +712,38 @@ const buildingOverviewMapRoute = computed(() => {
 const buildingFinancialSnapshots = computed(() => buildingFinancialTimeline.value?.timeline ?? [])
 const buildingFinancialHasActivity = computed(() => buildingFinancialSnapshots.value.some((snapshot) => snapshot.sales > 0 || snapshot.costs > 0 || snapshot.profit !== 0))
 
-/** Computed competitive price suggestion for the currently selected B2B_SALES draft unit. */
-const b2bSuggestedPrice = computed<number | null>(() => {
+/** Source metadata returned by getB2BPriceSource. */
+interface B2BPriceSourceInfo {
+  price: number
+  sourceType: 'manufacturing' | 'mining'
+  itemName: string | null
+}
+
+/** Full price source info for the currently selected B2B_SALES draft unit. */
+const b2bPriceSource = computed<B2BPriceSourceInfo | null>(() => {
   if (!selectedCell.value || !isEditing.value) return null
   const unit = getDraftUnitAt(selectedCell.value.x, selectedCell.value.y)
   if (!unit || unit.unitType !== 'B2B_SALES') return null
-  return getB2BSuggestedPrice(unit)
+  return getB2BPriceSource(unit)
+})
+
+/** Convenience accessor – price only (used for auto-fill on placement). */
+const b2bSuggestedPrice = computed<number | null>(() => b2bPriceSource.value?.price ?? null)
+
+/**
+ * True when the current draft contains at least one MANUFACTURING unit with a product
+ * or MINING unit with a resource — i.e., there is a configured upstream source from
+ * which a B2B price can be derived. False means the no-source guidance should be shown.
+ */
+const b2bHasUpstreamSource = computed<boolean>(() => {
+  if (!selectedCell.value || !isEditing.value) return true
+  const unit = getDraftUnitAt(selectedCell.value.x, selectedCell.value.y)
+  if (!unit || unit.unitType !== 'B2B_SALES') return true
+  return draftUnits.value.some(
+    (u) =>
+      (u.unitType === 'MANUFACTURING' && !!u.productTypeId) ||
+      (u.unitType === 'MINING' && !!u.resourceTypeId),
+  )
 })
 
 /** Max revenue across all history ticks – used to normalise the revenue bar chart heights. */
@@ -3165,12 +3191,12 @@ async function submitUnitUpgrade(unitId: string) {
 }
 
 /**
- * Returns a competitive price suggestion for a B2B_SALES unit.
+ * Returns price source info for a B2B_SALES unit including the price, source type, and item name.
  * For factory buildings: uses the basePrice of the product from a linked (or any) MANUFACTURING unit.
  * For mine buildings: uses the basePrice of the resource from a linked (or any) MINING unit.
  * Returns null when no relevant configured unit is found in the current draft.
  */
-function getB2BSuggestedPrice(unit: EditableGridUnit): number | null {
+function getB2BPriceSource(unit: EditableGridUnit): B2BPriceSourceInfo | null {
   // Find adjacent units from the existing draft state (before the new unit is added at this position)
   const byPos = new Map(draftUnits.value.map((u) => [`${u.gridX},${u.gridY}`, u]))
   const neighbors: EditableGridUnit[] = []
@@ -3188,26 +3214,43 @@ function getB2BSuggestedPrice(unit: EditableGridUnit): number | null {
   // Factory path: look for a connected MANUFACTURING unit with a product set
   const mfgUnit = neighbors.find((n) => n.unitType === 'MANUFACTURING' && n.productTypeId)
   if (mfgUnit?.productTypeId) {
-    return productTypes.value.find((p) => p.id === mfgUnit.productTypeId)?.basePrice ?? null
+    const product = productTypes.value.find((p) => p.id === mfgUnit.productTypeId)
+    if (product?.basePrice != null) {
+      return { price: product.basePrice, sourceType: 'manufacturing', itemName: product.name ?? null }
+    }
   }
   // Fall back to any MANUFACTURING unit in the building with a product
   const anyMfg = draftUnits.value.find((u) => u.unitType === 'MANUFACTURING' && u.productTypeId)
   if (anyMfg?.productTypeId) {
-    return productTypes.value.find((p) => p.id === anyMfg.productTypeId)?.basePrice ?? null
+    const product = productTypes.value.find((p) => p.id === anyMfg.productTypeId)
+    if (product?.basePrice != null) {
+      return { price: product.basePrice, sourceType: 'manufacturing', itemName: product.name ?? null }
+    }
   }
 
   // Mine path: look for a connected MINING unit with a resource type set
   const miningUnit = neighbors.find((n) => n.unitType === 'MINING' && n.resourceTypeId)
   if (miningUnit?.resourceTypeId) {
-    return resourceTypes.value.find((r) => r.id === miningUnit.resourceTypeId)?.basePrice ?? null
+    const resource = resourceTypes.value.find((r) => r.id === miningUnit.resourceTypeId)
+    if (resource?.basePrice != null) {
+      return { price: resource.basePrice, sourceType: 'mining', itemName: resource.name ?? null }
+    }
   }
   // Fall back to any MINING unit in the building with a resource type
   const anyMining = draftUnits.value.find((u) => u.unitType === 'MINING' && u.resourceTypeId)
   if (anyMining?.resourceTypeId) {
-    return resourceTypes.value.find((r) => r.id === anyMining.resourceTypeId)?.basePrice ?? null
+    const resource = resourceTypes.value.find((r) => r.id === anyMining.resourceTypeId)
+    if (resource?.basePrice != null) {
+      return { price: resource.basePrice, sourceType: 'mining', itemName: resource.name ?? null }
+    }
   }
 
   return null
+}
+
+/** Backward-compatible helper used only for auto-fill on placement. */
+function getB2BSuggestedPrice(unit: EditableGridUnit): number | null {
+  return getB2BPriceSource(unit)?.price ?? null
 }
 
 async function loadUnitOperationalStatuses(buildingId: string) {
@@ -4888,6 +4931,14 @@ watch(
 
                 <!-- B2B Sales unit config -->
                 <template v-if="getDraftUnitAt(selectedCell.x, selectedCell.y)!.unitType === 'B2B_SALES'">
+                  <!-- No-source warning: shown when no MANUFACTURING or MINING unit has an item configured -->
+                  <div v-if="!b2bHasUpstreamSource" class="b2b-no-source-warning" role="alert" aria-label="No upstream source">
+                    <span class="b2b-no-source-icon" aria-hidden="true">⚠</span>
+                    <div class="b2b-no-source-content">
+                      <p class="b2b-no-source-title">{{ t('buildingDetail.config.b2bNoSourceTitle') }}</p>
+                      <p class="b2b-no-source-body">{{ t('buildingDetail.config.b2bNoSourceBody') }}</p>
+                    </div>
+                  </div>
                   <div class="config-field">
                     <label class="config-label">{{ t('buildingDetail.config.productType') }}</label>
                     <ProductPicker
@@ -4911,8 +4962,15 @@ watch(
                       min="0.01"
                       step="0.01"
                     />
-                    <p v-if="b2bSuggestedPrice !== null" class="config-help config-price-hint">
-                      {{ t('buildingDetail.config.b2bSuggestedPrice', { price: b2bSuggestedPrice!.toFixed(2) }) }}
+                    <p v-if="b2bPriceSource !== null" class="config-help config-price-hint">
+                      {{
+                        t(
+                          b2bPriceSource!.sourceType === 'manufacturing'
+                            ? 'buildingDetail.config.b2bPriceFromMfg'
+                            : 'buildingDetail.config.b2bPriceFromMining',
+                          { item: b2bPriceSource!.itemName ?? '?', price: b2bPriceSource!.price.toFixed(2) },
+                        )
+                      }}
                       <button type="button" class="btn-link" @click="updateSelectedUnitConfig('minPrice', b2bSuggestedPrice)">{{ t('buildingDetail.config.b2bUseSuggested') }}</button>
                     </p>
                   </div>
@@ -9752,6 +9810,45 @@ watch(
   font-size: 0.78rem;
   color: var(--color-text-secondary);
   margin: 0.25rem 0 0;
+}
+
+/* ── B2B No-source warning ── */
+.b2b-no-source-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  border-radius: var(--radius-md, 6px);
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.b2b-no-source-icon {
+  font-size: 1.1rem;
+  color: #eab308;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.b2b-no-source-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.b2b-no-source-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #d97706;
+  margin: 0;
+}
+
+.b2b-no-source-body {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+  line-height: 1.45;
 }
 
 .btn-link {

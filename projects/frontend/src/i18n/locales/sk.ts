@@ -919,6 +919,11 @@ export default {
       visibilityGroup: 'Skupina',
       b2bSuggestedPrice: 'Konkurenčná základná cena: ${price}',
       b2bUseSuggested: 'Použiť túto cenu',
+      b2bPriceFromMfg: 'Z výroby ({item}) — základná cena ${price}',
+      b2bPriceFromMining: 'Z ťažobnej jednotky ({item}) — základná cena ${price}',
+      b2bNoSourceTitle: 'Nie je nakonfigurovaný žiadny zdrojový uzol',
+      b2bNoSourceBody:
+        'Táto B2B predajná jednotka zatiaľ nemôže odvodiť konkurenčnú cenu. Najprv nakonfigurujte výrobnú jednotku s výstupným produktom alebo ťažobnú jednotku s typom suroviny v tejto budove.',
       scopeProduct: 'Produkt',
       scopeCategory: 'Kategória',
       scopeCompany: 'Firma',
