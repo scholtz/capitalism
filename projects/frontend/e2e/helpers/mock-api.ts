@@ -1010,17 +1010,18 @@ function computeMockTransitCost(weightPerUnit: number, distanceKm: number) {
 }
 
 function getMockUnitCapacity(unit: MockBuildingUnit) {
+  const level = unit.level
   switch (unit.unitType) {
     case 'STORAGE':
-      // Storage units hold 10× the base capacity
-      return unit.level >= 4 ? 10000 : unit.level === 3 ? 5000 : unit.level === 2 ? 2500 : 1000
+      // Storage units hold 10× the base capacity (mirrors GameConstants.StorageUnitHoldingCapacity)
+      return level >= 4 ? 10000 : level === 3 ? 5000 : level === 2 ? 2500 : 1000
     case 'MINING':
     case 'B2B_SALES':
     case 'PURCHASE':
     case 'MANUFACTURING':
     case 'BRANDING':
     case 'PUBLIC_SALES':
-      return unit.level >= 4 ? 1000 : unit.level === 3 ? 500 : unit.level === 2 ? 250 : 100
+      return level >= 4 ? 1000 : level === 3 ? 500 : level === 2 ? 250 : 100
     default:
       return 0
   }

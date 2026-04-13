@@ -40,6 +40,8 @@ public static class GameConstants
     /// <summary>
     /// Returns the holding capacity for a unit of the given type and level.
     /// STORAGE units have 10× the capacity of purchase, sales, mining, and manufacturing units.
+    /// The parameter is typed as <see langword="string"/> for GraphQL interop — unit type values
+    /// are stored and transmitted as strings matching the <see cref="Data.Entities.UnitType"/> constants.
     /// </summary>
     public static decimal GetUnitHoldingCapacity(string unitType, int level) =>
         unitType == Data.Entities.UnitType.Storage
