@@ -875,3 +875,17 @@ Root-cause of a quality failure (April 2026, PR #313 shared auth):
 2. **When a post-request middleware writes to EF Core after `await next(context)`, clear stale tracked state first or use a fresh context.** Otherwise a failed mutation can leave tracked entities behind and the middleware's later `SaveChangesAsync()` can accidentally persist or re-save them.
 3. **After changing token-validation or claim-sync code, rerun the full backend suites, not just auth-focused tests.** At minimum this means the full `Api.Tests` Release suite and the full `MasterApi.Tests` suite, because regressions can surface in unrelated flows like onboarding conflict recovery and news read-receipts.
 4. **MasterApi news-feed service endpoints are intentionally public/service callable unless the ROADMAP says otherwise.** Do not add `[Authorize]` to `gameNewsFeed`; draft visibility is controlled by `requesterEmail` + admin checks, not by bearer auth alone.
+
+## Shared-state GameState.CurrentTick corruption — always use isolated factories when mutating tick
+
+Root-cause of a recurring CI failure pattern (April 2026, PR #360 dashboard/ledger caching):
+- Several new `CompanyLedger_*` tests modified the shared `GameState.CurrentTick` via `db.GameStates.FindAsync(1)` using the shared `_factory`.
+- `BuildingRecentActivity_AfterTicks_ReturnsPurchasedEvents` queries a time window `windowStart = currentTick - (limit - 1)`. When the tick was advanced to 9000–10000, entries seeded at tick 1 and 2 fell outside the window, causing a spurious assertion failure.
+- The test passed in isolation but failed when run after the tick-mutating tests in the full suite.
+
+**Rules to prevent recurrence:**
+1. **Never modify `GameState.CurrentTick` (or any singleton game-state row) via the shared `IClassFixture`-backed `_factory`.** Any test that advances the game tick must use `await using var isolatedFactory = new ApiWebApplicationFactory()` so the mutation is scoped to a fresh, isolated database.
+2. **The same rule applies to any singleton entity:** `GameState`, global config, or shared seeded data whose state is read by other tests in the suite.
+3. **If a test passes in isolation but fails in the full suite, the root cause is almost always shared mutable state** — not test flakiness. Diagnose by checking which singleton was modified by a preceding test.
+4. **Tests that need a specific tick value (e.g. year 2001 = tick ≥ 8760) must use an isolated factory,** seed their own game state, and run their assertions against the isolated HTTP client. Never rely on the shared factory's tick advancing to a convenient value.
+5. **Existing tick-advancing tests that use the shared factory are pre-existing technical debt.** Do not add more; when fixing them is in scope, migrate them to isolated factories.

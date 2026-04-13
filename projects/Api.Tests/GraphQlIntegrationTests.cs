@@ -24787,6 +24787,278 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
             "Persisted pending config: B2B_SALES.linkUpLeft must be true (only reversed direction persists)");
     }
 
+    #region Dashboard and Ledger Caching / Query-Optimisation Tests
+
+    [Fact]
+    public async Task CompanyLedger_YearScopedQuery_ExcludesEntriesFromOtherYears()
+    {
+        // Seeds revenue entries in two different game years and verifies that querying
+        // year 2000 returns only that year's total, not the year-2001 entry.
+        // Uses an isolated factory to avoid mutating shared GameState.CurrentTick.
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, "ledger-scope-isolation@test.com", "LedgerScopeIsolation");
+        Guid companyId;
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-scope-isolation@test.com");
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Scope Isolation Co",
+                Cash = 50_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            // Year 2000 = ticks 0..8759; Year 2001 = ticks 8760..17519
+            db.LedgerEntries.AddRange(
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue, Description = "Year 2000 revenue",
+                    Amount = 500m, RecordedAtTick = 500, RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue, Description = "Year 2001 revenue",
+                    Amount = 999m, RecordedAtTick = 9000, RecordedAtUtc = DateTime.UtcNow,
+                });
+            var gameState = await db.GameStates.FindAsync(1);
+            gameState!.CurrentTick = 9500;
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        // Query year 2000 — should only include the 500m entry, NOT the 999m entry
+        var result = await ExecuteGraphQlAsync(isolatedClient,
+            $"{{ companyLedger(companyId: \"{companyId}\", gameYear: 2000) {{ gameYear totalRevenue isCurrentGameYear }} }}",
+            token: token);
+
+        var ledger = result.GetProperty("data").GetProperty("companyLedger");
+        Assert.Equal(2000, ledger.GetProperty("gameYear").GetInt32());
+        Assert.Equal(500m, ledger.GetProperty("totalRevenue").GetDecimal());
+        Assert.False(ledger.GetProperty("isCurrentGameYear").GetBoolean());
+    }
+
+    [Fact]
+    public async Task CompanyLedger_HistoryContainsPreviousYearsWithCorrectTotals()
+    {
+        // Verifies the history array includes per-year totals for entries seeded in multiple game years.
+        // Uses an isolated factory to avoid mutating shared GameState.CurrentTick.
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, "ledger-history-totals@test.com", "LedgerHistoryTotals");
+        Guid companyId;
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-history-totals@test.com");
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "History Totals Co",
+                Cash = 50_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            db.LedgerEntries.AddRange(
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue, Description = "Y2000 sale",
+                    Amount = 1500m, RecordedAtTick = 100, RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue, Description = "Y2001 sale",
+                    Amount = 2500m, RecordedAtTick = 9000, RecordedAtUtc = DateTime.UtcNow,
+                });
+            var gameState = await db.GameStates.FindAsync(1);
+            gameState!.CurrentTick = 10_000;
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        var result = await ExecuteGraphQlAsync(isolatedClient,
+            $"{{ companyLedger(companyId: \"{companyId}\") {{ gameYear history {{ gameYear totalRevenue }} }} }}",
+            token: token);
+
+        var ledger = result.GetProperty("data").GetProperty("companyLedger");
+        Assert.Equal(2001, ledger.GetProperty("gameYear").GetInt32());
+
+        var history = ledger.GetProperty("history").EnumerateArray()
+            .ToDictionary(
+                h => h.GetProperty("gameYear").GetInt32(),
+                h => h.GetProperty("totalRevenue").GetDecimal());
+
+        Assert.True(history.ContainsKey(2000), "History should include game year 2000");
+        Assert.True(history.ContainsKey(2001), "History should include game year 2001");
+        Assert.Equal(1500m, history[2000]);
+        Assert.Equal(2500m, history[2001]);
+    }
+
+    [Fact]
+    public async Task LedgerDrillDown_WithoutGameYear_ReturnsEntriesFromAllYears()
+    {
+        // When no gameYear is supplied, drill-down should return entries across all game years.
+        var token = await RegisterAndGetTokenAsync("ledger-drill-allyr@test.com", "LedgerDrillAllYr");
+        Guid companyId;
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-drill-allyr@test.com");
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "All Years Drill Co",
+                Cash = 50_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            db.LedgerEntries.AddRange(
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue, Description = "Year 2000 entry",
+                    Amount = 400m, RecordedAtTick = 200, RecordedAtUtc = DateTime.UtcNow,
+                },
+                new LedgerEntry
+                {
+                    Id = Guid.NewGuid(), CompanyId = company.Id,
+                    Category = LedgerCategory.Revenue, Description = "Year 2001 entry",
+                    Amount = 800m, RecordedAtTick = 9200, RecordedAtUtc = DateTime.UtcNow,
+                });
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        // No gameYear — should return both entries
+        var drillResult = await ExecuteGraphQlAsync(
+            $"{{ ledgerDrillDown(companyId: \"{companyId}\", category: \"REVENUE\") {{ description recordedAtTick }} }}",
+            token: token);
+
+        var entries = drillResult.GetProperty("data").GetProperty("ledgerDrillDown").EnumerateArray().ToList();
+        Assert.Equal(2, entries.Count);
+        var ticks = entries.Select(e => e.GetProperty("recordedAtTick").GetInt64()).OrderBy(t => t).ToList();
+        Assert.Equal(200L, ticks[0]);
+        Assert.Equal(9200L, ticks[1]);
+    }
+
+    [Fact]
+    public async Task GetResourceTypes_ReturnsAllEightSeedResources()
+    {
+        // Validates that the (cached) GetResourceTypes query returns all 8 seeded raw material types.
+        var result = await ExecuteGraphQlAsync("{ resourceTypes { slug name } }");
+        var types = result.GetProperty("data").GetProperty("resourceTypes").EnumerateArray()
+            .Select(r => r.GetProperty("slug").GetString()!)
+            .OrderBy(s => s)
+            .ToList();
+
+        Assert.Equal(8, types.Count);
+        Assert.Contains("wood", types);
+        Assert.Contains("iron-ore", types);
+        Assert.Contains("coal", types);
+        Assert.Contains("gold", types);
+        Assert.Contains("chemical-minerals", types);
+        Assert.Contains("cotton", types);
+        Assert.Contains("grain", types);
+        Assert.Contains("silicon", types);
+    }
+
+    [Fact]
+    public async Task GetCities_ReturnsAllThreeSeedCities()
+    {
+        // Validates that the (cached) GetCities query returns all three seeded cities
+        // and that each city has at least one resource abundance record.
+        var result = await ExecuteGraphQlAsync("{ cities { id name resources { abundance } } }");
+        var cities = result.GetProperty("data").GetProperty("cities").EnumerateArray().ToList();
+
+        Assert.Equal(3, cities.Count);
+
+        var names = cities.Select(c => c.GetProperty("name").GetString()!).ToList();
+        Assert.Contains("Bratislava", names);
+        Assert.Contains("Prague", names);
+        Assert.Contains("Vienna", names);
+
+        // Each city must have resource abundance data (seeded from AppDbInitializer)
+        foreach (var city in cities)
+        {
+            var resourceCount = city.GetProperty("resources").GetArrayLength();
+            Assert.True(resourceCount > 0, $"City should have resource abundances seeded");
+        }
+    }
+
+    [Fact]
+    public async Task GetGameState_ReturnsCurrentTick()
+    {
+        // Validates the (cached) GetGameState query returns a non-null game state with sensible tick.
+        var result = await ExecuteGraphQlAsync("{ gameState { currentTick taxRate } }");
+        var gameState = result.GetProperty("data").GetProperty("gameState");
+
+        Assert.False(gameState.ValueKind == System.Text.Json.JsonValueKind.Null,
+            "gameState must not be null — database should be seeded");
+        Assert.True(gameState.GetProperty("currentTick").GetInt64() >= 0);
+        // TaxRate is stored as a percentage value (e.g. 15 for 15%), not a fraction
+        Assert.True(gameState.GetProperty("taxRate").GetDecimal() is >= 0m and <= 100m);
+    }
+
+    [Fact]
+    public async Task CompanyLedger_CurrentYearIsCurrentGameYear_IsCurrentGameYearFlag()
+    {
+        // Verifies the isCurrentGameYear flag distinguishes the active year from historical years.
+        // Uses an isolated factory to avoid mutating shared GameState.CurrentTick.
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, "ledger-current-flag@test.com", "LedgerCurrentFlag");
+        Guid companyId;
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.SingleAsync(p => p.Email == "ledger-current-flag@test.com");
+            var company = new Company
+            {
+                Id = Guid.NewGuid(),
+                PlayerId = player.Id,
+                Name = "Current Flag Co",
+                Cash = 50_000m,
+                FoundedAtUtc = DateTime.UtcNow,
+                FoundedAtTick = 0,
+            };
+            db.Companies.Add(company);
+            var gameState = await db.GameStates.FindAsync(1);
+            gameState!.CurrentTick = 9000; // year 2001
+            await db.SaveChangesAsync();
+            companyId = company.Id;
+        }
+
+        // Current year (2001) query
+        var currentResult = await ExecuteGraphQlAsync(isolatedClient,
+            $"{{ companyLedger(companyId: \"{companyId}\") {{ gameYear isCurrentGameYear }} }}",
+            token: token);
+        var currentLedger = currentResult.GetProperty("data").GetProperty("companyLedger");
+        Assert.Equal(2001, currentLedger.GetProperty("gameYear").GetInt32());
+        Assert.True(currentLedger.GetProperty("isCurrentGameYear").GetBoolean());
+
+        // Explicitly request year 2000 (historical)
+        var historicalResult = await ExecuteGraphQlAsync(isolatedClient,
+            $"{{ companyLedger(companyId: \"{companyId}\", gameYear: 2000) {{ gameYear isCurrentGameYear }} }}",
+            token: token);
+        var historicalLedger = historicalResult.GetProperty("data").GetProperty("companyLedger");
+        Assert.Equal(2000, historicalLedger.GetProperty("gameYear").GetInt32());
+        Assert.False(historicalLedger.GetProperty("isCurrentGameYear").GetBoolean());
+    }
+
+    #endregion
+
     #region News Feed Proxy Tests
 
     [Fact]
