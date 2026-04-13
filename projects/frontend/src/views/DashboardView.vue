@@ -19,6 +19,9 @@ import StarterGuidance from '@/components/dashboard/StarterGuidance.vue'
 import DashboardChatPanel from '@/components/dashboard/DashboardChatPanel.vue'
 import type { Company, GameState, ScheduledActionSummary, CityPowerBalance, CompanyLedgerSummary, City, BuildingUnitOperationalStatus } from '@/types'
 
+// Module-level cache for city names — cities are static and never change during a session.
+const _cityNamesCache: Record<string, string> = {}
+
 const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
@@ -214,11 +217,19 @@ async function loadPendingActions() {
 }
 
 async function loadCityNames() {
+  // Cities are static — serve from module-level cache after first successful load.
+  if (Object.keys(_cityNamesCache).length > 0) {
+    if (!deepEqual(cityNames.value, _cityNamesCache)) {
+      cityNames.value = { ..._cityNamesCache }
+    }
+    return
+  }
   try {
     const data = await gqlRequest<{ cities: City[] }>('{ cities { id name } }')
     const map: Record<string, string> = {}
     for (const city of data.cities) {
       map[city.id] = city.name
+      _cityNamesCache[city.id] = city.name
     }
     cityNames.value = map
   } catch {

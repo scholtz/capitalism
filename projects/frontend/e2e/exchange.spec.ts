@@ -1447,8 +1447,8 @@ test.describe('Global Exchange — quality variability bands', () => {
     const firstCard = woodRow.locator('.city-offer-card').first()
     // The quality band bar has a title attribute explaining the variability
     const bandBar = firstCard.locator('.quality-band-bar')
-    const title = await bandBar.getAttribute('title')
-    expect(title).toBeTruthy()
+    const title = bandBar
+    await expect(title).toHaveAttribute('title', )
     expect(title!.length).toBeGreaterThan(10)
   })
 })

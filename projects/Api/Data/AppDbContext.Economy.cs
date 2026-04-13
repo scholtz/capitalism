@@ -56,6 +56,7 @@ public sealed partial class AppDbContext
             e.HasOne(i => i.BuildingUnit).WithMany().HasForeignKey(i => i.BuildingUnitId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(i => i.ResourceType).WithMany().HasForeignKey(i => i.ResourceTypeId);
             e.HasOne(i => i.ProductType).WithMany().HasForeignKey(i => i.ProductTypeId);
+            e.HasIndex(i => i.BuildingId);
         });
 
         modelBuilder.Entity<BuildingUnitResourceHistory>(e =>
@@ -128,6 +129,8 @@ public sealed partial class AppDbContext
             e.HasOne(l => l.ProductType).WithMany().HasForeignKey(l => l.ProductTypeId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(l => l.ResourceType).WithMany().HasForeignKey(l => l.ResourceTypeId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(l => new { l.CompanyId, l.RecordedAtTick });
+            // Compound index for category-filtered drill-down queries
+            e.HasIndex(l => new { l.CompanyId, l.Category, l.RecordedAtTick });
         });
 
         modelBuilder.Entity<PublicSalesRecord>(e =>

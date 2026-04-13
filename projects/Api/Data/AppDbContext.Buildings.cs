@@ -41,6 +41,7 @@ public sealed partial class AppDbContext
             e.Property(u => u.Budget).HasPrecision(18, 2);
             e.Property(u => u.MinQuality).HasPrecision(5, 4);
             e.HasOne(u => u.Building).WithMany(b => b.Units).HasForeignKey(u => u.BuildingId);
+            e.HasIndex(u => u.BuildingId);
         });
 
         modelBuilder.Entity<BuildingConfigurationPlan>(e =>

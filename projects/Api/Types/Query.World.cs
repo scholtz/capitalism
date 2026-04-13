@@ -7,19 +7,34 @@ using Api.Security;
 using Api.Utilities;
 using HotChocolate.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 namespace Api.Types;
 
 public sealed partial class Query
 {
-    public async Task<List<City>> GetCities([Service] AppDbContext db)
+    private const string CitiesCacheKey = "cities_all";
+    private const string ResourceTypesCacheKey = "resourceTypes_all";
+    private static readonly TimeSpan CitiesCacheDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan ResourceTypesCacheDuration = TimeSpan.FromMinutes(10);
+
+    public async Task<List<City>> GetCities([Service] AppDbContext db, [Service] IMemoryCache cache)
     {
-        return await db.Cities
+        if (cache.TryGetValue(CitiesCacheKey, out List<City>? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        var cities = await db.Cities
+            .AsNoTracking()
             .Include(c => c.Resources)
             .ThenInclude(r => r.ResourceType)
             .OrderBy(c => c.Name)
             .ToListAsync();
+
+        cache.Set(CitiesCacheKey, cities, CitiesCacheDuration);
+        return cities;
     }
 
     /// <summary>Gets a specific city by ID.</summary>
@@ -48,9 +63,16 @@ public sealed partial class Query
     }
 
     /// <summary>Lists all raw material resource types in the game encyclopaedia.</summary>
-    public async Task<List<ResourceType>> GetResourceTypes([Service] AppDbContext db)
+    public async Task<List<ResourceType>> GetResourceTypes([Service] AppDbContext db, [Service] IMemoryCache cache)
     {
-        return await db.ResourceTypes.OrderBy(r => r.Name).ToListAsync();
+        if (cache.TryGetValue(ResourceTypesCacheKey, out List<ResourceType>? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        var resourceTypes = await db.ResourceTypes.AsNoTracking().OrderBy(r => r.Name).ToListAsync();
+        cache.Set(ResourceTypesCacheKey, resourceTypes, ResourceTypesCacheDuration);
+        return resourceTypes;
     }
 
     /// <summary>

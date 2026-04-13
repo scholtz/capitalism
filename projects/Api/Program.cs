@@ -120,6 +120,7 @@ public class Program
 
         builder.Services.AddScoped<IMasterGameAdministrationService, MasterGameAdministrationService>();
         builder.Services.AddScoped<GameAdminAuthorizationService>();
+        builder.Services.AddMemoryCache();
 
         // ── Game tick engine ──
         builder.Services.AddScoped<TickProcessor>();

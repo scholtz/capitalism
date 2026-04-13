@@ -5,6 +5,7 @@ using Api.Security;
 using Api.Utilities;
 using HotChocolate.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Api.Types;
 
@@ -284,8 +285,16 @@ public sealed partial class Query
     }
 
     /// <summary>Gets the current game state (tick, tax info).</summary>
-    public async Task<GameState?> GetGameState([Service] AppDbContext db)
+    public async Task<GameState?> GetGameState([Service] AppDbContext db, [Service] IMemoryCache cache)
     {
+        // Use a very short cache to reduce DB reads when multiple panels request game state
+        // simultaneously or in rapid succession (e.g. dashboard + home page on navigation).
+        const string key = "gameState_singleton";
+        if (cache.TryGetValue(key, out GameState? cached) && cached is not null)
+        {
+            return cached;
+        }
+
         var gameState = await db.GameStates.FirstOrDefaultAsync();
         if (gameState is null)
         {
@@ -294,6 +303,8 @@ public sealed partial class Query
 
         await BuildingConfigurationService.ApplyDuePlansAsync(db, gameState.CurrentTick);
         await db.SaveChangesAsync();
+
+        cache.Set(key, gameState, TimeSpan.FromSeconds(8));
         return gameState;
     }
 

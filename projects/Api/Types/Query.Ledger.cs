@@ -5,22 +5,28 @@ using Api.Security;
 using Api.Utilities;
 using HotChocolate.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Api.Types;
 
 public sealed partial class Query
 {
+    private static readonly TimeSpan LedgerHistoryCacheDuration = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan LedgerCurrentYearCacheDuration = TimeSpan.FromSeconds(10);
+
     /// <summary>Returns a financial ledger summary for a company (requires auth — must own company).</summary>
     [Authorize]
     public async Task<CompanyLedgerSummary?> GetCompanyLedger(
         Guid companyId,
         int? gameYear,
         [Service] AppDbContext db,
-        [Service] IHttpContextAccessor httpContextAccessor)
+        [Service] IHttpContextAccessor httpContextAccessor,
+        [Service] IMemoryCache cache)
     {
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
 
         var company = await db.Companies
+            .AsNoTracking()
             .Include(c => c.Buildings)
             .FirstOrDefaultAsync(c => c.Id == companyId && c.PlayerId == userId);
 
@@ -32,14 +38,32 @@ public sealed partial class Query
         var currentTick = gameState?.CurrentTick ?? 0L;
         var currentGameYear = GameTime.GetGameYear(currentTick);
         var selectedGameYear = gameYear ?? currentGameYear;
+        var isCurrentYear = selectedGameYear == currentGameYear;
 
-        var allEntries = await db.LedgerEntries
-            .Where(e => e.CompanyId == companyId)
+        // Check cache — historical (non-current) years are immutable so can be cached longer.
+        var cacheKey = $"ledger_{companyId}_{selectedGameYear}";
+        var cacheDuration = isCurrentYear ? LedgerCurrentYearCacheDuration : LedgerHistoryCacheDuration;
+        if (cache.TryGetValue(cacheKey, out CompanyLedgerSummary? cachedSummary) && cachedSummary is not null)
+        {
+            return cachedSummary;
+        }
+
+        // Fetch only entries for the selected year — uses the (CompanyId, RecordedAtTick) index.
+        var startTick = GameTime.GetStartTickForGameYear(selectedGameYear);
+        var endTick = GameTime.GetEndTickForGameYear(selectedGameYear);
+
+        var entries = await db.LedgerEntries
+            .AsNoTracking()
+            .Where(e => e.CompanyId == companyId && e.RecordedAtTick >= startTick && e.RecordedAtTick <= endTick)
             .ToListAsync();
 
-        var entries = allEntries
-            .Where(entry => IsTickInGameYear(entry.RecordedAtTick, selectedGameYear))
-            .ToList();
+        // For history years we only need lightweight aggregates: tick + category + amount.
+        // Load all entries but project only the columns needed for grouping.
+        var historyProjection = await db.LedgerEntries
+            .AsNoTracking()
+            .Where(e => e.CompanyId == companyId)
+            .Select(e => new { e.RecordedAtTick, e.Category, e.Amount })
+            .ToListAsync();
 
         var totalRevenue = LedgerCalculator.GetTotalRevenue(entries);
         var totalPurchasingCosts = LedgerCalculator.GetTotalPurchasingCosts(entries);
@@ -53,11 +77,12 @@ public sealed partial class Query
         var totalStockPurchaseCashOut = LedgerCalculator.GetTotalStockPurchaseCashOut(entries);
         var totalStockSaleCashIn = LedgerCalculator.GetTotalStockSaleCashIn(entries);
         var taxableIncome = LedgerCalculator.ComputeTaxableIncome(entries);
-        var estimatedIncomeTax = selectedGameYear == currentGameYear
+        var estimatedIncomeTax = isCurrentYear
             ? GameTime.ComputeEstimatedIncomeTax(taxableIncome, gameState?.TaxRate ?? 0m)
             : totalTaxPaid;
 
         var ownedLots = await db.BuildingLots
+            .AsNoTracking()
             .Where(lot => lot.OwnerCompanyId == companyId)
             .ToListAsync();
 
@@ -66,6 +91,7 @@ public sealed partial class Query
 
         var buildingIds = company.Buildings.Select(b => b.Id).ToList();
         var inventories = await db.Inventories
+            .AsNoTracking()
             .Where(i => buildingIds.Contains(i.BuildingId))
             .Include(i => i.ResourceType)
             .Include(i => i.ProductType)
@@ -89,24 +115,27 @@ public sealed partial class Query
             })
             .ToList();
 
-        var history = allEntries
-            .GroupBy(entry => GameTime.GetGameYear(entry.RecordedAtTick))
-            .Select(group => BuildCompanyLedgerHistoryYear(group.Key, currentGameYear, gameState?.TaxRate ?? 0m, group.ToList()))
+        // Build history from the lightweight projection — no in-memory entity hydration needed.
+        var history = historyProjection
+            .GroupBy(e => GameTime.GetGameYear(e.RecordedAtTick))
+            .Select(group => BuildCompanyLedgerHistoryYearFromProjection(
+                group.Key, currentGameYear, gameState?.TaxRate ?? 0m,
+                group.Select(e => (e.RecordedAtTick, e.Category, e.Amount)).ToList()))
             .ToDictionary(item => item.GameYear);
 
         if (!history.ContainsKey(currentGameYear))
         {
-            history[currentGameYear] = BuildCompanyLedgerHistoryYear(currentGameYear, currentGameYear, gameState?.TaxRate ?? 0m, []);
+            history[currentGameYear] = BuildCompanyLedgerHistoryYearFromProjection(currentGameYear, currentGameYear, gameState?.TaxRate ?? 0m, []);
         }
 
         var incomeTaxDueAtTick = GameTime.GetIncomeTaxDueTickForGameYear(selectedGameYear);
 
-        return new CompanyLedgerSummary
+        var summary = new CompanyLedgerSummary
         {
             CompanyId = company.Id,
             CompanyName = company.Name,
             GameYear = selectedGameYear,
-            IsCurrentGameYear = selectedGameYear == currentGameYear,
+            IsCurrentGameYear = isCurrentYear,
             CurrentCash = company.Cash,
             TotalRevenue = totalRevenue,
             TotalPurchasingCosts = totalPurchasingCosts,
@@ -140,6 +169,9 @@ public sealed partial class Query
                 .OrderByDescending(item => item.GameYear)
                 .ToList(),
         };
+
+        cache.Set(cacheKey, summary, cacheDuration);
+        return summary;
     }
 
     /// <summary>Returns drill-down entries for a specific ledger category.</summary>
@@ -158,7 +190,9 @@ public sealed partial class Query
 
         if (!ownsCompany) return [];
 
+        // Uses the compound (CompanyId, Category, RecordedAtTick) index.
         var entriesQuery = db.LedgerEntries
+            .AsNoTracking()
             .Where(e => e.CompanyId == companyId && e.Category == category);
 
         if (gameYear.HasValue)
@@ -207,15 +241,30 @@ public sealed partial class Query
         decimal taxRate,
         List<LedgerEntry> entries)
     {
-        var totalRevenue = LedgerCalculator.GetTotalRevenue(entries);
-        var totalPurchasingCosts = LedgerCalculator.GetTotalPurchasingCosts(entries);
-        var totalShippingCosts = LedgerCalculator.GetTotalShippingCosts(entries);
-        var totalLaborCosts = LedgerCalculator.GetTotalLaborCosts(entries);
-        var totalEnergyCosts = LedgerCalculator.GetTotalEnergyCosts(entries);
-        var totalMarketingCosts = LedgerCalculator.GetTotalMarketingCosts(entries);
-        var totalTaxPaid = LedgerCalculator.GetTotalTaxPaid(entries);
-        var totalOtherCosts = LedgerCalculator.GetTotalOtherCosts(entries);
-        var taxableIncome = LedgerCalculator.ComputeTaxableIncome(entries);
+        var projections = entries.Select(e => (e.RecordedAtTick, e.Category, e.Amount)).ToList();
+        return BuildCompanyLedgerHistoryYearFromProjection(gameYear, currentGameYear, taxRate, projections);
+    }
+
+    /// <summary>
+    /// Builds a ledger history year summary from lightweight (RecordedAtTick, Category, Amount) projections,
+    /// avoiding the need to hydrate full LedgerEntry entities for historical data.
+    /// </summary>
+    private static CompanyLedgerHistoryYear BuildCompanyLedgerHistoryYearFromProjection(
+        int gameYear,
+        int currentGameYear,
+        decimal taxRate,
+        List<(long RecordedAtTick, string Category, decimal Amount)> projections)
+    {
+        var totalRevenue = projections.Where(e => e.Category == LedgerCategory.Revenue && e.Amount > 0).Sum(e => e.Amount);
+        var totalPurchasingCosts = Math.Abs(projections.Where(e => e.Category == LedgerCategory.PurchasingCost && e.Amount < 0).Sum(e => e.Amount));
+        var totalShippingCosts = Math.Abs(projections.Where(e => e.Category == LedgerCategory.ShippingCost && e.Amount < 0).Sum(e => e.Amount));
+        var totalLaborCosts = Math.Abs(projections.Where(e => e.Category == LedgerCategory.LaborCost && e.Amount < 0).Sum(e => e.Amount));
+        var totalEnergyCosts = Math.Abs(projections.Where(e => e.Category == LedgerCategory.EnergyCost && e.Amount < 0).Sum(e => e.Amount));
+        var totalMarketingCosts = Math.Abs(projections.Where(e => e.Category == LedgerCategory.Marketing && e.Amount < 0).Sum(e => e.Amount));
+        var totalTaxPaid = Math.Abs(projections.Where(e => e.Category == LedgerCategory.Tax && e.Amount < 0).Sum(e => e.Amount));
+        var totalOtherCosts = Math.Abs(projections.Where(e => e.Category == LedgerCategory.Other && e.Amount < 0).Sum(e => e.Amount));
+        // Taxable income = revenue minus all deductible operating costs (excluding tax itself).
+        var taxableIncome = Math.Max(totalRevenue - totalPurchasingCosts - totalShippingCosts - totalLaborCosts - totalEnergyCosts - totalMarketingCosts, 0m);
         var estimatedIncomeTax = gameYear == currentGameYear
             ? GameTime.ComputeEstimatedIncomeTax(taxableIncome, taxRate)
             : totalTaxPaid;
@@ -231,8 +280,8 @@ public sealed partial class Query
             TotalTaxPaid = totalTaxPaid,
             TaxableIncome = taxableIncome,
             EstimatedIncomeTax = estimatedIncomeTax,
-            FirstRecordedTick = entries.Count > 0 ? entries.Min(entry => entry.RecordedAtTick) : 0,
-            LastRecordedTick = entries.Count > 0 ? entries.Max(entry => entry.RecordedAtTick) : 0,
+            FirstRecordedTick = projections.Count > 0 ? projections.Min(e => e.RecordedAtTick) : 0,
+            LastRecordedTick = projections.Count > 0 ? projections.Max(e => e.RecordedAtTick) : 0,
         };
     }
 

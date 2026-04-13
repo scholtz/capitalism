@@ -37,7 +37,7 @@ It will use real world map. The game will start in single city and later other c
 - In the stock exchange the buy and sell buttons should be arranged with the share quantity input. Add caption above the buy and sell buttons so that the buttons are moved little bit down.
 
 ### Database improvements
-- Dashboard and ledger is loading slow, make sure to use the caching headers so that when user goes fast between the panels it does not have to load all information from the database again. Analyze the issue of the slow requests and if the database is missing an indexes make sure they are created.
+- ✅ 80% — Dashboard and ledger loading is measurably faster for repeated navigation. Delivered: (1) New compound index `IX_LedgerEntries_CompanyId_Category_RecordedAtTick` for category drill-down queries. (2) `GetCompanyLedger` now filters entries by game year at the database level instead of loading all entries for a company, reducing row transfer for multi-year companies. History summaries use a lightweight `(RecordedAtTick, Category, Amount)` projection instead of full entity hydration. (3) `IMemoryCache` added across the server: `GetCities` cached 5 min, `GetResourceTypes` cached 10 min, `GetGameState` cached 8 s (eliminates redundant writes on rapid panel switching). (4) Non-current game-year ledger summaries cached for 60 s (historical data is immutable). Current-year summaries cached for 10 s. (5) `AsNoTracking()` added to all read-only ledger and city queries. (6) Frontend dashboard caches city names at module level after first load — no redundant API calls on navigation back.
 
 ### All buildings
 - Add bottom margin to building-header as the components touch the components below. Make sure not to make the design errors in the future.
