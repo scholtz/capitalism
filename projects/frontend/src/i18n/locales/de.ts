@@ -1679,10 +1679,10 @@ export default {
     occupiedArea: 'Belegte Fläche',
     noRentSet: 'Nicht festgelegt',
     noRentHint: 'Legen Sie eine Miete pro m² fest, um Einkommen aus diesem Objekt zu erzielen.',
-    pendingRentNotice: 'Geplante Mietänderung: {rent} / m² aktiviert sich in {ticks} Ticks',
+    pendingRentNotice: 'Geplante Mietänderung: {rent} / m² aktiviert sich in {time}',
     rentDialogTitle: 'Mietänderung planen',
     rentDelayHint:
-      'Die neue Miete tritt nach einem Spieltag (24 Ticks) in Kraft. Die Belegung passt sich schrittweise an, basierend auf dem Vergleich Ihres Preises mit dem lokalen Marktdurchschnitt.',
+      'Die neue Miete tritt nach einem Spieltag (1 Tag) in Kraft. Die Belegung passt sich schrittweise an, basierend auf dem Vergleich Ihres Preises mit dem lokalen Marktdurchschnitt.',
     rentLabel: 'Neue Miete pro m²',
     rentPlaceholder: 'Miete pro m² eingeben',
     scheduleRentBtn: 'Änderung planen',

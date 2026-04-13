@@ -44,7 +44,7 @@ It will use real world map. The game will start in single city and later other c
 - In each building header right below the building name show chart of total costs, total revenue and total profit in the top building overview
 
 ### Show time instead of ticks
-- Instead of ticks everywhere in the game show the tick time and show the tick only as a title for better debugging
+- ✅ 90% — Instead of ticks everywhere in the game show the tick time and show the tick only as a title for better debugging. **Delivered**: `formatTickDuration(ticks, locale)` helper added to `gameTime.ts`; LeaderboardView game-time chip, BuildingDetailView upgrade banner / unit cells / upgrade pills / concurrent-upgrade list, LedgerView data-range header and income-tax schedule, OnboardingView configure status and first-sale celebration, CityMapView construction countdown, and PendingActionsTimeline all now show player-friendly game dates/durations as primary labels with raw tick numbers preserved in `title` attributes for debugging. Unit tests added for `formatTickDuration` covering hours, days, days+hours, edge cases, and locale variants.
 
 ### Onboarding details
 - Hide Sales Loop Status or Production Chain panel after user close it and do not show it any more until there is an error in the building. 

@@ -40,7 +40,7 @@ function formatApplyTime(appliesAtTick: number): string {
 }
 
 function actionDebugTitle(action: ScheduledActionSummary): string {
-  return `${t('pendingActions.appliesAtTick', { tick: action.appliesAtTick })} · ${t('pendingActions.ticksRemaining', { time: formatTickDuration(action.ticksRemaining, locale.value) })}`
+  return `Tick ${action.appliesAtTick} · ${formatTickDuration(action.ticksRemaining, locale.value)}`
 }
 </script>
 

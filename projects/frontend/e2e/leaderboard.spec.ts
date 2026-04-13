@@ -342,19 +342,20 @@ test.describe('Leaderboard tick-refresh stability', () => {
     const player1 = makePlayer({ id: 'player-tick-chip-1', displayName: 'Chip Tester' })
 
     const state = setupMockApi(page, { players: [player1] })
-    state.gameState.currentTick = 42
+    state.gameState.currentTick = 42 // Jan 02, 2000, 18:00
     state.gameState.tickIntervalSeconds = 1
     state.gameState.lastTickAtUtc = new Date(Date.now() - 500).toISOString()
 
     await page.goto('/leaderboard')
-    await expect(page.locator('.leaderboard-tick-value')).toContainText('42')
+    // Tick 42 = Jan 02, 2000, 18:00 in game time
+    await expect(page.locator('.leaderboard-tick-value')).toContainText('18:00')
 
     // Advance tick in mock state
-    state.gameState.currentTick = 43
+    state.gameState.currentTick = 43 // Jan 02, 2000, 19:00
     state.gameState.lastTickAtUtc = new Date().toISOString()
 
-    // Tick chip must reflect the new tick value
-    await expect(page.locator('.leaderboard-tick-value')).toContainText('43')
+    // Tick chip must reflect the new game time (19:00 instead of 18:00)
+    await expect(page.locator('.leaderboard-tick-value')).toContainText('19:00')
   })
 
   test('active companies tab is preserved after a background tick refresh', async ({ page }) => {

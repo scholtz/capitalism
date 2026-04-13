@@ -170,7 +170,7 @@ test.describe('Building detail upgrades', () => {
     const plannedTopLeftCell = getGridCell(plannedSection, 0, 0)
 
     await expect(plannedSecondaryDiagonal).toHaveClass(/link-state-none/)
-    await expect(plannedSection.getByText('Upgrade time: 0 ticks')).toBeVisible()
+    await expect(plannedSection.getByText('Upgrade time: 0')).toBeVisible()
 
     await plannedTopLeftCell.click()
     await page.getByRole('button', { name: 'Remove' }).click()
@@ -178,12 +178,12 @@ test.describe('Building detail upgrades', () => {
     await page.getByRole('button', { name: 'Branding' }).click()
 
     await expect(plannedTopLeftCell).toContainText('Branding')
-    await expect(plannedSection.getByText('Upgrade time: 3 ticks')).toBeVisible()
+    await expect(plannedSection.getByText('Upgrade time: 3 hours')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Store Upgrade' })).toBeEnabled()
 
     await page.getByRole('button', { name: 'Store Upgrade' }).click()
 
-    await expect(page.getByRole('status')).toContainText('The current building keeps running until the queued layout activates in 3 ticks.')
+    await expect(page.getByRole('status')).toContainText('The current building keeps running until the queued layout activates in 3 hours.')
     await expect(page.getByRole('heading', { name: 'Queued Upgrade' })).toHaveCount(0)
     await expect(currentPrimaryDiagonal).toHaveClass(/link-state-none/)
     await expect(currentSecondaryDiagonal).toHaveClass(/link-state-none/)
@@ -197,17 +197,17 @@ test.describe('Building detail upgrades', () => {
 
     await queuedSecondaryDiagonal.click()
     await expect(queuedSecondaryDiagonal).toHaveClass(/link-state-forward/)
-    await expect(queuedSection.getByText('Upgrade time: 3 ticks')).toBeVisible()
+    await expect(queuedSection.getByText('Upgrade time: 3 hours')).toBeVisible()
 
     await page.getByRole('button', { name: 'Store Upgrade' }).click()
 
-    await expect(page.getByRole('status')).toContainText('The current building keeps running until the queued layout activates in 3 ticks.')
+    await expect(page.getByRole('status')).toContainText('The current building keeps running until the queued layout activates in 3 hours.')
 
     state.gameState.currentTick += 1
     await page.reload()
 
     const refreshedCurrentSection = getGridSection(page, 'Current Configuration')
-    await expect(page.getByRole('status')).toContainText('The current building keeps running until the queued layout activates in 2 ticks.')
+    await expect(page.getByRole('status')).toContainText('The current building keeps running until the queued layout activates in 2 hours.')
     await expect(refreshedCurrentSection).toContainText('Purchase')
 
     await page.getByRole('button', { name: 'Edit Building' }).click()
@@ -9273,7 +9273,7 @@ test.describe('Property management panel', () => {
     const notice = page.locator('.pending-rent-notice')
     await expect(notice).toBeVisible()
     await expect(notice).toContainText('€18.00')
-    await expect(notice).toContainText('20 ticks')
+    await expect(notice).toContainText('20 hours')
   })
 
   test('opens rent dialog and schedules a new rent', async ({ page }) => {
@@ -9294,7 +9294,7 @@ test.describe('Property management panel', () => {
     // Dialog should open
     await expect(panel.locator('.rent-dialog')).toBeVisible()
     // Should show the delay hint
-    await expect(panel.locator('.rent-dialog')).toContainText('24 ticks')
+    await expect(panel.locator('.rent-dialog')).toContainText('1 day')
 
     // Fill new rent
     await panel.locator('.rent-dialog input[type="number"]').fill('20')

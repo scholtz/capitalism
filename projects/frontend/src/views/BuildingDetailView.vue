@@ -3973,7 +3973,9 @@ watch(
             {{
               t('property.pendingRentNotice', {
                 rent: '€' + building.pendingPricePerSqm.toFixed(2),
-                ticks: building.pendingPriceActivationTick != null ? Math.max(0, building.pendingPriceActivationTick - currentTick) : '—',
+                time: building.pendingPriceActivationTick != null
+                  ? formatTickDuration(Math.max(0, building.pendingPriceActivationTick - currentTick), locale)
+                  : '—',
               })
             }}
           </span>

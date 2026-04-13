@@ -982,8 +982,8 @@ test.describe('Guest onboarding wizard', () => {
     // Tick panel should explain time progression
     await expect(page.locator('.guest-tick-panel')).toBeVisible()
     await expect(page.getByText('Wait for the next tick')).toBeVisible()
-    // Current tick should be displayed — use a regex so the test is resilient to mock data changes
-    await expect(page.getByText(/Current simulation tick: \d+\./)).toBeVisible()
+    // Current game time should be displayed — check for year 2000 (game start year)
+    await expect(page.locator('.tick-status')).toContainText('2000')
   })
 
   test('guest completion screen shows tick countdown timer in the tick panel (AC 8)', async ({ page }) => {
@@ -1647,7 +1647,7 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     await expect(page.getByText('The market benchmark is $45.', { exact: false })).toBeVisible()
     await expect(page.getByText('Enable public sales')).toBeVisible()
     await expect(page.getByText('Wait for the next tick')).toBeVisible()
-    await expect(page.getByText('Current simulation tick: 42.')).toBeVisible()
+    await expect(page.locator('.tick-status')).toContainText('2000')
   })
 
   test('configure-guide cash step shows remaining balance after lot purchases (ROADMAP: show money available)', async ({ page }) => {
@@ -2050,8 +2050,8 @@ test.describe('Guided first-profit onboarding (post-completion)', () => {
     // Business-live panel should appear automatically (auto-detection fired on load)
     await expect(page.locator('.business-live-panel')).toBeVisible()
 
-    // Should show tick info mentioning the current tick
-    await expect(page.locator('.business-live-panel')).toContainText('55')
+    // Should show tick info mentioning game time (year 2000 for any early-game tick)
+    await expect(page.locator('.business-live-panel')).toContainText('2000')
 
     // Should show the next-tick process steps
     await expect(page.locator('.business-live-panel')).toContainText('Raw materials are purchased')
@@ -3555,23 +3555,24 @@ test.describe('Empty-lots graceful degradation (AC11)', () => {
 // ─────────────────────────────────────────────────────────────────
 test.describe('Tick feedback connected to simulation state', () => {
   test('guest step-5 tick panel shows the current tick from game state', async ({ page }) => {
-    // The tick number shown in the guest save-progress screen must come from the
+    // The game time shown in the guest save-progress screen must come from the
     // live gameState API response, not from a hardcoded constant in the UI.
-    // This test sets a non-default tick value and verifies the panel uses it.
+    // tick 77 = Jan 04, 2000 (different from the default tick 42 = Jan 02, 2000)
     const state = setupMockApi(page)
     state.gameState.currentTick = 77 // Non-default value (default mock is 42)
     await page.goto('/onboarding')
     await completeGuestSteps1to4(page)
 
     await expect(page.getByRole('heading', { name: 'Save Your Progress' })).toBeVisible()
-    // The tick panel must reference exactly the tick number returned by the API
+    // The tick panel must reference the game time for the API tick (Jan 04 vs default Jan 02)
     await expect(page.locator('.guest-tick-panel')).toBeVisible()
-    await expect(page.getByText(/Current simulation tick: 77\./)).toBeVisible()
+    await expect(page.locator('.tick-status')).toContainText('Jan 04')
   })
 
   test('authenticated completion screen shows the correct tick from game state', async ({ page }) => {
     // After authentication + FinishOnboarding, the configure-guide tick step must
-    // show the tick number from the authoritative gameState response.
+    // show the game time from the authoritative gameState response.
+    // tick 99 = Jan 05, 2000 (different from default tick 42 = Jan 02, 2000)
     const player = makePlayer()
     const state = setupMockApi(page, { players: [player] })
     state.currentUserId = player.id
@@ -3583,8 +3584,8 @@ test.describe('Tick feedback connected to simulation state', () => {
     await completeGuidedOnboarding(page, 'Tick Verify Corp')
 
     await expect(page.getByRole('heading', { name: /Your Empire Has Launched/i })).toBeVisible()
-    // Configure-guide tick step must reference the server-provided tick (99)
-    await expect(page.getByText('Current simulation tick: 99.')).toBeVisible()
+    // Configure-guide tick step must reference the server-provided tick (Jan 05 for tick 99)
+    await expect(page.locator('.tick-status')).toContainText('Jan 05')
   })
 })
 
