@@ -24,6 +24,13 @@ import {
 } from '@/lib/linkHelpers'
 import { annotateExchangeOffers, selectOptimalOffer, sortExchangeOffers, detectLogisticsTrap, type AnnotatedExchangeOffer, type ExchangeSortBy } from '@/lib/globalExchange'
 import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedResourceDescription, getLocalizedResourceName, getProductImageUrl, getResourceImageUrl } from '@/lib/catalogPresentation'
+import {
+  PRODUCTION_PANEL_DISMISSED_KEY,
+  SALES_PANEL_DISMISSED_KEY,
+  isBuildingPanelDismissed,
+  dismissBuildingPanel,
+  shouldShowPanel,
+} from '@/lib/panelDismissal'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
@@ -455,66 +462,28 @@ const chainStatus = computed(() => {
 
 // ── Panel dismissal state ──
 
-/**
- * localStorage key that stores a JSON array of building IDs for which the
- * production-chain guidance panel has been dismissed by the player.
- */
-const PRODUCTION_PANEL_DISMISSED_KEY = 'bdpanel_production_dismissed'
-/**
- * localStorage key that stores a JSON array of building IDs for which the
- * sales-chain guidance panel has been dismissed by the player.
- */
-const SALES_PANEL_DISMISSED_KEY = 'bdpanel_sales_dismissed'
-
 /** Whether the production-chain panel has been dismissed for the current building. */
 const productionChainPanelDismissed = ref(false)
 /** Whether the sales-chain panel has been dismissed for the current building. */
 const salesChainPanelDismissed = ref(false)
 
-function loadDismissedIds(key: string): string[] {
-  try {
-    const raw = localStorage.getItem(key)
-    return raw ? (JSON.parse(raw) as string[]) : []
-  } catch {
-    return []
-  }
-}
-
-function saveDismissedIds(key: string, ids: string[]): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(ids))
-  } catch {
-    // localStorage unavailable — ignore
-  }
-}
-
 function loadPanelDismissalState(bid: string): void {
-  const prodDismissed = loadDismissedIds(PRODUCTION_PANEL_DISMISSED_KEY)
-  productionChainPanelDismissed.value = prodDismissed.includes(bid)
-  const salesDismissed = loadDismissedIds(SALES_PANEL_DISMISSED_KEY)
-  salesChainPanelDismissed.value = salesDismissed.includes(bid)
+  productionChainPanelDismissed.value = isBuildingPanelDismissed(PRODUCTION_PANEL_DISMISSED_KEY, bid)
+  salesChainPanelDismissed.value = isBuildingPanelDismissed(SALES_PANEL_DISMISSED_KEY, bid)
 }
 
 function dismissProductionChainPanel(): void {
   const bid = buildingId.value
   if (!bid) return
+  dismissBuildingPanel(PRODUCTION_PANEL_DISMISSED_KEY, bid)
   productionChainPanelDismissed.value = true
-  const ids = loadDismissedIds(PRODUCTION_PANEL_DISMISSED_KEY)
-  if (!ids.includes(bid)) {
-    ids.push(bid)
-    saveDismissedIds(PRODUCTION_PANEL_DISMISSED_KEY, ids)
-  }
 }
 
 function dismissSalesChainPanel(): void {
   const bid = buildingId.value
   if (!bid) return
+  dismissBuildingPanel(SALES_PANEL_DISMISSED_KEY, bid)
   salesChainPanelDismissed.value = true
-  const ids = loadDismissedIds(SALES_PANEL_DISMISSED_KEY)
-  if (!ids.includes(bid)) {
-    ids.push(bid)
-    saveDismissedIds(SALES_PANEL_DISMISSED_KEY, ids)
-  }
 }
 
 /**
@@ -528,11 +497,7 @@ const showProductionChainPanel = computed(() => {
   if (building.value?.type !== 'FACTORY') return false
   if (activeUnits.value.length === 0 && pendingConfiguration.value === null) return false
   if (showStarterSetupBanner.value) return false
-  // Respect dismissal: keep hidden only when the chain is complete (normal play).
-  // If the chain is incomplete (error condition), override the dismissal so the player
-  // is alerted that action is required.
-  if (productionChainPanelDismissed.value && chainStatus.value.isChainComplete) return false
-  return true
+  return shouldShowPanel(productionChainPanelDismissed.value, chainStatus.value.isChainComplete)
 })
 
 /**
@@ -570,11 +535,7 @@ const showSalesChainPanel = computed(() => {
   if (building.value?.type !== 'SALES_SHOP') return false
   if (activeUnits.value.length === 0 && pendingConfiguration.value === null) return false
   if (showSalesShopStarterBanner.value) return false
-  // Respect dismissal: keep hidden only when the chain is complete (normal play).
-  // If the chain is incomplete (error condition), override the dismissal so the player
-  // is alerted that action is required.
-  if (salesChainPanelDismissed.value && shopChainStatus.value.isChainComplete) return false
-  return true
+  return shouldShowPanel(salesChainPanelDismissed.value, shopChainStatus.value.isChainComplete)
 })
 
 type LinkChangeSummaryEntry = {
