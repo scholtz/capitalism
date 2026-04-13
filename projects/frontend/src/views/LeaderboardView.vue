@@ -8,9 +8,10 @@ import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useGameStateStore } from '@/stores/gameState'
 import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { deepEqual } from '@/lib/utils'
+import { formatInGameTime } from '@/lib/gameTime'
 import type { PlayerRanking, CompanyRanking } from '@/types'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
@@ -150,6 +151,10 @@ function rankBadge(index: number): string {
 
 const currentPlayerId = computed(() => auth.player?.id ?? null)
 const currentTick = computed(() => gameStateStore.gameState?.currentTick ?? null)
+const currentGameTime = computed(() => {
+  const utc = gameStateStore.gameState?.currentGameTimeUtc
+  return utc ? formatInGameTime(utc, locale.value) : null
+})
 </script>
 
 <template>
@@ -160,9 +165,12 @@ const currentTick = computed(() => gameStateStore.gameState?.currentTick ?? null
         <h1 class="leaderboard-title">{{ t('leaderboard.title') }}</h1>
         <p class="leaderboard-subtitle">{{ t('leaderboard.subtitle') }}</p>
         <div class="leaderboard-hero-meta">
-          <span class="leaderboard-tick-chip" :title="t('leaderboard.tickHint')">
+          <span
+            class="leaderboard-tick-chip"
+            :title="currentTick !== null ? t('leaderboard.tickHint') + ' #' + currentTick : t('leaderboard.tickHint')"
+          >
             <span class="leaderboard-tick-label">{{ t('leaderboard.tick') }}</span>
-            <span class="leaderboard-tick-value">{{ currentTick !== null ? currentTick : '—' }}</span>
+            <span class="leaderboard-tick-value">{{ currentGameTime !== null ? currentGameTime : '—' }}</span>
           </span>
         </div>
       </div>

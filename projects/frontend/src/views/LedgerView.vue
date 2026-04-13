@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { gqlRequest } from '@/lib/graphql'
-import { formatInGameTime } from '@/lib/gameTime'
+import { formatInGameTime, formatGameTickTime } from '@/lib/gameTime'
 import type { CompanyLedgerSummary, LedgerEntryResult } from '@/types'
 
 const { t, locale } = useI18n()
@@ -185,16 +185,20 @@ useTickRefresh(async () => {
         <span>{{ t('ledger.noHistoryYet') }}</span>
       </div>
       <p v-else class="tick-range-note">
-        {{ t('ledger.dataRange', { from: ledger.firstRecordedTick, to: ledger.lastRecordedTick }) }}
+        {{ t('ledger.dataRange', {
+          fromTime: formatGameTickTime(ledger.firstRecordedTick, locale),
+          toTime: formatGameTickTime(ledger.lastRecordedTick, locale),
+        }) }}
       </p>
 
       <div class="year-meta-row">
         <div class="statement-card meta-card">
           <h2 class="statement-title">🧾 {{ t('ledger.incomeTaxSchedule') }}</h2>
           <p class="meta-copy">
-            {{ ledger.isIncomeTaxSettled ? t('ledger.incomeTaxSettledAtTick', { tick: ledger.incomeTaxDueAtTick }) : t('ledger.incomeTaxDueAtTick', { tick: ledger.incomeTaxDueAtTick }) }}
+            {{ ledger.isIncomeTaxSettled
+              ? t('ledger.incomeTaxSettledAtTick', { time: formatGameTime(ledger.incomeTaxDueGameTimeUtc) })
+              : t('ledger.incomeTaxDueAtTick', { time: formatGameTime(ledger.incomeTaxDueGameTimeUtc) }) }}
           </p>
-          <p class="meta-copy">{{ t('ledger.incomeTaxDueAtTime', { time: formatGameTime(ledger.incomeTaxDueGameTimeUtc) }) }}</p>
           <p class="meta-copy">{{ t('ledger.incomeTaxDueYear', { year: ledger.incomeTaxDueGameYear }) }}</p>
         </div>
 

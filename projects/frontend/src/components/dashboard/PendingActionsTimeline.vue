@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { formatGameTickTime } from '@/lib/gameTime'
+import { formatGameTickTime, formatTickDuration } from '@/lib/gameTime'
 import type { ScheduledActionSummary } from '@/types'
 
 const { t, locale } = useI18n()
@@ -40,7 +40,7 @@ function formatApplyTime(appliesAtTick: number): string {
 }
 
 function actionDebugTitle(action: ScheduledActionSummary): string {
-  return `${t('pendingActions.appliesAtTick', { tick: action.appliesAtTick })} · ${t('pendingActions.ticksRemaining', { ticks: action.ticksRemaining })}`
+  return `${t('pendingActions.appliesAtTick', { tick: action.appliesAtTick })} · ${t('pendingActions.ticksRemaining', { time: formatTickDuration(action.ticksRemaining, locale.value) })}`
 }
 </script>
 

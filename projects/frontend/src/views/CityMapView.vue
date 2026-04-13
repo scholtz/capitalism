@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useGameStateStore } from '@/stores/gameState'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
+import { formatTickDuration } from '@/lib/gameTime'
 import {
   getLotStatus as lotStatusFromOwnership,
   getLotMarkerColor as markerColorFromStatus,
@@ -797,8 +798,11 @@ watch(viewMode, async (mode) => {
                   </div>
                   <div v-if="selectedBuildingType" class="cost-row construction-time-row">
                     <span class="cost-label">{{ t('cityMap.constructionTime') }}</span>
-                    <span class="cost-value construction-ticks">
-                      {{ t('cityMap.constructionTicks', { ticks: constructionTicksForType(selectedBuildingType) }) }}
+                    <span
+                      class="cost-value construction-ticks"
+                      :title="constructionTicksForType(selectedBuildingType) + ' ticks'"
+                    >
+                      {{ t('cityMap.constructionTicks', { time: formatTickDuration(constructionTicksForType(selectedBuildingType), locale) }) }}
                     </span>
                   </div>
                   <div v-if="selectedCompany" class="cost-row">
@@ -842,9 +846,12 @@ watch(viewMode, async (mode) => {
                 {{
                   t('cityMap.constructionStartedBody', {
                     type: formatBuildingType(justPurchasedBuildingType ?? 'FACTORY'),
-                    ticks: justPurchasedConstructionCompletesAtTick
-                      ? constructionTicksRemaining(justPurchasedConstructionCompletesAtTick)
-                      : constructionTicksForType(justPurchasedBuildingType ?? 'FACTORY'),
+                    time: formatTickDuration(
+                      justPurchasedConstructionCompletesAtTick
+                        ? constructionTicksRemaining(justPurchasedConstructionCompletesAtTick)
+                        : constructionTicksForType(justPurchasedBuildingType ?? 'FACTORY'),
+                      locale
+                    ),
                   })
                 }}
               </p>
@@ -880,10 +887,14 @@ watch(viewMode, async (mode) => {
                 {{ selectedLot.building.name }}
                 ({{ formatBuildingType(selectedLot.building.type) }})
               </p>
-              <p class="construction-ticks-info" data-testid="construction-ticks-remaining">
+              <p
+                class="construction-ticks-info"
+                data-testid="construction-ticks-remaining"
+                :title="constructionTicksRemaining(selectedLot.building.constructionCompletesAtTick) + ' ticks'"
+              >
                 {{
                   t('cityMap.ticksRemaining', {
-                    ticks: constructionTicksRemaining(selectedLot.building.constructionCompletesAtTick),
+                    time: formatTickDuration(constructionTicksRemaining(selectedLot.building.constructionCompletesAtTick), locale),
                   })
                 }}
               </p>

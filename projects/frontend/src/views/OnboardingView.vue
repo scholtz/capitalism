@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
 import { computeSimulatedProfit, trackOnboardingEvent } from '@/lib/onboardingAnalytics'
 import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedRecipeIngredientName, getLocalizedResourceName, getProductImageUrl } from '@/lib/catalogPresentation'
+import { formatGameTickTime } from '@/lib/gameTime'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import {
   canProceedStep3 as checkCanProceedStep3,
@@ -942,10 +943,6 @@ function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`
 }
 
-function formatNumber(value: number): string {
-  return value.toLocaleString(locale.value)
-}
-
 /** Returns the translated label for a building unit type, falling back to the raw string. */
 function getUnitTypeLabel(unitType: string): string {
   const key = `buildingDetail.unitTypes.${unitType}`
@@ -1432,7 +1429,7 @@ useTickRefresh(async () => {
           <div>
             <strong>{{ t('onboarding.configureStepTick') }}</strong>
             <p>{{ t('onboarding.configureStepTickDesc') }}</p>
-            <p class="tick-status">{{ t('onboarding.configureStepTickStatus', { tick: formatNumber(gameState.currentTick) }) }}</p>
+            <p class="tick-status">{{ t('onboarding.configureStepTickStatus', { time: formatGameTickTime(gameState.currentTick, locale) }) }}</p>
             <p v-if="tickCountdown" class="tick-countdown" role="timer">{{ tickCountdown }}</p>
           </div>
         </div>
@@ -1672,7 +1669,7 @@ useTickRefresh(async () => {
                   <li>{{ t('onboarding.nextTickProcessStep3') }}</li>
                 </ol>
                 <p v-if="gameState" class="tick-status">
-                  {{ t('onboarding.configureStepTickStatus', { tick: formatNumber(gameState.currentTick) }) }}
+                  {{ t('onboarding.configureStepTickStatus', { time: formatGameTickTime(gameState.currentTick, locale) }) }}
                 </p>
                 <p v-if="tickCountdown" class="tick-countdown" role="timer">{{ tickCountdown }}</p>
               </div>
@@ -1765,13 +1762,13 @@ useTickRefresh(async () => {
               </div>
               <div v-if="firstSaleMission.firstSaleTick !== null" class="first-sale-stat">
                 <dt>{{ t('onboarding.firstSaleCelebrationTick') }}</dt>
-                <dd>{{ formatNumber(firstSaleMission.firstSaleTick) }}</dd>
+                <dd :title="'tick #' + firstSaleMission.firstSaleTick">{{ formatGameTickTime(firstSaleMission.firstSaleTick, locale) }}</dd>
               </div>
             </dl>
           </div>
 
           <div v-if="gameState" class="business-live-tick">
-            <p class="tick-status">{{ t('onboarding.businessLiveTickInfo', { tick: formatNumber(gameState.currentTick) }) }}</p>
+            <p class="tick-status" :title="'tick #' + gameState.currentTick">{{ t('onboarding.businessLiveTickInfo', { time: formatGameTickTime(gameState.currentTick, locale) }) }}</p>
             <p v-if="tickCountdown" class="tick-countdown" role="timer">{{ tickCountdown }}</p>
           </div>
 

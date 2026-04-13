@@ -41,6 +41,7 @@ import {
 import { deepEqual } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 import { useGameStateStore } from '@/stores/gameState'
+import { formatTickDuration, formatGameTickTime } from '@/lib/gameTime'
 import { getUnitResourceHistoryItemKey, type UnitResourceHistoryItemOption } from '@/lib/unitResourceHistory'
 import { buildPurchaseVendorOptions, collectSameCityVendorItemKeys, getPurchaseSelectorItemKey, sortPurchaseSelectorItems } from '@/lib/purchaseSelector'
 import { getSalesUnitProductOptions } from '@/lib/salesUnitProductPicker'
@@ -4122,11 +4123,14 @@ watch(
       <div v-if="isUpgradeInProgress" class="upgrade-banner" role="status">
         <div>
           <strong>{{ t('buildingDetail.upgradeQueuedTitle') }}</strong>
-          <p>{{ t('buildingDetail.upgradeQueuedBody', { ticks: remainingUpgradeTicks }) }}</p>
+          <p>{{ t('buildingDetail.upgradeQueuedBody', { time: formatTickDuration(remainingUpgradeTicks, locale) }) }}</p>
         </div>
         <div class="upgrade-banner-actions">
-          <div class="upgrade-pill">
-            {{ t('buildingDetail.upgradeAppliesAt', { tick: pendingConfiguration!.appliesAtTick }) }}
+          <div
+            class="upgrade-pill"
+            :title="t('buildingDetail.upgradeAppliesAt', { time: pendingConfiguration!.appliesAtTick })"
+          >
+            {{ t('buildingDetail.upgradeAppliesAt', { time: formatGameTickTime(pendingConfiguration!.appliesAtTick, locale) }) }}
           </div>
           <button v-if="!isEditing" class="btn btn-danger btn-sm" :disabled="cancellingPlan" @click="cancelPlan">
             {{ cancellingPlan ? t('common.loading') : t('buildingDetail.cancelPlan') }}
@@ -4154,7 +4158,7 @@ watch(
             <span class="concurrent-upgrade-pos">({{ u.gridX }}, {{ u.gridY }})</span>
             <span class="concurrent-upgrade-arrow">→</span>
             <span class="concurrent-upgrade-level">{{ t('buildingDetail.unitUpgrade.nextLevel', { level: u.toLevel }) }}</span>
-            <span class="concurrent-upgrade-ticks">{{ t('buildingDetail.unitUpgrade.ticksRemaining', { ticks: u.ticksRemaining }) }}</span>
+            <span class="concurrent-upgrade-ticks" :title="u.ticksRemaining + ' ticks'">{{ t('buildingDetail.unitUpgrade.ticksRemaining', { time: formatTickDuration(u.ticksRemaining, locale) }) }}</span>
           </li>
         </ul>
       </div>
@@ -4485,8 +4489,14 @@ watch(
             </div>
 
             <div class="upgrade-summary">
-              <span class="upgrade-summary-pill">{{ t('buildingDetail.currentTickLabel', { tick: currentTick }) }}</span>
-              <span class="upgrade-summary-pill">{{ t('buildingDetail.totalUpgradeTicks', { ticks: draftTotalTicks }) }}</span>
+              <span
+                class="upgrade-summary-pill"
+                :title="'Tick #' + currentTick"
+              >{{ t('buildingDetail.currentTickLabel', { time: gameStateStore.gameState ? formatGameTickTime(currentTick, locale) : String(currentTick) }) }}</span>
+              <span
+                class="upgrade-summary-pill"
+                :title="draftTotalTicks + ' ticks'"
+              >{{ t('buildingDetail.totalUpgradeTicks', { time: formatTickDuration(draftTotalTicks, locale) }) }}</span>
               <span class="upgrade-summary-pill">{{ t('buildingDetail.totalBuildCost', { cost: formatCurrency(draftConstructionCost) }) }}</span>
               <span v-if="projectedCompanyCashAfterApply != null" class="upgrade-summary-pill">
                 {{ t('buildingDetail.cashAfterApply', { cash: formatCurrency(projectedCompanyCashAfterApply) }) }}
@@ -4595,8 +4605,13 @@ watch(
                             :style="{ width: `${Math.round((getUnitInventorySummary(getUnitAtFrom(plannedUnits, x, y))!.fillPercent ?? 0) * 100)}%` }"
                           ></span>
                         </div>
-                        <span v-if="getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) > 0" class="cell-pending" aria-hidden="true">
-                          {{ t('buildingDetail.unitUnavailableFor', { ticks: getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) }) }}
+                        <span
+                          v-if="getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) > 0"
+                          class="cell-pending"
+                          aria-hidden="true"
+                          :title="getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!) + ' ticks'"
+                        >
+                          {{ t('buildingDetail.unitUnavailableFor', { time: formatTickDuration(getDisplayedTicks(getUnitAtFrom(plannedUnits, x, y)!), locale) }) }}
                         </span>
                         <span v-if="isUnitReverting(getUnitAtFrom(plannedUnits, x, y))" class="cell-reverting" aria-hidden="true">{{ t('buildingDetail.reverting') }}</span>
                       </template>
@@ -4731,8 +4746,12 @@ watch(
                 <span v-if="getDraftUnitConstructionCostLabel(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y))" class="stat">
                   {{ t('buildingDetail.unitCost', { cost: getDraftUnitConstructionCostLabel(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)) }) }}
                 </span>
-                <span class="stat" v-if="getDisplayedTicks(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!) > 0">
-                  {{ t('buildingDetail.unitUnavailableFor', { ticks: getDisplayedTicks(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!) }) }}
+                <span
+                  class="stat"
+                  v-if="getDisplayedTicks(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!) > 0"
+                  :title="getDisplayedTicks(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!) + ' ticks'"
+                >
+                  {{ t('buildingDetail.unitUnavailableFor', { time: formatTickDuration(getDisplayedTicks(getUnitAtFrom(plannedUnits, selectedCell.x, selectedCell.y)!), locale) }) }}
                 </span>
               </div>
               <div class="unit-links">
@@ -5362,10 +5381,10 @@ watch(
                   <div class="unit-upgrade-progress-badge">⏳</div>
                   <div class="unit-upgrade-progress-body">
                     <strong>{{ t('buildingDetail.unitUpgrade.pendingTitle') }}</strong>
-                    <p class="unit-upgrade-progress-desc">
+                    <p class="unit-upgrade-progress-desc" :title="selectedCellPendingUpgrade.ticksRemaining + ' ticks remaining'">
                       {{ t('buildingDetail.unitUpgrade.pendingBody', {
                         level: selectedCellPendingUpgrade.level,
-                        ticks: selectedCellPendingUpgrade.ticksRemaining,
+                        time: formatTickDuration(selectedCellPendingUpgrade.ticksRemaining, locale),
                       }) }}
                     </p>
                     <!-- Downtime notice: unit is offline during upgrade -->
@@ -5424,8 +5443,11 @@ watch(
                     </div>
                   </div>
                   <!-- Downtime notice shown before confirming the upgrade -->
-                  <p class="unit-upgrade-downtime-notice available">
-                    {{ t('buildingDetail.unitUpgrade.availableDowntimeNotice', { ticks: selectedCellUpgradeInfo.upgradeTicks }) }}
+                  <p
+                    class="unit-upgrade-downtime-notice available"
+                    :title="selectedCellUpgradeInfo.upgradeTicks + ' ticks'"
+                  >
+                    {{ t('buildingDetail.unitUpgrade.availableDowntimeNotice', { time: formatTickDuration(selectedCellUpgradeInfo.upgradeTicks, locale) }) }}
                   </p>
                   <div class="unit-upgrade-meta">
                     <span class="unit-upgrade-cost">{{ t('buildingDetail.unitUpgrade.cost', { cost: formatCurrency(selectedCellUpgradeInfo.upgradeCost) }) }}</span>
