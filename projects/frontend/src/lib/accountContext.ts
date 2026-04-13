@@ -34,6 +34,10 @@ export function getActiveAccountName<TCompany extends CompanyAccountSnapshot>(pl
   return player?.displayName ?? null
 }
 
+export function getActiveAccountOption<TCompany extends CompanyAccountSnapshot>(player: PlayerAccountSnapshot, companies: readonly TCompany[]): AccountOption<TCompany> | null {
+  return buildAccountOptions(player, companies).find((option) => option.isActive) ?? null
+}
+
 export function buildAccountOptions<TCompany extends CompanyAccountSnapshot>(player: PlayerAccountSnapshot, companies: readonly TCompany[]): AccountOption<TCompany>[] {
   const isCompanyAccountActive = player?.activeAccountType === 'COMPANY' && !!player.activeCompanyId
 

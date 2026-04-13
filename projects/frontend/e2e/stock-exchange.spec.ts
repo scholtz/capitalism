@@ -26,6 +26,12 @@ async function openTradePanel(page: Page, companyName: string) {
   await row.getByRole('button', { name: 'Trade' }).click()
 }
 
+async function switchNavbarAccount(page: Page, accountName: string) {
+  const switcher = page.locator('.account-switcher')
+  await switcher.getByRole('button').click()
+  await switcher.getByRole('menuitemradio', { name: new RegExp(accountName) }).click()
+}
+
 test.describe('Stock exchange', () => {
   test('market overview shows all listed companies in a sortable table', async ({ page }) => {
     const player = makePlayer({
@@ -336,7 +342,7 @@ test.describe('Stock exchange', () => {
     await expect(tradePanel.getByRole('status')).toContainText('Sold 500 shares in SellTest Corp.')
   })
 
-  test('player selects trading account inline — no top-nav switching required', async ({ page }) => {
+  test('selected navbar company context stays visible on the stock exchange and drives trading', async ({ page }) => {
     const player = makePlayer({
       personalCash: 50000,
       companies: [makeControlledCompany({ id: 'company-home', name: 'Home Holdings', cash: 400000 })],
@@ -374,25 +380,29 @@ test.describe('Stock exchange', () => {
     state.currentToken = `token-${player.id}`
 
     await authenticateViaLocalStorage(page, `token-${player.id}`)
-    await page.goto('/stocks')
+    await page.goto('/dashboard')
+
+    await expect(page.locator('.account-switcher')).toBeVisible()
+    await switchNavbarAccount(page, 'Home Holdings')
+    await expect(page.locator('.account-trigger-name')).toContainText('Home Holdings')
+
+    await page.getByTitle('Stocks').click()
+    await expect(page).toHaveURL(/\/stocks/)
+    await expect(page.locator('.account-switcher')).toBeVisible()
+    await expect(page.locator('.account-trigger-name')).toContainText('Home Holdings')
 
     await openTradePanel(page, 'AccountTarget Ltd')
 
     const tradePanel = page.locator('.trade-panel')
+    await expect(tradePanel.getByLabel(/Trade with AccountTarget/)).toHaveCount(0)
+    await expect(tradePanel.getByText('Trading as', { exact: true })).toBeVisible()
+    await expect(tradePanel.locator('.trade-order-name')).toContainText('Home Holdings')
+    await expect(tradePanel.getByText('Order actions', { exact: true })).toBeVisible()
 
-    // Account selector must be visible inside the trade panel
-    const accountSelect = tradePanel.getByLabel(/Trade with AccountTarget/)
-    await expect(accountSelect).toBeVisible()
-
-    // Switch to company account in-context (must use string label, not regex, for selectOption)
-    await accountSelect.selectOption({ value: 'COMPANY:company-home' })
-
-    // Buy using the company account
     const qtyInput = tradePanel.getByLabel(/Share quantity AccountTarget/)
     await qtyInput.fill('100')
     await tradePanel.getByRole('button', { name: /Buy @ / }).click()
 
-    // Success message should appear near the action buttons
     await expect(tradePanel.getByRole('status')).toContainText('Bought 100 shares in AccountTarget Ltd.')
   })
 
@@ -738,6 +748,8 @@ test.describe('Stock exchange', () => {
     const player = makePlayer({
       personalCash: 100000,
       companies: [makeControlledCompany({ id: 'company-ledger', name: 'Ledger Holdings', cash: 450000 })],
+      activeAccountType: 'COMPANY',
+      activeCompanyId: 'company-ledger',
     })
     const rival = makePlayer({
       id: 'player-ledger',
@@ -773,7 +785,8 @@ test.describe('Stock exchange', () => {
 
     await openTradePanel(page, 'Ledger Target')
     const tradePanel = page.locator('.trade-panel')
-    await tradePanel.getByLabel(/Trade with Ledger Target/).selectOption({ value: 'COMPANY:company-ledger' })
+    await expect(page.locator('.account-trigger-name')).toContainText('Ledger Holdings')
+    await expect(tradePanel.getByLabel(/Trade with Ledger Target/)).toHaveCount(0)
     await tradePanel.getByLabel(/Share quantity Ledger Target/).fill('100')
     await tradePanel.getByRole('button', { name: /Buy @ / }).click()
     await expect(tradePanel.getByRole('status')).toContainText('Bought 100 shares in Ledger Target.')
@@ -859,7 +872,12 @@ test.describe('Stock exchange', () => {
   })
 
   test('personal trade history records a buy after executing a person-account purchase', async ({ page }) => {
-    const player = makePlayer({ personalCash: 200000, companies: [makeControlledCompany()] })
+    const player = makePlayer({
+      personalCash: 200000,
+      companies: [makeControlledCompany()],
+      activeAccountType: 'PERSON',
+      activeCompanyId: null,
+    })
     const rival = makePlayer({
       id: 'player-trk',
       email: 'trk@test.com',
@@ -887,6 +905,8 @@ test.describe('Stock exchange', () => {
         { companyId: 'company-trk', ownerPlayerId: 'player-trk', ownerCompanyId: null, shareCount: 5000 },
       ],
     })
+    player.activeAccountType = 'PERSON'
+    player.activeCompanyId = null
     state.currentUserId = player.id
     state.currentToken = `token-${player.id}`
 
@@ -1862,33 +1882,8 @@ test.describe('Stock exchange portfolio and dividend sections', () => {
   })
 })
 
-test.describe('Stock exchange — global account switcher hidden in nav', () => {
-  // Per ROADMAP: "Remove account switching from stock exchange as it is implemented
-  // now in the top navigation bar." The /stocks page has its own per-listing
-  // account selector in the inline trade panel.
-
-  test('account switcher is NOT shown in the nav bar on the /stocks page', async ({ page }) => {
-    const player = makePlayer({
-      personalCash: 100000,
-      companies: [makeControlledCompany()],
-    })
-    const state = setupMockApi(page, {
-      players: [player],
-      shareholdings: [{ companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 }],
-    })
-    state.currentUserId = player.id
-    state.currentToken = `token-${player.id}`
-
-    await restoreMockSession(page, `token-${player.id}`)
-    await page.goto('/stocks')
-
-    // The global account switcher must be absent on the /stocks page
-    await expect(page.locator('.account-switcher')).toHaveCount(0)
-    // But the page itself should be fully rendered
-    await expect(page.getByRole('heading', { name: 'Stock Exchange' })).toBeVisible()
-  })
-
-  test('account switcher IS shown in the nav bar on the /dashboard page', async ({ page }) => {
+test.describe('Stock exchange — navbar account switcher', () => {
+  test('account switcher is shown in the nav bar on the /stocks page just like /dashboard', async ({ page }) => {
     const player = makePlayer({
       personalCash: 100000,
       companies: [makeControlledCompany()],
@@ -1902,9 +1897,64 @@ test.describe('Stock exchange — global account switcher hidden in nav', () => 
 
     await restoreMockSession(page, `token-${player.id}`)
     await page.goto('/dashboard')
-
-    // The global account switcher IS present on other pages
     await expect(page.locator('.account-switcher')).toBeVisible()
+    await page.getByTitle('Stocks').click()
+    await expect(page).toHaveURL(/\/stocks/)
+    await expect(page.locator('.account-switcher')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Stock Exchange' })).toBeVisible()
+  })
+})
+
+test.describe('Stock exchange — mobile trading layout (375px)', () => {
+  test.use({ viewport: { width: 375, height: 812 } })
+
+  test('trade controls stay grouped and readable on smaller screens', async ({ page }) => {
+    const player = makePlayer({
+      personalCash: 100000,
+      companies: [makeControlledCompany()],
+    })
+    const rival = makePlayer({
+      id: 'player-mobile',
+      email: 'mobile@test.com',
+      displayName: 'Mobile Rival',
+      companies: [
+        {
+          id: 'company-mobile',
+          playerId: 'player-mobile',
+          name: 'Mobile Metals',
+          cash: 700000,
+          totalSharesIssued: 10000,
+          dividendPayoutRatio: 0.2,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          foundedAtTick: 1,
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, {
+      players: [player, rival],
+      shareholdings: [
+        { companyId: 'company-home', ownerPlayerId: 'player-1', ownerCompanyId: null, shareCount: 10000 },
+        { companyId: 'company-mobile', ownerPlayerId: 'player-mobile', ownerCompanyId: null, shareCount: 5000 },
+      ],
+    })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await restoreMockSession(page, `token-${player.id}`)
+    await page.goto('/stocks')
+
+    await expect(page.locator('.account-switcher')).toBeVisible()
+    await openTradePanel(page, 'Mobile Metals')
+
+    const tradePanel = page.locator('.trade-panel')
+    await expect(tradePanel.locator('.trade-order-panel')).toBeVisible()
+    await expect(tradePanel.getByText('Trading as', { exact: true })).toBeVisible()
+    await expect(tradePanel.getByText('Order actions', { exact: true })).toBeVisible()
+    await expect(tradePanel.getByLabel(/Share quantity Mobile Metals/)).toBeVisible()
+    await expect(tradePanel.getByRole('button', { name: /Buy @ / })).toBeVisible()
+    await expect(tradePanel.getByRole('button', { name: /Sell @ / })).toBeVisible()
+    await expect(tradePanel.getByLabel(/Trade with Mobile Metals/)).toHaveCount(0)
   })
 })
 

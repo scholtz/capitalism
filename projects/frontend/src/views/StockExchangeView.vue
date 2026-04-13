@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import { useGameStateStore } from '@/stores/gameState'
 import { useScrollPreservation } from '@/composables/useScrollPreservation'
+import { getActiveAccountOption } from '@/lib/accountContext'
 import { deepEqual } from '@/lib/utils'
 import type {
   CompanyOwnership,
@@ -50,9 +51,6 @@ const priceHistoryErrorByCompany = ref<Record<string, string | null>>({})
 const shareholdersByCompany = ref<Record<string, CompanyOwnership>>({})
 const shareholdersLoadingByCompany = ref<Record<string, boolean>>({})
 const shareholdersErrorByCompany = ref<Record<string, string | null>>({})
-
-// Per-listing trade account selection: "PERSON" or "COMPANY:<id>"
-const tradeAccountByCompany = ref<Record<string, string>>({})
 
 // Merge dialog state
 const mergeDialogCompanyId = ref<string | null>(null)
@@ -247,6 +245,22 @@ const recentDividendTotal = computed(() =>
     .reduce((total, payment) => total + payment.totalAmount, 0) ?? 0,
 )
 
+const activeTradeAccount = computed(() => getActiveAccountOption(auth.player, auth.player?.companies ?? []))
+
+const activeTradeAccountName = computed(() =>
+  activeTradeAccount.value?.name ?? personAccount.value?.displayName ?? t('stockExchange.personAccount'),
+)
+
+const activeTradeAccountType = computed(() => activeTradeAccount.value?.accountType ?? 'PERSON')
+
+const activeTradeAccountCash = computed(() => {
+  if (activeTradeAccount.value?.accountType === 'COMPANY') {
+    return activeTradeAccount.value.cash
+  }
+
+  return auth.player?.personalCash ?? personAccount.value?.personalCash ?? null
+})
+
 const filteredAndSortedListings = computed(() => {
   const text = filterText.value.trim().toLowerCase()
   const filtered = text
@@ -307,12 +321,6 @@ function setDefaultQuantities() {
   }
 }
 
-function setDefaultTradeAccounts() {
-  for (const listing of listings.value) {
-    tradeAccountByCompany.value[listing.companyId] ??= 'PERSON'
-  }
-}
-
 function isControlledCompany(companyId: string): boolean {
   return controlledCompanies.value.some((company) => company.id === companyId)
 }
@@ -337,14 +345,15 @@ function estimatedSellProceeds(listing: StockExchangeListing): number {
   return getQuantity(listing.companyId) * listing.bidPrice
 }
 
-function resolveTradeAccount(companyId: string): { tradeAccountType: string; tradeAccountCompanyId: string | null } {
-  const selected = tradeAccountByCompany.value[companyId] ?? 'PERSON'
-  if (selected === 'PERSON') {
-    return { tradeAccountType: 'PERSON', tradeAccountCompanyId: null }
+function resolveTradeAccount(): { tradeAccountType: string; tradeAccountCompanyId: string | null } {
+  if (activeTradeAccountType.value === 'COMPANY') {
+    return {
+      tradeAccountType: 'COMPANY',
+      tradeAccountCompanyId: activeTradeAccount.value?.companyId ?? auth.player?.activeCompanyId ?? null,
+    }
   }
-  const colonIdx = selected.indexOf(':')
-  const id = colonIdx >= 0 ? selected.slice(colonIdx + 1) : null
-  return { tradeAccountType: 'COMPANY', tradeAccountCompanyId: id }
+
+  return { tradeAccountType: 'PERSON', tradeAccountCompanyId: null }
 }
 
 async function loadPriceHistory(companyId: string) {
@@ -431,7 +440,6 @@ async function loadData(isRefresh = false) {
     }
 
     setDefaultQuantities()
-    setDefaultTradeAccounts()
   } catch (reason: unknown) {
     if (!isRefresh) {
       error.value = reason instanceof Error ? reason.message : t('stockExchange.loadFailed')
@@ -476,7 +484,7 @@ async function executeTrade(kind: 'buy' | 'sell', companyId: string) {
   errorByCompany.value[companyId] = null
   successByCompany.value[companyId] = null
 
-  const { tradeAccountType, tradeAccountCompanyId } = resolveTradeAccount(companyId)
+  const { tradeAccountType, tradeAccountCompanyId } = resolveTradeAccount()
 
   try {
     let result: ShareTradeResult
@@ -909,64 +917,70 @@ useTickRefresh(async () => {
                         </div>
 
                         <div class="trade-form">
-                          <label class="trade-field">
-                            <span>{{ t('stockExchange.tradeWith') }}</span>
-                            <select
-                              v-model="tradeAccountByCompany[listing.companyId]"
-                              class="trade-select"
-                              :aria-label="`${t('stockExchange.tradeWith')} ${listing.companyName}`"
-                            >
-                              <option value="PERSON">
-                                {{ personAccount?.displayName }} ({{ formatCurrency(personAccount?.personalCash ?? 0) }})
-                              </option>
-                              <option
-                                v-for="company in controlledCompanies"
-                                :key="company.id"
-                                :value="`COMPANY:${company.id}`"
-                              >
-                                {{ company.name }}{{ company.cash != null ? ` (${formatCurrency(company.cash)})` : '' }}
-                              </option>
-                            </select>
-                          </label>
-
-                          <div class="trade-order-row">
-                            <label class="trade-field trade-field--quantity">
-                              <span>{{ t('stockExchange.quantity') }}</span>
-                              <input
-                                :value="quantityByCompany[listing.companyId] ?? 100"
-                                type="number"
-                                min="1"
-                                step="1"
-                                class="trade-input"
-                                :aria-label="`${t('stockExchange.quantity')} ${listing.companyName}`"
-                                @input="updateQuantity(listing.companyId, Number(($event.target as HTMLInputElement).value))"
-                              />
-                            </label>
-
-                            <div class="trade-actions">
-                              <div class="trade-action-group">
-                                <button
-                                  class="btn btn-primary"
-                                  :disabled="actionLoadingKey === `buy-${listing.companyId}`"
-                                  @click="executeTrade('buy', listing.companyId)"
-                                >
-                                  {{ t('stockExchange.buyAt', { price: formatCurrency(listing.askPrice) }) }}
-                                </button>
-                                <span class="trade-est" aria-live="polite">
-                                  {{ t('stockExchange.estimatedCost', { total: formatCurrency(estimatedBuyCost(listing)) }) }}
-                                </span>
+                          <div class="trade-order-panel">
+                            <div class="trade-order-header">
+                              <div class="trade-order-context">
+                                <span class="trade-order-caption">{{ t('stockExchange.tradeAccountLabel') }}</span>
+                                <strong class="trade-order-name">{{ activeTradeAccountName }}</strong>
+                                <p class="trade-order-hint">
+                                  {{
+                                    activeTradeAccountType === 'COMPANY'
+                                      ? t('stockExchange.tradeAccountHintCompany')
+                                      : t('stockExchange.tradeAccountHintPerson')
+                                  }}
+                                </p>
                               </div>
-                              <div class="trade-action-group">
-                                <button
-                                  class="btn btn-secondary"
-                                  :disabled="actionLoadingKey === `sell-${listing.companyId}`"
-                                  @click="executeTrade('sell', listing.companyId)"
-                                >
-                                  {{ t('stockExchange.sellAt', { price: formatCurrency(listing.bidPrice) }) }}
-                                </button>
-                                <span class="trade-est" aria-live="polite">
-                                  {{ t('stockExchange.estimatedProceeds', { total: formatCurrency(estimatedSellProceeds(listing)) }) }}
-                                </span>
+                              <span v-if="activeTradeAccountCash !== null" class="trade-account-cash">
+                                {{ formatCurrency(activeTradeAccountCash) }}
+                              </span>
+                            </div>
+
+                            <div class="trade-order-controls">
+                              <label class="trade-field trade-field--quantity">
+                                <span>{{ t('stockExchange.quantity') }}</span>
+                                <input
+                                  :value="quantityByCompany[listing.companyId] ?? 100"
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  class="trade-input"
+                                  :aria-label="`${t('stockExchange.quantity')} ${listing.companyName}`"
+                                  @input="updateQuantity(listing.companyId, Number(($event.target as HTMLInputElement).value))"
+                                />
+                              </label>
+
+                              <div class="trade-actions-card">
+                                <div class="trade-actions-header">
+                                  <span class="trade-actions-caption">{{ t('stockExchange.tradeActionsLabel') }}</span>
+                                  <span class="trade-actions-hint">{{ t('stockExchange.tradeActionsHint') }}</span>
+                                </div>
+
+                                <div class="trade-actions">
+                                  <div class="trade-action-group">
+                                    <button
+                                      class="btn btn-primary"
+                                      :disabled="actionLoadingKey === `buy-${listing.companyId}`"
+                                      @click="executeTrade('buy', listing.companyId)"
+                                    >
+                                      {{ t('stockExchange.buyAt', { price: formatCurrency(listing.askPrice) }) }}
+                                    </button>
+                                    <span class="trade-est" aria-live="polite">
+                                      {{ t('stockExchange.estimatedCost', { total: formatCurrency(estimatedBuyCost(listing)) }) }}
+                                    </span>
+                                  </div>
+                                  <div class="trade-action-group">
+                                    <button
+                                      class="btn btn-secondary"
+                                      :disabled="actionLoadingKey === `sell-${listing.companyId}`"
+                                      @click="executeTrade('sell', listing.companyId)"
+                                    >
+                                      {{ t('stockExchange.sellAt', { price: formatCurrency(listing.bidPrice) }) }}
+                                    </button>
+                                    <span class="trade-est" aria-live="polite">
+                                      {{ t('stockExchange.estimatedProceeds', { total: formatCurrency(estimatedSellProceeds(listing)) }) }}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1725,10 +1739,71 @@ useTickRefresh(async () => {
 }
 
 .trade-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.trade-order-panel {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-surface) 88%, var(--color-primary) 12%);
+}
+
+.trade-order-header {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-  align-items: flex-end;
+}
+
+.trade-order-context,
+.trade-actions-header {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.trade-order-caption,
+.trade-actions-caption {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.trade-order-name {
+  font-size: 1rem;
+  color: var(--color-text-primary);
+}
+
+.trade-order-hint,
+.trade-actions-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.trade-account-cash {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-text-primary);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.trade-order-controls {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: end;
 }
 
 .trade-field {
@@ -1755,35 +1830,37 @@ useTickRefresh(async () => {
 }
 
 .trade-input {
-  width: 130px;
+  width: 100%;
 }
 
-.trade-order-row {
-  display: flex;
+.trade-actions-card {
+  display: grid;
   gap: 0.75rem;
-  align-items: flex-end;
-  flex-wrap: wrap;
 }
 
 .trade-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: start;
 }
 
 .trade-action-group {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  align-items: flex-start;
+  align-items: stretch;
+}
+
+.trade-action-group .btn {
+  width: 100%;
+  justify-content: center;
 }
 
 .trade-est {
   font-size: 0.78rem;
   color: var(--color-text-muted, var(--color-text-secondary));
   font-variant-numeric: tabular-nums;
-  padding-left: 0.15rem;
 }
 
 .company-snapshot {
@@ -1990,6 +2067,14 @@ useTickRefresh(async () => {
 
   .trade-price-context {
     gap: 1rem;
+  }
+
+  .trade-order-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .trade-actions {
+    grid-template-columns: 1fr;
   }
 
   .pagination-bar {

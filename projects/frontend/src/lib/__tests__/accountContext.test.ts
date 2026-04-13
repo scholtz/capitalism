@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAccountOptions, getActiveAccountName, getActiveCompany, getPreferredCompany } from '../accountContext'
+import { buildAccountOptions, getActiveAccountName, getActiveAccountOption, getActiveCompany, getPreferredCompany } from '../accountContext'
 
 const companies = [
   { id: 'company-1', name: 'Alpha Manufacturing', cash: 240000 },
@@ -57,6 +57,27 @@ describe('accountContext', () => {
         companies,
       ),
     ).toBe('Alpha Manufacturing')
+  })
+
+  it('returns the active account option including cash and account type', () => {
+    expect(
+      getActiveAccountOption(
+        {
+          displayName: 'Alice Founder',
+          activeAccountType: 'COMPANY',
+          activeCompanyId: 'company-2',
+        },
+        companies,
+      ),
+    ).toEqual({
+      key: 'company-company-2',
+      accountType: 'COMPANY',
+      companyId: 'company-2',
+      name: 'Bravo Foods',
+      cash: 175000,
+      company: companies[1],
+      isActive: true,
+    })
   })
 
   it('prefers the active company over the first company', () => {
