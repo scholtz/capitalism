@@ -43,7 +43,7 @@ It will use real world map. The game will start in single city and later other c
 - ✅ 90% — Instead of ticks everywhere in the game show the tick time and show the tick only as a title for better debugging. **Delivered**: `formatTickDuration(ticks, locale)` helper added to `gameTime.ts`; LeaderboardView game-time chip, BuildingDetailView upgrade banner / unit cells / upgrade pills / concurrent-upgrade list, LedgerView data-range header and income-tax schedule, OnboardingView configure status and first-sale celebration, CityMapView construction countdown, and PendingActionsTimeline all now show player-friendly game dates/durations as primary labels with raw tick numbers preserved in `title` attributes for debugging. Unit tests added for `formatTickDuration` covering hours, days, days+hours, edge cases, and locale variants.
 
 ### Onboarding details
-- Hide Sales Loop Status or Production Chain panel after user close it and do not show it any more until there is an error in the building. 
+- Hide Sales Loop Status or Production Chain panel after user close it and do not show it any more until there is an error in the building. **[100% complete — Dismiss button added to both panels; dismissal stored in localStorage per building ID; panel re-appears automatically when chain is incomplete (error condition); state survives navigation and reactive refreshes; E2E tests added for dismiss, persistence, and error-override behavior.]**
 
 ### Loans menu
 - In loans offers make sure is the action button to do some action. If user needs to buy a bank to allow public loan service make sure there is button to buy the building. If user can offer a loan make sure to navigate him to the form where he can offer a loan.

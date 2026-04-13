@@ -762,6 +762,8 @@ export default {
       editHint: 'Click "Edit Building" above, then click on a unit in the grid to configure it.',
       chainCompleteDesc: 'This shop is stocking {product} and selling it publicly at a minimum price of {price}.',
       nextStep: 'Your sales shop is ready. Once ticks process your configuration, customers in the city can discover and buy your product.',
+      dismiss: 'Dismiss',
+      dismissAriaLabel: 'Dismiss Sales Loop Status panel',
     },
     purchaseSelector: {
       eyebrow: 'Purchase setup',
@@ -1208,6 +1210,8 @@ export default {
       editHint: 'Click "Edit Building" above, then click on a unit in the grid to configure it.',
       chainCompleteDesc: 'This factory is configured to buy {resource} and manufacture {product}. The starter production chain is complete.',
       nextStep: 'Next step: set up a Sales Shop to start selling your manufactured goods and earning revenue.',
+      dismiss: 'Dismiss',
+      dismissAriaLabel: 'Dismiss Production Chain panel',
     },
     operationalStatus: {
       title: 'Unit Status',

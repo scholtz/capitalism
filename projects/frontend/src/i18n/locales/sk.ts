@@ -760,6 +760,8 @@ export default {
       editHint: 'Kliknite na "Upraviť budovu" vyššie, potom kliknite na jednotku v mriežke a nakonfigurujte ju.',
       chainCompleteDesc: 'Tento obchod zásobuje {product} a predáva ho verejnosti za minimálnu cenu {price}.',
       nextStep: 'Váš obchod je pripravený. Keď ticky spracujú vašu konfiguráciu, zákazníci v meste môžu objaviť a kúpiť váš produkt.',
+      dismiss: 'Zavrieť',
+      dismissAriaLabel: 'Zavrieť panel stavu predajného cyklu',
     },
     purchaseSelector: {
       eyebrow: 'Nastavenie nákupu',
@@ -1206,6 +1208,8 @@ export default {
       editHint: 'Kliknite na "Upraviť budovu" vyššie a potom kliknite na jednotku v mriežke.',
       chainCompleteDesc: 'Táto továreň je nakonfigurovaná na nákup {resource} a výrobu {product}. Počiatočný výrobný reťazec je kompletný.',
       nextStep: 'Ďalší krok: zriaďte predajňu a začnite predávať vyrobené tovary.',
+      dismiss: 'Zavrieť',
+      dismissAriaLabel: 'Zavrieť panel výrobného reťazca',
     },
     operationalStatus: {
       title: 'Stav jednotky',

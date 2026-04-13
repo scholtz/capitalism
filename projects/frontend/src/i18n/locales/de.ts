@@ -762,6 +762,8 @@ export default {
       editHint: 'Klicken Sie auf "Gebäude bearbeiten" oben, dann klicken Sie auf eine Einheit im Raster, um sie zu konfigurieren.',
       chainCompleteDesc: 'Dieses Geschäft bevorratet {product} und verkauft es öffentlich zu einem Mindestpreis von {price}.',
       nextStep: 'Ihr Ladengeschäft ist bereit. Sobald die Ticks Ihre Konfiguration verarbeiten, können Kunden in der Stadt Ihr Produkt entdecken und kaufen.',
+      dismiss: 'Schließen',
+      dismissAriaLabel: 'Panel "Verkaufskreislauf-Status" schließen',
     },
     purchaseSelector: {
       eyebrow: 'Einkauf einrichten',
@@ -1211,6 +1213,8 @@ export default {
       editHint: 'Klicken Sie oben auf "Gebäude bearbeiten" und dann auf eine Einheit im Raster.',
       chainCompleteDesc: 'Diese Fabrik ist konfiguriert, um {resource} zu kaufen und {product} herzustellen. Die Startproduktionskette ist vollständig.',
       nextStep: 'Nächster Schritt: Richten Sie ein Verkaufsgeschäft ein, um Ihre hergestellten Waren zu verkaufen.',
+      dismiss: 'Schließen',
+      dismissAriaLabel: 'Panel "Produktionskette" schließen',
     },
     operationalStatus: {
       title: 'Einheitenstatus',
