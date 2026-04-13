@@ -2380,6 +2380,33 @@ const selectedCellUpgradeInfo = computed<import('@/types').UnitUpgradeInfo | nul
   return null
 })
 
+/**
+ * List of all active units in this building that are currently under a level upgrade,
+ * used to show the concurrent-upgrades summary panel.
+ */
+const allUnitsUnderUpgrade = computed<
+  Array<{ unitType: string; gridX: number; gridY: number; toLevel: number; ticksRemaining: number }>
+>(() => {
+  if (!building.value?.pendingConfiguration) return []
+  const plan = building.value.pendingConfiguration
+  const tick = gameStateStore.gameState?.currentTick ?? currentTick.value
+  return plan.units
+    .filter((pu) => pu.isChanged && pu.ticksRequired > 0 && pu.appliesAtTick > tick)
+    .flatMap((pu) => {
+      const activeUnit = getUnitAtFrom(activeUnits.value, pu.gridX, pu.gridY)
+      if (!activeUnit || pu.level <= activeUnit.level) return []
+      return [
+        {
+          unitType: pu.unitType,
+          gridX: pu.gridX,
+          gridY: pu.gridY,
+          toLevel: pu.level,
+          ticksRemaining: Math.max(0, pu.appliesAtTick - tick),
+        },
+      ]
+    })
+})
+
 function formatCurrency(value: number | null | undefined): string {
   const amount = value ?? 0
   const formatter = new Intl.NumberFormat(locale.value, {
@@ -3087,6 +3114,10 @@ async function fetchUpgradeInfo(unitId: string) {
         unitUpgradeInfo(unitId: $unitId) {
           unitId unitType currentLevel nextLevel isMaxLevel isUpgradable
           upgradeCost upgradeTicks currentStat nextStat statLabel
+          currentLaborHoursPerTick nextLaborHoursPerTick
+          currentEnergyMwhPerTick nextEnergyMwhPerTick
+          currentLaborCostPerTick nextLaborCostPerTick
+          currentEnergyCostPerTick nextEnergyCostPerTick
         }
       }`,
       { unitId },
@@ -4101,6 +4132,30 @@ watch(
         </div>
       </div>
       <div v-if="cancelPlanError" class="error-banner" role="alert">{{ cancelPlanError }}</div>
+
+      <!-- Concurrent unit upgrades summary: lists every unit currently under upgrade in this building -->
+      <div
+        v-if="allUnitsUnderUpgrade.length > 0"
+        class="concurrent-upgrades-panel"
+        aria-label="Units under upgrade"
+      >
+        <h4>⏳ {{ t('buildingDetail.unitUpgrade.concurrentTitle') }}</h4>
+        <p class="concurrent-upgrades-help">{{ t('buildingDetail.unitUpgrade.concurrentHelp') }}</p>
+        <ul class="concurrent-upgrades-list">
+          <li
+            v-for="u in allUnitsUnderUpgrade"
+            :key="`${u.gridX}-${u.gridY}`"
+            class="concurrent-upgrade-item"
+            :aria-label="`${u.unitType} at (${u.gridX}, ${u.gridY}) upgrading to level ${u.toLevel}`"
+          >
+            <span class="concurrent-upgrade-type">{{ u.unitType }}</span>
+            <span class="concurrent-upgrade-pos">({{ u.gridX }}, {{ u.gridY }})</span>
+            <span class="concurrent-upgrade-arrow">→</span>
+            <span class="concurrent-upgrade-level">{{ t('buildingDetail.unitUpgrade.nextLevel', { level: u.toLevel }) }}</span>
+            <span class="concurrent-upgrade-ticks">{{ t('buildingDetail.unitUpgrade.ticksRemaining', { ticks: u.ticksRemaining }) }}</span>
+          </li>
+        </ul>
+      </div>
 
       <div v-if="lockedConfiguredProducts.length > 0" class="pro-access-banner" role="status">
         <strong>{{ t('catalog.proLockedTitle') }}</strong>
@@ -5337,13 +5392,32 @@ watch(
                     <span class="unit-upgrade-arrow">→</span>
                     <span class="unit-upgrade-level next-level">{{ t('buildingDetail.unitUpgrade.nextLevel', { level: selectedCellUpgradeInfo.nextLevel }) }}</span>
                   </div>
-                  <div class="unit-upgrade-stats">
+                  <!-- Full before/after stat table -->
+                  <div class="unit-upgrade-stats" aria-label="Upgrade impact">
                     <div class="unit-upgrade-stat-row">
                       <span class="unit-upgrade-stat-label">{{ selectedCellUpgradeInfo.statLabel }}</span>
                       <span class="unit-upgrade-stat-values">
                         <span class="stat-current">{{ selectedCellUpgradeInfo.currentStat.toFixed(1) }}</span>
                         <span class="stat-arrow"> → </span>
                         <span class="stat-next">{{ selectedCellUpgradeInfo.nextStat.toFixed(1) }}</span>
+                      </span>
+                    </div>
+                    <div class="unit-upgrade-stat-row" aria-label="Labor cost delta">
+                      <span class="unit-upgrade-stat-label">{{ t('buildingDetail.unitUpgrade.laborCost') }}</span>
+                      <span class="unit-upgrade-stat-values">
+                        <span class="stat-current">{{ formatCurrency(selectedCellUpgradeInfo.currentLaborCostPerTick) }}</span>
+                        <span class="stat-arrow"> → </span>
+                        <span class="stat-next">{{ formatCurrency(selectedCellUpgradeInfo.nextLaborCostPerTick) }}</span>
+                        <span class="stat-delta stat-delta-negative">+{{ formatCurrency(selectedCellUpgradeInfo.nextLaborCostPerTick - selectedCellUpgradeInfo.currentLaborCostPerTick) }}</span>
+                      </span>
+                    </div>
+                    <div class="unit-upgrade-stat-row" aria-label="Energy cost delta">
+                      <span class="unit-upgrade-stat-label">{{ t('buildingDetail.unitUpgrade.energyCost') }}</span>
+                      <span class="unit-upgrade-stat-values">
+                        <span class="stat-current">{{ formatCurrency(selectedCellUpgradeInfo.currentEnergyCostPerTick) }}</span>
+                        <span class="stat-arrow"> → </span>
+                        <span class="stat-next">{{ formatCurrency(selectedCellUpgradeInfo.nextEnergyCostPerTick) }}</span>
+                        <span class="stat-delta stat-delta-negative">+{{ formatCurrency(selectedCellUpgradeInfo.nextEnergyCostPerTick - selectedCellUpgradeInfo.currentEnergyCostPerTick) }}</span>
                       </span>
                     </div>
                   </div>
@@ -9829,6 +9903,86 @@ watch(
   border-radius: 4px;
   padding: 1px 3px;
   z-index: 2;
+}
+
+/* Stat delta badge shown in the before/after stat table */
+.stat-delta {
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-sm);
+}
+
+.stat-delta-negative {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.12);
+}
+
+/* Concurrent upgrades summary panel */
+.concurrent-upgrades-panel {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius-sm);
+}
+
+.concurrent-upgrades-panel h4 {
+  margin: 0 0 0.3rem;
+  font-size: 0.9rem;
+  color: #f59e0b;
+}
+
+.concurrent-upgrades-help {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.5rem;
+}
+
+.concurrent-upgrades-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.concurrent-upgrade-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(245, 158, 11, 0.04);
+  border-radius: var(--radius-sm);
+}
+
+.concurrent-upgrade-type {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  min-width: 8rem;
+}
+
+.concurrent-upgrade-pos {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+}
+
+.concurrent-upgrade-arrow {
+  color: var(--color-text-secondary);
+}
+
+.concurrent-upgrade-level {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.concurrent-upgrade-ticks {
+  margin-left: auto;
+  color: #f59e0b;
+  font-size: 0.75rem;
 }
 
 .flush-confirm-dialog {

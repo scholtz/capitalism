@@ -23434,6 +23434,88 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     }
 
     [Fact]
+    public async Task UnitUpgradeInfo_IncludesLaborAndEnergyCostDeltas()
+    {
+        // Proves the new operating-cost delta fields are populated correctly so the frontend
+        // can show players the concrete before/after labor and energy impact of an upgrade.
+        var email = $"uui-costs-{Guid.NewGuid():N}@test.com";
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, email, "UUICosts");
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = await db.Players.FirstAsync(p => p.Email == email);
+        var city = await db.Cities.FirstAsync();
+
+        var company = new Api.Data.Entities.Company { PlayerId = player.Id, Name = "UUICostsCo", Cash = 50_000m };
+        db.Companies.Add(company);
+        var building = new Api.Data.Entities.Building
+        {
+            CompanyId = company.Id, CityId = city.Id,
+            Type = Api.Data.Entities.BuildingType.Factory, Name = "UUICostsFactory",
+            Level = 1, Latitude = city.Latitude, Longitude = city.Longitude,
+        };
+        db.Buildings.Add(building);
+        // Use a PUBLIC_SALES unit at level 1 so cost delta is straightforward to assert.
+        var unit = new Api.Data.Entities.BuildingUnit
+        {
+            BuildingId = building.Id, UnitType = Api.Data.Entities.UnitType.PublicSales,
+            GridX = 0, GridY = 0, Level = 1,
+        };
+        db.BuildingUnits.Add(unit);
+        await db.SaveChangesAsync();
+
+        var query = """
+            query UUI($unitId: UUID!) {
+              unitUpgradeInfo(unitId: $unitId) {
+                currentLevel nextLevel isUpgradable
+                currentLaborHoursPerTick nextLaborHoursPerTick
+                currentEnergyMwhPerTick nextEnergyMwhPerTick
+                currentLaborCostPerTick nextLaborCostPerTick
+                currentEnergyCostPerTick nextEnergyCostPerTick
+              }
+            }
+            """;
+        var result = await ExecuteGraphQlAsync(isolatedClient, query,
+            new { unitId = unit.Id.ToString() }, token);
+
+        var info = result.GetProperty("data").GetProperty("unitUpgradeInfo");
+        Assert.True(info.GetProperty("isUpgradable").GetBoolean());
+        Assert.Equal(1, info.GetProperty("currentLevel").GetInt32());
+        Assert.Equal(2, info.GetProperty("nextLevel").GetInt32());
+
+        // PUBLIC_SALES: baseHours=0.70 per level, baseEnergy=0.12 per level
+        // Level 1 → currentLaborHours = 0.70 * 1 = 0.70
+        // Level 2 → nextLaborHours    = 0.70 * 2 = 1.40
+        var expectedCurrentLabor  = Api.Utilities.CompanyEconomyCalculator.GetBaseUnitLaborHours(Api.Data.Entities.UnitType.PublicSales, 1);
+        var expectedNextLabor     = Api.Utilities.CompanyEconomyCalculator.GetBaseUnitLaborHours(Api.Data.Entities.UnitType.PublicSales, 2);
+        var expectedCurrentEnergy = Api.Utilities.CompanyEconomyCalculator.GetBaseUnitEnergyMwh(Api.Data.Entities.UnitType.PublicSales, 1);
+        var expectedNextEnergy    = Api.Utilities.CompanyEconomyCalculator.GetBaseUnitEnergyMwh(Api.Data.Entities.UnitType.PublicSales, 2);
+
+        Assert.Equal(expectedCurrentLabor,  info.GetProperty("currentLaborHoursPerTick").GetDecimal());
+        Assert.Equal(expectedNextLabor,     info.GetProperty("nextLaborHoursPerTick").GetDecimal());
+        Assert.Equal(expectedCurrentEnergy, info.GetProperty("currentEnergyMwhPerTick").GetDecimal());
+        Assert.Equal(expectedNextEnergy,    info.GetProperty("nextEnergyMwhPerTick").GetDecimal());
+
+        // Cost = hours × reference salary / energy × energy price
+        var expectedCurrentLaborCost  = decimal.Round(expectedCurrentLabor  * Api.Engine.GameConstants.ReferenceSalaryPerManhour, 2, MidpointRounding.AwayFromZero);
+        var expectedNextLaborCost     = decimal.Round(expectedNextLabor     * Api.Engine.GameConstants.ReferenceSalaryPerManhour, 2, MidpointRounding.AwayFromZero);
+        var expectedCurrentEnergyCost = decimal.Round(expectedCurrentEnergy * Api.Engine.GameConstants.EnergyPricePerMwh, 2, MidpointRounding.AwayFromZero);
+        var expectedNextEnergyCost    = decimal.Round(expectedNextEnergy    * Api.Engine.GameConstants.EnergyPricePerMwh, 2, MidpointRounding.AwayFromZero);
+
+        Assert.Equal(expectedCurrentLaborCost,  info.GetProperty("currentLaborCostPerTick").GetDecimal());
+        Assert.Equal(expectedNextLaborCost,     info.GetProperty("nextLaborCostPerTick").GetDecimal());
+        Assert.Equal(expectedCurrentEnergyCost, info.GetProperty("currentEnergyCostPerTick").GetDecimal());
+        Assert.Equal(expectedNextEnergyCost,    info.GetProperty("nextEnergyCostPerTick").GetDecimal());
+
+        // Next level costs must be strictly higher than current level costs.
+        Assert.True(expectedNextLaborCost     > expectedCurrentLaborCost,  "Labor cost must increase at higher levels.");
+        Assert.True(expectedNextEnergyCost    > expectedCurrentEnergyCost, "Energy cost must increase at higher levels.");
+    }
+
+    [Fact]
     public async Task ScheduleUnitUpgrade_Unauthenticated_ReturnsError()
     {
         var email = $"uu-anon-{Guid.NewGuid():N}@test.com";

@@ -472,4 +472,14 @@ public sealed class UnitUpgradeInfo
     public decimal CurrentStat { get; set; }
     public decimal NextStat { get; set; }
     public string StatLabel { get; set; } = string.Empty;
+
+    // Operating cost deltas (per tick, at reference wage / energy price)
+    public decimal CurrentLaborHoursPerTick { get; set; }
+    public decimal NextLaborHoursPerTick { get; set; }
+    public decimal CurrentEnergyMwhPerTick { get; set; }
+    public decimal NextEnergyMwhPerTick { get; set; }
+    public decimal CurrentLaborCostPerTick { get; set; }
+    public decimal NextLaborCostPerTick { get; set; }
+    public decimal CurrentEnergyCostPerTick { get; set; }
+    public decimal NextEnergyCostPerTick { get; set; }
 }

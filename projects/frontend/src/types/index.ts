@@ -1155,6 +1155,15 @@ export interface UnitUpgradeInfo {
   currentStat: number
   nextStat: number
   statLabel: string
+  // Operating cost deltas (per tick at reference wage/energy price)
+  currentLaborHoursPerTick: number
+  nextLaborHoursPerTick: number
+  currentEnergyMwhPerTick: number
+  nextEnergyMwhPerTick: number
+  currentLaborCostPerTick: number
+  nextLaborCostPerTick: number
+  currentEnergyCostPerTick: number
+  nextEnergyCostPerTick: number
 }
 
 export interface GameNewsFeed {

@@ -5253,6 +5253,16 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         currentStat: stat.current,
         nextStat: stat.next,
         statLabel: stat.label,
+        // Operating cost deltas at reference wage ($20/manhour) and energy ($55/MWh)
+        // Values mirror CompanyEconomyCalculator.GetBaseUnitLaborHours/EnergyMwh × multipliers
+        currentLaborHoursPerTick: 0.7 * resolvedLevel,
+        nextLaborHoursPerTick: 0.7 * Math.min(resolvedLevel + 1, 4),
+        currentEnergyMwhPerTick: 0.12 * resolvedLevel,
+        nextEnergyMwhPerTick: 0.12 * Math.min(resolvedLevel + 1, 4),
+        currentLaborCostPerTick: Math.round(0.7 * resolvedLevel * 20 * 100) / 100,
+        nextLaborCostPerTick: Math.round(0.7 * Math.min(resolvedLevel + 1, 4) * 20 * 100) / 100,
+        currentEnergyCostPerTick: Math.round(0.12 * resolvedLevel * 55 * 100) / 100,
+        nextEnergyCostPerTick: Math.round(0.12 * Math.min(resolvedLevel + 1, 4) * 55 * 100) / 100,
       }
       return route.fulfill({
         status: 200,

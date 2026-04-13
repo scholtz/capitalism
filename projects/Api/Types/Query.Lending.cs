@@ -286,13 +286,22 @@ public sealed partial class Query
         var isUpgradable = Engine.GameConstants.IsUpgradableUnitType(unit.UnitType);
         var isMaxLevel = unit.Level >= Engine.GameConstants.MaxUnitLevel;
         var currentStat = Engine.GameConstants.GetUnitStat(unit.UnitType, unit.Level);
+        var nextLevel = isMaxLevel ? unit.Level : unit.Level + 1;
+
+        // Operating cost deltas — use reference wage so the numbers are reproducible
+        // regardless of which city the building is in. City-specific wages are applied at
+        // runtime by the tick engine; here we show the "baseline" impact.
+        var currentLaborHours = Utilities.CompanyEconomyCalculator.GetBaseUnitLaborHours(unit.UnitType, unit.Level);
+        var nextLaborHours    = Utilities.CompanyEconomyCalculator.GetBaseUnitLaborHours(unit.UnitType, nextLevel);
+        var currentEnergyMwh  = Utilities.CompanyEconomyCalculator.GetBaseUnitEnergyMwh(unit.UnitType, unit.Level);
+        var nextEnergyMwh     = Utilities.CompanyEconomyCalculator.GetBaseUnitEnergyMwh(unit.UnitType, nextLevel);
 
         return new UnitUpgradeInfo
         {
             UnitId = unit.Id,
             UnitType = unit.UnitType,
             CurrentLevel = unit.Level,
-            NextLevel = isMaxLevel ? unit.Level : unit.Level + 1,
+            NextLevel = nextLevel,
             IsMaxLevel = isMaxLevel,
             IsUpgradable = isUpgradable,
             UpgradeCost = isUpgradable && !isMaxLevel
@@ -306,6 +315,14 @@ public sealed partial class Query
                 ? currentStat  // same as CurrentStat at max level
                 : Engine.GameConstants.GetUnitStat(unit.UnitType, unit.Level + 1),
             StatLabel = Engine.GameConstants.GetUnitStatLabel(unit.UnitType),
+            CurrentLaborHoursPerTick = currentLaborHours,
+            NextLaborHoursPerTick    = nextLaborHours,
+            CurrentEnergyMwhPerTick  = currentEnergyMwh,
+            NextEnergyMwhPerTick     = nextEnergyMwh,
+            CurrentLaborCostPerTick  = decimal.Round(currentLaborHours * Engine.GameConstants.ReferenceSalaryPerManhour, 2, MidpointRounding.AwayFromZero),
+            NextLaborCostPerTick     = decimal.Round(nextLaborHours    * Engine.GameConstants.ReferenceSalaryPerManhour, 2, MidpointRounding.AwayFromZero),
+            CurrentEnergyCostPerTick = decimal.Round(currentEnergyMwh  * Engine.GameConstants.EnergyPricePerMwh, 2, MidpointRounding.AwayFromZero),
+            NextEnergyCostPerTick    = decimal.Round(nextEnergyMwh     * Engine.GameConstants.EnergyPricePerMwh, 2, MidpointRounding.AwayFromZero),
         };
     }
 }

@@ -15351,6 +15351,170 @@ test.describe('Unit upgrade panel', () => {
     await expect(upgradePanel.locator('.unit-upgrade-in-progress')).toBeVisible()
     await expect(upgradePanel).toContainText('Upgrade in Progress')
   })
+
+  test('shows labor and energy cost deltas in before/after stat table', async ({ page }) => {
+    const player = makePlayer()
+    player.companies.push({
+      id: 'company-uu',
+      playerId: player.id,
+      name: 'Delta Co',
+      cash: 50000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [makeUpgradeBuilding(player.id, 'PUBLIC_SALES')],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-uu-1')
+    await expect(page.getByRole('heading', { name: 'Upgrade Factory' })).toBeVisible()
+
+    const currentSection = getGridSection(page, 'Current Configuration')
+    await getGridCell(currentSection, 0, 0).click()
+
+    const upgradePanel = page.locator('.unit-upgrade-panel')
+    await expect(upgradePanel).toBeVisible()
+
+    // The full impact table must be visible with aria-label
+    const impactTable = upgradePanel.locator('[aria-label="Upgrade impact"]')
+    await expect(impactTable).toBeVisible()
+
+    // Labor cost row must show before → after values
+    const laborRow = impactTable.locator('[aria-label="Labor cost delta"]')
+    await expect(laborRow).toBeVisible()
+    await expect(laborRow.locator('.stat-current')).toBeVisible()
+    await expect(laborRow.locator('.stat-next')).toBeVisible()
+    await expect(laborRow.locator('.stat-delta-negative')).toBeVisible()
+
+    // Energy cost row must show before → after values
+    const energyRow = impactTable.locator('[aria-label="Energy cost delta"]')
+    await expect(energyRow).toBeVisible()
+    await expect(energyRow.locator('.stat-current')).toBeVisible()
+    await expect(energyRow.locator('.stat-next')).toBeVisible()
+    await expect(energyRow.locator('.stat-delta-negative')).toBeVisible()
+
+    // The downtime notice must still be visible
+    await expect(upgradePanel.locator('.unit-upgrade-downtime-notice.available')).toBeVisible()
+  })
+
+  test('shows concurrent upgrades summary when multiple units are under upgrade', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    const building = makeUpgradeBuilding(player.id)
+    // Add a second unit that will also be under upgrade
+    building.units.push({
+      id: 'unit-uu-2',
+      buildingId: 'building-uu-1',
+      unitType: 'PURCHASE',
+      gridX: 1,
+      gridY: 0,
+      level: 1,
+      linkUp: false,
+      linkDown: false,
+      linkLeft: false,
+      linkRight: false,
+      linkUpLeft: false,
+      linkUpRight: false,
+      linkDownLeft: false,
+      linkDownRight: false,
+    })
+    // Pending configuration: both units are under a level upgrade
+    building.pendingConfiguration = {
+      id: 'plan-multi-1',
+      buildingId: 'building-uu-1',
+      submittedAtTick: 40,
+      appliesAtTick: 50,
+      totalTicksRequired: 10,
+      units: [
+        {
+          id: 'plan-u1',
+          buildingConfigurationPlanId: 'plan-multi-1',
+          unitType: 'MANUFACTURING',
+          gridX: 0,
+          gridY: 0,
+          level: 2,
+          isChanged: true,
+          ticksRequired: 10,
+          startedAtTick: 40,
+          appliesAtTick: 50,
+          isReverting: false,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: false,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+        {
+          id: 'plan-u2',
+          buildingConfigurationPlanId: 'plan-multi-1',
+          unitType: 'PURCHASE',
+          gridX: 1,
+          gridY: 0,
+          level: 2,
+          isChanged: true,
+          ticksRequired: 8,
+          startedAtTick: 42,
+          appliesAtTick: 50,
+          isReverting: false,
+          linkUp: false,
+          linkDown: false,
+          linkLeft: false,
+          linkRight: false,
+          linkUpLeft: false,
+          linkUpRight: false,
+          linkDownLeft: false,
+          linkDownRight: false,
+        },
+      ],
+      removals: [],
+    }
+    player.companies.push({
+      id: 'company-uu',
+      playerId: player.id,
+      name: 'Multi Upgrade Co',
+      cash: 50000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [building],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    // Current tick is 42; both upgrades apply at 50 so ticksRemaining > 0
+    state.gameState.currentTick = 42
+
+    await page.addInitScript((token) => {
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('auth_expires', new Date(Date.now() + 7200000).toISOString())
+    }, `token-${player.id}`)
+
+    await page.goto('/building/building-uu-1')
+    await expect(page.getByRole('heading', { name: 'Upgrade Factory' })).toBeVisible()
+
+    // The concurrent upgrades summary panel must be visible
+    const concurrentPanel = page.locator('[aria-label="Units under upgrade"]')
+    await expect(concurrentPanel).toBeVisible()
+    await expect(concurrentPanel).toContainText('Units Under Upgrade')
+
+    // Must list both upgrading units
+    const items = concurrentPanel.locator('.concurrent-upgrade-item')
+    await expect(items).toHaveCount(2)
+
+    // The help text explaining offline behavior must be present
+    await expect(concurrentPanel.locator('.concurrent-upgrades-help')).toBeVisible()
+
+    // Each item should show unit type, new level, and ticks remaining
+    await expect(items.first().locator('.concurrent-upgrade-type')).toBeVisible()
+    await expect(items.first().locator('.concurrent-upgrade-ticks')).toBeVisible()
+  })
 })
 
 test.describe('Building detail tick-refresh stability', () => {

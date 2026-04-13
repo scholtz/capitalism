@@ -718,6 +718,8 @@ export default {
       cost: 'Cost: {cost}',
       duration: 'Duration: {ticks} ticks',
       statChange: '{label}: {current} → {next}',
+      laborCost: 'Labor cost/tick',
+      energyCost: 'Energy cost/tick',
       confirmButton: 'Upgrade Now',
       confirmingButton: 'Scheduling…',
       pendingTitle: 'Upgrade in Progress',
@@ -729,6 +731,9 @@ export default {
       errorPendingPlan: 'A configuration change is already in progress. Wait or cancel it first.',
       errorGeneric: 'Failed to schedule upgrade.',
       upgradingBadge: 'Upgrading',
+      ticksRemaining: '{ticks} ticks left',
+      concurrentTitle: 'Units Under Upgrade',
+      concurrentHelp: 'These units are temporarily offline and will not operate until their upgrade completes. Multiple units can be upgraded simultaneously.',
     },
     starterSetup: {
       title: 'New Factory — Ready to Set Up',
