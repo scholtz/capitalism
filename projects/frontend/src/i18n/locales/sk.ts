@@ -784,7 +784,7 @@ export default {
     },
     unitDescriptions: {
       MINING: 'Produkuje suroviny z bane.',
-      STORAGE: 'Skladuje suroviny alebo hotov\u00e9 produkty.',
+      STORAGE: 'Ukladá suroviny alebo hotové výrobky s 10× väčšou kapacitou ako štandardné vstupno-výstupné jednotky — dedikovaná logistická vrstva pre vysokopriepustné zásobovanie.',
       B2B_SALES: 'Pred\u00e1va materi\u00e1ly firmom.',
       PURCHASE: 'Nakupuje produkty z trhu.',
       MANUFACTURING: 'Vyr\u00e1ba produkty zo surov\u00edn.',

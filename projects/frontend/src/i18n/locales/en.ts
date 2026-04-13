@@ -786,7 +786,7 @@ export default {
     },
     unitDescriptions: {
       MINING: 'Produces raw materials from the mine.',
-      STORAGE: 'Stores raw materials or finished products.',
+      STORAGE: 'Buffers raw materials or finished goods with 10× the holding capacity of standard input/output units — the dedicated logistics layer for high-throughput supply chains.',
       B2B_SALES: 'Sells materials to other businesses.',
       PURCHASE: 'Purchases products from the market.',
       MANUFACTURING: 'Manufactures products from raw materials.',

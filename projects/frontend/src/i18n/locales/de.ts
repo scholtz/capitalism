@@ -787,7 +787,7 @@ export default {
     },
     unitDescriptions: {
       MINING: 'Produziert Rohstoffe aus dem Bergwerk.',
-      STORAGE: 'Lagert Rohstoffe oder Fertigprodukte.',
+      STORAGE: 'Puffert Rohstoffe oder Fertigprodukte mit der 10-fachen Kapazität von Standard-Ein-/Ausgabeeinheiten — die dedizierte Logistikschicht für hochdurchsatzfähige Lieferketten.',
       B2B_SALES: 'Verkauft Materialien an andere Unternehmen.',
       PURCHASE: 'Kauft Produkte vom Markt.',
       MANUFACTURING: 'Stellt Produkte aus Rohstoffen her.',
