@@ -165,6 +165,18 @@ public sealed class SourcingCandidate
     /// <summary>Estimated quality of goods at this source (0.0–1.0).</summary>
     public decimal? EstimatedQuality { get; set; }
 
+    /// <summary>
+    /// Minimum quality in the variability band for exchange sources.
+    /// Null for non-exchange sourcing types.
+    /// </summary>
+    public decimal? QualityMin { get; set; }
+
+    /// <summary>
+    /// Maximum quality in the variability band for exchange sources.
+    /// Null for non-exchange sourcing types.
+    /// </summary>
+    public decimal? QualityMax { get; set; }
+
     /// <summary>Straight-line distance in km from source city to destination city.</summary>
     public double? DistanceKm { get; set; }
 

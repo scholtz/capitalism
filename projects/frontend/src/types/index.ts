@@ -234,7 +234,18 @@ export interface GlobalExchangeOffer {
   unitSymbol: string
   localAbundance: number
   exchangePricePerUnit: number
+  /** Typical (central) quality for this city/resource abundance level. */
   estimatedQuality: number
+  /**
+   * Minimum quality in the variability band. Actual purchase quality varies
+   * between qualityMin and qualityMax each tick.
+   */
+  qualityMin: number
+  /**
+   * Maximum quality in the variability band. Actual purchase quality varies
+   * between qualityMin and qualityMax each tick.
+   */
+  qualityMax: number
   transitCostPerUnit: number
   deliveredPricePerUnit: number
   distanceKm: number

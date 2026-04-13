@@ -2488,8 +2488,10 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         Assert.True(company.Cash < cashBefore,
             "Company should have paid for global exchange purchase.");
 
-        // Quality should be within expected exchange range (0.35 – 0.95).
-        Assert.All(inventory, inv => Assert.InRange(inv.Quality, 0.35m, 0.95m));
+        // Quality should be within the expanded exchange band (0.20 – 0.99).
+        // Actual quality is now sampled per tick from a variability band whose width
+        // depends on city abundance, so the range is wider than the old fixed [0.35, 0.95].
+        Assert.All(inventory, inv => Assert.InRange(inv.Quality, 0.20m, 0.99m));
     }
 
     [Fact]

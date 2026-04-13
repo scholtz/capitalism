@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   computeExchangePrice,
   computeExchangeQuality,
+  computeExchangeQualityBand,
   computeDistanceKm,
   computeTransitCostPerUnit,
   computeDeliveredPrice,
@@ -90,6 +91,63 @@ describe('computeExchangeQuality', () => {
     const quality = computeExchangeQuality(0.333)
     const decimals = quality.toString().split('.')[1]?.length ?? 0
     expect(decimals).toBeLessThanOrEqual(4)
+  })
+})
+
+describe('computeExchangeQualityBand', () => {
+  it('returns { min, max } where min < max for all valid abundances', () => {
+    for (const abundance of [0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0]) {
+      const { min, max } = computeExchangeQualityBand(abundance)
+      expect(min).toBeLessThan(max)
+    }
+  })
+
+  it('band is widest at zero abundance (≥ 19% wide)', () => {
+    const { min, max } = computeExchangeQualityBand(0)
+    expect(max - min).toBeGreaterThanOrEqual(0.19)
+  })
+
+  it('band is narrowest at full abundance (≤ 6% wide)', () => {
+    const { min, max } = computeExchangeQualityBand(1)
+    expect(max - min).toBeLessThanOrEqual(0.06)
+  })
+
+  it('band narrows as abundance increases', () => {
+    const lowBand = computeExchangeQualityBand(0.1)
+    const midBand = computeExchangeQualityBand(0.5)
+    const highBand = computeExchangeQualityBand(0.9)
+    const widthLow = lowBand.max - lowBand.min
+    const widthMid = midBand.max - midBand.min
+    const widthHigh = highBand.max - highBand.min
+    expect(widthLow).toBeGreaterThan(widthMid)
+    expect(widthMid).toBeGreaterThan(widthHigh)
+  })
+
+  it('estimatedQuality falls within the band', () => {
+    for (const abundance of [0, 0.25, 0.5, 0.75, 1.0]) {
+      const { min, max } = computeExchangeQualityBand(abundance)
+      const central = computeExchangeQuality(abundance)
+      expect(central).toBeGreaterThanOrEqual(min)
+      expect(central).toBeLessThanOrEqual(max)
+    }
+  })
+
+  it('clamps to [0.05, 0.99]', () => {
+    const { min, max } = computeExchangeQualityBand(0)
+    expect(min).toBeGreaterThanOrEqual(0.05)
+    expect(max).toBeLessThanOrEqual(0.99)
+  })
+
+  it('clamps clamped inputs same as zero/one', () => {
+    const negative = computeExchangeQualityBand(-1)
+    const zero = computeExchangeQualityBand(0)
+    expect(negative.min).toEqual(zero.min)
+    expect(negative.max).toEqual(zero.max)
+
+    const overflow = computeExchangeQualityBand(2)
+    const full = computeExchangeQualityBand(1)
+    expect(overflow.min).toEqual(full.min)
+    expect(overflow.max).toEqual(full.max)
   })
 })
 
@@ -237,6 +295,8 @@ function makeOffer(
     exchangePricePerUnit: number
     transitCostPerUnit: number
     estimatedQuality: number
+    qualityMin: number
+    qualityMax: number
     localAbundance: number
     distanceKm: number
   }> = {},
@@ -250,6 +310,8 @@ function makeOffer(
   localAbundance: number
   exchangePricePerUnit: number
   estimatedQuality: number
+  qualityMin: number
+  qualityMax: number
   transitCostPerUnit: number
   deliveredPricePerUnit: number
   distanceKm: number
@@ -266,6 +328,8 @@ function makeOffer(
     transitCostPerUnit: 0,
     deliveredPricePerUnit: 11.0,
     estimatedQuality: 0.77,
+    qualityMin: 0.7075,
+    qualityMax: 0.8325,
     distanceKm: 0,
     ...overrides,
   }
@@ -389,6 +453,8 @@ describe('selectOptimalOffer', () => {
       transitCostPerUnit: 0,
       deliveredPricePerUnit: 11.0,
       estimatedQuality: 0.77,
+      qualityMin: 0.7075,
+      qualityMax: 0.8325,
       distanceKm: 0,
       blocked: false,
       blockedReason: null,
@@ -561,6 +627,8 @@ function makeAnnotated(
     localAbundance: overrides.localAbundance ?? 0.5,
     exchangePricePerUnit: overrides.exchangePricePerUnit ?? 10,
     estimatedQuality: overrides.estimatedQuality ?? 0.65,
+    qualityMin: overrides.qualityMin ?? 0.5875,
+    qualityMax: overrides.qualityMax ?? 0.7125,
     transitCostPerUnit: overrides.transitCostPerUnit ?? 0,
     deliveredPricePerUnit: overrides.deliveredPricePerUnit ?? overrides.exchangePricePerUnit ?? 10,
     distanceKm: overrides.distanceKm ?? 0,

@@ -1356,3 +1356,99 @@ test.describe('Global Exchange — tick-refresh stability', () => {
     await expect(page.locator('.exchange-loading')).toHaveCount(0)
   })
 })
+
+// ── Quality variability bands ─────────────────────────────────────────────────
+
+test.describe('Global Exchange — quality variability bands', () => {
+  test('each offer card shows a quality range (min–max) not just a single value', async ({
+    page,
+  }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // The Wood resource row's first offer card must show a quality range
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    await expect(woodRow).toBeVisible()
+
+    const firstCard = woodRow.locator('.city-offer-card').first()
+    // quality-range element must contain an en-dash (–) separating min and max
+    const qualityRange = firstCard.locator('.quality-range')
+    await expect(qualityRange).toBeVisible()
+    const rangeText = await qualityRange.textContent()
+    expect(rangeText).toContain('–')
+    // Both sides of the dash must be percentage values
+    const parts = (rangeText ?? '').split('–').map((s) => s.trim())
+    expect(parts).toHaveLength(2)
+    expect(parts[0]).toMatch(/%/)
+    expect(parts[1]).toMatch(/%/)
+  })
+
+  test('quality band bar is rendered for each offer card', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    const firstCard = woodRow.locator('.city-offer-card').first()
+    // The band bar track must be rendered
+    await expect(firstCard.locator('.quality-band-bar')).toBeVisible()
+    // The filled portion inside the band bar must be rendered
+    await expect(firstCard.locator('.quality-band-fill')).not.toHaveCount(0)
+    // The center tick marking the estimated quality must be rendered
+    await expect(firstCard.locator('.quality-band-center')).not.toHaveCount(0)
+  })
+
+  test('high-abundance resource (Wood 70%) shows narrower quality range than low-abundance (ChemMinerals 30%)', async ({
+    page,
+  }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    // Wood (abundance 0.7) → Bratislava card
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    const woodBraCard = woodRow.locator('.city-offer-card').filter({ hasText: 'Bratislava' })
+    const woodRangeText = await woodBraCard.locator('.quality-range').textContent()
+
+    // Chemical Minerals (abundance 0.3 in Bratislava seed data) → Bratislava card
+    const chemRow = page.locator('.resource-row[data-slug="chemical-minerals"]')
+    const chemBraCard = chemRow.locator('.city-offer-card').filter({ hasText: 'Bratislava' })
+    const chemRangeText = await chemBraCard.locator('.quality-range').textContent()
+
+    // Parse the ranges
+    const parseRange = (text: string | null): number => {
+      if (!text) return 0
+      const parts = text.split('–').map((s) => parseFloat(s.replace('%', '').trim()))
+      return Math.abs((parts[1] ?? 0) - (parts[0] ?? 0))
+    }
+
+    const woodBandWidth = parseRange(woodRangeText)
+    const chemBandWidth = parseRange(chemRangeText)
+
+    // Higher abundance → narrower band (more predictable quality)
+    expect(chemBandWidth).toBeGreaterThan(woodBandWidth)
+  })
+
+  test('quality band tooltip hint is accessible via title attribute', async ({ page }) => {
+    const cities = makeDefaultCities()
+    const resources = makeDefaultResources()
+    setupMockApi(page, { cities, resourceTypes: resources })
+    await page.goto('/exchange')
+    await expect(page.locator('.exchange-loading')).toHaveCount(0)
+
+    const woodRow = page.locator('.resource-row[data-slug="wood"]')
+    const firstCard = woodRow.locator('.city-offer-card').first()
+    // The quality band bar has a title attribute explaining the variability
+    const bandBar = firstCard.locator('.quality-band-bar')
+    const title = await bandBar.getAttribute('title')
+    expect(title).toBeTruthy()
+    expect(title!.length).toBeGreaterThan(10)
+  })
+})

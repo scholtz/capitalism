@@ -392,6 +392,126 @@ public sealed class GlobalExchangeCalculatorUnitTests
             $"Mid-abundance quality {quality} should be strictly between 0.35 and 0.95");
     }
 
+    // ---------------------------------------------------------------------------
+    // ComputeExchangeQualityBand
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void ComputeExchangeQualityBand_ZeroAbundance_HasWidestBand()
+    {
+        var (min, max) = GlobalExchangeCalculator.ComputeExchangeQualityBand(0m);
+        var centralQuality = GlobalExchangeCalculator.ComputeExchangeQuality(0m);
+        // Band should be widest (20 %) at zero abundance.
+        Assert.True(max - min >= 0.19m, $"Band at zero abundance should be ≥19% wide, got {max - min:P2}");
+        Assert.True(min < centralQuality, "min must be below central quality");
+        Assert.True(max > centralQuality, "max must be above central quality");
+    }
+
+    [Fact]
+    public void ComputeExchangeQualityBand_FullAbundance_HasNarrowestBand()
+    {
+        var (min, max) = GlobalExchangeCalculator.ComputeExchangeQualityBand(1m);
+        // Band should be narrowest (5 %) at full abundance.
+        Assert.True(max - min <= 0.06m, $"Band at full abundance should be ≤6% wide, got {max - min:P2}");
+        Assert.InRange(min, 0.05m, 0.99m);
+        Assert.InRange(max, 0.05m, 0.99m);
+    }
+
+    [Fact]
+    public void ComputeExchangeQualityBand_MinIsAlwaysLessThanMax()
+    {
+        foreach (var abundance in new[] { 0m, 0.1m, 0.3m, 0.5m, 0.7m, 0.9m, 1.0m })
+        {
+            var (min, max) = GlobalExchangeCalculator.ComputeExchangeQualityBand(abundance);
+            Assert.True(min < max, $"min ({min}) must be < max ({max}) at abundance {abundance}");
+        }
+    }
+
+    [Fact]
+    public void ComputeExchangeQualityBand_EstimatedQualityFallsWithinBand()
+    {
+        foreach (var abundance in new[] { 0m, 0.25m, 0.5m, 0.75m, 1.0m })
+        {
+            var (min, max) = GlobalExchangeCalculator.ComputeExchangeQualityBand(abundance);
+            var central = GlobalExchangeCalculator.ComputeExchangeQuality(abundance);
+            Assert.True(central >= min && central <= max,
+                $"Central quality {central} must be within band [{min}, {max}] at abundance {abundance}");
+        }
+    }
+
+    [Fact]
+    public void ComputeExchangeQualityBand_BandNarrowsAsAbundanceIncreases()
+    {
+        var (minLow, maxLow)   = GlobalExchangeCalculator.ComputeExchangeQualityBand(0.1m);
+        var (minMid, maxMid)   = GlobalExchangeCalculator.ComputeExchangeQualityBand(0.5m);
+        var (minHigh, maxHigh) = GlobalExchangeCalculator.ComputeExchangeQualityBand(0.9m);
+
+        var widthLow  = maxLow  - minLow;
+        var widthMid  = maxMid  - minMid;
+        var widthHigh = maxHigh - minHigh;
+
+        Assert.True(widthLow > widthMid, $"Band at low abundance ({widthLow:P2}) must be wider than mid ({widthMid:P2})");
+        Assert.True(widthMid > widthHigh, $"Band at mid abundance ({widthMid:P2}) must be wider than high ({widthHigh:P2})");
+    }
+
+    [Fact]
+    public void ComputeExchangeQualityBand_ClampsWithinValidRange()
+    {
+        var (min, max) = GlobalExchangeCalculator.ComputeExchangeQualityBand(0m);
+        Assert.True(min >= 0.05m, "min must be ≥ 0.05");
+        Assert.True(max <= 0.99m, "max must be ≤ 0.99");
+    }
+
+    // ---------------------------------------------------------------------------
+    // SampleExchangeQuality
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void SampleExchangeQuality_AlwaysFallsWithinBand()
+    {
+        var cityId = Guid.NewGuid();
+        var resourceId = Guid.NewGuid();
+        foreach (var abundance in new[] { 0m, 0.3m, 0.6m, 1.0m })
+        {
+            var (min, max) = GlobalExchangeCalculator.ComputeExchangeQualityBand(abundance);
+            for (long tick = 1; tick <= 20; tick++)
+            {
+                var sample = GlobalExchangeCalculator.SampleExchangeQuality(abundance, tick, cityId, resourceId);
+                Assert.True(sample >= min && sample <= max,
+                    $"Sample {sample} must be within [{min}, {max}] at abundance {abundance}, tick {tick}");
+            }
+        }
+    }
+
+    [Fact]
+    public void SampleExchangeQuality_IsDeterministic()
+    {
+        var abundance = 0.5m;
+        var cityId = Guid.NewGuid();
+        var resourceId = Guid.NewGuid();
+        var tick = 42L;
+
+        var first  = GlobalExchangeCalculator.SampleExchangeQuality(abundance, tick, cityId, resourceId);
+        var second = GlobalExchangeCalculator.SampleExchangeQuality(abundance, tick, cityId, resourceId);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void SampleExchangeQuality_VariesAcrossTicks()
+    {
+        var abundance = 0.3m;
+        var cityId = Guid.NewGuid();
+        var resourceId = Guid.NewGuid();
+
+        var samples = Enumerable.Range(1, 50)
+            .Select(t => GlobalExchangeCalculator.SampleExchangeQuality(abundance, t, cityId, resourceId))
+            .Distinct()
+            .Count();
+
+        // Over 50 ticks, at least half should be distinct values (genuine variation).
+        Assert.True(samples >= 5, $"Expected diverse quality samples across ticks, got {samples} distinct values");
+    }
+
     [Fact]
     public void ComputeExchangePrice_HigherRentCity_HasHigherPrice()
     {

@@ -146,6 +146,8 @@ public sealed partial class Query
                     LocalAbundance = decimal.Round(abundance, 4, MidpointRounding.AwayFromZero),
                     ExchangePricePerUnit = exchangePrice,
                     EstimatedQuality = GlobalExchangeCalculator.ComputeExchangeQuality(abundance),
+                    QualityMin = GlobalExchangeCalculator.ComputeExchangeQualityBand(abundance).min,
+                    QualityMax = GlobalExchangeCalculator.ComputeExchangeQualityBand(abundance).max,
                     TransitCostPerUnit = transitCost,
                     DeliveredPricePerUnit = exchangePrice + transitCost,
                     DistanceKm = decimal.Round(

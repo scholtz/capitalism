@@ -117,7 +117,22 @@ public sealed class GlobalExchangeOffer
     public string UnitSymbol { get; set; } = string.Empty;
     public decimal LocalAbundance { get; set; }
     public decimal ExchangePricePerUnit { get; set; }
+
+    /// <summary>Typical (central) quality for this city/resource abundance level.</summary>
     public decimal EstimatedQuality { get; set; }
+
+    /// <summary>
+    /// Minimum quality in the variability band. Actual purchase quality varies
+    /// between <see cref="QualityMin"/> and <see cref="QualityMax"/> each tick.
+    /// </summary>
+    public decimal QualityMin { get; set; }
+
+    /// <summary>
+    /// Maximum quality in the variability band. Actual purchase quality varies
+    /// between <see cref="QualityMin"/> and <see cref="QualityMax"/> each tick.
+    /// </summary>
+    public decimal QualityMax { get; set; }
+
     public decimal TransitCostPerUnit { get; set; }
     public decimal DeliveredPricePerUnit { get; set; }
     public decimal DistanceKm { get; set; }

@@ -28,6 +28,46 @@ public static class GlobalExchangeCalculator
         return decimal.Round(Math.Clamp(0.35m + (normalizedAbundance * 0.60m), 0.35m, 0.95m), 4, MidpointRounding.AwayFromZero);
     }
 
+    /// <summary>
+    /// Computes the quality band for global exchange sourcing at a given abundance.
+    /// The band width scales from 20% at zero abundance (scarce, uncertain) down to
+    /// 5% at full abundance (plentiful, consistent). The centre of the band is the
+    /// same value returned by <see cref="ComputeExchangeQuality"/>.
+    /// </summary>
+    /// <returns>
+    /// A tuple of (min, max) quality clamped to [0.05, 0.99].
+    /// </returns>
+    public static (decimal min, decimal max) ComputeExchangeQualityBand(decimal abundance)
+    {
+        var normalizedAbundance = Math.Clamp(abundance, 0m, 1m);
+        var centralQuality = 0.35m + (normalizedAbundance * 0.60m);
+        var bandWidth = 0.05m + ((1m - normalizedAbundance) * 0.15m);
+        var halfBand = bandWidth / 2m;
+        var min = decimal.Round(Math.Clamp(centralQuality - halfBand, 0.05m, 0.99m), 4, MidpointRounding.AwayFromZero);
+        var max = decimal.Round(Math.Clamp(centralQuality + halfBand, 0.05m, 0.99m), 4, MidpointRounding.AwayFromZero);
+        return (min, max);
+    }
+
+    /// <summary>
+    /// Samples a deterministic quality value within the quality band for a given
+    /// (tick, sourceCityId, resourceTypeId) combination.
+    /// The same inputs always produce the same output, ensuring tick-reproducibility.
+    /// </summary>
+    public static decimal SampleExchangeQuality(decimal abundance, long tick, Guid sourceCityId, Guid resourceTypeId)
+    {
+        var (min, max) = ComputeExchangeQualityBand(abundance);
+        // Deterministic hash mixing to derive a fraction in [0, 1)
+        unchecked
+        {
+            var h = (long)tick * 1_000_003L
+                    ^ (long)(uint)sourceCityId.GetHashCode() * 999_983L
+                    ^ (long)(uint)resourceTypeId.GetHashCode() * 998_993L;
+            var fraction = (Math.Abs(h) % 10_000L) / 10_000m;
+            var sampled = min + (fraction * (max - min));
+            return decimal.Round(Math.Clamp(sampled, min, max), 4, MidpointRounding.AwayFromZero);
+        }
+    }
+
     public static decimal ComputeTransitCostPerUnit(City sourceCity, City destinationCity, ResourceType resourceType)
     {
         if (sourceCity.Id == destinationCity.Id)

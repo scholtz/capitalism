@@ -312,6 +312,7 @@ public static class SourcingComparisonService
             var transitCost = GlobalExchangeCalculator.ComputeTransitCostPerUnit(sourceCity, destinationCity, resource);
             var deliveredPrice = exchangePrice + transitCost;
             var quality = GlobalExchangeCalculator.ComputeExchangeQuality(abundance);
+            var (qualityMin, qualityMax) = GlobalExchangeCalculator.ComputeExchangeQualityBand(abundance);
             var distanceKm = GlobalExchangeCalculator.ComputeDistanceKm(
                 sourceCity.Latitude, sourceCity.Longitude,
                 destinationCity.Latitude, destinationCity.Longitude);
@@ -342,6 +343,8 @@ public static class SourcingComparisonService
                 TransitCostPerUnit = transitCost,
                 DeliveredPricePerUnit = deliveredPrice,
                 EstimatedQuality = quality,
+                QualityMin = qualityMin,
+                QualityMax = qualityMax,
                 DistanceKm = distanceKm,
                 IsEligible = eligible,
                 BlockReason = blockReason,

@@ -29,7 +29,7 @@ It will use real world map. The game will start in single city and later other c
 - ✅ 95% — For upgrading the units show true changes what effect it will have. For example the storage capacity of the unit will expand from 100 to 250 and power consumption will increase from 1MW to 1.5MW and salaries will increase from 1 manhour to 2 manhour for example. **Delivered**: The upgrade panel now shows a full before/after stat table — primary throughput stat, labor cost/tick delta, and energy cost/tick delta — all with explicit +delta badges. Backend `unitUpgradeInfo` returns `currentLaborCostPerTick`, `nextLaborCostPerTick`, `currentEnergyCostPerTick`, `nextEnergyCostPerTick`. Backend test `UnitUpgradeInfo_IncludesLaborAndEnergyCostDeltas` validates the delta values.
 
 ### Global exchange
-- Make the quality in global exchange vary from 5 to 20 %
+- ✅ 95% — Quality variability bands are implemented end-to-end. Each exchange offer now exposes a `qualityMin`/`qualityMax` band whose width scales from 20% at zero abundance (scarce, unpredictable) to 5% at full abundance (plentiful, consistent). The exchange UI shows the range (e.g. "59% – 71%") plus a visual band bar with a centre tick for the typical estimate. Actual purchased quality is sampled deterministically from the band each tick, so factory inputs vary realistcally. Sourcing candidate panels in building detail also receive quality band data. Backend: `GlobalExchangeCalculator.ComputeExchangeQualityBand` + `SampleExchangeQuality`; 13 new backend unit tests; 1 tick-engine range test updated. Frontend: 7 new unit tests; 4 new E2E tests. Remaining: sort/filter by quality band in the exchange UI.
 
 ### Stock exchange
 - Do not hide the account selection in the navbar in stock exchange

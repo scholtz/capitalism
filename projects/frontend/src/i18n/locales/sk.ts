@@ -493,6 +493,7 @@ export default {
     transitCost: 'Doprava',
     deliveredPrice: 'Doručenie',
     quality: 'Kvalita',
+    qualityBandHint: 'Skutočná kvalita sa mení v tomto rozsahu každý tick. Vyššia dostupnosť znamená predvídateľnejšiu kvalitu.',
     abundance: 'Miestna dostupnosť',
     bestDelivered: 'Najlepšia cena',
     bestDeliveredHint: 'Najnižšia cena dodania pre túto surovinu do vybraného mesta.',

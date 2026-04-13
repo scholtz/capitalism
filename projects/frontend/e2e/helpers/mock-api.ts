@@ -1004,6 +1004,16 @@ function computeMockExchangeQuality(abundance: number) {
   return Number(Math.min(Math.max(0.35 + abundance * 0.6, 0.35), 0.95).toFixed(4))
 }
 
+function computeMockExchangeQualityBand(abundance: number): { min: number; max: number } {
+  const normalizedAbundance = Math.min(Math.max(abundance, 0), 1)
+  const centralQuality = 0.35 + normalizedAbundance * 0.6
+  const bandWidth = 0.05 + (1 - normalizedAbundance) * 0.15
+  const halfBand = bandWidth / 2
+  const min = Number(Math.min(Math.max(centralQuality - halfBand, 0.05), 0.99).toFixed(4))
+  const max = Number(Math.min(Math.max(centralQuality + halfBand, 0.05), 0.99).toFixed(4))
+  return { min, max }
+}
+
 function computeMockTransitCost(weightPerUnit: number, distanceKm: number) {
   const rawCost = distanceKm * Math.max(weightPerUnit, 0.1) * 0.0025
   return Number(Math.max(rawCost, 0.01).toFixed(2))
@@ -3842,6 +3852,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
                 const distanceKm = computeDistanceKm(city.latitude, city.longitude, destinationCity.latitude, destinationCity.longitude)
                 const exchangePricePerUnit = computeMockExchangePrice(resource.basePrice, abundance, city.averageRentPerSqm)
                 const transitCostPerUnit = computeMockTransitCost(resource.weightPerUnit, distanceKm)
+                const qualityBand = computeMockExchangeQualityBand(abundance)
                 return {
                   cityId: city.id,
                   cityName: city.name,
@@ -3852,6 +3863,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
                   localAbundance: abundance,
                   exchangePricePerUnit,
                   estimatedQuality: computeMockExchangeQuality(abundance),
+                  qualityMin: qualityBand.min,
+                  qualityMax: qualityBand.max,
                   transitCostPerUnit,
                   deliveredPricePerUnit: Number((exchangePricePerUnit + transitCostPerUnit).toFixed(2)),
                   distanceKm: Number(distanceKm.toFixed(1)),

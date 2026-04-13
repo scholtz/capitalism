@@ -42,16 +42,29 @@ public sealed partial class PurchasingPhase
                 var exchangePrice = GlobalExchangeCalculator.ComputeExchangePrice(sourceCity, resource, abundance);
                 var transitCost = GlobalExchangeCalculator.ComputeTransitCostPerUnit(sourceCity, destinationCity, resource);
                 var deliveredPrice = exchangePrice + transitCost;
-                var quality = GlobalExchangeCalculator.ComputeExchangeQuality(abundance);
+                var estimatedQuality = GlobalExchangeCalculator.ComputeExchangeQuality(abundance);
 
-                return (sourceCity, exchangePrice, transitCost, deliveredPrice, quality);
+                return (sourceCity, exchangePrice, transitCost, deliveredPrice, estimatedQuality);
             })
-            .Where(o => o.deliveredPrice <= maxPrice && o.quality >= minQuality)
+            .Where(o => o.deliveredPrice <= maxPrice && o.estimatedQuality >= minQuality)
             .OrderBy(o => o.deliveredPrice)
-            .ThenByDescending(o => o.quality)
+            .ThenByDescending(o => o.estimatedQuality)
             .FirstOrDefault();
 
         if (bestOffer == default) return (0m, 0m, 0m);
+
+        // Sample actual quality within the band for this tick/city/resource combination.
+        // The eligibility check above uses estimatedQuality; the actual quality received
+        // varies ±5–10 % each tick, creating meaningful sourcing decisions for players.
+        var abundance2 = context.ResourcesByCity
+            .GetValueOrDefault(bestOffer.sourceCity.Id)
+            ?.FirstOrDefault(cr => cr.ResourceTypeId == resourceId)
+            ?.Abundance ?? GlobalExchangeCalculator.DefaultMissingAbundance;
+        var actualQuality = GlobalExchangeCalculator.SampleExchangeQuality(
+            abundance2,
+            context.CurrentTick,
+            bestOffer.sourceCity.Id,
+            resourceId);
 
         var amountToBuy = maxAmountToBuy;
         var totalCost = amountToBuy * bestOffer.deliveredPrice;
@@ -100,6 +113,6 @@ public sealed partial class PurchasingPhase
             });
         }
 
-        return (amountToBuy, bestOffer.quality, totalCost);
+        return (amountToBuy, actualQuality, totalCost);
     }
 }

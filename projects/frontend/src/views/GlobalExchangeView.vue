@@ -123,6 +123,8 @@ const EXCHANGE_QUERY = `
       localAbundance
       exchangePricePerUnit
       estimatedQuality
+      qualityMin
+      qualityMax
       transitCostPerUnit
       deliveredPricePerUnit
       distanceKm
@@ -524,7 +526,22 @@ function priceVsBaseClass(pricePerUnit: number, basePrice: number): string {
                   <div class="offer-metric">
                     <span class="metric-label">{{ t('globalExchange.quality') }}</span>
                     <span class="metric-value quality-value">
-                      {{ formatPercent(offer.estimatedQuality) }}
+                      <span class="quality-range">
+                        {{ formatPercent(offer.qualityMin) }}&nbsp;–&nbsp;{{ formatPercent(offer.qualityMax) }}
+                      </span>
+                      <span class="quality-band-bar" :title="t('globalExchange.qualityBandHint')">
+                        <span
+                          class="quality-band-fill"
+                          :style="{
+                            left: `${offer.qualityMin * 100}%`,
+                            width: `${(offer.qualityMax - offer.qualityMin) * 100}%`,
+                          }"
+                        ></span>
+                        <span
+                          class="quality-band-center"
+                          :style="{ left: `${offer.estimatedQuality * 100}%` }"
+                        ></span>
+                      </span>
                     </span>
                   </div>
                   <div class="offer-metric">
@@ -1047,6 +1064,49 @@ function priceVsBaseClass(pricePerUnit: number, basePrice: number): string {
   font-size: 0.8rem;
   color: var(--color-text-secondary);
   padding: 0.5rem 0;
+}
+
+/* Quality band display */
+.quality-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+}
+
+.quality-range {
+  font-weight: 600;
+  font-size: 0.78rem;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.quality-band-bar {
+  position: relative;
+  width: 80px;
+  height: 5px;
+  background: color-mix(in srgb, var(--color-border) 60%, transparent);
+  border-radius: 99px;
+  overflow: visible;
+}
+
+.quality-band-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--color-primary) 70%, transparent);
+  min-width: 3px;
+}
+
+.quality-band-center {
+  position: absolute;
+  top: -2px;
+  transform: translateX(-50%);
+  width: 3px;
+  height: 9px;
+  border-radius: 1px;
+  background: var(--color-primary);
 }
 
 /* Product rows */

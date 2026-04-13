@@ -494,6 +494,7 @@ export default {
     transitCost: 'Transit',
     deliveredPrice: 'Geliefert',
     quality: 'Qualität',
+    qualityBandHint: 'Die tatsächliche Qualität schwankt jeden Tick innerhalb dieses Bereichs. Höhere Verfügbarkeit bedeutet gleichmäßigere Qualität.',
     abundance: 'Lokale Verfügbarkeit',
     bestDelivered: 'Bester Preis',
     bestDeliveredHint: 'Niedrigster Lieferpreis für diesen Rohstoff in die ausgewählte Stadt.',

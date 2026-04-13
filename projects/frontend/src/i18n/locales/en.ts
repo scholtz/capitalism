@@ -492,6 +492,7 @@ export default {
     transitCost: 'Transit',
     deliveredPrice: 'Delivered',
     quality: 'Quality',
+    qualityBandHint: 'Actual quality varies within this band each tick. Higher abundance gives narrower, more predictable quality.',
     abundance: 'Local abundance',
     bestDelivered: 'Best price',
     bestDeliveredHint: 'Lowest delivered price for this resource to the selected city.',

@@ -40,6 +40,25 @@ export function computeExchangeQuality(abundance: number): number {
 }
 
 /**
+ * Computes the quality variability band for global exchange sourcing at a given
+ * city abundance level. The band width scales from 20% at zero abundance (scarce,
+ * uncertain sourcing) down to 5% at full abundance (plentiful, consistent quality).
+ *
+ * Mirrors `GlobalExchangeCalculator.ComputeExchangeQualityBand`.
+ *
+ * @returns { min, max } quality values clamped to [0.05, 0.99].
+ */
+export function computeExchangeQualityBand(abundance: number): { min: number; max: number } {
+  const normalizedAbundance = Math.min(Math.max(abundance, 0), 1)
+  const centralQuality = 0.35 + normalizedAbundance * 0.6
+  const bandWidth = 0.05 + (1 - normalizedAbundance) * 0.15
+  const halfBand = bandWidth / 2
+  const min = Number(Math.min(Math.max(centralQuality - halfBand, 0.05), 0.99).toFixed(4))
+  const max = Number(Math.min(Math.max(centralQuality + halfBand, 0.05), 0.99).toFixed(4))
+  return { min, max }
+}
+
+/**
  * Computes the Haversine great-circle distance in kilometres between two
  * geographic coordinates.
  *
@@ -118,6 +137,8 @@ export interface AnnotatedExchangeOffer {
   localAbundance: number
   exchangePricePerUnit: number
   estimatedQuality: number
+  qualityMin: number
+  qualityMax: number
   transitCostPerUnit: number
   deliveredPricePerUnit: number
   distanceKm: number
@@ -152,6 +173,8 @@ export function annotateExchangeOffers(
     localAbundance: number
     exchangePricePerUnit: number
     estimatedQuality: number
+    qualityMin: number
+    qualityMax: number
     transitCostPerUnit: number
     deliveredPricePerUnit: number
     distanceKm: number
