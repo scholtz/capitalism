@@ -55,10 +55,10 @@ public sealed partial class TickContext
         return inventories.Sum(i => i.Quantity);
     }
 
-    /// <summary>Returns the remaining storage space in a unit based on its level.</summary>
+    /// <summary>Returns the remaining storage space in a unit based on its type and level.</summary>
     public decimal GetUnitFreeSpace(BuildingUnit unit)
     {
-        var capacity = GameConstants.StorageCapacity(unit.Level);
+        var capacity = GameConstants.GetUnitHoldingCapacity(unit.UnitType, unit.Level);
         return Math.Max(0m, capacity - GetUnitCurrentLoad(unit.Id));
     }
 

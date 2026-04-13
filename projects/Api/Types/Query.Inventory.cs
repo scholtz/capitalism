@@ -179,7 +179,7 @@ public sealed partial class Query
             UnitType.Mining or UnitType.Storage or UnitType.B2BSales
                 or UnitType.Purchase or UnitType.Manufacturing
                 or UnitType.Branding or UnitType.PublicSales
-                => GameConstants.StorageCapacity(unit.Level),
+                => GameConstants.GetUnitHoldingCapacity(unit.UnitType, unit.Level),
             _ => 0m
         };
     }

@@ -13,7 +13,7 @@ public static class GameConstants
     public const int DaysPerYear = 365;
     public const int TicksPerYear = TicksPerDay * DaysPerYear;
 
-    /// <summary>Maximum storage capacity (units) per unit level.</summary>
+    /// <summary>Base holding capacity (units) per unit level for purchase, sales, mining, and manufacturing units.</summary>
     public static decimal StorageCapacity(int level) => level switch
     {
         1 => 100m,
@@ -22,6 +22,29 @@ public static class GameConstants
         4 => 1000m,
         _ => 100m * (decimal)Math.Pow(2, Math.Max(level - 1, 0))
     };
+
+    /// <summary>
+    /// Maximum holding capacity for dedicated STORAGE units per level.
+    /// Storage units hold 10× the base capacity so players have a meaningful logistical
+    /// advantage when placing dedicated storage between production and sales stages.
+    /// </summary>
+    public static decimal StorageUnitHoldingCapacity(int level) => level switch
+    {
+        1 => 1000m,
+        2 => 2500m,
+        3 => 5000m,
+        4 => 10000m,
+        _ => 1000m * (decimal)Math.Pow(2, Math.Max(level - 1, 0))
+    };
+
+    /// <summary>
+    /// Returns the holding capacity for a unit of the given type and level.
+    /// STORAGE units have 10× the capacity of purchase, sales, mining, and manufacturing units.
+    /// </summary>
+    public static decimal GetUnitHoldingCapacity(string unitType, int level) =>
+        unitType == Data.Entities.UnitType.Storage
+            ? StorageUnitHoldingCapacity(level)
+            : StorageCapacity(level);
 
     /// <summary>Mining production per tick per unit level (multiplied by city abundance).</summary>
     public static decimal MiningRate(int level) => level switch
@@ -289,7 +312,7 @@ public static class GameConstants
     public static decimal GetUnitStat(string unitType, int level) => unitType switch
     {
         Data.Entities.UnitType.Mining         => MiningRate(level),
-        Data.Entities.UnitType.Storage        => StorageCapacity(level),
+        Data.Entities.UnitType.Storage        => StorageUnitHoldingCapacity(level),
         Data.Entities.UnitType.Manufacturing  => ManufacturingBatches(level),
         Data.Entities.UnitType.Purchase       => PurchaseCapacity(level),
         Data.Entities.UnitType.PublicSales    => SalesCapacity(level),

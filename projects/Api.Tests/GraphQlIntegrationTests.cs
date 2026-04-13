@@ -19362,6 +19362,137 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
     #endregion
 
+    #region Storage Unit Capacity
+
+    [Fact]
+    public async Task GameConstants_StorageUnitHoldingCapacity_IsTenTimesBaseCapacity()
+    {
+        // AC: Storage units must have 10× the holding capacity of purchase / sales units.
+        for (var level = 1; level <= 4; level++)
+        {
+            var storageCapacity = Api.Engine.GameConstants.StorageUnitHoldingCapacity(level);
+            var baseCapacity = Api.Engine.GameConstants.StorageCapacity(level);
+            Assert.True(storageCapacity == 10m * baseCapacity,
+                $"Level {level}: StorageUnitHoldingCapacity ({storageCapacity}) must be exactly 10× base capacity ({baseCapacity}).");
+        }
+    }
+
+    [Fact]
+    public async Task GameConstants_GetUnitHoldingCapacity_StorageUnitHasTenTimesPurchaseCapacity()
+    {
+        // GetUnitHoldingCapacity must return the 10× value for STORAGE
+        // and the base value for PURCHASE and sales unit types.
+        for (var level = 1; level <= 4; level++)
+        {
+            var storageHolding = Api.Engine.GameConstants.GetUnitHoldingCapacity(
+                Api.Data.Entities.UnitType.Storage, level);
+            var purchaseHolding = Api.Engine.GameConstants.GetUnitHoldingCapacity(
+                Api.Data.Entities.UnitType.Purchase, level);
+            var publicSalesHolding = Api.Engine.GameConstants.GetUnitHoldingCapacity(
+                Api.Data.Entities.UnitType.PublicSales, level);
+            var b2bSalesHolding = Api.Engine.GameConstants.GetUnitHoldingCapacity(
+                Api.Data.Entities.UnitType.B2BSales, level);
+
+            Assert.True(storageHolding == 10m * purchaseHolding,
+                $"Level {level}: STORAGE capacity ({storageHolding}) must be 10× PURCHASE capacity ({purchaseHolding}).");
+            Assert.True(storageHolding == 10m * publicSalesHolding,
+                $"Level {level}: STORAGE capacity ({storageHolding}) must be 10× PUBLIC_SALES capacity ({publicSalesHolding}).");
+            Assert.True(storageHolding == 10m * b2bSalesHolding,
+                $"Level {level}: STORAGE capacity ({storageHolding}) must be 10× B2B_SALES capacity ({b2bSalesHolding}).");
+        }
+    }
+
+    [Fact]
+    public async Task GameConstants_GetUnitStat_StorageUnitStatShowsHighCapacity()
+    {
+        // The displayed stat for a level-1 STORAGE unit must be 1000 (not 100),
+        // so the player can immediately see the 10× advantage in the UI.
+        var level1Stat = Api.Engine.GameConstants.GetUnitStat(Api.Data.Entities.UnitType.Storage, 1);
+        Assert.Equal(1000m, level1Stat);
+
+        var level4Stat = Api.Engine.GameConstants.GetUnitStat(Api.Data.Entities.UnitType.Storage, 4);
+        Assert.Equal(10000m, level4Stat);
+
+        // Purchase and sales units must still show lower values so players understand the contrast.
+        var purchaseLevel1 = Api.Engine.GameConstants.GetUnitStat(Api.Data.Entities.UnitType.Purchase, 1);
+        var publicSalesLevel1 = Api.Engine.GameConstants.GetUnitStat(Api.Data.Entities.UnitType.PublicSales, 1);
+        Assert.True(level1Stat > purchaseLevel1,
+            $"STORAGE stat ({level1Stat}) must exceed PURCHASE stat ({purchaseLevel1}).");
+        Assert.True(level1Stat > publicSalesLevel1,
+            $"STORAGE stat ({level1Stat}) must exceed PUBLIC_SALES stat ({publicSalesLevel1}).");
+    }
+
+    [Fact]
+    public async Task BuildingUnitInventorySummaries_StorageUnit_HasTenTimesCapacityOfPurchaseUnit()
+    {
+        // Integration test: the capacity returned in the GraphQL inventory summaries must
+        // reflect the 10× advantage for STORAGE units vs. PURCHASE units in the same building.
+        var token = await RegisterAndGetTokenAsync($"storage-cap-inv-{Guid.NewGuid()}@test.com");
+        var (companyId, _, _) = await CompleteOnboardingAsync(token, "Storage Cap Co");
+
+        // Directly seed a PURCHASE and STORAGE unit into the factory building.
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var companyGuid = Guid.Parse(companyId);
+        var factory = await db.Buildings
+            .Include(b => b.Units)
+            .FirstAsync(b => b.CompanyId == companyGuid && b.Type == Api.Data.Entities.BuildingType.Factory);
+
+        // Add a fresh PURCHASE and STORAGE unit to the factory at level 1.
+        var purchaseUnit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = factory.Id,
+            UnitType = Api.Data.Entities.UnitType.Purchase,
+            GridX = 0,
+            GridY = 2,
+            Level = 1,
+        };
+        var storageUnit = new Api.Data.Entities.BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = factory.Id,
+            UnitType = Api.Data.Entities.UnitType.Storage,
+            GridX = 1,
+            GridY = 2,
+            Level = 1,
+        };
+        db.BuildingUnits.AddRange(purchaseUnit, storageUnit);
+        await db.SaveChangesAsync();
+
+        // Query inventory summaries via GraphQL — these include the capacity field.
+        var result = await ExecuteGraphQlAsync(
+            """
+            query BuildingUnitInventorySummaries($buildingId: UUID!) {
+              buildingUnitInventorySummaries(buildingId: $buildingId) {
+                buildingUnitId
+                capacity
+              }
+            }
+            """,
+            new { buildingId = factory.Id },
+            token);
+
+        var summaries = result.GetProperty("data").GetProperty("buildingUnitInventorySummaries").EnumerateArray().ToList();
+
+        var purchaseSummary = summaries.FirstOrDefault(s => s.GetProperty("buildingUnitId").GetString() == purchaseUnit.Id.ToString());
+        var storageSummary = summaries.FirstOrDefault(s => s.GetProperty("buildingUnitId").GetString() == storageUnit.Id.ToString());
+
+        Assert.True(purchaseSummary.ValueKind != System.Text.Json.JsonValueKind.Undefined,
+            "PURCHASE unit must appear in buildingUnitInventorySummaries.");
+        Assert.True(storageSummary.ValueKind != System.Text.Json.JsonValueKind.Undefined,
+            "STORAGE unit must appear in buildingUnitInventorySummaries.");
+
+        var purchaseCapacity = purchaseSummary.GetProperty("capacity").GetDecimal();
+        var storageCapacity = storageSummary.GetProperty("capacity").GetDecimal();
+
+        Assert.True(storageCapacity >= 10m * purchaseCapacity,
+            $"STORAGE capacity ({storageCapacity}) must be at least 10× PURCHASE capacity ({purchaseCapacity}).");
+    }
+
+    #endregion
+
 }
 
 /// <summary>

@@ -22,7 +22,7 @@ It will use real world map. The game will start in single city and later other c
 - **Progress: 90% complete** — B2B sales units auto-fill competitive prices from linked products/resources at placement. Remaining: stronger visual hint when no source unit is configured yet.
 
 ### Basic unit definition
-- Make storage unit have 10x storage capacity then the purchase or sales units by default
+- ✅ 100% — Make storage unit have 10x storage capacity then the purchase or sales units by default. Implemented: STORAGE units hold 1000/2500/5000/10000 units at levels 1–4 vs 100/250/500/1000 for purchase/sales units. The upgrade info panel, inventory fill bar, and capacity stat all reflect the 10× difference so players can immediately see the storage advantage when planning layouts.
 
 ### Unit modification
 - While upgrade of unit is in progress do not move the items from or to the unit or do not produce the items. Allow upgrades UX to be the same as the edit building. Show the upgrade buttons in the edit mode and allow multiple units in the building to be upgraded at the same time. Test this by the upgrading active sales unit which did sale some product past tick and first tick while unit is upgraded it should not sell any products.

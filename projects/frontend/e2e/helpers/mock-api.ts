@@ -1011,8 +1011,10 @@ function computeMockTransitCost(weightPerUnit: number, distanceKm: number) {
 
 function getMockUnitCapacity(unit: MockBuildingUnit) {
   switch (unit.unitType) {
-    case 'MINING':
     case 'STORAGE':
+      // Storage units hold 10× the base capacity
+      return unit.level >= 4 ? 10000 : unit.level === 3 ? 5000 : unit.level === 2 ? 2500 : 1000
+    case 'MINING':
     case 'B2B_SALES':
     case 'PURCHASE':
     case 'MANUFACTURING':
