@@ -64,6 +64,9 @@ public sealed class ResourceMovementPhase : ITickPhase
         BuildingUnit source,
         Dictionary<Guid, decimal> movableQuantities)
     {
+        // A unit under upgrade is offline: it neither pushes nor receives inventory.
+        if (context.UnitsUnderUpgrade.Contains(source.Id)) return;
+
         if (!context.InventoryByUnit.TryGetValue(source.Id, out var inventories))
             return;
 
@@ -80,7 +83,9 @@ public sealed class ResourceMovementPhase : ITickPhase
                 continue;
 
             // Distribute evenly among neighbors with free space.
+            // Also exclude neighbors that are currently under upgrade — they don't receive items.
             var eligibleNeighbors = neighbors
+                .Where(n => !context.UnitsUnderUpgrade.Contains(n.Id))
                 .Where(n => context.GetUnitReceivingSpace(n, inv.ResourceTypeId, inv.ProductTypeId) > 0m)
                 .ToList();
             if (eligibleNeighbors.Count == 0) continue;

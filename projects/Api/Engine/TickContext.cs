@@ -55,6 +55,15 @@ public sealed partial class TickContext
     /// </summary>
     public Dictionary<(Guid CityId, Guid ItemId), MarketTrendState> TrendStatesByKey { get; init; } = [];
 
+    /// <summary>
+    /// Set of <see cref="BuildingUnit"/> IDs that currently have a pending upgrade in progress
+    /// (i.e., a <see cref="BuildingConfigurationPlanUnit"/> with <c>IsChanged = true</c>,
+    /// <c>TicksRequired &gt; 0</c>, and <c>AppliesAtTick &gt; CurrentTick</c>).
+    /// While a unit is under upgrade it must not receive items, push items, manufacture goods,
+    /// mine resources, or execute sales during any tick in the upgrade window.
+    /// </summary>
+    public HashSet<Guid> UnitsUnderUpgrade { get; init; } = [];
+
     public List<Inventory> NewInventory { get; } = [];
     public List<BuildingUnitResourceHistory> NewUnitResourceHistories { get; } = [];
 

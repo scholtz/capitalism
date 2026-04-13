@@ -35,6 +35,7 @@ public sealed class ManufacturingPhase : ITickPhase
             foreach (var unit in units)
             {
                 if (unit.UnitType != UnitType.Manufacturing) continue;
+                if (context.UnitsUnderUpgrade.Contains(unit.Id)) continue;
                 ProcessManufacturingUnit(context, building, unit, efficiency, maxCompanyAssetValue);
             }
         }

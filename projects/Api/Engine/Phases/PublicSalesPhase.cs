@@ -53,6 +53,7 @@ public sealed class PublicSalesPhase : ITickPhase
             foreach (var unit in units)
             {
                 if (unit.UnitType != UnitType.PublicSales) continue;
+                if (context.UnitsUnderUpgrade.Contains(unit.Id)) continue;
                 if (!context.InventoryByUnit.TryGetValue(unit.Id, out var inventories))
                     continue;
 

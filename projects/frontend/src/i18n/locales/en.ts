@@ -722,10 +722,13 @@ export default {
       confirmingButton: 'Scheduling…',
       pendingTitle: 'Upgrade in Progress',
       pendingBody: 'Upgrading to Level {level} — {ticks} ticks remaining',
+      pendingDowntimeNotice: '⚠ This unit is offline while the upgrade runs. It will not purchase, produce, move inventory, or sell until the upgrade is complete.',
+      availableDowntimeNotice: 'This unit will be offline during the upgrade — {ticks} ticks of downtime.',
       errorInsufficientFunds: 'Not enough cash to schedule this upgrade.',
       errorMaxLevel: 'Already at maximum level.',
       errorPendingPlan: 'A configuration change is already in progress. Wait or cancel it first.',
       errorGeneric: 'Failed to schedule upgrade.',
+      upgradingBadge: 'Upgrading',
     },
     starterSetup: {
       title: 'New Factory — Ready to Set Up',

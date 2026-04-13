@@ -35,6 +35,7 @@ public sealed class MiningPhase : ITickPhase
             foreach (var unit in units)
             {
                 if (unit.UnitType != UnitType.Mining) continue;
+                if (context.UnitsUnderUpgrade.Contains(unit.Id)) continue;
                 if (!unit.ResourceTypeId.HasValue) continue;
 
                 var abundance = abundanceMap.GetValueOrDefault(unit.ResourceTypeId.Value, 0m);

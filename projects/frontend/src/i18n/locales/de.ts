@@ -720,10 +720,13 @@ export default {
       confirmingButton: 'Wird geplant\u2026',
       pendingTitle: 'Upgrade l\u00e4uft',
       pendingBody: 'Upgrade auf Stufe {level} \u2014 noch {ticks} Ticks',
+      pendingDowntimeNotice: '\u26a0 Diese Einheit ist w\u00e4hrend des Upgrades offline. Sie kauft, produziert, verschiebt Inventar oder verkauft nicht, bis das Upgrade abgeschlossen ist.',
+      availableDowntimeNotice: 'Diese Einheit ist w\u00e4hrend des Upgrades offline \u2014 {ticks} Ticks Ausfallzeit.',
       errorInsufficientFunds: 'Nicht gen\u00fcgend Kapital f\u00fcr dieses Upgrade.',
       errorMaxLevel: 'Bereits auf maximaler Stufe.',
       errorPendingPlan: 'Eine Konfigurations\u00e4nderung l\u00e4uft bereits. Bitte warten oder abbrechen.',
       errorGeneric: 'Upgrade konnte nicht geplant werden.',
+      upgradingBadge: 'Wird upgegradet',
     },
     starterSetup: {
       title: 'Neue Fabrik — Bereit zur Einrichtung',

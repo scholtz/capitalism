@@ -35,6 +35,7 @@ public sealed partial class PurchasingPhase : ITickPhase
             foreach (var unit in units)
             {
                 if (unit.UnitType != UnitType.Purchase) continue;
+                if (context.UnitsUnderUpgrade.Contains(unit.Id)) continue;
                 ProcessPurchaseUnit(context, building, unit, company);
             }
         }

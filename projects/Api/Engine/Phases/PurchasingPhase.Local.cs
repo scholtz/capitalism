@@ -28,6 +28,8 @@ public sealed partial class PurchasingPhase
             {
                 if (unit.UnitType != UnitType.B2BSales)
                     continue;
+                if (context.UnitsUnderUpgrade.Contains(unit.Id))
+                    continue;
                 if (purchaseUnit.VendorLockCompanyId.HasValue && building.CompanyId != purchaseUnit.VendorLockCompanyId.Value)
                     continue;
                 if (!purchaseUnit.VendorLockCompanyId.HasValue && building.CompanyId != destinationBuilding.CompanyId)

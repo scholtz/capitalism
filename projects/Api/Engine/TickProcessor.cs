@@ -145,6 +145,28 @@ public sealed class TickProcessor(
         var trendStates = await db.MarketTrendStates.ToListAsync(ct);
         var trendStatesByKey = trendStates.ToDictionary(t => (t.CityId, t.ItemId));
 
+        // Build a position-keyed unit map and derive which units are currently under upgrade.
+        // A unit is "under upgrade" when its building has a pending configuration plan containing
+        // an IsChanged entry with TicksRequired > 0 whose AppliesAtTick is still in the future.
+        // These units must not produce, purchase, sell, mine, or move inventory this tick.
+        var unitsByBuildingPosition = buildings.ToDictionary(
+            b => b.Id,
+            b => b.Units.DistinctBy(u => (u.GridX, u.GridY)).ToDictionary(u => (u.GridX, u.GridY)));
+
+        var unitsUnderUpgrade = new HashSet<Guid>();
+        foreach (var building in buildings)
+        {
+            if (building.PendingConfiguration is null) continue;
+            foreach (var planUnit in building.PendingConfiguration.Units)
+            {
+                if (!planUnit.IsChanged || planUnit.TicksRequired <= 0) continue;
+                if (planUnit.AppliesAtTick <= gameState.CurrentTick) continue;
+                if (!unitsByBuildingPosition.TryGetValue(building.Id, out var posMap)) continue;
+                if (posMap.TryGetValue((planUnit.GridX, planUnit.GridY), out var activeUnit))
+                    unitsUnderUpgrade.Add(activeUnit.Id);
+            }
+        }
+
         return new TickContext
         {
             Db = db,
@@ -154,9 +176,7 @@ public sealed class TickProcessor(
                 .GroupBy(b => b.Type)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase),
             UnitsByBuilding = buildings.ToDictionary(b => b.Id, b => b.Units.ToList()),
-            UnitsByBuildingPosition = buildings.ToDictionary(
-                b => b.Id,
-                b => b.Units.DistinctBy(u => (u.GridX, u.GridY)).ToDictionary(u => (u.GridX, u.GridY))),
+            UnitsByBuildingPosition = unitsByBuildingPosition,
             InventoryByUnit = inventories
                 .Where(i => i.BuildingUnitId.HasValue)
                 .GroupBy(i => i.BuildingUnitId!.Value)
@@ -185,6 +205,7 @@ public sealed class TickProcessor(
             TickStartRemainingQuantityByInventoryId = inventories.ToDictionary(i => i.Id, i => i.Quantity),
             RecentSalaryByCity = recentSalaryByCity,
             TrendStatesByKey = trendStatesByKey,
+            UnitsUnderUpgrade = unitsUnderUpgrade,
         };
     }
 }

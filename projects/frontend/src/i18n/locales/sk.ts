@@ -719,10 +719,13 @@ export default {
       confirmingButton: 'Pl\u00e1nujem\u2026',
       pendingTitle: 'Vylep\u0161enie prebieha',
       pendingBody: 'Vylep\u0161enie na \u00farovn\u0148 {level} \u2014 zost\u00e1va {ticks} tickov',
+      pendingDowntimeNotice: '\u26a0 T\u00e1to jednotka je offline po\u010das vylep\u0161enia. Nebude nakupova\u0165, vyr\u00e1ba\u0165, pres\u00fava\u0165 z\u00e1soby ani preda\u0165, k\u00fdm nebude vylep\u0161enie dokon\u010den\u00e9.',
+      availableDowntimeNotice: 'T\u00e1to jednotka bude offline po\u010das vylep\u0161enia \u2014 {ticks} tickov v\u00fdpadku.',
       errorInsufficientFunds: 'Nedostatok hotovosti na vylep\u0161enie.',
       errorMaxLevel: 'Jednotka je u\u017e na maxim\u00e1lnej \u00farovni.',
       errorPendingPlan: 'Zmena konfigur\u00e1cie u\u017e prebieha. Po\u010dkajte alebo ju zru\u0161te.',
       errorGeneric: 'Vylep\u0161enie sa nepodarilo napl\u00e1nova\u0165.',
+      upgradingBadge: 'Vylep\u0161uje sa',
     },
     starterSetup: {
       title: 'Nová továreň — pripravená na nastavenie',
