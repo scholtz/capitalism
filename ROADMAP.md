@@ -295,6 +295,8 @@ When unit is being modified user can still change it. For example when user upgr
 
 ## The onboarding 
 
+**Status: 93% complete** (May 2026)
+
 Onboarding process:
 1. User is given $200000 to his personal account and he picks the game player name
 2. IPO Process - User puts his $50k to the business and has decision how much money he wants to raise - $800 000, $600000, or $400 000 varying his own shares to be 25% or 33% or 50% in the company. User picks the company name.

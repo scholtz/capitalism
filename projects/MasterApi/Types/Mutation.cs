@@ -15,6 +15,7 @@ namespace MasterApi.Types;
 public sealed partial class Mutation
 {
     private const int StartupPackDurationMonths = 3;
+    internal const string PersonalAccountNameClaimType = "capitalism/personal-account-name";
 
 
     private static string NormalizeRequiredUrl(string url, string errorCode)
@@ -40,11 +41,16 @@ public sealed partial class Mutation
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var expires = DateTime.UtcNow.AddMinutes(options.ExpiresMinutes);
 
+        var effectiveName = string.IsNullOrWhiteSpace(player.PersonalAccountName)
+            ? player.DisplayName
+            : player.PersonalAccountName;
+
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, player.Id.ToString()),
             new Claim(ClaimTypes.Email, player.Email),
-            new Claim(ClaimTypes.Name, player.DisplayName),
+            new Claim(ClaimTypes.Name, effectiveName),
+            new Claim(PersonalAccountNameClaimType, effectiveName),
         };
 
         var token = new JwtSecurityToken(
@@ -129,6 +135,32 @@ public sealed partial class Mutation
         }
 
         return normalizedLocale;
+    }
+
+    internal static string NormalizePersonalAccountName(string personalAccountName)
+    {
+        var normalized = string.Join(' ', personalAccountName
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Personal account name is required.")
+                    .SetCode("PERSONAL_ACCOUNT_NAME_REQUIRED")
+                    .Build());
+        }
+
+        if (normalized.Length > 120)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Personal account name is too long.")
+                    .SetCode("PERSONAL_ACCOUNT_NAME_TOO_LONG")
+                    .Build());
+        }
+
+        return normalized;
     }
 
 

@@ -23,6 +23,7 @@ public sealed class AuthenticatedPlayerClaimsSyncService(AppDbContext db)
         var claimedDisplayName = principal.FindFirstValue(ClaimsPrincipalExtensions.EffectivePlayerNameClaimType)
             ?? principal.FindFirstValue(ClaimTypes.Name)
             ?? normalizedEmail;
+        var claimedPersonalAccountName = principal.FindFirstValue(ClaimsPrincipalExtensions.PersonalAccountNameClaimType)?.Trim();
 
         var player = await db.Players.FirstOrDefaultAsync(
             candidate => candidate.Email == email || candidate.Email.ToLower() == normalizedEmail,
@@ -40,6 +41,7 @@ public sealed class AuthenticatedPlayerClaimsSyncService(AppDbContext db)
                 Id = playerId,
                 Email = normalizedEmail,
                 DisplayName = displayName,
+                PersonalAccountName = string.IsNullOrWhiteSpace(claimedPersonalAccountName) ? null : claimedPersonalAccountName,
                 Role = PlayerRole.Player,
                 PersonalCash = 200_000m,
                 ActiveAccountType = AccountContextType.Person,
@@ -65,6 +67,13 @@ public sealed class AuthenticatedPlayerClaimsSyncService(AppDbContext db)
                 player.DisplayName = displayName;
                 changed = true;
             }
+
+            if (!string.IsNullOrWhiteSpace(claimedPersonalAccountName)
+                && !string.Equals(player.PersonalAccountName, claimedPersonalAccountName, StringComparison.Ordinal))
+            {
+                player.PersonalAccountName = claimedPersonalAccountName;
+                changed = true;
+            }
         }
 
         if (changed)
@@ -85,7 +94,12 @@ public sealed class AuthenticatedPlayerClaimsSyncService(AppDbContext db)
 
         if (!principal.HasClaim(claim => claim.Type == ClaimsPrincipalExtensions.EffectivePlayerNameClaimType))
         {
-            EnsureClaim(identity, ClaimsPrincipalExtensions.EffectivePlayerNameClaimType, player.DisplayName);
+            EnsureClaim(identity, ClaimsPrincipalExtensions.EffectivePlayerNameClaimType, player.PersonalAccountName ?? player.DisplayName);
+        }
+
+        if (!principal.HasClaim(claim => claim.Type == ClaimsPrincipalExtensions.PersonalAccountNameClaimType))
+        {
+            EnsureClaim(identity, ClaimsPrincipalExtensions.PersonalAccountNameClaimType, player.PersonalAccountName ?? player.DisplayName);
         }
 
         if (!principal.HasClaim(claim => claim.Type == ClaimTypes.Role))

@@ -16,6 +16,7 @@ export type MockPlayer = {
   email: string
   password: string
   displayName: string
+  personalAccountName?: string | null
   role: 'PLAYER' | 'ADMIN'
   isInvisibleInChat: boolean
   createdAtUtc: string
@@ -1230,6 +1231,7 @@ export function makePlayer(overrides?: Partial<MockPlayer>): MockPlayer {
     email: 'player@test.com',
     password: 'TestPass1!',
     displayName: 'Test Player',
+    personalAccountName: null,
     role: 'PLAYER',
     isInvisibleInChat: false,
     createdAtUtc: '2026-01-01T00:00:00Z',
@@ -1758,6 +1760,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         email: input.email,
         password: input.password,
         displayName: input.displayName,
+        personalAccountName: null,
         role: 'PLAYER',
         isInvisibleInChat: false,
         createdAtUtc: new Date().toISOString(),
@@ -1817,6 +1820,64 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           },
         }),
       })
+    }
+
+    if (query.includes('isPersonalAccountNameAvailable')) {
+      if (!state.currentUserId) {
+        return routeJsonError('Not authenticated.')
+      }
+      const requested = (body.variables?.personalAccountName as string | undefined)?.trim().toLowerCase() ?? ''
+      const isTakenByOther = state.players.some((candidate) => candidate.id !== state.currentUserId && (candidate.personalAccountName ?? '').trim().toLowerCase() === requested)
+      return routeJson({ isPersonalAccountNameAvailable: !isTakenByOther })
+    }
+
+    if (query.includes('updatePersonalAccountName')) {
+      const player = resolveCurrentPlayer()
+      if (!player) {
+        return routeJsonError('Not authenticated.')
+      }
+      const input = body.variables?.input
+      const nextName = (input?.personalAccountName as string | undefined)?.trim() ?? ''
+      const onlyIfMissing = !!input?.onlyIfMissing
+      if (onlyIfMissing && player.personalAccountName) {
+        return routeJson({
+          updatePersonalAccountName: {
+            id: player.id,
+            personalAccountName: player.personalAccountName,
+          },
+        })
+      }
+      const isTakenByOther = state.players.some((candidate) => candidate.id !== player.id && (candidate.personalAccountName ?? '').trim().toLowerCase() === nextName.toLowerCase())
+      if (isTakenByOther) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Personal account name is already taken.', extensions: { code: 'DUPLICATE_PERSONAL_ACCOUNT_NAME' } }] }),
+        })
+      }
+      player.personalAccountName = nextName
+      return routeJson({
+        updatePersonalAccountName: {
+          id: player.id,
+          personalAccountName: player.personalAccountName,
+        },
+      })
+    }
+
+    const isStandalonePersonalAccountNameQuery =
+      query.includes('personalAccountName') &&
+      !query.includes('me') &&
+      !query.includes('rankings') &&
+      !query.includes('companyRankings') &&
+      !query.includes('updatePersonalAccountName') &&
+      !query.includes('isPersonalAccountNameAvailable')
+
+    if (isStandalonePersonalAccountNameQuery) {
+      const player = resolveCurrentPlayer()
+      if (!player) {
+        return routeJsonError('Not authenticated.')
+      }
+      return routeJson({ personalAccountName: player.personalAccountName ?? null })
     }
 
     if (query.includes('myBuildingLayouts')) {
@@ -4238,9 +4299,10 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
               .toFixed(2),
           )
 
-          return {
-            playerId: p.id,
-            displayName: p.displayName,
+            return {
+              playerId: p.id,
+              displayName: p.personalAccountName ?? p.displayName,
+              personalAccountName: p.personalAccountName ?? null,
             personalCash,
             sharesValue,
             totalWealth: Number((personalCash + sharesValue).toFixed(2)),
@@ -4281,7 +4343,8 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
               companyId: company.id,
               companyName: company.name,
               playerId: player.id,
-              ownerDisplayName: player.displayName,
+              ownerDisplayName: player.personalAccountName ?? player.displayName,
+              ownerPersonalAccountName: player.personalAccountName ?? null,
               cash: company.cash,
               buildingValue,
               inventoryValue,

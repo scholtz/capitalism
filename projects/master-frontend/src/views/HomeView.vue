@@ -110,6 +110,7 @@ onMounted(() => {
     <section class="hero-panel">
       <div class="hero-copy">
         <span class="hero-title">CAPITALISM V</span>
+        <h1>One master website, multiple live economies.</h1>
         <p class="eyebrow">Capitalism Network</p>
         <p class="hero-text">
           Free to play, <b>play to earn</b>, market simulation game - Build your business empire,
@@ -118,10 +119,11 @@ onMounted(() => {
 
         <nav class="site-nav">
           <template v-if="auth.isAuthenticated">
-            <span class="nav-player">{{ auth.player?.displayName ?? 'Account' }}</span>
+            <span class="nav-player">{{ auth.player?.personalAccountName ?? auth.player?.displayName ?? 'Account' }}</span>
             <button class="nav-btn nav-btn--ghost" type="button" @click="logout">Sign out</button>
           </template>
           <template v-else>
+            <a class="nav-btn nav-btn--ghost" href="/login">Sign in</a>
             <a class="hero-cta" href="/login">Get started free →</a>
           </template>
         </nav>
@@ -278,7 +280,7 @@ onMounted(() => {
         <!-- How it works for unauthenticated users -->
         <article v-else class="pitch-card">
           <p class="section-kicker">How it works</p>
-          <h2>Play to earn</h2>
+          <h2>Master infrastructure keeps discovery separate from simulation.</h2>
           <ul>
             <li>Players can swap ingame dollars to real-world currency.</li>
             <li>

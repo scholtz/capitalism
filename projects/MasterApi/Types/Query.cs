@@ -44,6 +44,45 @@ public sealed class Query
     }
 
     [HotChocolate.Authorization.Authorize]
+    public async Task<string?> GetPersonalAccountName(
+        ClaimsPrincipal claimsPrincipal,
+        [Service] MasterDbContext db)
+    {
+        var player = await GetCurrentUserAsync(claimsPrincipal, db)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+
+        return player.PersonalAccountName;
+    }
+
+    [HotChocolate.Authorization.Authorize]
+    public async Task<bool> IsPersonalAccountNameAvailable(
+        string personalAccountName,
+        ClaimsPrincipal claimsPrincipal,
+        [Service] MasterDbContext db)
+    {
+        var currentPlayer = await GetCurrentUserAsync(claimsPrincipal, db)
+            ?? throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Player not found.")
+                    .SetCode("PLAYER_NOT_FOUND")
+                    .Build());
+
+        var normalized = Mutation.NormalizePersonalAccountName(personalAccountName);
+        var isTakenByOther = await db.PlayerAccounts
+            .AsNoTracking()
+            .AnyAsync(player =>
+                player.Id != currentPlayer.Id
+                && player.PersonalAccountName != null
+                && player.PersonalAccountName.ToLower() == normalized.ToLower());
+
+        return !isTakenByOther;
+    }
+
+    [HotChocolate.Authorization.Authorize]
     public async Task<SubscriptionInfo> GetMySubscription(
         ClaimsPrincipal claimsPrincipal,
         [Service] MasterDbContext db)
@@ -245,6 +284,7 @@ public sealed class Query
             Id = player.Id,
             Email = player.Email,
             DisplayName = player.DisplayName,
+            PersonalAccountName = player.PersonalAccountName,
             CreatedAtUtc = player.CreatedAtUtc,
             StartupPackClaimedAtUtc = player.StartupPackClaimedAtUtc,
             CanClaimStartupPack = player.StartupPackClaimedAtUtc is null,

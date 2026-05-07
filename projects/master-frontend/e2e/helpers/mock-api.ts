@@ -33,6 +33,7 @@ export interface MockPlayer {
   id: string
   email: string
   displayName: string
+  personalAccountName: string | null
   createdAtUtc: string
   startupPackClaimedAtUtc: string | null
   canClaimStartupPack: boolean
@@ -72,6 +73,7 @@ export function makePlayer(overrides: Partial<MockPlayer> = {}): MockPlayer {
     id: 'player-001',
     email: 'alice@example.com',
     displayName: 'Alice',
+    personalAccountName: null,
     createdAtUtc: '2026-01-01T00:00:00.000Z',
     startupPackClaimedAtUtc: null,
     canClaimStartupPack: true,

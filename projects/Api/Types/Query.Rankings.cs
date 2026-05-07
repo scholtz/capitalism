@@ -56,7 +56,8 @@ public sealed partial class Query
                 return new PlayerRanking
                 {
                     PlayerId = p.Id,
-                    DisplayName = p.DisplayName,
+                    DisplayName = p.PersonalAccountName ?? p.DisplayName,
+                    PersonalAccountName = p.PersonalAccountName,
                     PersonalCash = personalCash,
                     SharesValue = sharesValue,
                     TotalWealth = decimal.Round(personalCash + sharesValue, 4, MidpointRounding.AwayFromZero),
@@ -108,7 +109,8 @@ public sealed partial class Query
                     CompanyId = c.Id,
                     CompanyName = c.Name,
                     PlayerId = c.PlayerId,
-                    OwnerDisplayName = c.Player?.DisplayName ?? "Unknown",
+                    OwnerDisplayName = c.Player?.PersonalAccountName ?? c.Player?.DisplayName ?? "Unknown",
+                    OwnerPersonalAccountName = c.Player?.PersonalAccountName,
                     Cash = c.Cash,
                     BuildingValue = buildingValue,
                     InventoryValue = inventoryValue,

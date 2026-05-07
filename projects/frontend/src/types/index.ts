@@ -8,6 +8,7 @@ export interface Player {
   id: string
   email: string
   displayName: string
+  personalAccountName: string | null
   role: PlayerRole
   createdAtUtc: string
   lastLoginAtUtc: string | null
@@ -585,6 +586,7 @@ export interface ShareTradeResult {
 export interface PlayerRanking {
   playerId: string
   displayName: string
+  personalAccountName: string | null
   totalWealth: number
   personalCash: number
   sharesValue: number
@@ -597,6 +599,7 @@ export interface CompanyRanking {
   companyName: string
   playerId: string
   ownerDisplayName: string
+  ownerPersonalAccountName: string | null
   totalWealth: number
   cash: number
   buildingValue: number

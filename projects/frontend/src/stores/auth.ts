@@ -8,6 +8,7 @@ import type { AccountContextResult, AccountContextType, Player, AuthPayload } fr
 const PLAYER_SELECTION = `
   id
   displayName
+  personalAccountName
   email
   role
   createdAtUtc

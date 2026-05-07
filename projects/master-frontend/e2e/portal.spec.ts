@@ -176,6 +176,17 @@ test.describe('Login page', () => {
 // ── Authenticated home page ─────────────────────────────────────────────────
 
 test.describe('Authenticated home page', () => {
+  test('shows personal account name when available', async ({ page }) => {
+    const player = makePlayer({ displayName: 'Bob', personalAccountName: 'John Michael Rivers' })
+    const state = setupMockApi(page, { servers: [] })
+    state.subscription = makeSubscription()
+    await loginAs(page, state, player)
+    await page.goto('/')
+
+    await expect(page.getByText('John Michael Rivers')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
+  })
+
   test('shows player display name and Sign out button', async ({ page }) => {
     const player = makePlayer({ displayName: 'Bob' })
     const state = setupMockApi(page, { servers: [] })

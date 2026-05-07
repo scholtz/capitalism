@@ -103,7 +103,7 @@ public sealed partial class Query
         var result = new PersonAccountResult
         {
             PlayerId = player.Id,
-            DisplayName = player.DisplayName,
+            DisplayName = player.PersonalAccountName ?? player.DisplayName,
             PersonalCash = player.PersonalCash,
             ActiveAccountType = player.ActiveAccountType,
             ActiveCompanyId = player.ActiveCompanyId,

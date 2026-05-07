@@ -3,9 +3,11 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { gqlRequest, GraphQLError } from '@/lib/graphql'
+import { gqlRequest as gqlMasterRequest } from '@/lib/graphqlMasterServer'
 import { computeSimulatedProfit, trackOnboardingEvent } from '@/lib/onboardingAnalytics'
 import { getLocalizedProductDescription, getLocalizedProductName, getLocalizedRecipeIngredientName, getLocalizedResourceName, getProductImageUrl } from '@/lib/catalogPresentation'
 import { formatGameTickTime } from '@/lib/gameTime'
+import { generatePersonalAccountName } from '@/lib/personalAccountNameGenerator'
 import { useTickRefresh } from '@/composables/useTickRefresh'
 import {
   canProceedStep3 as checkCanProceedStep3,
@@ -172,6 +174,21 @@ const PRODUCTS_QUERY = `
   }
 `
 
+const PERSONAL_ACCOUNT_NAME_QUERY = `
+  query {
+    personalAccountName
+  }
+`
+
+const UPDATE_PERSONAL_ACCOUNT_NAME_MUTATION = `
+  mutation UpdatePersonalAccountName($input: UpdatePersonalAccountNameInput!) {
+    updatePersonalAccountName(input: $input) {
+      id
+      personalAccountName
+    }
+  }
+`
+
 const starterProductSlugByIndustry: Record<string, string[]> = {
   FURNITURE: ['wooden-chair'],
   FOOD_PROCESSING: ['bread'],
@@ -207,6 +224,8 @@ const selectedFactoryLotId = ref('')
 const selectedShopLotId = ref('')
 const selectedIpoRaiseTarget = ref(DEFAULT_IPO_RAISE_TARGET)
 const companyName = ref('')
+const personalAccountName = ref('')
+const hasExistingPersonalAccountName = ref(false)
 
 const completionResult = ref<OnboardingResult | null>(null)
 const gameState = ref<GameState | null>(null)
@@ -434,6 +453,7 @@ function saveProgress() {
         productId: selectedProductId.value,
         ipoRaiseTarget: selectedIpoRaiseTarget.value,
         companyName: companyName.value,
+        personalAccountName: personalAccountName.value,
         factoryLotId: selectedFactoryLotId.value,
         shopLotId: selectedShopLotId.value,
         companyCash: onboardingCompanyCash.value ?? undefined,
@@ -469,6 +489,9 @@ function restoreProgress() {
     if (typeof saved.productId === 'string') selectedProductId.value = saved.productId
     if ([400000, 600000, 800000].includes(saved.ipoRaiseTarget)) selectedIpoRaiseTarget.value = saved.ipoRaiseTarget
     if (typeof saved.companyName === 'string') companyName.value = saved.companyName
+    if (typeof saved.personalAccountName === 'string' && !hasExistingPersonalAccountName.value) {
+      personalAccountName.value = saved.personalAccountName
+    }
     if (typeof saved.factoryLotId === 'string') selectedFactoryLotId.value = saved.factoryLotId
     if (typeof saved.shopLotId === 'string') selectedShopLotId.value = saved.shopLotId
     if (typeof saved.companyCash === 'number') onboardingCompanyCash.value = saved.companyCash
@@ -479,7 +502,41 @@ function restoreProgress() {
   }
 }
 
-watch([step, selectedIndustry, selectedCityId, selectedProductId, selectedIpoRaiseTarget, companyName, selectedFactoryLotId, selectedShopLotId], saveProgress)
+watch([step, selectedIndustry, selectedCityId, selectedProductId, selectedIpoRaiseTarget, companyName, personalAccountName, selectedFactoryLotId, selectedShopLotId], saveProgress)
+
+function regeneratePersonalAccountName() {
+  personalAccountName.value = generatePersonalAccountName()
+}
+
+async function ensurePersonalAccountNameForOnboarding() {
+  if (isGuestMode.value || hasExistingPersonalAccountName.value) {
+    return
+  }
+
+  const trimmedName = personalAccountName.value.trim()
+  if (!trimmedName) {
+    return
+  }
+
+  const data = await gqlMasterRequest<{ updatePersonalAccountName: { personalAccountName: string | null } }>(
+    UPDATE_PERSONAL_ACCOUNT_NAME_MUTATION,
+    {
+      input: {
+        personalAccountName: trimmedName,
+        onlyIfMissing: true,
+      },
+    },
+  )
+
+  const resolved = data.updatePersonalAccountName.personalAccountName
+  if (resolved) {
+    personalAccountName.value = resolved
+    hasExistingPersonalAccountName.value = true
+    if (auth.player) {
+      auth.player.personalAccountName = resolved
+    }
+  }
+}
 
 watch(step, async (currentStep) => {
   const currentKey = stepToKey(currentStep)
@@ -591,7 +648,20 @@ onMounted(async () => {
     restoreProgress()
 
     if (hasAuthenticatedSession.value) {
+      try {
+        const personalData = await gqlMasterRequest<{ personalAccountName: string | null }>(PERSONAL_ACCOUNT_NAME_QUERY)
+        if (personalData.personalAccountName) {
+          personalAccountName.value = personalData.personalAccountName
+          hasExistingPersonalAccountName.value = true
+        }
+      } catch {
+        // Keep onboarding functional even if master name lookup fails.
+      }
       await syncOngoingOnboardingState()
+    }
+
+    if (!personalAccountName.value) {
+      regeneratePersonalAccountName()
     }
 
     if (selectedIndustry.value) {
@@ -655,6 +725,7 @@ async function startOnboardingCompany() {
   error.value = null
 
   try {
+    await ensurePersonalAccountNameForOnboarding()
     const result = await gqlRequest<{ startOnboardingCompany: OnboardingStartResult }>(
       `mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
         startOnboardingCompany(input: $input) {
@@ -817,6 +888,7 @@ async function saveGuestProgress() {
       try {
         loading.value = true
         error.value = null
+        await ensurePersonalAccountNameForOnboarding()
 
         const startResult = await gqlRequest<{ startOnboardingCompany: OnboardingStartResult }>(
           `mutation StartOnboardingCompany($input: StartOnboardingCompanyInput!) {
@@ -1197,6 +1269,28 @@ useTickRefresh(async () => {
         <div class="form-group compact">
           <label for="companyName">{{ t('onboarding.companyName') }}</label>
           <input id="companyName" v-model="companyName" type="text" required maxlength="200" :placeholder="t('onboarding.companyNamePlaceholder')" />
+        </div>
+
+        <div class="personal-name-card" role="region" :aria-label="t('onboarding.personalAccountNameTitle')">
+          <div class="personal-name-card-header">
+            <h3>{{ t('onboarding.personalAccountNameTitle') }}</h3>
+            <button
+              v-if="!hasExistingPersonalAccountName"
+              class="btn btn-secondary"
+              type="button"
+              @click="regeneratePersonalAccountName"
+            >
+              {{ t('onboarding.regeneratePersonalAccountName') }}
+            </button>
+          </div>
+          <p class="personal-name-preview">{{ personalAccountName }}</p>
+          <p class="personal-name-note">
+            {{
+              hasExistingPersonalAccountName
+                ? t('onboarding.personalAccountNameExisting')
+                : t('onboarding.personalAccountNameDesc')
+            }}
+          </p>
         </div>
 
         <div class="guidance-panel">
@@ -2188,6 +2282,36 @@ useTickRefresh(async () => {
 
 .ipo-metric {
   font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.personal-name-card {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+}
+
+.personal-name-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.personal-name-card-header h3 {
+  margin: 0;
+}
+
+.personal-name-preview {
+  margin: 0.6rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-secondary);
+}
+
+.personal-name-note {
+  margin: 0.4rem 0 0;
   color: var(--color-text-secondary);
 }
 

@@ -350,7 +350,7 @@ async function createCompany() {
       <div>
         <h1>{{ t('dashboard.title') }}</h1>
         <div v-if="auth.player" class="player-info">
-          <span class="player-name">{{ auth.player.displayName }}</span>
+          <span class="player-name">{{ auth.player.personalAccountName ?? auth.player.displayName }}</span>
           <span class="player-email">{{ auth.player.email }}</span>
         </div>
       </div>
