@@ -4,13 +4,15 @@ import { ref } from 'vue'
 import { gqlRequest } from '@/lib/graphql'
 import type {
   AccountContextType,
-    AuthPayload,
-    GameAdminDashboard,
-    GameAdminPlayer,
-    GameAdminSession,
-    GameNewsEntry,
+  AdminProductAnalyticsRow,
+  AuthPayload,
+  GameAdminDashboard,
+  GameAdminPlayer,
+  GameAdminSession,
+  GameNewsEntry,
   GameNewsLocalization,
   GlobalGameAdminGrant,
+  OperationsStatistics,
 } from '@/types'
 
 const PLAYER_FIELDS = `
@@ -156,6 +158,45 @@ export const useGameAdminStore = defineStore('gameAdmin', () => {
     } finally {
       loadingDashboard.value = false
     }
+  }
+
+  async function fetchOperationsStatistics() {
+    const data = await gqlRequest<{ operationsStatistics: OperationsStatistics }>(`{
+      operationsStatistics {
+        incomeItems {
+          category
+          amount
+          description
+        }
+        expenseItems {
+          category
+          amount
+          description
+        }
+      }
+    }`)
+
+    return data.operationsStatistics
+  }
+
+  async function fetchAdminProductAnalytics() {
+    const data = await gqlRequest<{ adminProductAnalytics: AdminProductAnalyticsRow[] }>(`{
+      adminProductAnalytics {
+        productTypeId
+        productName
+        materialCost
+        energyCost
+        laborCost
+        unitsProduced
+        unitsSold
+        marketSize
+        marketSaturationPercent
+        currentMarketingSpend
+        researchQualityLevel
+      }
+    }`)
+
+    return data.adminProductAnalytics
   }
 
   async function startImpersonation(targetPlayerId: string, accountType: AccountContextType, companyId?: string | null) {
@@ -384,6 +425,8 @@ export const useGameAdminStore = defineStore('gameAdmin', () => {
     error,
     fetchSession,
     fetchDashboard,
+    fetchOperationsStatistics,
+    fetchAdminProductAnalytics,
     startImpersonation,
     stopImpersonation,
     setPlayerInvisibleInChat,

@@ -581,6 +581,20 @@ export type MockGameAdminAuditLog = {
   recordedAtUtc: string
 }
 
+export type MockAdminProductAnalyticsRow = {
+  productTypeId: string
+  productName: string
+  materialCost: number
+  energyCost: number
+  laborCost: number
+  unitsProduced: number
+  unitsSold: number
+  marketSize: number
+  marketSaturationPercent: number
+  currentMarketingSpend: number
+  researchQualityLevel: number
+}
+
 export type MockImpersonationSession = {
   adminActorUserId: string
   effectiveUserId: string
@@ -644,6 +658,7 @@ export type MockState = {
   adminShippingCostSummaries: MockGameAdminShippingCostSummary[]
   adminMultiAccountAlerts: MockGameAdminMultiAccountAlert[]
   adminAuditLogs: MockGameAdminAuditLog[]
+  adminProductAnalyticsRows: MockAdminProductAnalyticsRow[]
   impersonationSession: MockImpersonationSession | null
   buildingLayouts: MockBuildingLayoutTemplate[]
   /** When set, the next StoreBuildingConfiguration call returns this string as a CONTRADICTORY_LINK error. */
@@ -1541,6 +1556,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     adminShippingCostSummaries: [],
     adminMultiAccountAlerts: [],
     adminAuditLogs: [],
+    adminProductAnalyticsRows: [],
     impersonationSession: null,
     buildingLayouts: [],
     forceBuildingConfigError: null,
@@ -4622,6 +4638,45 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
             .sort((left, right) => left.email.localeCompare(right.email)),
           recentAuditLogs: [...state.adminAuditLogs].sort((left, right) => right.recordedAtUtc.localeCompare(left.recordedAtUtc)).slice(0, 12),
         },
+      })
+    }
+
+    if (query.includes('operationsStatistics')) {
+      const accessFailure = getAdminAccessFailure(false)
+      if (accessFailure) {
+        return routeJsonError(accessFailure.message, accessFailure.code)
+      }
+
+      const incomeItems =
+        state.adminMoneyInflowSummaries.length > 0
+          ? state.adminMoneyInflowSummaries.map((summary) => ({ category: summary.category, amount: summary.amount, description: summary.description }))
+          : [{ category: 'Public sales', amount: 0, description: 'No income data.' }]
+
+      const expenseItems =
+        state.adminShippingCostSummaries.length > 0
+          ? state.adminShippingCostSummaries.map((summary) => ({
+              category: summary.companyName,
+              amount: summary.amount,
+              description: `${summary.entryCount} shipping entries`,
+            }))
+          : [{ category: 'Taxes', amount: 0, description: 'No expense data.' }]
+
+      return routeJson({
+        operationsStatistics: {
+          incomeItems,
+          expenseItems,
+        },
+      })
+    }
+
+    if (query.includes('adminProductAnalytics')) {
+      const accessFailure = getAdminAccessFailure(false)
+      if (accessFailure) {
+        return routeJsonError(accessFailure.message, accessFailure.code)
+      }
+
+      return routeJson({
+        adminProductAnalytics: state.adminProductAnalyticsRows.map((row) => ({ ...row })),
       })
     }
 

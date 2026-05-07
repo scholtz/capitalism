@@ -85,8 +85,8 @@ const closeMenu = () => {
           <span class="inline-block md:hidden">{{ t('nav.news') }}</span>
           <span v-if="showUnreadBadge" class="news-badge">{{ unreadCount }}</span>
         </RouterLink>
-        <RouterLink v-if="session?.canAccessAdminDashboard" to="/admin" :title="t('nav.admin')" :aria-label="t('nav.admin')" @click="closeMenu">
-          <font-awesome-icon :icon="['fas', 'shield-halved']" class="mr-2" /> <span class="inline-block md:hidden">{{ t('nav.admin') }}</span>
+        <RouterLink v-if="session?.canAccessAdminDashboard" to="/operations/statistics" :title="t('nav.operations')" :aria-label="t('nav.operations')" @click="closeMenu">
+          <font-awesome-icon :icon="['fas', 'shield-halved']" class="mr-2" /> <span class="inline-block md:hidden">{{ t('nav.operations') }}</span>
         </RouterLink>
       </nav>
       <div class="header-actions">

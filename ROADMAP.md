@@ -378,6 +378,8 @@ In game chat will be possible
 
 ## Game administrators
 
+**Status: 75% complete** (May 2026)
+
 Game administrators have a dashboard where they can see all critical issues in the game like inflow of money, highlighting users which may be doing multiaccount gaming where they boost one of the account.
 
 Game administrators can switch person as invisible - In this mode the person can see his chat messages, but others do not see them. 
@@ -391,6 +393,13 @@ There are roles in the game which can be assigned to any user account. The root 
 Game administration is managed in the master api, but local game administrator role can be managed at the game server.
 
 List of the root game administrators is managed by the master api configuration.
+
+### What was delivered
+- `/operations/statistics` is now the canonical operations entry point with a persistent level-2 menu for Statistics, News & Changelog, Players & Intervention, and Product Analytics.
+- Header navigation no longer links to `/admin`; legacy `/admin` now redirects into the operations section to avoid dead links.
+- News list and news publisher are separated into dedicated routes (`/operations/news` and `/operations/news/new`) so form editing no longer shares the same visual plane as the list.
+- Added sortable/filterable players table with dedicated player detail actions route (`/operations/players/:playerId`) and a sortable/filterable product analytics table with CSV export.
+- Added live backend queries for `operationsStatistics` (money-flow income/expense aggregation from ledger entries) and `adminProductAnalytics` (per-product cost/volume/saturation/marketing/research aggregation).
 
 ## Newspaper and changelog
 

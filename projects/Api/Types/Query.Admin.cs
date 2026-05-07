@@ -134,6 +134,152 @@ public sealed partial class Query
         };
     }
 
+    [Authorize]
+    public async Task<OperationsStatisticsResult> GetOperationsStatistics(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        [Service] GameAdminAuthorizationService gameAdminAuthorizationService)
+    {
+        var principal = httpContextAccessor.HttpContext!.User;
+        await gameAdminAuthorizationService.RequireAdminDashboardAccessAsync(db, principal, httpContextAccessor.HttpContext!.RequestAborted);
+
+        var currentTick = await db.GameStates
+            .AsNoTracking()
+            .Select(state => state.CurrentTick)
+            .FirstOrDefaultAsync(httpContextAccessor.HttpContext.RequestAborted);
+
+        var recentLedgerEntries = await db.LedgerEntries
+            .AsNoTracking()
+            .Where(entry => entry.RecordedAtTick >= Math.Max(0, currentTick - 100))
+            .ToListAsync(httpContextAccessor.HttpContext.RequestAborted);
+
+        return new OperationsStatisticsResult
+        {
+            IncomeItems = BuildOperationsIncomeItems(recentLedgerEntries),
+            ExpenseItems = BuildOperationsExpenseItems(recentLedgerEntries),
+        };
+    }
+
+    [Authorize]
+    public async Task<List<AdminProductAnalyticsRow>> GetAdminProductAnalytics(
+        [Service] AppDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        [Service] GameAdminAuthorizationService gameAdminAuthorizationService)
+    {
+        var principal = httpContextAccessor.HttpContext!.User;
+        await gameAdminAuthorizationService.RequireAdminDashboardAccessAsync(db, principal, httpContextAccessor.HttpContext!.RequestAborted);
+
+        var currentTick = await db.GameStates
+            .AsNoTracking()
+            .Select(state => state.CurrentTick)
+            .FirstOrDefaultAsync(httpContextAccessor.HttpContext.RequestAborted);
+        var windowStart = Math.Max(0, currentTick - 100);
+
+        var productTypes = await db.ProductTypes
+            .AsNoTracking()
+            .Select(product => new { product.Id, product.Name })
+            .ToListAsync(httpContextAccessor.HttpContext.RequestAborted);
+
+        var producedByProductId = await db.BuildingUnitResourceHistories
+            .AsNoTracking()
+            .Where(history => history.Tick >= windowStart && history.ProductTypeId.HasValue)
+            .GroupBy(history => history.ProductTypeId!.Value)
+            .Select(group => new { ProductTypeId = group.Key, Quantity = group.Sum(history => history.ProducedQuantity) })
+            .ToDictionaryAsync(row => row.ProductTypeId, row => row.Quantity, httpContextAccessor.HttpContext.RequestAborted);
+
+        var salesByProductId = await db.PublicSalesRecords
+            .AsNoTracking()
+            .Where(record => record.Tick >= windowStart && record.ProductTypeId.HasValue)
+            .GroupBy(record => record.ProductTypeId!.Value)
+            .Select(group => new
+            {
+                ProductTypeId = group.Key,
+                UnitsSold = group.Sum(record => record.QuantitySold),
+                MarketSize = group.Sum(record => record.Demand),
+            })
+            .ToListAsync(httpContextAccessor.HttpContext.RequestAborted);
+        var soldByProductId = salesByProductId.ToDictionary(row => row.ProductTypeId, row => row.UnitsSold);
+        var marketSizeByProductId = salesByProductId.ToDictionary(row => row.ProductTypeId, row => row.MarketSize);
+
+        var costs = await db.LedgerEntries
+            .AsNoTracking()
+            .Where(entry => entry.RecordedAtTick >= windowStart && entry.ProductTypeId.HasValue)
+            .Where(entry => entry.Amount < 0m)
+            .Where(entry => entry.Category == LedgerCategory.PurchasingCost
+                            || entry.Category == LedgerCategory.LaborCost
+                            || entry.Category == LedgerCategory.EnergyCost)
+            .GroupBy(entry => new { ProductTypeId = entry.ProductTypeId!.Value, entry.Category })
+            .Select(group => new
+            {
+                group.Key.ProductTypeId,
+                group.Key.Category,
+                Amount = Math.Abs(group.Sum(entry => entry.Amount)),
+            })
+            .ToListAsync(httpContextAccessor.HttpContext.RequestAborted);
+
+        var materialCostByProductId = costs
+            .Where(cost => cost.Category == LedgerCategory.PurchasingCost)
+            .GroupBy(cost => cost.ProductTypeId)
+            .ToDictionary(group => group.Key, group => group.Sum(cost => cost.Amount));
+        var laborCostByProductId = costs
+            .Where(cost => cost.Category == LedgerCategory.LaborCost)
+            .GroupBy(cost => cost.ProductTypeId)
+            .ToDictionary(group => group.Key, group => group.Sum(cost => cost.Amount));
+        var energyCostByProductId = costs
+            .Where(cost => cost.Category == LedgerCategory.EnergyCost)
+            .GroupBy(cost => cost.ProductTypeId)
+            .ToDictionary(group => group.Key, group => group.Sum(cost => cost.Amount));
+
+        var marketingSpendByProductId = await db.BuildingUnits
+            .AsNoTracking()
+            .Where(unit => unit.UnitType == UnitType.Marketing && unit.ProductTypeId.HasValue)
+            .GroupBy(unit => unit.ProductTypeId!.Value)
+            .Select(group => new
+            {
+                ProductTypeId = group.Key,
+                Spend = group.Sum(unit => unit.Budget ?? 0m),
+            })
+            .ToDictionaryAsync(row => row.ProductTypeId, row => row.Spend, httpContextAccessor.HttpContext.RequestAborted);
+
+        var researchQualityByProductId = await db.Brands
+            .AsNoTracking()
+            .Where(brand => brand.ProductTypeId.HasValue)
+            .GroupBy(brand => brand.ProductTypeId!.Value)
+            .Select(group => new
+            {
+                ProductTypeId = group.Key,
+                Quality = group.Average(brand => brand.Quality),
+            })
+            .ToDictionaryAsync(row => row.ProductTypeId, row => decimal.Round(row.Quality, 4, MidpointRounding.AwayFromZero), httpContextAccessor.HttpContext.RequestAborted);
+
+        return productTypes
+            .Select(product =>
+            {
+                var unitsSold = soldByProductId.GetValueOrDefault(product.Id, 0m);
+                var marketSize = marketSizeByProductId.GetValueOrDefault(product.Id, 0m);
+                var saturation = marketSize > 0m
+                    ? decimal.Round(Math.Clamp((unitsSold / marketSize) * 100m, 0m, 100m), 2, MidpointRounding.AwayFromZero)
+                    : 0m;
+
+                return new AdminProductAnalyticsRow
+                {
+                    ProductTypeId = product.Id,
+                    ProductName = product.Name,
+                    MaterialCost = materialCostByProductId.GetValueOrDefault(product.Id, 0m),
+                    EnergyCost = energyCostByProductId.GetValueOrDefault(product.Id, 0m),
+                    LaborCost = laborCostByProductId.GetValueOrDefault(product.Id, 0m),
+                    UnitsProduced = producedByProductId.GetValueOrDefault(product.Id, 0m),
+                    UnitsSold = unitsSold,
+                    MarketSize = marketSize,
+                    MarketSaturationPercent = saturation,
+                    CurrentMarketingSpend = marketingSpendByProductId.GetValueOrDefault(product.Id, 0m),
+                    ResearchQualityLevel = researchQualityByProductId.GetValueOrDefault(product.Id, 0m),
+                };
+            })
+            .OrderBy(row => row.ProductName)
+            .ToList();
+    }
+
     private static GameAdminPlayerSummary ToGameAdminPlayerSummary(Player player)
     {
         return new GameAdminPlayerSummary
@@ -200,6 +346,58 @@ public sealed partial class Query
             })
             .OrderByDescending(summary => summary.Amount)
             .ThenBy(summary => summary.CompanyName)
+            .ToList();
+    }
+
+    private static List<OperationsMoneyFlowItem> BuildOperationsIncomeItems(IReadOnlyCollection<LedgerEntry> recentLedgerEntries)
+    {
+        return BuildOperationsMoneyFlowItems(
+            recentLedgerEntries,
+            positive: true,
+            [
+                (LedgerCategory.Revenue, "Public sales", "Cash earned from goods sold into public markets."),
+                (LedgerCategory.RentIncome, "Apartment rent", "Lease payments collected from city properties."),
+                (LedgerCategory.StockSale, "IPO proceeds", "Cash raised by selling shares on the stock exchange."),
+                (LedgerCategory.MediaHouseIncome, "AMM fees", "Media and market-maker style fee income."),
+                (LedgerCategory.LoanOrigination, "Other player earnings", "Additional inflows such as financing and cross-player settlements."),
+            ]);
+    }
+
+    private static List<OperationsMoneyFlowItem> BuildOperationsExpenseItems(IReadOnlyCollection<LedgerEntry> recentLedgerEntries)
+    {
+        return BuildOperationsMoneyFlowItems(
+            recentLedgerEntries,
+            positive: false,
+            [
+                (LedgerCategory.Tax, "Taxes", "Tax obligations paid by companies."),
+                (LedgerCategory.StockPurchase, "FX fees", "Capital outflow for stock purchases and exchange exposure."),
+                (LedgerCategory.LaborCost, "Labour costs", "Wages paid to keep business units staffed."),
+                (LedgerCategory.EnergyCost, "Energy", "Electricity and utility expenses."),
+                (LedgerCategory.UnitUpgrade, "Research costs", "R&D and upgrade spending on company operations."),
+                (LedgerCategory.ShippingCost, "Stock exchange fees", "Logistics and market transfer fees."),
+            ]);
+    }
+
+    private static List<OperationsMoneyFlowItem> BuildOperationsMoneyFlowItems(
+        IReadOnlyCollection<LedgerEntry> recentLedgerEntries,
+        bool positive,
+        IReadOnlyCollection<(string Category, string Label, string Description)> definitions)
+    {
+        return definitions
+            .Select(definition =>
+            {
+                var amount = recentLedgerEntries
+                    .Where(entry => entry.Category == definition.Category)
+                    .Where(entry => positive ? entry.Amount > 0m : entry.Amount < 0m)
+                    .Sum(entry => Math.Abs(entry.Amount));
+
+                return new OperationsMoneyFlowItem
+                {
+                    Category = definition.Label,
+                    Amount = amount,
+                    Description = definition.Description,
+                };
+            })
             .ToList();
     }
 

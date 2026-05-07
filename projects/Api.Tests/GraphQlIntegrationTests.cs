@@ -24362,6 +24362,192 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         Assert.Equal(2, summaries[0].GetProperty("entryCount").GetInt32());
     }
 
+    [Fact]
+    public async Task OperationsStatistics_ReturnsIncomeAndExpenseBreakdown()
+    {
+        var email = $"admin-ops-{Guid.NewGuid():N}@example.com";
+        var token = await RegisterAndGetTokenAsync(email, "Admin Ops");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var admin = await db.Players.FirstAsync(p => p.Email == email);
+        admin.Role = PlayerRole.Admin;
+
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = admin.Id, Name = "Ops Co", Cash = 100_000m };
+        db.Companies.Add(company);
+        db.LedgerEntries.AddRange(
+            new LedgerEntry { CompanyId = company.Id, Category = LedgerCategory.Revenue, Amount = 500m, RecordedAtTick = 2 },
+            new LedgerEntry { CompanyId = company.Id, Category = LedgerCategory.RentIncome, Amount = 120m, RecordedAtTick = 2 },
+            new LedgerEntry { CompanyId = company.Id, Category = LedgerCategory.StockSale, Amount = 300m, RecordedAtTick = 2 },
+            new LedgerEntry { CompanyId = company.Id, Category = LedgerCategory.MediaHouseIncome, Amount = 50m, RecordedAtTick = 2 },
+            new LedgerEntry { CompanyId = company.Id, Category = LedgerCategory.LoanOrigination, Amount = 40m, RecordedAtTick = 2 },
+            new LedgerEntry { CompanyId = company.Id, Category = LedgerCategory.Tax, Amount = -25m, RecordedAtTick = 2 },
+            new LedgerEntry { CompanyId = company.Id, Category = LedgerCategory.StockPurchase, Amount = -45m, RecordedAtTick = 2 },
+            new LedgerEntry { CompanyId = company.Id, Category = LedgerCategory.LaborCost, Amount = -35m, RecordedAtTick = 2 },
+            new LedgerEntry { CompanyId = company.Id, Category = LedgerCategory.EnergyCost, Amount = -15m, RecordedAtTick = 2 },
+            new LedgerEntry { CompanyId = company.Id, Category = LedgerCategory.UnitUpgrade, Amount = -10m, RecordedAtTick = 2 },
+            new LedgerEntry { CompanyId = company.Id, Category = LedgerCategory.ShippingCost, Amount = -5m, RecordedAtTick = 2 });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query OperationsStatistics {
+              operationsStatistics {
+                incomeItems {
+                  category
+                  amount
+                }
+                expenseItems {
+                  category
+                  amount
+                }
+              }
+            }
+            """,
+            token: token);
+
+        var statistics = result.GetProperty("data").GetProperty("operationsStatistics");
+        var income = statistics.GetProperty("incomeItems").EnumerateArray().ToDictionary(
+            item => item.GetProperty("category").GetString()!,
+            item => item.GetProperty("amount").GetDecimal());
+        var expenses = statistics.GetProperty("expenseItems").EnumerateArray().ToDictionary(
+            item => item.GetProperty("category").GetString()!,
+            item => item.GetProperty("amount").GetDecimal());
+
+        Assert.True(income["Public sales"] >= 500m);
+        Assert.True(income["Apartment rent"] >= 120m);
+        Assert.True(income["IPO proceeds"] >= 300m);
+        Assert.True(income["AMM fees"] >= 50m);
+        Assert.True(income["Other player earnings"] >= 40m);
+        Assert.True(expenses["Taxes"] >= 25m);
+        Assert.True(expenses["FX fees"] >= 45m);
+        Assert.True(expenses["Labour costs"] >= 35m);
+        Assert.True(expenses["Energy"] >= 15m);
+        Assert.True(expenses["Research costs"] >= 10m);
+        Assert.True(expenses["Stock exchange fees"] >= 5m);
+    }
+
+    [Fact]
+    public async Task AdminProductAnalytics_ReturnsAggregatedProductMetrics()
+    {
+        var email = $"admin-product-analytics-{Guid.NewGuid():N}@example.com";
+        var token = await RegisterAndGetTokenAsync(email, "Admin Product Analytics");
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var admin = await db.Players.FirstAsync(p => p.Email == email);
+        admin.Role = PlayerRole.Admin;
+
+        var bread = await db.ProductTypes.FirstAsync(product => product.Name == "Bread");
+        var city = await db.Cities.FirstAsync();
+        var company = new Company { Id = Guid.NewGuid(), PlayerId = admin.Id, Name = "Analytics Co", Cash = 100_000m };
+        var building = new Building
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            CityId = city.Id,
+            Type = BuildingType.SalesShop,
+            Name = "Analytics Shop",
+            Level = 1,
+            Latitude = city.Latitude,
+            Longitude = city.Longitude,
+        };
+        var manufacturingUnit = new BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = UnitType.Manufacturing,
+            GridX = 1,
+            GridY = 1,
+            ProductTypeId = bread.Id,
+        };
+        var marketingUnit = new BuildingUnit
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            UnitType = UnitType.Marketing,
+            GridX = 2,
+            GridY = 1,
+            ProductTypeId = bread.Id,
+            Budget = 175m,
+        };
+
+        db.Companies.Add(company);
+        db.Buildings.Add(building);
+        db.BuildingUnits.AddRange(manufacturingUnit, marketingUnit);
+        db.BuildingUnitResourceHistories.Add(new BuildingUnitResourceHistory
+        {
+            Id = Guid.NewGuid(),
+            BuildingId = building.Id,
+            BuildingUnitId = manufacturingUnit.Id,
+            ProductTypeId = bread.Id,
+            Tick = 10,
+            ProducedQuantity = 60m,
+        });
+        db.PublicSalesRecords.Add(new PublicSalesRecord
+        {
+            Id = Guid.NewGuid(),
+            BuildingUnitId = marketingUnit.Id,
+            BuildingId = building.Id,
+            CompanyId = company.Id,
+            CityId = city.Id,
+            ProductTypeId = bread.Id,
+            Tick = 10,
+            QuantitySold = 45m,
+            Demand = 90m,
+            PricePerUnit = 3m,
+            Revenue = 135m,
+        });
+        db.LedgerEntries.AddRange(
+            new LedgerEntry { CompanyId = company.Id, ProductTypeId = bread.Id, Category = LedgerCategory.PurchasingCost, Amount = -80m, RecordedAtTick = 10 },
+            new LedgerEntry { CompanyId = company.Id, ProductTypeId = bread.Id, Category = LedgerCategory.LaborCost, Amount = -25m, RecordedAtTick = 10 },
+            new LedgerEntry { CompanyId = company.Id, ProductTypeId = bread.Id, Category = LedgerCategory.EnergyCost, Amount = -10m, RecordedAtTick = 10 });
+        db.Brands.Add(new Brand
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = company.Id,
+            Name = "Bread Master",
+            Scope = BrandScope.Product,
+            ProductTypeId = bread.Id,
+            Awareness = 0.3m,
+            Quality = 0.82m,
+            MarketingEfficiencyMultiplier = 1m,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await ExecuteGraphQlAsync(
+            """
+            query AdminProductAnalytics {
+              adminProductAnalytics {
+                productName
+                materialCost
+                energyCost
+                laborCost
+                unitsProduced
+                unitsSold
+                marketSize
+                marketSaturationPercent
+                currentMarketingSpend
+                researchQualityLevel
+              }
+            }
+            """,
+            token: token);
+
+        var rows = result.GetProperty("data").GetProperty("adminProductAnalytics").EnumerateArray().ToList();
+        var breadRow = rows.First(row => row.GetProperty("productName").GetString() == "Bread");
+
+        Assert.Equal(80m, breadRow.GetProperty("materialCost").GetDecimal());
+        Assert.Equal(10m, breadRow.GetProperty("energyCost").GetDecimal());
+        Assert.Equal(25m, breadRow.GetProperty("laborCost").GetDecimal());
+        Assert.Equal(60m, breadRow.GetProperty("unitsProduced").GetDecimal());
+        Assert.Equal(45m, breadRow.GetProperty("unitsSold").GetDecimal());
+        Assert.Equal(90m, breadRow.GetProperty("marketSize").GetDecimal());
+        Assert.Equal(50m, breadRow.GetProperty("marketSaturationPercent").GetDecimal());
+        Assert.Equal(175m, breadRow.GetProperty("currentMarketingSpend").GetDecimal());
+        Assert.Equal(0.82m, breadRow.GetProperty("researchQualityLevel").GetDecimal());
+    }
+
     #endregion
 
     // ── Contradictory bidirectional link rejection ─────────────────────────────────────────────
