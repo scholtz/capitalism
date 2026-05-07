@@ -890,3 +890,14 @@ Root-cause of a recurring CI failure pattern (April 2026, PR #360 dashboard/ledg
 3. **If a test passes in isolation but fails in the full suite, the root cause is almost always shared mutable state** — not test flakiness. Diagnose by checking which singleton was modified by a preceding test.
 4. **Tests that need a specific tick value (e.g. year 2001 = tick ≥ 8760) must use an isolated factory,** seed their own game state, and run their assertions against the isolated HTTP client. Never rely on the shared factory's tick advancing to a convenient value.
 5. **Existing tick-advancing tests that use the shared factory are pre-existing technical debt.** Do not add more; when fixing them is in scope, migrate them to isolated factories.
+
+## Master-frontend portal CI parity — preserve unauthenticated hero contract
+
+Root-cause of a CI failure (May 2026, PR #367 personal account names):
+- `projects/master-frontend/src/views/HomeView.vue` was updated for `personalAccountName` display but removed the unauthenticated `Sign in` link and replaced the hero/pitch headings used by `projects/master-frontend/e2e/portal.spec.ts`.
+- `master-frontend CI` Playwright then failed on unauthenticated and mobile scenarios (`Sign in` missing, expected hero heading missing), blocking merge even though backend and game-frontend checks were green.
+
+**Rules to prevent recurrence:**
+1. **When changing master-frontend identity rendering, keep unauthenticated CTAs intact:** guest home must still expose both `Sign in` and `Get started free →` links.
+2. **Do not silently replace canonical hero/pitch headings without updating and rerunning `e2e/portal.spec.ts`.** Text-level contract changes on the master home page are CI-breaking and must be treated as explicit E2E updates.
+3. **For master-frontend UI changes, always run `cd projects/master-frontend && npm run lint && npm run test:unit && npm run build && CI=true npx playwright test --project=chromium e2e/portal.spec.ts` before pushing.**
