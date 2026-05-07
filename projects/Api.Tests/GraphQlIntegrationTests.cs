@@ -139,7 +139,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var phases = scope.ServiceProvider.GetServices<ITickPhase>();
         var logger = new NullLogger<TickProcessor>();
-        return Task.FromResult(new TickProcessor(db, phases, logger));
+        var masterService = scope.ServiceProvider.GetRequiredService<Api.Utilities.IMasterGameAdministrationService>();
+        var registrationOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Api.Configuration.MasterServerRegistrationOptions>>();
+        return Task.FromResult(new TickProcessor(db, phases, masterService, registrationOptions, logger));
     }
 
     private async Task ProcessTicksAsync(int count)
@@ -16514,7 +16516,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         // Run one tick to trigger the marketing phase.
         var phases = scope.ServiceProvider.GetServices<ITickPhase>();
         var logger = new NullLogger<TickProcessor>();
-        var processor = new TickProcessor(db, phases, logger);
+        var masterService = scope.ServiceProvider.GetRequiredService<Api.Utilities.IMasterGameAdministrationService>();
+        var registrationOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Api.Configuration.MasterServerRegistrationOptions>>();
+        var processor = new TickProcessor(db, phases, masterService, registrationOptions, logger);
         await processor.ProcessTickAsync();
 
         var marketingEntries = await db.LedgerEntries
@@ -16587,7 +16591,9 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
 
         var phases = scope.ServiceProvider.GetServices<ITickPhase>();
         var logger = new NullLogger<TickProcessor>();
-        var processor = new TickProcessor(db, phases, logger);
+        var masterService = scope.ServiceProvider.GetRequiredService<Api.Utilities.IMasterGameAdministrationService>();
+        var registrationOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Api.Configuration.MasterServerRegistrationOptions>>();
+        var processor = new TickProcessor(db, phases, masterService, registrationOptions, logger);
         await processor.ProcessTickAsync();
 
         var ledgerResult = await ExecuteGraphQlAsync(
@@ -19589,7 +19595,9 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var phases = scope.ServiceProvider.GetServices<ITickPhase>();
         var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<TickProcessor>();
-        var processor = new TickProcessor(db, phases, logger);
+        var masterService = scope.ServiceProvider.GetRequiredService<Api.Utilities.IMasterGameAdministrationService>();
+        var registrationOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Api.Configuration.MasterServerRegistrationOptions>>();
+        var processor = new TickProcessor(db, phases, masterService, registrationOptions, logger);
         for (var i = 0; i < count; i++)
             await processor.ProcessTickAsync();
     }
@@ -21291,7 +21299,9 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         var mediaCashBefore = mediaOwnerCompany.Cash;
 
         var phases = scope.ServiceProvider.GetServices<ITickPhase>();
-        var processor = new TickProcessor(db, phases, new NullLogger<TickProcessor>());
+        var masterService = scope.ServiceProvider.GetRequiredService<Api.Utilities.IMasterGameAdministrationService>();
+        var registrationOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Api.Configuration.MasterServerRegistrationOptions>>();
+        var processor = new TickProcessor(db, phases, masterService, registrationOptions, new NullLogger<TickProcessor>());
         await processor.ProcessTickAsync();
 
         Assert.True(advertiserCompany.Cash < cashBefore, "Advertiser cash should decrease.");
@@ -21347,7 +21357,9 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         await db.SaveChangesAsync();
 
         var phases = scope.ServiceProvider.GetServices<ITickPhase>();
-        var processor = new TickProcessor(db, phases, new NullLogger<TickProcessor>());
+        var masterService = scope.ServiceProvider.GetRequiredService<Api.Utilities.IMasterGameAdministrationService>();
+        var registrationOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Api.Configuration.MasterServerRegistrationOptions>>();
+        var processor = new TickProcessor(db, phases, masterService, registrationOptions, new NullLogger<TickProcessor>());
         await processor.ProcessTickAsync();
 
         var brand1 = await db.Brands.FirstOrDefaultAsync(b => b.CompanyId == company1.Id && b.ProductTypeId == product.Id);
@@ -21385,7 +21397,9 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         var cashBefore = company.Cash;
 
         var phases = scope.ServiceProvider.GetServices<ITickPhase>();
-        var processor = new TickProcessor(db, phases, new NullLogger<TickProcessor>());
+        var masterService = scope.ServiceProvider.GetRequiredService<Api.Utilities.IMasterGameAdministrationService>();
+        var registrationOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Api.Configuration.MasterServerRegistrationOptions>>();
+        var processor = new TickProcessor(db, phases, masterService, registrationOptions, new NullLogger<TickProcessor>());
         await processor.ProcessTickAsync();
 
         Assert.True(company.Cash < cashBefore, "Cash should still be deducted when owning the media house.");
@@ -23335,7 +23349,9 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         // Process 10 ticks using same scope that has the seeded data loaded
         var phases = scope.ServiceProvider.GetServices<ITickPhase>();
         var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<Api.Engine.TickProcessor>();
-        var processor = new Api.Engine.TickProcessor(db, phases, logger);
+        var masterService = scope.ServiceProvider.GetRequiredService<Api.Utilities.IMasterGameAdministrationService>();
+        var registrationOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Api.Configuration.MasterServerRegistrationOptions>>();
+        var processor = new Api.Engine.TickProcessor(db, phases, masterService, registrationOptions, logger);
 
         for (int i = 0; i < 10; i++)
             await processor.ProcessTickAsync();
@@ -25391,6 +25407,54 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         Assert.True(WouldFallbackCatch(upstream), "Genuine upstream failures (e.g. HttpRequestException) must be caught by the fallback.");
 
         await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task EndgameTargetLeaderboard_ReturnsTopFiveRealWorldBenchmarks()
+    {
+        var result = await ExecuteGraphQlAsync("{ endgameTargetLeaderboard { name estimatedUsdWealth } }");
+        var items = result.GetProperty("data").GetProperty("endgameTargetLeaderboard").EnumerateArray().ToList();
+
+        Assert.Equal(5, items.Count);
+        Assert.Equal("Elon Musk", items[0].GetProperty("name").GetString());
+        Assert.Equal(170_000_000_000m, items[^1].GetProperty("estimatedUsdWealth").GetDecimal());
+    }
+
+    [Fact]
+    public async Task BuyShares_WhenGameIsEnded_ReturnsGameEndedError()
+    {
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, "game-ended-stock@test.com", "EndedStock");
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var gameState = await db.GameStates.FirstAsync();
+            gameState.IsEnded = true;
+            gameState.EndedAtUtc = DateTime.UtcNow;
+            gameState.WinnerDisplayName = "Winner";
+            await db.SaveChangesAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            isolatedClient,
+            """
+            mutation BuyShares($input: BuySharesInput!) {
+              buyShares(input: $input) { companyId }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    companyId = Guid.NewGuid(),
+                    shareCount = 1m,
+                },
+            },
+            token);
+
+        var errorCode = result.GetProperty("errors")[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("GAME_ENDED", errorCode);
     }
 
     #endregion

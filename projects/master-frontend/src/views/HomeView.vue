@@ -327,8 +327,8 @@ onMounted(() => {
                   {{ server.region }} · {{ server.environment }} · v{{ server.version }}
                 </p>
               </div>
-              <span :class="['status-pill', server.isOnline ? 'status-online' : 'status-offline']">
-                {{ server.isOnline ? 'Online' : 'Offline' }}
+              <span :class="['status-pill', server.isCompleted ? 'status-offline' : server.isOnline ? 'status-online' : 'status-offline']">
+                {{ server.isCompleted ? 'Completed' : server.isOnline ? 'Online' : 'Offline' }}
               </span>
             </div>
 
@@ -354,6 +354,13 @@ onMounted(() => {
               <div>
                 <dt>Heartbeat</dt>
                 <dd>{{ heartbeatLabel(server) }}</dd>
+              </div>
+              <div v-if="server.isCompleted && server.winnerDisplayName">
+                <dt>Winner</dt>
+                <dd>
+                  {{ server.winnerDisplayName }}
+                  <template v-if="server.winnerWealth !== null">(${{ Number(server.winnerWealth).toLocaleString() }})</template>
+                </dd>
               </div>
             </dl>
 

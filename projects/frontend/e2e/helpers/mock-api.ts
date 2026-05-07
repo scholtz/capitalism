@@ -623,7 +623,21 @@ export type MockState = {
   productTypes: MockProductType[]
   currentUserId: string | null
   currentToken: string | null
-  gameState: { currentTick: number; lastTickAtUtc: string; tickIntervalSeconds: number; taxCycleTicks: number; taxRate: number }
+  gameState: {
+    currentTick: number
+    lastTickAtUtc: string
+    startedAtUtc: string
+    tickIntervalSeconds: number
+    taxCycleTicks: number
+    taxRate: number
+    isEnded: boolean
+    endedAtUtc: string | null
+    winnerPlayerId: string | null
+    winnerDisplayName: string | null
+    winnerWealth: number | null
+    winningTargetName: string | null
+    winningTargetWealth: number | null
+  }
   stockPriceHistory: Record<string, MockStockPriceHistoryPoint[]>
   ledgerData: Record<string, MockLedgerSummary>
   drillDownData: Record<string, MockLedgerEntry[]>
@@ -1534,7 +1548,21 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     productTypes: makeDefaultProducts(),
     currentUserId: null,
     currentToken: null,
-    gameState: { currentTick: 42, lastTickAtUtc: new Date(Date.now() - 30000).toISOString(), tickIntervalSeconds: 60, taxCycleTicks: 8760, taxRate: 15 },
+    gameState: {
+      currentTick: 42,
+      lastTickAtUtc: new Date(Date.now() - 30000).toISOString(),
+      startedAtUtc: new Date(Date.now() - 3600000).toISOString(),
+      tickIntervalSeconds: 60,
+      taxCycleTicks: 8760,
+      taxRate: 15,
+      isEnded: false,
+      endedAtUtc: null,
+      winnerPlayerId: null,
+      winnerDisplayName: null,
+      winnerWealth: null,
+      winningTargetName: null,
+      winningTargetWealth: null,
+    },
     stockPriceHistory: {},
     ledgerData: {},
     drillDownData: {},
@@ -4276,6 +4304,24 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { stockExchangePriceHistory: priceHistory } }),
+      })
+    }
+
+    if (query.includes('endgameTargetLeaderboard')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            endgameTargetLeaderboard: [
+              { name: 'Elon Musk', estimatedUsdWealth: 430000000000 },
+              { name: 'Jeff Bezos', estimatedUsdWealth: 240000000000 },
+              { name: 'Mark Zuckerberg', estimatedUsdWealth: 220000000000 },
+              { name: 'Larry Ellison', estimatedUsdWealth: 190000000000 },
+              { name: 'Bernard Arnault', estimatedUsdWealth: 170000000000 },
+            ],
+          },
+        }),
       })
     }
 

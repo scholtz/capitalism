@@ -23,6 +23,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         if (input.ShareCount <= 0m)
         {
             throw new GraphQLException(
@@ -173,6 +175,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         if (input.ShareCount <= 0m)
         {
             throw new GraphQLException(

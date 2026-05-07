@@ -17,6 +17,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
 
         var building = await db.Buildings
@@ -50,6 +52,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
 
         var building = await db.Buildings
@@ -105,6 +109,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
 
         var company = await db.Companies.FirstOrDefaultAsync(

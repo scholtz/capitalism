@@ -25,6 +25,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
 
         // Validate the bank building is owned by this player's company.
@@ -130,6 +132,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
 
         var offer = await db.LoanOffers
@@ -217,6 +221,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
 
         var offer = await db.LoanOffers
@@ -248,6 +254,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
 
         // Verify borrower owns the company.

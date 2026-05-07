@@ -24,6 +24,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
         var currentTick = await db.GameStates
             .AsNoTracking()
@@ -71,6 +73,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
         var company = await db.Companies
             .Include(candidate => candidate.CitySalarySettings)
@@ -155,6 +159,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
 
         var company = await db.Companies.FirstOrDefaultAsync(

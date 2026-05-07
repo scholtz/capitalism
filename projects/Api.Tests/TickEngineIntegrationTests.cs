@@ -31,7 +31,9 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var phases = scope.ServiceProvider.GetServices<ITickPhase>();
         var logger = new NullLogger<TickProcessor>();
-        return Task.FromResult(new TickProcessor(db, phases, logger));
+        var masterService = scope.ServiceProvider.GetRequiredService<Api.Utilities.IMasterGameAdministrationService>();
+        var registrationOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Api.Configuration.MasterServerRegistrationOptions>>();
+        return Task.FromResult(new TickProcessor(db, phases, masterService, registrationOptions, logger));
     }
 
     private async Task<(Guid CompanyId, Guid BuildingId, Guid CityId)> SeedMineAsync(AppDbContext db)
@@ -5876,6 +5878,54 @@ public sealed class TickEngineIntegrationTests : IClassFixture<ApiWebApplication
             .Where(i => i.BuildingUnitId == unitId)
             .SumAsync(i => i.Quantity);
         Assert.Equal(50m, remainingQty);
+    }
+
+    [Fact]
+    public async Task ProcessTickAsync_EndgameWinnerReached_MarksShardCompletedAndStopsFurtherTicks()
+    {
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        _ = isolatedFactory.CreateClient();
+
+        await using var seedScope = isolatedFactory.Services.CreateAsyncScope();
+        var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var player = new Player
+        {
+            Id = Guid.NewGuid(),
+            Email = $"endgame-{Guid.NewGuid():N}@test.com",
+            DisplayName = "Endgame Winner",
+            PasswordHash = "hash",
+            Role = PlayerRole.Player,
+            PersonalCash = 200_000_000_000m,
+        };
+        seedDb.Players.Add(player);
+        await seedDb.SaveChangesAsync();
+
+        var gameState = await seedDb.GameStates.FirstAsync();
+        var startTick = gameState.CurrentTick;
+
+        var phases = seedScope.ServiceProvider.GetServices<ITickPhase>();
+        var processor = new TickProcessor(
+            seedDb,
+            phases,
+            seedScope.ServiceProvider.GetRequiredService<Api.Utilities.IMasterGameAdministrationService>(),
+            seedScope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Api.Configuration.MasterServerRegistrationOptions>>(),
+            new NullLogger<TickProcessor>());
+
+        await processor.ProcessTickAsync();
+
+        var completedState = await seedDb.GameStates.AsNoTracking().FirstAsync();
+        Assert.True(completedState.IsEnded);
+        Assert.Equal("Endgame Winner", completedState.WinnerDisplayName);
+        Assert.NotNull(completedState.WinnerWealth);
+
+        var endedTick = completedState.CurrentTick;
+
+        await processor.ProcessTickAsync();
+
+        var afterSecondTick = await seedDb.GameStates.AsNoTracking().FirstAsync();
+        Assert.Equal(endedTick, afterSecondTick.CurrentTick);
+        Assert.Equal(startTick + 1, endedTick);
     }
 
     #endregion

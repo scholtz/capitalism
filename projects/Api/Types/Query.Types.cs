@@ -29,6 +29,13 @@ public sealed class PlayerRanking
     public int CompanyCount { get; set; }
 }
 
+/// <summary>Real-world wealth benchmark used by the endgame win condition.</summary>
+public sealed class EndgameTargetPersonResult
+{
+    public string Name { get; set; } = string.Empty;
+    public decimal EstimatedUsdWealth { get; set; }
+}
+
 /// <summary>Individual company ranking for the leaderboard.</summary>
 public sealed class CompanyRanking
 {

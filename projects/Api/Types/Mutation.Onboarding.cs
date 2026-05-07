@@ -27,6 +27,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
         var nowUtc = DateTime.UtcNow;
         var player = await db.Players.FindAsync(userId)
@@ -195,6 +197,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
         var nowUtc = DateTime.UtcNow;
         var player = await db.Players.FindAsync(userId)
@@ -349,6 +353,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
         var nowUtc = DateTime.UtcNow;
         var player = await db.Players.FindAsync(userId)

@@ -14,6 +14,9 @@ export interface GameServerSummary {
   playerCount: number
   companyCount: number
   currentTick: number
+  isCompleted: boolean
+  winnerDisplayName: string | null
+  winnerWealth: number | null
   registeredAtUtc: string
   lastHeartbeatAtUtc: string
   isOnline: boolean
@@ -65,6 +68,9 @@ const GAME_SERVERS_QUERY = `
       playerCount
       companyCount
       currentTick
+      isCompleted
+      winnerDisplayName
+      winnerWealth
       registeredAtUtc
       lastHeartbeatAtUtc
       isOnline

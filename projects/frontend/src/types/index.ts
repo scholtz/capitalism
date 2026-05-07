@@ -611,9 +611,17 @@ export interface CompanyRanking {
 export interface GameState {
   currentTick: number
   lastTickAtUtc: string
+  startedAtUtc: string
   tickIntervalSeconds: number
   taxCycleTicks: number
   taxRate: number
+  isEnded: boolean
+  endedAtUtc: string | null
+  winnerPlayerId: string | null
+  winnerDisplayName: string | null
+  winnerWealth: number | null
+  winningTargetName: string | null
+  winningTargetWealth: number | null
   currentGameYear: number
   currentGameTimeUtc: string
   ticksPerDay: number
@@ -621,6 +629,11 @@ export interface GameState {
   nextTaxTick: number
   nextTaxGameTimeUtc: string
   nextTaxGameYear: number
+}
+
+export interface EndgameTargetPerson {
+  name: string
+  estimatedUsdWealth: number
 }
 
 /** Matches backend BuildingLot entity */

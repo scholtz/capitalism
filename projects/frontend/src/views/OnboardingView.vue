@@ -1106,7 +1106,9 @@ function navigateToDashboard() {
 
 async function loadGameState() {
   try {
-    const data = await gqlRequest<{ gameState: GameState }>('{ gameState { currentTick lastTickAtUtc tickIntervalSeconds taxRate } }')
+    const data = await gqlRequest<{ gameState: GameState }>(
+      '{ gameState { currentTick lastTickAtUtc startedAtUtc tickIntervalSeconds taxCycleTicks taxRate isEnded endedAtUtc winnerPlayerId winnerDisplayName winnerWealth winningTargetName winningTargetWealth currentGameYear currentGameTimeUtc ticksPerDay ticksPerYear nextTaxTick nextTaxGameTimeUtc nextTaxGameYear } }',
+    )
     gameState.value = data.gameState
     startTickCountdown()
   } catch {

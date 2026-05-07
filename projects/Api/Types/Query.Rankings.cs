@@ -318,4 +318,16 @@ public sealed partial class Query
             Industries = Industry.StarterIndustries.ToList()
         };
     }
+
+    /// <summary>Returns the top real-world wealth targets for the endgame win condition.</summary>
+    public List<EndgameTargetPersonResult> GetEndgameTargetLeaderboard()
+    {
+        return EndgameService.GetTargetRichList()
+            .Select(target => new EndgameTargetPersonResult
+            {
+                Name = target.Name,
+                EstimatedUsdWealth = target.EstimatedUsdWealth,
+            })
+            .ToList();
+    }
 }
