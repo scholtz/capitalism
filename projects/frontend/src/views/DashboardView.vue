@@ -73,6 +73,18 @@ const gameEndedBanner = computed(() => {
   const targetName = gameState.value.winningTargetName ?? t('dashboard.gameEndedTarget')
   return t('dashboard.gameEndedBanner', { winner: winnerName, target: targetName })
 })
+const currentPlayerRanking = computed(() =>
+  auth.player ? finalRankings.value.find((entry) => entry.playerId === auth.player?.id) : undefined,
+)
+const currentPlayerWealth = computed(() => currentPlayerRanking.value?.totalWealth ?? (auth.player?.personalCash ?? 0))
+const endgameGoalWealth = computed(() => {
+  if (endgameTargets.value.length === 0) return 0
+  return endgameTargets.value[endgameTargets.value.length - 1]?.estimatedUsdWealth ?? 0
+})
+const endgameProgressPercent = computed(() => {
+  if (endgameGoalWealth.value <= 0) return 0
+  return Math.min(100, Math.max(0, (currentPlayerWealth.value / endgameGoalWealth.value) * 100))
+})
 
 const buildingTypeIcons: Record<string, string> = {
   MINE: '⛏️',
@@ -162,19 +174,11 @@ onMounted(async () => {
       router.push('/onboarding')
       return
     }
-    const [companiesData, gameStateData] = await Promise.all([
-      gqlRequest<{ myCompanies: Company[] }>(
-        `{ myCompanies {
-          id name cash foundedAtUtc
-          buildings { id name type level cityId powerStatus units { id unitType gridX gridY level } }
-        } }`,
-      ),
-      gqlRequest<{ gameState: GameState }>(
-        '{ gameState { currentTick lastTickAtUtc startedAtUtc tickIntervalSeconds taxCycleTicks taxRate isEnded endedAtUtc winnerPlayerId winnerDisplayName winnerWealth winningTargetName winningTargetWealth currentGameYear currentGameTimeUtc ticksPerDay ticksPerYear nextTaxTick nextTaxGameTimeUtc nextTaxGameYear } }',
-      ),
-    ])
-    companies.value = companiesData.myCompanies
+    const gameStateData = await gqlRequest<{ gameState: GameState }>(
+      '{ gameState { currentTick lastTickAtUtc startedAtUtc tickIntervalSeconds taxCycleTicks taxRate isEnded endedAtUtc winnerPlayerId winnerDisplayName winnerWealth winningTargetName winningTargetWealth currentGameYear currentGameTimeUtc ticksPerDay ticksPerYear nextTaxTick nextTaxGameTimeUtc nextTaxGameYear } }',
+    )
     gameState.value = gameStateData.gameState
+    await loadDashboardData()
     startTickCountdown()
 
     // Load city power balances for each unique city that has buildings.
@@ -468,6 +472,10 @@ async function createCompany() {
             <strong class="person-metric-value">${{ formatCurrency(auth.player?.personalCash ?? 0) }}</strong>
           </article>
           <article class="person-metric-card">
+            <span class="person-metric-label">{{ t('dashboard.personalWealth') }}</span>
+            <strong class="person-metric-value">${{ formatCurrency(currentPlayerWealth) }}</strong>
+          </article>
+          <article class="person-metric-card">
             <span class="person-metric-label">{{ t('dashboard.controlledCompanies') }}</span>
             <strong class="person-metric-value">{{ companies.length }}</strong>
           </article>
@@ -476,6 +484,25 @@ async function createCompany() {
         <div v-if="endgameTargets.length > 0" class="endgame-target-panel" aria-label="Target Leaderboard">
           <h3>{{ t('dashboard.targetLeaderboardTitle') }}</h3>
           <p class="person-account-copy">{{ t('dashboard.targetLeaderboardBody') }}</p>
+          <div class="endgame-progress-meter">
+            <div class="endgame-progress-header">
+              <span>{{ t('dashboard.targetProgressToGoal') }}</span>
+              <strong>{{ endgameProgressPercent.toFixed(3) }}%</strong>
+            </div>
+            <div
+              class="endgame-progress-track"
+              role="progressbar"
+              :aria-valuemin="0"
+              :aria-valuemax="100"
+              :aria-valuenow="Number(endgameProgressPercent.toFixed(3))"
+              :aria-label="t('dashboard.targetProgressToGoal')"
+            >
+              <span class="endgame-progress-fill" :style="{ width: `${endgameProgressPercent}%` }"></span>
+            </div>
+            <p class="person-account-copy endgame-progress-hint">
+              {{ t('dashboard.targetProgressHint', { wealth: formatCurrency(currentPlayerWealth), goal: formatCurrency(endgameGoalWealth) }) }}
+            </p>
+          </div>
           <ol>
             <li v-for="target in endgameTargets" :key="target.name">
               🏆 {{ target.name }} — ${{ formatCurrency(target.estimatedUsdWealth) }}
@@ -495,7 +522,12 @@ async function createCompany() {
               <input v-model="createCompanyName" type="text" maxlength="200" :placeholder="t('dashboard.companyNamePlaceholder')" />
             </label>
             <div class="new-company-buttons">
-              <button class="btn btn-primary" type="submit" :disabled="createCompanyLoading || isGameEnded">
+              <button
+                class="btn btn-primary"
+                type="submit"
+                :disabled="createCompanyLoading || isGameEnded"
+                :title="isGameEnded ? t('dashboard.gameEndedTooltip') : undefined"
+              >
                 {{ createCompanyLoading ? t('common.loading') : isGameEnded ? t('dashboard.gameEndedReadOnly') : t('dashboard.createCompany') }}
               </button>
               <RouterLink to="/encyclopedia" class="btn btn-secondary">{{ t('dashboard.browseEncyclopedia') }}</RouterLink>
@@ -538,7 +570,7 @@ async function createCompany() {
                 </span>
               </div>
             </div>
-            <button v-if="isGameEnded" class="btn btn-primary" type="button" disabled>
+            <button v-if="isGameEnded" class="btn btn-primary" type="button" :title="t('dashboard.gameEndedTooltip')" disabled>
               {{ t('dashboard.gameEndedReadOnly') }}
             </button>
             <RouterLink v-else :to="`/buy-building/${company.id}`" class="btn btn-primary">
@@ -882,6 +914,38 @@ async function createCompany() {
   border: 1px dashed var(--color-border);
   border-radius: var(--radius-md);
   padding: 1rem;
+}
+
+.endgame-progress-meter {
+  margin: 0.85rem 0;
+}
+
+.endgame-progress-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.endgame-progress-track {
+  width: 100%;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.endgame-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f59e0b, #f97316);
+}
+
+.endgame-progress-hint {
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
 }
 
 .person-account-header {
