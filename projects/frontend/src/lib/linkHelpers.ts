@@ -416,3 +416,37 @@ export function applyDiagonalLinkCycle<T extends LinkFlagSource>(
   }
   // 'bl-tr' or 'cross' → stays cleared (all flags already set to false above)
 }
+
+// ---------------------------------------------------------------------------
+// UnitLinkConnector visual descriptor helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * The rendered visual for a link connector: which SVG elements are present.
+ * Used for unit-testing the connector's state-to-visual mapping logic.
+ */
+export interface LinkConnectorVisual {
+  /** A track line is always rendered. */
+  hasTrack: true
+  /** Whether the active (primary-color) stroke is applied to the track. */
+  isActive: boolean
+  /** Whether a forward-direction arrowhead polyline is present. */
+  hasForwardArrow: boolean
+  /** Whether a backward-direction arrowhead polyline is present. */
+  hasBackwardArrow: boolean
+}
+
+/**
+ * Pure function describing the visual elements the UnitLinkConnector should render
+ * for a given state.  Used for unit tests without needing a DOM/Vue instance.
+ */
+export function getLinkConnectorVisual(
+  state: DirectedPairLinkState,
+): LinkConnectorVisual {
+  return {
+    hasTrack: true,
+    isActive: state !== 'none',
+    hasForwardArrow: state === 'forward' || state === 'both',
+    hasBackwardArrow: state === 'backward' || state === 'both',
+  }
+}

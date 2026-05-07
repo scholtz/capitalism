@@ -6,8 +6,9 @@ It will use real world map. The game will start in single city and later other c
 
 ## Issues to work on
 
-### Unit links
+### Unit links (100%)
 - Diagonal links does not look good on frontend. There seems to be two lines - one arrow and one line. Also two rounded objects are visible there. There must be only only object which handles all 8 possible states for the link and links should look professional.
+- **[100% complete — Replaced dual-span approach (diag-line + diag-arrow / link-line + link-arrow) with a single SVG component (UnitLinkConnector.vue) for all 8 directional states. Diagonal links now render a clean geometric line + corner-bracket arrowhead with no rounded CSS artifacts and no duplicate visual elements. Horizontal and vertical links use the same SVG system for consistency. All existing link-editing behavior and button layout preserved. Unit tests added via getLinkConnectorVisual() helper covering all states parametrically.]**
 
 ### Warehouse unit
 - Remove the settings from the warehouse unit. It can accept any product, so product selection is not required to be set.
