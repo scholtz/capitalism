@@ -94,10 +94,9 @@ public sealed partial class Mutation
             return;
         }
 
-        var completedAt = gameState.EndedAtUtc?.ToString("u") ?? "unknown time";
         throw new GraphQLException(
             ErrorBuilder.New()
-                .SetMessage($"This game server is completed and runs in read-only mode (winner: {gameState.WinnerDisplayName ?? "unknown"}, ended at {completedAt}).")
+                .SetMessage("This game server has ended and is now in read-only mode.")
                 .SetCode("GAME_ENDED")
                 .Build());
     }

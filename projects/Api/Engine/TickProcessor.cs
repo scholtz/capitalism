@@ -149,9 +149,14 @@ public sealed class TickProcessor(
             return;
         }
 
+        if (gameState.EndedAtUtc is null)
+        {
+            return;
+        }
+
         var durationRealDays = Math.Max(
             0,
-            (int)Math.Ceiling(((gameState.EndedAtUtc ?? DateTime.UtcNow) - gameState.StartedAtUtc).TotalDays));
+            (int)Math.Ceiling((gameState.EndedAtUtc.Value - gameState.StartedAtUtc).TotalDays));
         var durationGameDays = gameState.CurrentTick / Math.Max(1, GameConstants.TicksPerDay);
         var largestCompany = await db.Companies
             .AsNoTracking()
@@ -178,16 +183,6 @@ public sealed class TickProcessor(
             : $"<p><strong>Largest company cash balance:</strong> {largestCompany.Name} (${largestCompany.Cash:N0}).</p>";
         var title = $"Game completed: {gameState.WinnerDisplayName} reached ${gameState.WinnerWealth.Value:N0}";
         var summary = $"{gameState.WinnerDisplayName} surpassed {gameState.WinningTargetName} and completed this shard.";
-        var html = $"""
-            <h2>Final Game Report</h2>
-            <p><strong>Winner:</strong> {gameState.WinnerDisplayName} with ${gameState.WinnerWealth.Value:N0}.</p>
-            <p><strong>Milestone beaten:</strong> {gameState.WinningTargetName} (${gameState.WinningTargetWealth:N0}).</p>
-            <p><strong>Duration:</strong> {durationRealDays} real day(s), {durationGameDays} in-game day(s), tick {gameState.CurrentTick}.</p>
-            {statsHtml}
-            {largestCompanyHtml}
-            <h3>Final personal wealth ranking</h3>
-            <ol>{rankingHtml}</ol>
-            """;
 
         try
         {
@@ -198,20 +193,26 @@ public sealed class TickProcessor(
                 status: "PUBLISHED",
                 localizations:
                 [
-                    new GameNewsLocalizationInput { Locale = "en", Title = title, Summary = summary, HtmlContent = html },
+                    new GameNewsLocalizationInput
+                    {
+                        Locale = "en",
+                        Title = title,
+                        Summary = summary,
+                        HtmlContent = BuildLocalizedEndgameHtml("en", gameState, durationRealDays, durationGameDays, rankingHtml, statsHtml, largestCompanyHtml),
+                    },
                     new GameNewsLocalizationInput
                     {
                         Locale = "sk",
                         Title = $"Hra ukončená: {gameState.WinnerDisplayName} dosiahol ${gameState.WinnerWealth.Value:N0}",
                         Summary = $"{gameState.WinnerDisplayName} prekonal cieľ {gameState.WinningTargetName} a ukončil tento server.",
-                        HtmlContent = html,
+                        HtmlContent = BuildLocalizedEndgameHtml("sk", gameState, durationRealDays, durationGameDays, rankingHtml, statsHtml, largestCompanyHtml),
                     },
                     new GameNewsLocalizationInput
                     {
                         Locale = "de",
                         Title = $"Spiel beendet: {gameState.WinnerDisplayName} erreichte ${gameState.WinnerWealth.Value:N0}",
                         Summary = $"{gameState.WinnerDisplayName} hat das Ziel {gameState.WinningTargetName} übertroffen und diesen Server abgeschlossen.",
-                        HtmlContent = html,
+                        HtmlContent = BuildLocalizedEndgameHtml("de", gameState, durationRealDays, durationGameDays, rankingHtml, statsHtml, largestCompanyHtml),
                     },
                 ],
                 cancellationToken: ct);
@@ -220,6 +221,50 @@ public sealed class TickProcessor(
         {
             logger.LogWarning(ex, "Failed to publish automatic endgame newsletter.");
         }
+    }
+
+    private static string BuildLocalizedEndgameHtml(
+        string locale,
+        GameState gameState,
+        int durationRealDays,
+        long durationGameDays,
+        string rankingHtml,
+        string statsHtml,
+        string largestCompanyHtml)
+    {
+        return locale switch
+        {
+            "sk" => $"""
+                <h2>Záverečná herná správa</h2>
+                <p><strong>Víťaz:</strong> {gameState.WinnerDisplayName} s majetkom ${gameState.WinnerWealth!.Value:N0}.</p>
+                <p><strong>Prekonaný míľnik:</strong> {gameState.WinningTargetName} (${gameState.WinningTargetWealth:N0}).</p>
+                <p><strong>Trvanie:</strong> {durationRealDays} reálnych dní, {durationGameDays} herných dní, tick {gameState.CurrentTick}.</p>
+                {statsHtml}
+                {largestCompanyHtml}
+                <h3>Finálny rebríček osobného bohatstva</h3>
+                <ol>{rankingHtml}</ol>
+                """,
+            "de" => $"""
+                <h2>Finaler Spielbericht</h2>
+                <p><strong>Sieger:</strong> {gameState.WinnerDisplayName} mit ${gameState.WinnerWealth!.Value:N0}.</p>
+                <p><strong>Übertroffenes Ziel:</strong> {gameState.WinningTargetName} (${gameState.WinningTargetWealth:N0}).</p>
+                <p><strong>Dauer:</strong> {durationRealDays} reale Tage, {durationGameDays} Spieltage, Tick {gameState.CurrentTick}.</p>
+                {statsHtml}
+                {largestCompanyHtml}
+                <h3>Finale Rangliste des persönlichen Vermögens</h3>
+                <ol>{rankingHtml}</ol>
+                """,
+            _ => $"""
+                <h2>Final Game Report</h2>
+                <p><strong>Winner:</strong> {gameState.WinnerDisplayName} with ${gameState.WinnerWealth!.Value:N0}.</p>
+                <p><strong>Milestone beaten:</strong> {gameState.WinningTargetName} (${gameState.WinningTargetWealth:N0}).</p>
+                <p><strong>Duration:</strong> {durationRealDays} real day(s), {durationGameDays} in-game day(s), tick {gameState.CurrentTick}.</p>
+                {statsHtml}
+                {largestCompanyHtml}
+                <h3>Final personal wealth ranking</h3>
+                <ol>{rankingHtml}</ol>
+                """,
+        };
     }
 
     private async Task<TickContext> BuildContextAsync(GameState gameState, CancellationToken ct)

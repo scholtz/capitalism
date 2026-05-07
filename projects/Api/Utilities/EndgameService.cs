@@ -32,12 +32,12 @@ public static class EndgameService
 
     public static decimal GetWinThresholdWealth() => TargetRichList[^1].EstimatedUsdWealth;
 
-    public static EndgameTargetPerson GetHighestSurpassedTarget(decimal wealth)
+    public static EndgameTargetPerson? GetHighestSurpassedTarget(decimal wealth)
     {
         return TargetRichList
             .Where(target => wealth >= target.EstimatedUsdWealth)
             .OrderByDescending(target => target.EstimatedUsdWealth)
-            .FirstOrDefault() ?? TargetRichList[^1];
+            .FirstOrDefault();
     }
 
     public static async Task<List<EndgamePlayerWealth>> ComputePlayerWealthRankingAsync(AppDbContext db, CancellationToken ct = default)
@@ -97,9 +97,15 @@ public static class EndgameService
             return null;
         }
 
+        var surpassedTarget = GetHighestSurpassedTarget(winner.TotalWealth);
+        if (surpassedTarget is null)
+        {
+            return null;
+        }
+
         return new EndgameOutcome(
             winner,
-            GetHighestSurpassedTarget(winner.TotalWealth),
+            surpassedTarget,
             ranking);
     }
 }
