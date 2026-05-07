@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AdvancedItemSelector from '@/components/buildings/AdvancedItemSelector.vue'
 import BuildingFinancialTimelineChart from '@/components/buildings/BuildingFinancialTimelineChart.vue'
+import UnitLinkConnector from '@/components/buildings/UnitLinkConnector.vue'
 import UnitResourceHistoryPanel from '@/components/buildings/UnitResourceHistoryPanel.vue'
 import { getInventorySourcingCostPerUnit, getPlannedUnitConstructionCost, getTotalInventorySourcingCost, getUnitConstructionCost, sumPlannedConfigurationCost } from '@/lib/buildingUnitEconomics'
 import { isProductLocked } from '@/lib/productAccess'
@@ -13,13 +14,11 @@ import {
   applyPrimaryDiagonalLinkCycle,
   applySecondaryDiagonalLinkCycle,
   applyVerticalLinkCycle,
-  getHorizontalLinkArrow,
   getHorizontalLinkState,
   getPrimaryDiagonalLinkArrow,
   getPrimaryDiagonalLinkState,
   getSecondaryDiagonalLinkArrow,
   getSecondaryDiagonalLinkState,
-  getVerticalLinkArrow,
   getVerticalLinkState,
 } from '@/lib/linkHelpers'
 import { annotateExchangeOffers, selectOptimalOffer, sortExchangeOffers, detectLogisticsTrap, type AnnotatedExchangeOffer, type ExchangeSortBy } from '@/lib/globalExchange'
@@ -4516,10 +4515,7 @@ watch(
                         { active: isHorizontalLinkActiveFor(activeUnits, x, y), disabled: !canToggleHorizontalLink(activeUnits, x, y) },
                       ]"
                     >
-                      <span class="link-line"></span>
-                      <span v-if="getHorizontalLinkStateFor(activeUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{
-                        getHorizontalLinkArrow(getHorizontalLinkStateFor(activeUnits, x, y))
-                      }}</span>
+                      <UnitLinkConnector type="horizontal" :state="getHorizontalLinkStateFor(activeUnits, x, y)" />
                     </div>
                   </template>
                 </div>
@@ -4530,10 +4526,7 @@ watch(
                       class="link-toggle vertical readonly"
                       :class="[`link-state-${getVerticalLinkStateFor(activeUnits, x, y)}`, { active: isVerticalLinkActiveFor(activeUnits, x, y), disabled: !canToggleVerticalLink(activeUnits, x, y) }]"
                     >
-                      <span class="link-line"></span>
-                      <span v-if="getVerticalLinkStateFor(activeUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{
-                        getVerticalLinkArrow(getVerticalLinkStateFor(activeUnits, x, y))
-                      }}</span>
+                      <UnitLinkConnector type="vertical" :state="getVerticalLinkStateFor(activeUnits, x, y)" />
                     </div>
 
                     <div
@@ -4552,10 +4545,7 @@ watch(
                         data-diagonal-axis="primary"
                         :data-diagonal-root="`${x},${y}`"
                       >
-                        <span class="diag-line"></span>
-                        <span v-if="getPrimaryDiagonalLinkStateFor(activeUnits, x, y) !== 'none'" class="diag-arrow" aria-hidden="true">{{
-                          getPrimaryDiagonalLinkArrow(getPrimaryDiagonalLinkStateFor(activeUnits, x, y))
-                        }}</span>
+                        <UnitLinkConnector type="diag-primary" :state="getPrimaryDiagonalLinkStateFor(activeUnits, x, y)" />
                       </div>
                       <div
                         v-if="canToggleSecondaryDiagonalLink(activeUnits, x, y)"
@@ -4567,10 +4557,7 @@ watch(
                         data-diagonal-axis="secondary"
                         :data-diagonal-root="`${x},${y}`"
                       >
-                        <span class="diag-line"></span>
-                        <span v-if="getSecondaryDiagonalLinkStateFor(activeUnits, x, y) !== 'none'" class="diag-arrow" aria-hidden="true">{{
-                          getSecondaryDiagonalLinkArrow(getSecondaryDiagonalLinkStateFor(activeUnits, x, y))
-                        }}</span>
+                        <UnitLinkConnector type="diag-secondary" :state="getSecondaryDiagonalLinkStateFor(activeUnits, x, y)" />
                       </div>
                     </div>
                   </template>
@@ -4747,10 +4734,7 @@ watch(
                       :aria-label="t('buildingDetail.linkHorizontalAriaLabel', { state: getHorizontalLinkStateFor(plannedUnits, x, y) })"
                       @click="toggleHorizontalLink(x, y)"
                     >
-                      <span class="link-line"></span>
-                      <span v-if="getHorizontalLinkStateFor(plannedUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{
-                        getHorizontalLinkArrow(getHorizontalLinkStateFor(plannedUnits, x, y))
-                      }}</span>
+                      <UnitLinkConnector type="horizontal" :state="getHorizontalLinkStateFor(plannedUnits, x, y)" />
                     </button>
                   </template>
                 </div>
@@ -4767,10 +4751,7 @@ watch(
                       :aria-label="t('buildingDetail.linkVerticalAriaLabel', { state: getVerticalLinkStateFor(plannedUnits, x, y) })"
                       @click="toggleVerticalLink(x, y)"
                     >
-                      <span class="link-line"></span>
-                      <span v-if="getVerticalLinkStateFor(plannedUnits, x, y) !== 'none'" class="link-arrow" aria-hidden="true">{{
-                        getVerticalLinkArrow(getVerticalLinkStateFor(plannedUnits, x, y))
-                      }}</span>
+                      <UnitLinkConnector type="vertical" :state="getVerticalLinkStateFor(plannedUnits, x, y)" />
                     </button>
 
                     <div
@@ -4791,10 +4772,7 @@ watch(
                         :data-diagonal-root="`${x},${y}`"
                         @click="togglePrimaryDiagonalLink(x, y)"
                       >
-                        <span class="diag-line"></span>
-                        <span v-if="getPrimaryDiagonalLinkStateFor(plannedUnits, x, y) !== 'none'" class="diag-arrow" aria-hidden="true">{{
-                          getPrimaryDiagonalLinkArrow(getPrimaryDiagonalLinkStateFor(plannedUnits, x, y))
-                        }}</span>
+                        <UnitLinkConnector type="diag-primary" :state="getPrimaryDiagonalLinkStateFor(plannedUnits, x, y)" />
                       </button>
                       <button
                         v-if="canToggleSecondaryDiagonalLink(plannedUnits, x, y)"
@@ -4808,10 +4786,7 @@ watch(
                         :data-diagonal-root="`${x},${y}`"
                         @click="toggleSecondaryDiagonalLink(x, y)"
                       >
-                        <span class="diag-line"></span>
-                        <span v-if="getSecondaryDiagonalLinkStateFor(plannedUnits, x, y) !== 'none'" class="diag-arrow" aria-hidden="true">{{
-                          getSecondaryDiagonalLinkArrow(getSecondaryDiagonalLinkStateFor(plannedUnits, x, y))
-                        }}</span>
+                        <UnitLinkConnector type="diag-secondary" :state="getSecondaryDiagonalLinkStateFor(plannedUnits, x, y)" />
                       </button>
                     </div>
                   </template>
@@ -7504,130 +7479,12 @@ watch(
   right: 0;
 }
 
-.link-line {
-  display: block;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-border) 82%, transparent);
-}
+/* link-line, link-arrow, diag-line, diag-arrow removed — replaced by UnitLinkConnector SVG */
 
-.horizontal .link-line {
-  width: 20px;
-  height: 4px;
-}
-
-.vertical .link-line {
-  width: 4px;
-  height: 20px;
-}
-
-.link-toggle.active .link-line {
-  background: var(--color-primary);
-}
-
-/* Directional arrow indicator inside link toggle buttons */
-.link-arrow {
-  position: absolute;
-  font-size: 12px;
-  line-height: 1;
-  color: var(--color-primary);
-  pointer-events: none;
-  font-weight: 700;
-  text-shadow: 0 1px 2px rgba(8, 15, 28, 0.65);
-}
-
-.link-toggle.horizontal .link-arrow {
-  right: 1px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.link-toggle.horizontal.link-state-backward .link-arrow {
-  right: auto;
-  left: 1px;
-}
-
-.link-toggle.horizontal.link-state-both .link-arrow {
-  right: auto;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.link-toggle.vertical .link-arrow {
-  bottom: 1px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.link-toggle.vertical.link-state-backward .link-arrow {
-  bottom: auto;
-  top: 1px;
-}
-
-.link-toggle.vertical.link-state-both .link-arrow {
-  top: 50%;
-  bottom: auto;
-  transform: translate(-50%, -50%);
-}
-
-.diag-line {
-  position: absolute;
-  top: 50%;
-  width: 28px;
-  height: 4px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-border) 78%, transparent);
-  opacity: 0.55;
-}
-
-.diagonal-primary .diag-line {
-  left: 8px;
-  transform-origin: left center;
-  transform: translateY(-50%) rotate(45deg);
-}
-
-.diagonal-secondary .diag-line {
-  right: 8px;
-  transform-origin: right center;
-  transform: translateY(-50%) rotate(-45deg);
-}
-
-.link-toggle.diagonal.active .diag-line {
-  background: var(--color-primary);
-  opacity: 1;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
-}
-
-.diag-arrow {
-  position: absolute;
-  font-size: 16px;
-  line-height: 1;
-  color: var(--color-primary);
-  pointer-events: none;
-  font-weight: 700;
-  z-index: 1;
-  text-shadow: 0 2px 4px rgba(8, 15, 28, 0.72);
-}
-
-.diagonal-primary.link-state-forward .diag-arrow {
-  left: 18px;
-  top: 18px;
-}
-
-.diagonal-primary.link-state-backward .diag-arrow,
-.diagonal-primary.link-state-both .diag-arrow {
-  left: 2px;
-  top: 2px;
-}
-
-.diagonal-secondary.link-state-forward .diag-arrow {
-  right: 18px;
-  top: 18px;
-}
-
-.diagonal-secondary.link-state-backward .diag-arrow,
-.diagonal-secondary.link-state-both .diag-arrow {
-  right: 2px;
-  top: 2px;
+/* Diagonal link buttons need overflow:visible so the 36×36 SVG can extend
+   beyond the 18px-wide button to cover the full intersection square. */
+.link-toggle.diagonal {
+  overflow: visible;
 }
 
 /* config-help-notice is a softer variant of config-help for guidance messages */
@@ -7824,9 +7681,7 @@ watch(
     height: 28px;
   }
 
-  .diag-line {
-    width: 18px;
-  }
+  /* diag-line removed — diagonal SVG scales automatically via viewBox */
 
   .upgrade-banner,
   .grid-header {

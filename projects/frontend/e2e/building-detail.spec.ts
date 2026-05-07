@@ -3540,7 +3540,8 @@ test.describe('Building detail upgrades', () => {
     // Default direction should be STORAGE → PUBLIC_SALES (↗) on the first click.
     await sparseSecondary.click()
     await expect(sparseSecondary).toHaveClass(/link-state-backward/)
-    await expect(sparseSecondary.locator('.diag-arrow')).toContainText('↗')
+    // SVG connector shows backward arrowhead (↗ direction)
+    await expect(sparseSecondary.locator('[data-arrowhead="backward"]')).toBeVisible()
 
     await page.getByRole('button', { name: 'Store Upgrade' }).click()
     await expect(page.getByRole('status')).toContainText('Building upgrade in progress')
@@ -3951,9 +3952,10 @@ test.describe('Building detail upgrades', () => {
     await expect(finalDiag).not.toHaveClass(/link-state-forward/)
   })
 
-  test('diagonal direction arrows render correct Unicode glyphs for all 4 states — AC6 visual', async ({ page }) => {
-    // Verifies that the diag-arrow element shows the correct Unicode glyph (↘ ↖ ↙ ↗)
-    // for each of the four diagonal states, proving direction is visually unambiguous.
+  test('diagonal direction arrows render correct SVG arrowheads for all 4 states — AC6 visual', async ({ page }) => {
+    // Verifies that the UnitLinkConnector SVG renders the correct arrowhead element
+    // for each of the four diagonal states, proving direction is visually unambiguous
+    // without duplicate line+glyph artifacts.
     const player = makePlayer()
     const buildingUnits: MockBuildingUnit[] = [
       { id: 'glyph-1', buildingId: 'building-glyph', unitType: 'PURCHASE',      gridX: 0, gridY: 0, level: 1,
@@ -3994,30 +3996,44 @@ test.describe('Building detail upgrades', () => {
     const primaryDiagButton = getDiagonalToggle(plannedSection, 0, 0, 'primary')
     const secondaryDiagButton = getDiagonalToggle(plannedSection, 0, 0, 'secondary')
 
-    // Primary axis (\): ↘ then ↖
+    // Primary axis (\): forward = ↘ arrowhead
     await primaryDiagButton.click()
     await expect(primaryDiagButton).toHaveClass(/link-state-forward/)
-    await expect(primaryDiagButton.locator('.diag-arrow')).toContainText('↘')
-
-    await primaryDiagButton.click()
-    await expect(primaryDiagButton).toHaveClass(/link-state-backward/)
-    await expect(primaryDiagButton.locator('.diag-arrow')).toContainText('↖')
-
-    await primaryDiagButton.click()
-    await expect(primaryDiagButton).toHaveClass(/link-state-none/)
+    // SVG connector with forward state rendered (single SVG, no duplicate line+glyph)
+    await expect(primaryDiagButton.locator('.link-connector-svg[data-connector-state="forward"]')).toBeVisible()
+    await expect(primaryDiagButton.locator('[data-arrowhead="forward"]')).toBeVisible()
+    await expect(primaryDiagButton.locator('[data-arrowhead="backward"]')).toHaveCount(0)
+    // Confirm no old diag-arrow Unicode element exists
     await expect(primaryDiagButton.locator('.diag-arrow')).toHaveCount(0)
 
-    // Secondary axis (/): ↙ then ↗
+    // Primary axis backward = ↖ arrowhead
+    await primaryDiagButton.click()
+    await expect(primaryDiagButton).toHaveClass(/link-state-backward/)
+    await expect(primaryDiagButton.locator('.link-connector-svg[data-connector-state="backward"]')).toBeVisible()
+    await expect(primaryDiagButton.locator('[data-arrowhead="backward"]')).toBeVisible()
+    await expect(primaryDiagButton.locator('[data-arrowhead="forward"]')).toHaveCount(0)
+
+    // Primary axis none: no arrowhead polyline
+    await primaryDiagButton.click()
+    await expect(primaryDiagButton).toHaveClass(/link-state-none/)
+    await expect(primaryDiagButton.locator('.link-connector-svg[data-connector-state="none"]')).toBeVisible()
+    await expect(primaryDiagButton.locator('[data-arrowhead]')).toHaveCount(0)
+
+    // Secondary axis (/): forward = ↙ arrowhead
     await secondaryDiagButton.click()
     await expect(secondaryDiagButton).toHaveClass(/link-state-forward/)
-    await expect(secondaryDiagButton.locator('.diag-arrow')).toContainText('↙')
+    await expect(secondaryDiagButton.locator('.link-connector-svg[data-connector-state="forward"]')).toBeVisible()
+    await expect(secondaryDiagButton.locator('[data-arrowhead="forward"]')).toBeVisible()
 
+    // Secondary axis backward = ↗ arrowhead
     await secondaryDiagButton.click()
     await expect(secondaryDiagButton).toHaveClass(/link-state-backward/)
-    await expect(secondaryDiagButton.locator('.diag-arrow')).toContainText('↗')
+    await expect(secondaryDiagButton.locator('.link-connector-svg[data-connector-state="backward"]')).toBeVisible()
+    await expect(secondaryDiagButton.locator('[data-arrowhead="backward"]')).toBeVisible()
 
-    // Larger arrow glyph should remain clearly visible after the redesign
-    await expect(secondaryDiagButton.locator('.diag-arrow')).toHaveCSS('font-size', '16px')
+    // SVG connector is the single visual element (no old diag-line span either)
+    await expect(secondaryDiagButton.locator('.diag-line')).toHaveCount(0)
+    await expect(secondaryDiagButton.locator('.diag-arrow')).toHaveCount(0)
   })
 
   // ---------------------------------------------------------------------------
@@ -17155,8 +17171,8 @@ test.describe('Building Layouts panel — edit mode, no unit selected', () => {
       .first()
     await expect(planSection.locator('.grid-cell.occupied').first()).toBeVisible()
 
-    // At least one link arrow should appear in the planned grid (AC5: links preserved)
-    await expect(planSection.locator('.link-arrow').first()).toBeVisible()
+    // At least one link SVG connector should appear in the planned grid (AC5: links preserved)
+    await expect(planSection.locator('.link-connector-svg').first()).toBeVisible()
   })
 
   test('loading a template with diagonal link flags preserves diagonal state in planned grid (AC6)', async ({
