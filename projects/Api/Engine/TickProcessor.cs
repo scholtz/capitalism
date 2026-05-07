@@ -1,8 +1,12 @@
 using System.Diagnostics;
+using Api.Configuration;
 using Api.Data;
 using Api.Data.Entities;
+using Api.Types;
+using Api.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Api.Engine;
 
@@ -14,6 +18,8 @@ namespace Api.Engine;
 public sealed class TickProcessor(
     AppDbContext db,
     IEnumerable<ITickPhase> phases,
+    IMasterGameAdministrationService masterGameAdministrationService,
+    IOptions<MasterServerRegistrationOptions> masterServerRegistrationOptions,
     ILogger<TickProcessor> logger)
 {
     /// <summary>
@@ -27,6 +33,12 @@ public sealed class TickProcessor(
         {
             logger.LogWarning("No game state found; skipping tick.");
             return 10;
+        }
+
+        if (gameState.IsEnded)
+        {
+            logger.LogInformation("Tick loop skipped because game server is completed at tick {Tick}.", gameState.CurrentTick);
+            return Math.Max(1, gameState.TickIntervalSeconds);
         }
 
         gameState.CurrentTick++;
@@ -76,7 +88,14 @@ public sealed class TickProcessor(
             db.Inventories.RemoveRange(depleted);
         }
 
+        var endgameTriggered = await TryTriggerEndgameAsync(gameState, ct);
+
         await db.SaveChangesAsync(ct);
+
+        if (endgameTriggered)
+        {
+            await TryPublishEndgameNewsletterAsync(gameState, ct);
+        }
 
         sw.Stop();
         logger.LogInformation(
@@ -87,6 +106,120 @@ public sealed class TickProcessor(
             phases.Count());
 
         return gameState.TickIntervalSeconds;
+    }
+
+    private async Task<bool> TryTriggerEndgameAsync(GameState gameState, CancellationToken ct)
+    {
+        var outcome = await EndgameService.EvaluateWinConditionAsync(db, ct);
+        if (outcome is null)
+        {
+            return false;
+        }
+
+        var endedAtUtc = DateTime.UtcNow;
+        gameState.IsEnded = true;
+        gameState.EndedAtUtc = endedAtUtc;
+        gameState.WinnerPlayerId = outcome.Winner.PlayerId;
+        gameState.WinnerDisplayName = outcome.Winner.DisplayName;
+        gameState.WinnerWealth = outcome.Winner.TotalWealth;
+        gameState.WinningTargetName = outcome.SurpassedTarget.Name;
+        gameState.WinningTargetWealth = outcome.SurpassedTarget.EstimatedUsdWealth;
+
+        logger.LogInformation(
+            "Endgame reached at tick {Tick}. Winner: {Winner} with ${Wealth}. Surpassed {Target} (${TargetWealth}).",
+            gameState.CurrentTick,
+            outcome.Winner.DisplayName,
+            outcome.Winner.TotalWealth,
+            outcome.SurpassedTarget.Name,
+            outcome.SurpassedTarget.EstimatedUsdWealth);
+
+        return true;
+    }
+
+    private async Task TryPublishEndgameNewsletterAsync(GameState gameState, CancellationToken ct)
+    {
+        if (!masterServerRegistrationOptions.Value.IsConfigured())
+        {
+            return;
+        }
+
+        var ranking = await EndgameService.ComputePlayerWealthRankingAsync(db, ct);
+        if (ranking.Count == 0 || string.IsNullOrWhiteSpace(gameState.WinnerDisplayName) || gameState.WinnerWealth is null)
+        {
+            return;
+        }
+
+        var durationRealDays = Math.Max(
+            0,
+            (int)Math.Ceiling(((gameState.EndedAtUtc ?? DateTime.UtcNow) - gameState.StartedAtUtc).TotalDays));
+        var durationGameDays = gameState.CurrentTick / Math.Max(1, GameConstants.TicksPerDay);
+        var largestCompany = await db.Companies
+            .AsNoTracking()
+            .OrderByDescending(company => company.Cash)
+            .Select(company => new { company.Name, company.Cash })
+            .FirstOrDefaultAsync(ct);
+        var bestRevenueTick = await db.LedgerEntries
+            .AsNoTracking()
+            .Where(entry => entry.Category == LedgerCategory.Revenue && entry.Amount > 0m)
+            .GroupBy(entry => entry.RecordedAtTick)
+            .Select(group => new { Tick = group.Key, Revenue = group.Sum(entry => entry.Amount) })
+            .OrderByDescending(row => row.Revenue)
+            .FirstOrDefaultAsync(ct);
+
+        var rankingHtml = string.Join(
+            string.Empty,
+            ranking.Select((row, index) =>
+                $"<li>#{index + 1} {row.DisplayName}: ${row.TotalWealth:N0}</li>"));
+        var statsHtml = bestRevenueTick is null
+            ? string.Empty
+            : $"<p><strong>Highest revenue tick:</strong> Tick {bestRevenueTick.Tick} with ${bestRevenueTick.Revenue:N0}.</p>";
+        var largestCompanyHtml = largestCompany is null
+            ? string.Empty
+            : $"<p><strong>Largest company cash balance:</strong> {largestCompany.Name} (${largestCompany.Cash:N0}).</p>";
+        var title = $"Game completed: {gameState.WinnerDisplayName} reached ${gameState.WinnerWealth.Value:N0}";
+        var summary = $"{gameState.WinnerDisplayName} surpassed {gameState.WinningTargetName} and completed this shard.";
+        var html = $"""
+            <h2>Final Game Report</h2>
+            <p><strong>Winner:</strong> {gameState.WinnerDisplayName} with ${gameState.WinnerWealth.Value:N0}.</p>
+            <p><strong>Milestone beaten:</strong> {gameState.WinningTargetName} (${gameState.WinningTargetWealth:N0}).</p>
+            <p><strong>Duration:</strong> {durationRealDays} real day(s), {durationGameDays} in-game day(s), tick {gameState.CurrentTick}.</p>
+            {statsHtml}
+            {largestCompanyHtml}
+            <h3>Final personal wealth ranking</h3>
+            <ol>{rankingHtml}</ol>
+            """;
+
+        try
+        {
+            await masterGameAdministrationService.UpsertGameNewsEntryAsync(
+                requesterEmail: $"system@{masterServerRegistrationOptions.Value.ServerKey}.local",
+                entryId: null,
+                entryType: "CHANGELOG",
+                status: "PUBLISHED",
+                localizations:
+                [
+                    new GameNewsLocalizationInput { Locale = "en", Title = title, Summary = summary, HtmlContent = html },
+                    new GameNewsLocalizationInput
+                    {
+                        Locale = "sk",
+                        Title = $"Hra ukončená: {gameState.WinnerDisplayName} dosiahol ${gameState.WinnerWealth.Value:N0}",
+                        Summary = $"{gameState.WinnerDisplayName} prekonal cieľ {gameState.WinningTargetName} a ukončil tento server.",
+                        HtmlContent = html,
+                    },
+                    new GameNewsLocalizationInput
+                    {
+                        Locale = "de",
+                        Title = $"Spiel beendet: {gameState.WinnerDisplayName} erreichte ${gameState.WinnerWealth.Value:N0}",
+                        Summary = $"{gameState.WinnerDisplayName} hat das Ziel {gameState.WinningTargetName} übertroffen und diesen Server abgeschlossen.",
+                        HtmlContent = html,
+                    },
+                ],
+                cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to publish automatic endgame newsletter.");
+        }
     }
 
     private async Task<TickContext> BuildContextAsync(GameState gameState, CancellationToken ct)

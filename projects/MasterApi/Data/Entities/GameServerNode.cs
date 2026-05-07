@@ -28,6 +28,12 @@ public sealed class GameServerNode
 
     public long CurrentTick { get; set; }
 
+    public bool IsCompleted { get; set; }
+
+    public string? WinnerDisplayName { get; set; }
+
+    public decimal? WinnerWealth { get; set; }
+
     public DateTime RegisteredAtUtc { get; set; }
 
     public DateTime LastHeartbeatAtUtc { get; set; }

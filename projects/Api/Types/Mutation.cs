@@ -73,6 +73,35 @@ public sealed partial class Mutation
             .FirstOrDefaultAsync() ?? 0L;
     }
 
+    private static async Task EnsureGameIsActiveAsync(AppDbContext db)
+    {
+        var gameState = await db.GameStates
+            .AsNoTracking()
+            .Select(state => new { state.IsEnded, state.EndedAtUtc, state.WinnerDisplayName })
+            .FirstOrDefaultAsync();
+
+        if (gameState is null)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Game state is not initialized.")
+                    .SetCode("GAME_STATE_NOT_FOUND")
+                    .Build());
+        }
+
+        if (!gameState.IsEnded)
+        {
+            return;
+        }
+
+        var completedAt = gameState.EndedAtUtc?.ToString("u") ?? "unknown time";
+        throw new GraphQLException(
+            ErrorBuilder.New()
+                .SetMessage($"This game server is completed and runs in read-only mode (winner: {gameState.WinnerDisplayName ?? "unknown"}, ended at {completedAt}).")
+                .SetCode("GAME_ENDED")
+                .Build());
+    }
+
     private static void AddCompanyLedgerEntry(
         AppDbContext db,
         Company company,

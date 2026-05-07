@@ -104,9 +104,15 @@ public sealed class MasterServerRegistrationHostedService(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var currentTick = await db.GameStates
+        var gameState = await db.GameStates
             .AsNoTracking()
-            .Select(state => state.CurrentTick)
+            .Select(state => new
+            {
+                state.CurrentTick,
+                state.IsEnded,
+                state.WinnerDisplayName,
+                state.WinnerWealth,
+            })
             .FirstOrDefaultAsync(cancellationToken);
 
         var playerCount = await db.Players
@@ -137,7 +143,10 @@ public sealed class MasterServerRegistrationHostedService(
             Version = ResolveVersion(),
             PlayerCount = playerCount,
             CompanyCount = companyCount,
-            CurrentTick = currentTick,
+            CurrentTick = gameState?.CurrentTick ?? 0L,
+            IsCompleted = gameState?.IsEnded ?? false,
+            WinnerDisplayName = gameState?.WinnerDisplayName,
+            WinnerWealth = gameState?.WinnerWealth,
         };
     }
 
@@ -197,5 +206,11 @@ public sealed class MasterServerRegistrationHostedService(
         public int CompanyCount { get; init; }
 
         public long CurrentTick { get; init; }
+
+        public bool IsCompleted { get; init; }
+
+        public string? WinnerDisplayName { get; init; }
+
+        public decimal? WinnerWealth { get; init; }
     }
 }

@@ -19,6 +19,9 @@ public sealed class GameState
     /// <summary>UTC timestamp of the last tick processing.</summary>
     public DateTime LastTickAtUtc { get; set; } = DateTime.UtcNow;
 
+    /// <summary>UTC timestamp when this game shard was started.</summary>
+    public DateTime StartedAtUtc { get; set; } = DateTime.UtcNow;
+
     /// <summary>Interval in seconds between ticks.</summary>
     public int TickIntervalSeconds { get; set; } = 60;
 
@@ -27,6 +30,27 @@ public sealed class GameState
 
     /// <summary>Global tax rate percentage (0-100).</summary>
     public decimal TaxRate { get; set; } = 15m;
+
+    /// <summary>True when the endgame win condition was reached and the shard has ended.</summary>
+    public bool IsEnded { get; set; }
+
+    /// <summary>UTC timestamp when the shard was marked completed.</summary>
+    public DateTime? EndedAtUtc { get; set; }
+
+    /// <summary>Winning player's identifier.</summary>
+    public Guid? WinnerPlayerId { get; set; }
+
+    /// <summary>Winning player's display name at game end.</summary>
+    public string? WinnerDisplayName { get; set; }
+
+    /// <summary>Winner final personal-account wealth at game end.</summary>
+    public decimal? WinnerWealth { get; set; }
+
+    /// <summary>Name of the real-world target that was surpassed.</summary>
+    public string? WinningTargetName { get; set; }
+
+    /// <summary>Estimated net worth of the surpassed real-world target.</summary>
+    public decimal? WinningTargetWealth { get; set; }
 
     [NotMapped]
     public int CurrentGameYear => GameTime.GetGameYear(CurrentTick);

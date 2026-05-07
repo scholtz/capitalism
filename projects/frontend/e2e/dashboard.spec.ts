@@ -1983,4 +1983,35 @@ test.describe('Dashboard tick-refresh stability', () => {
     // No loading state between ticks
     await expect(page.locator('.loading', { hasText: 'Loading' })).toBeHidden()
   })
+
+  test('shows game-over banner and read-only actions after server completion', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      companies: [
+        {
+          id: 'comp-ended',
+          playerId: 'player-1',
+          name: 'Finished Corp',
+          cash: 300000,
+          foundedAtUtc: '2026-01-01T00:00:00Z',
+          buildings: [],
+        },
+      ],
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+    state.gameState.isEnded = true
+    state.gameState.endedAtUtc = new Date().toISOString()
+    state.gameState.winnerDisplayName = 'Tycoon Winner'
+    state.gameState.winnerWealth = 170000000000
+    state.gameState.winningTargetName = 'Bernard Arnault'
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.getByRole('heading', { name: 'Game Over' })).toBeVisible()
+    await expect(page.getByText('Tycoon Winner has completed this server by surpassing Bernard Arnault.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Read-only mode' })).toBeVisible()
+  })
 })

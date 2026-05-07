@@ -9,9 +9,17 @@ const GAME_STATE_QUERY = `
     gameState {
       currentTick
       lastTickAtUtc
+      startedAtUtc
       tickIntervalSeconds
       taxCycleTicks
       taxRate
+      isEnded
+      endedAtUtc
+      winnerPlayerId
+      winnerDisplayName
+      winnerWealth
+      winningTargetName
+      winningTargetWealth
       currentGameYear
       currentGameTimeUtc
       ticksPerDay

@@ -17,7 +17,17 @@ import SupplyChainPanel from '@/components/dashboard/SupplyChainPanel.vue'
 import FinancialSummaryCard from '@/components/dashboard/FinancialSummaryCard.vue'
 import StarterGuidance from '@/components/dashboard/StarterGuidance.vue'
 import DashboardChatPanel from '@/components/dashboard/DashboardChatPanel.vue'
-import type { Company, GameState, ScheduledActionSummary, CityPowerBalance, CompanyLedgerSummary, City, BuildingUnitOperationalStatus } from '@/types'
+import type {
+  Company,
+  GameState,
+  ScheduledActionSummary,
+  CityPowerBalance,
+  CompanyLedgerSummary,
+  City,
+  BuildingUnitOperationalStatus,
+  PlayerRanking,
+  EndgameTargetPerson,
+} from '@/types'
 
 // Module-level cache for city names — cities are static and never change during a session.
 const _cityNamesCache: Record<string, string> = {}
@@ -43,6 +53,8 @@ const createCompanyName = ref('')
 const createCompanyLoading = ref(false)
 const createCompanyError = ref<string | null>(null)
 const createCompanyMessage = ref<string | null>(null)
+const endgameTargets = ref<EndgameTargetPerson[]>([])
+const finalRankings = ref<PlayerRanking[]>([])
 const masterPortalUrl = import.meta.env.VITE_MASTER_WEB_URL || 'http://localhost:5174'
 
 const { tickCountdown, startTickCountdown, stopTickCountdown } = useTickCountdown(gameState)
@@ -54,6 +66,13 @@ const visibleCompanies = computed(() => (activeCompany.value ? [activeCompany.va
 const formattedGameTime = computed(() =>
   gameState.value?.currentGameTimeUtc ? formatInGameTime(gameState.value.currentGameTimeUtc, locale.value) : '',
 )
+const isGameEnded = computed(() => gameState.value?.isEnded === true)
+const gameEndedBanner = computed(() => {
+  if (!isGameEnded.value || !gameState.value) return null
+  const winnerName = gameState.value.winnerDisplayName ?? t('dashboard.gameEndedUnknownWinner')
+  const targetName = gameState.value.winningTargetName ?? t('dashboard.gameEndedTarget')
+  return t('dashboard.gameEndedBanner', { winner: winnerName, target: targetName })
+})
 
 const buildingTypeIcons: Record<string, string> = {
   MINE: '⛏️',
@@ -97,15 +116,29 @@ function powerBalanceClass(status: string): string {
 }
 
 async function loadDashboardData() {
-  const companiesData = await gqlRequest<{ myCompanies: Company[] }>(
-    `{ myCompanies {
+  const [companiesData, targetsData, rankingsData] = await Promise.all([
+    gqlRequest<{ myCompanies: Company[] }>(
+      `{ myCompanies {
       id name cash foundedAtUtc
       buildings { id name type level cityId powerStatus units { id unitType gridX gridY level } }
     } }`,
-  )
+    ),
+    gqlRequest<{ endgameTargetLeaderboard: EndgameTargetPerson[] }>(
+      `{ endgameTargetLeaderboard { name estimatedUsdWealth } }`,
+    ),
+    gqlRequest<{ rankings: PlayerRanking[] }>(
+      `{ rankings { playerId displayName personalAccountName totalWealth personalCash sharesValue companyCount } }`,
+    ),
+  ])
 
   if (!deepEqual(companies.value, companiesData.myCompanies)) {
     companies.value = companiesData.myCompanies
+  }
+  if (!deepEqual(endgameTargets.value, targetsData.endgameTargetLeaderboard)) {
+    endgameTargets.value = targetsData.endgameTargetLeaderboard
+  }
+  if (!deepEqual(finalRankings.value, rankingsData.rankings)) {
+    finalRankings.value = rankingsData.rankings
   }
 }
 
@@ -137,7 +170,7 @@ onMounted(async () => {
         } }`,
       ),
       gqlRequest<{ gameState: GameState }>(
-        '{ gameState { currentTick lastTickAtUtc tickIntervalSeconds taxCycleTicks taxRate currentGameYear currentGameTimeUtc ticksPerDay ticksPerYear nextTaxTick nextTaxGameTimeUtc nextTaxGameYear } }',
+        '{ gameState { currentTick lastTickAtUtc startedAtUtc tickIntervalSeconds taxCycleTicks taxRate isEnded endedAtUtc winnerPlayerId winnerDisplayName winnerWealth winningTargetName winningTargetWealth currentGameYear currentGameTimeUtc ticksPerDay ticksPerYear nextTaxTick nextTaxGameTimeUtc nextTaxGameYear } }',
       ),
     ])
     companies.value = companiesData.myCompanies
@@ -373,6 +406,19 @@ async function createCompany() {
     </div>
 
     <template v-else>
+      <section v-if="isGameEnded" class="game-ended-banner" role="status" aria-live="polite">
+        <h2>{{ t('dashboard.gameEndedTitle') }}</h2>
+        <p>{{ gameEndedBanner }}</p>
+        <p v-if="gameState?.winnerWealth !== null && gameState?.winnerWealth !== undefined">
+          {{ t('dashboard.gameEndedWinnerWealth', { wealth: formatCurrency(gameState.winnerWealth) }) }}
+        </p>
+        <ol v-if="finalRankings.length > 0" class="game-ended-ranking">
+          <li v-for="(entry, index) in finalRankings" :key="entry.playerId">
+            #{{ index + 1 }} {{ entry.displayName }} — ${{ formatCurrency(entry.totalWealth) }}
+          </li>
+        </ol>
+      </section>
+
       <section class="startup-pack-panel" aria-labelledby="dashboard-startup-pack-title">
         <div class="startup-pack-header">
           <div>
@@ -427,6 +473,16 @@ async function createCompany() {
           </article>
         </div>
 
+        <div v-if="endgameTargets.length > 0" class="endgame-target-panel" aria-label="Target Leaderboard">
+          <h3>{{ t('dashboard.targetLeaderboardTitle') }}</h3>
+          <p class="person-account-copy">{{ t('dashboard.targetLeaderboardBody') }}</p>
+          <ol>
+            <li v-for="target in endgameTargets" :key="target.name">
+              🏆 {{ target.name }} — ${{ formatCurrency(target.estimatedUsdWealth) }}
+            </li>
+          </ol>
+        </div>
+
         <div class="person-account-actions">
           <div>
             <h3>{{ t('dashboard.createCompanyTitle') }}</h3>
@@ -439,8 +495,8 @@ async function createCompany() {
               <input v-model="createCompanyName" type="text" maxlength="200" :placeholder="t('dashboard.companyNamePlaceholder')" />
             </label>
             <div class="new-company-buttons">
-              <button class="btn btn-primary" type="submit" :disabled="createCompanyLoading">
-                {{ createCompanyLoading ? t('common.loading') : t('dashboard.createCompany') }}
+              <button class="btn btn-primary" type="submit" :disabled="createCompanyLoading || isGameEnded">
+                {{ createCompanyLoading ? t('common.loading') : isGameEnded ? t('dashboard.gameEndedReadOnly') : t('dashboard.createCompany') }}
               </button>
               <RouterLink to="/encyclopedia" class="btn btn-secondary">{{ t('dashboard.browseEncyclopedia') }}</RouterLink>
             </div>
@@ -482,7 +538,10 @@ async function createCompany() {
                 </span>
               </div>
             </div>
-            <RouterLink :to="`/buy-building/${company.id}`" class="btn btn-primary">
+            <button v-if="isGameEnded" class="btn btn-primary" type="button" disabled>
+              {{ t('dashboard.gameEndedReadOnly') }}
+            </button>
+            <RouterLink v-else :to="`/buy-building/${company.id}`" class="btn btn-primary">
               {{ t('dashboard.buyBuilding') }}
             </RouterLink>
             <RouterLink v-if="company.buildings.length > 0 && company.buildings[0]" :to="`/city/${company.buildings[0].cityId}`" class="btn btn-secondary"> 🗺️ {{ t('nav.cityMap') }} </RouterLink>
@@ -803,6 +862,26 @@ async function createCompany() {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
+}
+
+.game-ended-banner {
+  border: 2px solid #f59e0b;
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.game-ended-ranking {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.endgame-target-panel {
+  margin-bottom: 1.25rem;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
 }
 
 .person-account-header {

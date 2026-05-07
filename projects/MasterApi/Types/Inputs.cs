@@ -49,6 +49,12 @@ public sealed class RegisterGameServerInput
     public int CompanyCount { get; set; }
 
     public long CurrentTick { get; set; }
+
+    public bool IsCompleted { get; set; }
+
+    public string? WinnerDisplayName { get; set; }
+
+    public decimal? WinnerWealth { get; set; }
 }
 
 public sealed class GameServerSummary
@@ -78,6 +84,12 @@ public sealed class GameServerSummary
     public int CompanyCount { get; init; }
 
     public long CurrentTick { get; init; }
+
+    public bool IsCompleted { get; init; }
+
+    public string? WinnerDisplayName { get; init; }
+
+    public decimal? WinnerWealth { get; init; }
 
     public DateTime RegisteredAtUtc { get; init; }
 

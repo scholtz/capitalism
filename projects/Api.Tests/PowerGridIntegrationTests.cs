@@ -61,7 +61,9 @@ public sealed class PowerGridIntegrationTests : IClassFixture<ApiWebApplicationF
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var phases = scope.ServiceProvider.GetServices<ITickPhase>();
         var logger = new NullLogger<TickProcessor>();
-        return Task.FromResult(new TickProcessor(db, phases, logger));
+        var masterService = scope.ServiceProvider.GetRequiredService<Api.Utilities.IMasterGameAdministrationService>();
+        var registrationOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Api.Configuration.MasterServerRegistrationOptions>>();
+        return Task.FromResult(new TickProcessor(db, phases, masterService, registrationOptions, logger));
     }
 
     // ── Unit tests (no DB) ───────────────────────────────────────────────────

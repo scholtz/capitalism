@@ -14,6 +14,9 @@ export interface MockGameServer {
   playerCount: number
   companyCount: number
   currentTick: number
+  isCompleted: boolean
+  winnerDisplayName: string | null
+  winnerWealth: number | null
   registeredAtUtc: string
   lastHeartbeatAtUtc: string
   isOnline: boolean
@@ -61,6 +64,9 @@ export function makeServer(overrides: Partial<MockGameServer> = {}): MockGameSer
     playerCount: 42,
     companyCount: 128,
     currentTick: 5000,
+    isCompleted: false,
+    winnerDisplayName: null,
+    winnerWealth: null,
     registeredAtUtc: '2026-04-01T00:00:00.000Z',
     lastHeartbeatAtUtc: new Date().toISOString(),
     isOnline: true,

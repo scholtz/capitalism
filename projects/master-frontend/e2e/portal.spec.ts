@@ -58,6 +58,21 @@ test.describe('Unauthenticated home page', () => {
     await expect(page.locator('.status-pill.status-offline')).toBeVisible()
   })
 
+  test('renders completed server with winner details', async ({ page }) => {
+    const server = makeServer({
+      displayName: 'Completed Server',
+      isCompleted: true,
+      winnerDisplayName: 'Tycoon Winner',
+      winnerWealth: 170000000000,
+    })
+    setupMockApi(page, { servers: [server] })
+    await page.goto('/')
+
+    await expect(page.getByText('Completed Server')).toBeVisible()
+    await expect(page.getByText('Completed', { exact: true })).toBeVisible()
+    await expect(page.getByText(/Tycoon Winner/)).toBeVisible()
+  })
+
   test('shows player count, company count, and tick for each server', async ({ page }) => {
     const server = makeServer({ playerCount: 42, companyCount: 128, currentTick: 5000 })
     setupMockApi(page, { servers: [server] })

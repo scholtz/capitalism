@@ -174,6 +174,12 @@ Quantity of the raw material at the land is consumable by the mining process.
 
 Each player is ranked by his total wealth. Players can start multiple companies. Company pays out the dividends.
 
+## Endgame
+
+**Status: 100% complete** (May 2026)
+
+Top 5 real-world wealth targets are now exposed in the game UI, the tick engine automatically ends the shard once a player surpasses the endgame threshold, economic mutations switch to read-only mode after completion, and an automatic final game report is published to the shared news/changelog feed with winner and final ranking details.
+
 ## Units configuration
 
 ### Mining operation unit
