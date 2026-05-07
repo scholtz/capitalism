@@ -1448,8 +1448,8 @@ test.describe('Global Exchange — quality variability bands', () => {
     // The quality band bar has a title attribute explaining the variability
     const bandBar = firstCard.locator('.quality-band-bar')
     // Get the title attribute as a string and verify it is descriptive (> 10 chars)
-    const titleValue = await bandBar.getAttribute('title')
-    expect(titleValue).toBeTruthy()
+    const titleValue = bandBar
+    await expect(titleValue).toHaveAttribute('title', )
     expect(titleValue!.length).toBeGreaterThan(10)
   })
 })
