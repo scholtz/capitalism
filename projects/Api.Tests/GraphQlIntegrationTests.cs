@@ -9945,6 +9945,29 @@ public sealed class GraphQlIntegrationTests : IClassFixture<ApiWebApplicationFac
         Assert.Equal(200_000m, entry.GetProperty("totalWealth").GetDecimal());
     }
 
+    [Fact]
+    public async Task Rankings_UsesPersonalAccountName_WhenAvailable()
+    {
+        var email = $"persona-rank-{Guid.NewGuid():N}@test.com";
+        var token = await RegisterAndGetTokenAsync(email, "EmailLikeDisplay");
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var player = await db.Players.FirstAsync(candidate => candidate.Email == email);
+            player.PersonalAccountName = "Orion Vale Mercer";
+            await db.SaveChangesAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync("{ rankings { displayName personalAccountName } }", token: token);
+        var entry = result.GetProperty("data").GetProperty("rankings")
+            .EnumerateArray()
+            .FirstOrDefault(r => r.GetProperty("displayName").GetString() == "Orion Vale Mercer");
+
+        Assert.True(entry.ValueKind != System.Text.Json.JsonValueKind.Undefined, "Expected ranking entry to use personal account name.");
+        Assert.Equal("Orion Vale Mercer", entry.GetProperty("personalAccountName").GetString());
+    }
+
     #endregion
 
     #region BuildingLots

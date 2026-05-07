@@ -39,6 +39,7 @@ const PLAYER_RANKINGS_QUERY = `
     rankings {
       playerId
       displayName
+      personalAccountName
       totalWealth
       personalCash
       sharesValue
@@ -54,6 +55,7 @@ const COMPANY_RANKINGS_QUERY = `
       companyName
       playerId
       ownerDisplayName
+      ownerPersonalAccountName
       totalWealth
       cash
       buildingValue
@@ -225,7 +227,7 @@ const currentGameTime = computed(() => {
             <div class="rank-badge">{{ rankBadge(index) }}</div>
             <div class="rank-info">
               <div class="rank-name">
-                {{ rank.displayName }}
+                <span class="personal-account-name">{{ rank.personalAccountName ?? rank.displayName }}</span>
                 <span v-if="rank.playerId === currentPlayerId" class="you-badge">{{ t('leaderboard.you') }}</span>
               </div>
               <div class="rank-companies">
@@ -285,7 +287,7 @@ const currentGameTime = computed(() => {
                 {{ rank.companyName }}
                 <span v-if="rank.playerId === currentPlayerId" class="you-badge">{{ t('leaderboard.you') }}</span>
               </div>
-              <div class="rank-companies">{{ t('leaderboard.ownedBy', { name: rank.ownerDisplayName }) }} · {{ t('leaderboard.buildingsCount', { n: rank.buildingCount }) }}</div>
+              <div class="rank-companies">{{ t('leaderboard.ownedBy', { name: rank.ownerPersonalAccountName ?? rank.ownerDisplayName }) }} · {{ t('leaderboard.buildingsCount', { n: rank.buildingCount }) }}</div>
             </div>
             <div class="rank-wealth">
               <div class="total-wealth">{{ formatWealth(rank.totalWealth) }}</div>
@@ -541,6 +543,10 @@ const currentGameTime = computed(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.personal-account-name {
+  color: var(--color-secondary);
 }
 
 .you-badge {

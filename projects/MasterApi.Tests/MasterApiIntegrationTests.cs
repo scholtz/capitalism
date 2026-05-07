@@ -49,12 +49,12 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
     {
         var result = await GraphQlAsync("""
             mutation Register($input: RegisterInput!) {
-              register(input: $input) {
-                token
-                expiresAtUtc
-                player { id email displayName createdAtUtc }
+                register(input: $input) {
+                  token
+                  expiresAtUtc
+                  player { id email displayName personalAccountName createdAtUtc }
+                }
               }
-            }
             """,
             new { input = new { email, displayName, password } });
 
@@ -197,6 +197,98 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
         Assert.NotEmpty(player.GetProperty("id").GetString()!);
         Assert.NotEmpty(player.GetProperty("email").GetString()!);
         Assert.Equal("Test Player", player.GetProperty("displayName").GetString());
+        Assert.Equal(JsonValueKind.Null, player.GetProperty("personalAccountName").ValueKind);
+    }
+
+    [Fact]
+    public async Task PersonalAccountName_QueryAndUpdate_Succeeds()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync($"personal-{Guid.NewGuid():N}@example.com");
+
+        var before = await GraphQlAsync("query { personalAccountName }", token: token);
+        Assert.Equal(JsonValueKind.Null, before.GetProperty("data").GetProperty("personalAccountName").ValueKind);
+
+        var update = await GraphQlAsync("""
+            mutation UpdatePersonalAccountName($input: UpdatePersonalAccountNameInput!) {
+              updatePersonalAccountName(input: $input) {
+                id
+                personalAccountName
+              }
+            }
+            """,
+            new { input = new { personalAccountName = "Nova Ember Hart", onlyIfMissing = false } },
+            token);
+
+        Assert.False(update.TryGetProperty("errors", out _));
+        Assert.Equal("Nova Ember Hart", update.GetProperty("data").GetProperty("updatePersonalAccountName").GetProperty("personalAccountName").GetString());
+
+        var after = await GraphQlAsync("query { personalAccountName }", token: token);
+        Assert.Equal("Nova Ember Hart", after.GetProperty("data").GetProperty("personalAccountName").GetString());
+    }
+
+    [Fact]
+    public async Task UpdatePersonalAccountName_DuplicateName_ReturnsError()
+    {
+        var unique = Guid.NewGuid().ToString("N");
+        var (tokenA, _) = await RegisterAndGetTokenAsync($"personal-a-{unique}@example.com");
+        var (tokenB, _) = await RegisterAndGetTokenAsync($"personal-b-{unique}@example.com");
+
+        await GraphQlAsync("""
+            mutation UpdatePersonalAccountName($input: UpdatePersonalAccountNameInput!) {
+              updatePersonalAccountName(input: $input) { id personalAccountName }
+            }
+            """,
+            new { input = new { personalAccountName = "Echo Prime Vale", onlyIfMissing = false } },
+            tokenA);
+
+        var duplicate = await GraphQlAsync("""
+            mutation UpdatePersonalAccountName($input: UpdatePersonalAccountNameInput!) {
+              updatePersonalAccountName(input: $input) { id personalAccountName }
+            }
+            """,
+            new { input = new { personalAccountName = "Echo Prime Vale", onlyIfMissing = false } },
+            tokenB);
+
+        Assert.True(duplicate.TryGetProperty("errors", out var errors));
+        Assert.Contains("DUPLICATE_PERSONAL_ACCOUNT_NAME", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task UpdatePersonalAccountName_OnlyIfMissing_PreservesExistingName()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync($"personal-preserve-{Guid.NewGuid():N}@example.com");
+
+        await GraphQlAsync("""
+            mutation UpdatePersonalAccountName($input: UpdatePersonalAccountNameInput!) {
+              updatePersonalAccountName(input: $input) { personalAccountName }
+            }
+            """,
+            new { input = new { personalAccountName = "Atlas River Stone", onlyIfMissing = false } },
+            token);
+
+        var preserve = await GraphQlAsync("""
+            mutation UpdatePersonalAccountName($input: UpdatePersonalAccountNameInput!) {
+              updatePersonalAccountName(input: $input) { personalAccountName }
+            }
+            """,
+            new { input = new { personalAccountName = "Should Not Apply", onlyIfMissing = true } },
+            token);
+
+        Assert.Equal("Atlas River Stone", preserve.GetProperty("data").GetProperty("updatePersonalAccountName").GetProperty("personalAccountName").GetString());
+    }
+
+    [Fact]
+    public async Task UpdatePersonalAccountName_Unauthenticated_ReturnsError()
+    {
+        var result = await GraphQlAsync("""
+            mutation UpdatePersonalAccountName($input: UpdatePersonalAccountNameInput!) {
+              updatePersonalAccountName(input: $input) { personalAccountName }
+            }
+            """,
+            new { input = new { personalAccountName = "Unauth Name Test", onlyIfMissing = false } });
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Contains("AUTH_NOT_AUTHENTICATED", errors[0].GetProperty("extensions").GetProperty("code").GetString());
     }
 
     [Fact]

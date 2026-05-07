@@ -8,6 +8,7 @@ public static class ClaimsPrincipalExtensions
     public const string EffectivePlayerIdClaimType = "capitalism/effective-player-id";
     public const string EffectivePlayerEmailClaimType = "capitalism/effective-player-email";
     public const string EffectivePlayerNameClaimType = "capitalism/effective-player-name";
+    public const string PersonalAccountNameClaimType = "capitalism/personal-account-name";
     public const string EffectiveAccountTypeClaimType = "capitalism/effective-account-type";
     public const string EffectiveCompanyIdClaimType = "capitalism/effective-company-id";
     public const string EffectiveCompanyNameClaimType = "capitalism/effective-company-name";

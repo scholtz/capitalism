@@ -19,6 +19,9 @@ public sealed class Player
     [Required, MaxLength(100)]
     public string DisplayName { get; set; } = string.Empty;
 
+    [MaxLength(120)]
+    public string? PersonalAccountName { get; set; }
+
     /// <summary>Hashed password for authentication.</summary>
     [Required]
     public string PasswordHash { get; set; } = string.Empty;

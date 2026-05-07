@@ -236,6 +236,45 @@ test.describe('Dashboard account switcher', () => {
 })
 
 test.describe('Onboarding wizard', () => {
+  test('generates personal account name and allows changing it in settings with leaderboard visibility', async ({ page }) => {
+    const player = makePlayer({ displayName: 'player@test.com', personalAccountName: null })
+    const state = setupMockApi(page, { players: [player] })
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.goto('/onboarding')
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    const generatedName = (await page.locator('.personal-name-preview').textContent())?.trim() ?? ''
+    expect(generatedName.split(' ')).toHaveLength(3)
+
+    await page.getByRole('button', { name: 'Regenerate' }).click()
+    await expect(page.locator('.personal-name-preview')).not.toHaveText(generatedName)
+    const regeneratedName = ((await page.locator('.personal-name-preview').textContent()) ?? '').trim()
+
+    await page.getByLabel('Company Name').fill('Name Driven Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    await page.goto('/leaderboard')
+    await expect(page.getByText(regeneratedName, { exact: true })).toBeVisible()
+
+    await page.goto('/settings')
+    await page.getByLabel('Personal account name').fill('Aster Nova Finch')
+    await expect(page.getByText('Name is available.')).toBeVisible()
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(page.getByText('Display name updated.')).toBeVisible()
+
+    await page.goto('/leaderboard')
+    await expect(page.getByText('Aster Nova Finch', { exact: true })).toBeVisible()
+  })
+
   test('complete full onboarding flow', async ({ page }) => {
     const player = makePlayer()
     const state = setupMockApi(page, { players: [player] })

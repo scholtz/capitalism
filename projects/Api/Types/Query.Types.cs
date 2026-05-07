@@ -11,6 +11,8 @@ public sealed class PlayerRanking
     /// <summary>Player display name.</summary>
     public string DisplayName { get; set; } = string.Empty;
 
+    public string? PersonalAccountName { get; set; }
+
     /// <summary>
     /// Total wealth = PersonalCash + SharesValue.
     /// See <see cref="Query.GetRankings"/> for the full valuation formula.
@@ -41,6 +43,8 @@ public sealed class CompanyRanking
 
     /// <summary>Owner player display name.</summary>
     public string OwnerDisplayName { get; set; } = string.Empty;
+
+    public string? OwnerPersonalAccountName { get; set; }
 
     /// <summary>Total company wealth = Cash + BuildingValue + InventoryValue.</summary>
     public decimal TotalWealth { get; set; }

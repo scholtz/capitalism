@@ -13,6 +13,7 @@ public sealed partial class AppDbContext
             e.HasIndex(p => p.Email).IsUnique();
             e.Property(p => p.Email).HasMaxLength(256);
             e.Property(p => p.DisplayName).HasMaxLength(100);
+            e.Property(p => p.PersonalAccountName).HasMaxLength(120);
             e.Property(p => p.Role).HasMaxLength(20);
             e.Property(p => p.PersonalCash).HasPrecision(18, 2);
             e.Property(p => p.ActiveAccountType).HasMaxLength(20);

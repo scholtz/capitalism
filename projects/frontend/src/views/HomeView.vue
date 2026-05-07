@@ -27,7 +27,7 @@ async function loadHomeData(isRefresh = false) {
   }
   try {
     const [rankData, stateData] = await Promise.all([
-      gqlRequest<{ rankings: PlayerRanking[] }>('{ rankings { playerId displayName totalWealth personalCash sharesValue companyCount } }'),
+      gqlRequest<{ rankings: PlayerRanking[] }>('{ rankings { playerId displayName personalAccountName totalWealth personalCash sharesValue companyCount } }'),
       gqlRequest<{ gameState: GameState }>(
         '{ gameState { currentTick lastTickAtUtc tickIntervalSeconds taxCycleTicks taxRate currentGameYear currentGameTimeUtc ticksPerDay ticksPerYear nextTaxTick nextTaxGameTimeUtc nextTaxGameYear } }',
       ),
@@ -125,7 +125,7 @@ useTickRefresh(() => loadHomeData(true))
         <tbody>
           <tr v-for="(rank, index) in rankings.slice(0, 5)" :key="rank.playerId">
             <td class="rank-num">{{ index + 1 }}</td>
-            <td>{{ rank.displayName }}</td>
+            <td class="leaderboard-personal-name">{{ rank.personalAccountName ?? rank.displayName }}</td>
             <td class="wealth">${{ rank.totalWealth.toLocaleString() }}</td>
             <td>{{ rank.companyCount }}</td>
           </tr>
@@ -278,6 +278,10 @@ section {
 .rank-num {
   font-weight: 700;
   color: var(--color-primary);
+}
+
+.leaderboard-personal-name {
+  font-weight: 700;
 }
 
 .wealth {

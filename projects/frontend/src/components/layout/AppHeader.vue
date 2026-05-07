@@ -65,6 +65,9 @@ const closeMenu = () => {
         <RouterLink v-if="auth.isAuthenticated" to="/dashboard" :title="t('nav.dashboard')" @click="closeMenu">
           <font-awesome-icon :icon="['fas', 'tachometer-alt']" class="mr-2" /> <span class="inline-block md:hidden">{{ t('nav.dashboard') }}</span>
         </RouterLink>
+        <RouterLink v-if="auth.isAuthenticated" to="/settings" :title="t('nav.settings')" @click="closeMenu">
+          <font-awesome-icon :icon="['fas', 'user-gear']" class="mr-2" /> <span class="inline-block md:hidden">{{ t('nav.settings') }}</span>
+        </RouterLink>
         <RouterLink to="/leaderboard" :title="t('nav.leaderboard')" @click="closeMenu">
           <font-awesome-icon :icon="['fas', 'trophy']" class="mr-2" /> <span class="inline-block md:hidden">{{ t('nav.leaderboard') }}</span>
         </RouterLink>

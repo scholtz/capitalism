@@ -19,7 +19,7 @@ const isOpen = ref(false)
 const switchingKey = ref<string | null>(null)
 
 const accountOptions = computed(() => buildAccountOptions(auth.player, auth.player?.companies ?? []))
-const activeAccountName = computed(() => getActiveAccountName(auth.player, auth.player?.companies ?? []) ?? auth.player?.displayName ?? '')
+const activeAccountName = computed(() => getActiveAccountName(auth.player, auth.player?.companies ?? []) ?? auth.player?.personalAccountName ?? auth.player?.displayName ?? '')
 const activeAccountBadge = computed(() => (auth.player?.activeAccountType === 'COMPANY' ? t('accountSwitcher.companyBadge') : t('accountSwitcher.personBadge')))
 
 function formatCurrency(value: number): string {

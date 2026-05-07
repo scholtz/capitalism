@@ -118,7 +118,7 @@ onMounted(() => {
 
         <nav class="site-nav">
           <template v-if="auth.isAuthenticated">
-            <span class="nav-player">{{ auth.player?.displayName ?? 'Account' }}</span>
+            <span class="nav-player">{{ auth.player?.personalAccountName ?? auth.player?.displayName ?? 'Account' }}</span>
             <button class="nav-btn nav-btn--ghost" type="button" @click="logout">Sign out</button>
           </template>
           <template v-else>

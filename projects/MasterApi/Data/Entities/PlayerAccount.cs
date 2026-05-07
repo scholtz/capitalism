@@ -8,6 +8,8 @@ public sealed class PlayerAccount
 
     public string DisplayName { get; set; } = string.Empty;
 
+    public string? PersonalAccountName { get; set; }
+
     public string PasswordHash { get; set; } = string.Empty;
 
     public DateTime CreatedAtUtc { get; set; }
