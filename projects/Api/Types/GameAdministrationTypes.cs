@@ -117,6 +117,47 @@ public sealed class GameAdminMoneyInflowSummary
     public string Description { get; set; } = string.Empty;
 }
 
+public sealed class OperationsStatisticsResult
+{
+    public List<OperationsMoneyFlowItem> IncomeItems { get; set; } = [];
+
+    public List<OperationsMoneyFlowItem> ExpenseItems { get; set; } = [];
+}
+
+public sealed class OperationsMoneyFlowItem
+{
+    public string Category { get; set; } = string.Empty;
+
+    public decimal Amount { get; set; }
+
+    public string Description { get; set; } = string.Empty;
+}
+
+public sealed class AdminProductAnalyticsRow
+{
+    public Guid ProductTypeId { get; set; }
+
+    public string ProductName { get; set; } = string.Empty;
+
+    public decimal MaterialCost { get; set; }
+
+    public decimal EnergyCost { get; set; }
+
+    public decimal LaborCost { get; set; }
+
+    public decimal UnitsProduced { get; set; }
+
+    public decimal UnitsSold { get; set; }
+
+    public decimal MarketSize { get; set; }
+
+    public decimal MarketSaturationPercent { get; set; }
+
+    public decimal CurrentMarketingSpend { get; set; }
+
+    public decimal ResearchQualityLevel { get; set; }
+}
+
 public sealed class GameAdminMultiAccountAlert
 {
     public string Reason { get; set; } = string.Empty;

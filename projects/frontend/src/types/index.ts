@@ -1298,3 +1298,28 @@ export interface GameAdminDashboard {
   globalGameAdminGrants: GlobalGameAdminGrant[]
   recentAuditLogs: GameAdminAuditLog[]
 }
+
+export interface OperationsMoneyFlowItem {
+  category: string
+  amount: number
+  description: string
+}
+
+export interface OperationsStatistics {
+  incomeItems: OperationsMoneyFlowItem[]
+  expenseItems: OperationsMoneyFlowItem[]
+}
+
+export interface AdminProductAnalyticsRow {
+  productTypeId: string
+  productName: string
+  materialCost: number
+  energyCost: number
+  laborCost: number
+  unitsProduced: number
+  unitsSold: number
+  marketSize: number
+  marketSaturationPercent: number
+  currentMarketingSpend: number
+  researchQualityLevel: number
+}
