@@ -10,6 +10,22 @@ async function authenticate(page: Page, token: string) {
 }
 
 test.describe('Operations dashboard', () => {
+  test('header admin entry points to operations route (not /admin)', async ({ page }) => {
+    const admin = makeAdminPlayer()
+    setupMockApi(page, {
+      players: [admin],
+      currentUserId: admin.id,
+      currentToken: `token-${admin.id}`,
+    })
+
+    await authenticate(page, `token-${admin.id}`)
+    await page.goto('/')
+
+    const operationsLink = page.locator('header a[href="/operations/statistics"]')
+    await expect(operationsLink).toHaveCount(1)
+    await expect(page.locator('header a[href="/admin"]')).toHaveCount(0)
+  })
+
   test('navigates between operations sub-sections from level-2 menu', async ({ page }) => {
     const admin = makeAdminPlayer()
     setupMockApi(page, {
