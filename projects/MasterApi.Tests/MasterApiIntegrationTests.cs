@@ -1296,6 +1296,49 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
     }
 
     [Fact]
+    public async Task GameServers_CompletedServer_ReturnsWinnerMetadata()
+    {
+        var result = await GraphQlAsync("""
+            mutation Reg($input: RegisterGameServerInput!) {
+              registerGameServer(input: $input) {
+                id
+                isCompleted
+                winnerDisplayName
+                winnerWealth
+              }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    registrationKey = "test-registration-key",
+                    serverKey = "endgame-completed-fields",
+                    displayName = "Endgame Completed Server",
+                    description = "Completed shard test",
+                    region = "EU",
+                    environment = "test",
+                    backendUrl = "https://endgame.example.com",
+                    graphqlUrl = "https://endgame.example.com/graphql",
+                    frontendUrl = "https://endgame.example.com/app",
+                    version = "2.0.0",
+                    playerCount = 9,
+                    companyCount = 21,
+                    currentTick = 1200,
+                    isCompleted = true,
+                    winnerDisplayName = "Tycoon Winner",
+                    winnerWealth = 170000000000m,
+                },
+            });
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var server = result.GetProperty("data").GetProperty("registerGameServer");
+        Assert.True(server.GetProperty("isCompleted").GetBoolean());
+        Assert.Equal("Tycoon Winner", server.GetProperty("winnerDisplayName").GetString());
+        Assert.Equal(170000000000m, server.GetProperty("winnerWealth").GetDecimal());
+    }
+
+    [Fact]
     public async Task GameServers_RegisteredByKey_AppearsInList()
     {
         // Register a server with a unique key

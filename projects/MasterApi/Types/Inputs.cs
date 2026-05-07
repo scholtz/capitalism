@@ -50,7 +50,7 @@ public sealed class RegisterGameServerInput
 
     public long CurrentTick { get; set; }
 
-    public bool IsCompleted { get; set; }
+    public bool? IsCompleted { get; set; }
 
     public string? WinnerDisplayName { get; set; }
 

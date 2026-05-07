@@ -901,3 +901,14 @@ Root-cause of a CI failure (May 2026, PR #367 personal account names):
 1. **When changing master-frontend identity rendering, keep unauthenticated CTAs intact:** guest home must still expose both `Sign in` and `Get started free →` links.
 2. **Do not silently replace canonical hero/pitch headings without updating and rerunning `e2e/portal.spec.ts`.** Text-level contract changes on the master home page are CI-breaking and must be treated as explicit E2E updates.
 3. **For master-frontend UI changes, always run `cd projects/master-frontend && npm run lint && npm run test:unit && npm run build && CI=true npx playwright test --project=chromium e2e/portal.spec.ts` before pushing.**
+
+## MasterApi registerGameServer schema evolution — keep backward compatibility
+
+Root-cause of a CI regression (May 2026, PR #369 endgame):
+- `RegisterGameServerInput` added a new non-nullable field (`IsCompleted: bool`) in MasterApi.
+- Existing integration tests and callers that did not send the new field started failing with GraphQL validation errors (`hasErrors=true`, missing `data.registerGameServer`), causing cascading `KeyNotFoundException` assertions in `MasterApi.Tests`.
+
+**Rules to prevent recurrence:**
+1. **When extending `RegisterGameServerInput`, add new fields as nullable/optional by default** unless every caller and test is updated in the same change. For booleans, use `bool?` input and coalesce in resolver.
+2. **After changing `RegisterGameServerInput` or `GameServerSummary`, always run `cd projects/MasterApi.Tests && dotnet test`** and update registration/listing tests in `MasterApiIntegrationTests.cs` to include new fields where relevant.
+3. **Always keep registration backward compatible** so older server agents can continue heartbeating while new metadata rolls out.

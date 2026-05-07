@@ -148,7 +148,7 @@ public sealed partial class Mutation
         server.PlayerCount = Math.Max(0, input.PlayerCount);
         server.CompanyCount = Math.Max(0, input.CompanyCount);
         server.CurrentTick = Math.Max(0, input.CurrentTick);
-        server.IsCompleted = input.IsCompleted;
+        server.IsCompleted = input.IsCompleted ?? false;
         server.WinnerDisplayName = string.IsNullOrWhiteSpace(input.WinnerDisplayName) ? null : input.WinnerDisplayName.Trim();
         server.WinnerWealth = input.WinnerWealth is null ? null : Math.Max(0m, input.WinnerWealth.Value);
         server.LastHeartbeatAtUtc = now;
