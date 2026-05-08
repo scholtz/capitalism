@@ -177,6 +177,12 @@ function rankBadge(index: number): string {
   return `${index + 1}`
 }
 
+function getTargetIcon(leadingWealth: number, target: EndgameTargetPerson, index: number): string {
+  if (leadingWealth >= target.estimatedUsdWealth) return '✅'
+  if (index === 0) return '🎯'
+  return '🏆'
+}
+
 const currentPlayerId = computed(() => auth.player?.id ?? null)
 const currentTick = computed(() => gameStateStore.gameState?.currentTick ?? null)
 const currentGameTime = computed(() => {
@@ -287,12 +293,13 @@ const leadingPlayerWealth = computed(() => rankings.value[0]?.totalWealth ?? 0)
               class="target-row"
               :class="{
                 'target-surpassed': leadingPlayerWealth >= target.estimatedUsdWealth,
-                'target-closest': leadingPlayerWealth < target.estimatedUsdWealth && (index === 0 || leadingPlayerWealth >= realWorldTargets[index - 1]!.estimatedUsdWealth),
+                'target-closest': (() => {
+                  const prev = realWorldTargets[index - 1]
+                  return leadingPlayerWealth < target.estimatedUsdWealth && (index === 0 || (prev !== undefined && leadingPlayerWealth >= prev.estimatedUsdWealth))
+                })(),
               }"
             >
-              <span class="target-icon">
-                {{ leadingPlayerWealth >= target.estimatedUsdWealth ? '✅' : index === 0 ? '🎯' : '🏆' }}
-              </span>
+              <span class="target-icon">{{ getTargetIcon(leadingPlayerWealth, target, index) }}</span>
               <span class="target-name">{{ target.name }}</span>
               <span
                 class="target-badge"
