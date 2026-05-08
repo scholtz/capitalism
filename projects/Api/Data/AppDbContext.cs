@@ -69,6 +69,9 @@ public sealed partial class AppDbContext(DbContextOptions<AppDbContext> options)
     /// <summary>Global game state (singleton row).</summary>
     public DbSet<GameState> GameStates => Set<GameState>();
 
+    /// <summary>Real-world billionaire wealth benchmarks for endgame target checks.</summary>
+    public DbSet<RealWorldBillionaire> RealWorldBillionaires => Set<RealWorldBillionaire>();
+
     /// <summary>Exchange buy/sell orders.</summary>
     public DbSet<ExchangeOrder> ExchangeOrders => Set<ExchangeOrder>();
 

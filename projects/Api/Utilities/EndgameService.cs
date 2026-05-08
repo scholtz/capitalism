@@ -19,7 +19,7 @@ public sealed record EndgameOutcome(
 
 public static class EndgameService
 {
-    private static readonly IReadOnlyList<EndgameTargetPerson> TargetRichList =
+    private static readonly IReadOnlyList<EndgameTargetPerson> DefaultTargetRichList =
     [
         new("Elon Musk", 430_000_000_000m),
         new("Jeff Bezos", 240_000_000_000m),
@@ -28,13 +28,27 @@ public static class EndgameService
         new("Bernard Arnault", 170_000_000_000m),
     ];
 
-    public static IReadOnlyList<EndgameTargetPerson> GetTargetRichList() => TargetRichList;
-
-    public static decimal GetWinThresholdWealth() => TargetRichList[^1].EstimatedUsdWealth;
-
-    public static EndgameTargetPerson? GetHighestSurpassedTarget(decimal wealth)
+    public static async Task<List<EndgameTargetPerson>> GetTargetRichListAsync(AppDbContext db, CancellationToken ct = default)
     {
-        return TargetRichList
+        var persistedTargets = await db.RealWorldBillionaires
+            .AsNoTracking()
+            .OrderBy(row => row.Rank)
+            .Take(5)
+            .Select(row => new EndgameTargetPerson(row.Name, row.EstimatedNetWorthUsd))
+            .ToListAsync(ct);
+
+        return persistedTargets.Count >= 5 ? persistedTargets : DefaultTargetRichList.ToList();
+    }
+
+    public static async Task<decimal> GetWinThresholdWealthAsync(AppDbContext db, CancellationToken ct = default)
+    {
+        var targets = await GetTargetRichListAsync(db, ct);
+        return targets[^1].EstimatedUsdWealth;
+    }
+
+    public static EndgameTargetPerson? GetHighestSurpassedTarget(decimal wealth, IReadOnlyList<EndgameTargetPerson> targets)
+    {
+        return targets
             .Where(target => wealth >= target.EstimatedUsdWealth)
             .OrderByDescending(target => target.EstimatedUsdWealth)
             .FirstOrDefault();
@@ -91,13 +105,14 @@ public static class EndgameService
             return null;
         }
 
+        var targets = await GetTargetRichListAsync(db, ct);
         var winner = ranking[0];
-        if (winner.TotalWealth < GetWinThresholdWealth())
+        if (winner.TotalWealth < targets[^1].EstimatedUsdWealth)
         {
             return null;
         }
 
-        var surpassedTarget = GetHighestSurpassedTarget(winner.TotalWealth);
+        var surpassedTarget = GetHighestSurpassedTarget(winner.TotalWealth, targets);
         if (surpassedTarget is null)
         {
             return null;

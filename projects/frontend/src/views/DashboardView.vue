@@ -135,8 +135,8 @@ async function loadDashboardData() {
       buildings { id name type level cityId powerStatus units { id unitType gridX gridY level } }
     } }`,
     ),
-    gqlRequest<{ endgameTargetLeaderboard: EndgameTargetPerson[] }>(
-      `{ endgameTargetLeaderboard { name estimatedUsdWealth } }`,
+    gqlRequest<{ realWorldBenchmarks: EndgameTargetPerson[] }>(
+      `{ realWorldBenchmarks { name estimatedUsdWealth } }`,
     ),
     gqlRequest<{ rankings: PlayerRanking[] }>(
       `{ rankings { playerId displayName personalAccountName totalWealth personalCash sharesValue companyCount } }`,
@@ -146,8 +146,8 @@ async function loadDashboardData() {
   if (!deepEqual(companies.value, companiesData.myCompanies)) {
     companies.value = companiesData.myCompanies
   }
-  if (!deepEqual(endgameTargets.value, targetsData.endgameTargetLeaderboard)) {
-    endgameTargets.value = targetsData.endgameTargetLeaderboard
+  if (!deepEqual(endgameTargets.value, targetsData.realWorldBenchmarks)) {
+    endgameTargets.value = targetsData.realWorldBenchmarks
   }
   if (!deepEqual(finalRankings.value, rankingsData.rankings)) {
     finalRankings.value = rankingsData.rankings

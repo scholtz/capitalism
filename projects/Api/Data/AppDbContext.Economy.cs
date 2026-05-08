@@ -105,6 +105,14 @@ public sealed partial class AppDbContext
             e.Property(g => g.TaxRate).HasPrecision(5, 2);
         });
 
+        modelBuilder.Entity<RealWorldBillionaire>(e =>
+        {
+            e.HasKey(row => row.Id);
+            e.Property(row => row.Name).HasMaxLength(200);
+            e.Property(row => row.EstimatedNetWorthUsd).HasPrecision(18, 2);
+            e.HasIndex(row => row.Rank).IsUnique();
+        });
+
         modelBuilder.Entity<ExchangeOrder>(e =>
         {
             e.HasKey(o => o.Id);

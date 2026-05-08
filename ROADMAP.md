@@ -178,7 +178,7 @@ Each player is ranked by his total wealth. Players can start multiple companies.
 
 **Status: 100% complete** (May 2026)
 
-Top 5 real-world wealth targets are now exposed in the game UI, including progress-to-goal guidance in founder view, the tick engine automatically ends the shard once a player surpasses the endgame threshold, economic mutations switch to read-only mode after completion, and a full-screen game-over report with winner + final leaderboard is published to players while the final changelog report is published to the shared news feed.
+Top 5 real-world wealth targets are persisted in the game database (seeded `RealWorldBillionaire` rows), exposed through canonical GraphQL queries (`realWorldBenchmarks`, `gameEndState`), shown in the game UI with progress-to-goal guidance, and enforced by the tick engine which ends the shard once a player surpasses the threshold; after completion, economic mutations switch to read-only mode, a full-screen game-over report shows winner + final leaderboard, and the final changelog report is published to the shared news feed.
 
 ## Units configuration
 
