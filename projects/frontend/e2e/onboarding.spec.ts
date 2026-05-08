@@ -256,7 +256,10 @@ test.describe('Onboarding wizard', () => {
     expect(generatedName.length).toBeLessThanOrEqual(30)
     await expect(page.getByText('Do not use your real name.')).toBeVisible()
 
-    await page.getByRole('button', { name: 'Regenerate' }).click()
+    const regenerateButton = page.getByRole('button', { name: 'Regenerate' })
+    await regenerateButton.click()
+    await expect(regenerateButton).toHaveClass(/is-regenerating/)
+    await expect(regenerateButton).not.toHaveClass(/is-regenerating/)
     await expect(nameInput).not.toHaveValue(generatedName)
 
     const manualOnboardingName = 'Aster Nova Finch'

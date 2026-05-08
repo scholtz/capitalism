@@ -226,6 +226,8 @@ const selectedIpoRaiseTarget = ref(DEFAULT_IPO_RAISE_TARGET)
 const companyName = ref('')
 const personalAccountName = ref('')
 const hasExistingPersonalAccountName = ref(false)
+const isRegeneratingPersonalAccountName = ref(false)
+let personalAccountRegenerateAnimationTimeout: ReturnType<typeof setTimeout> | null = null
 
 const completionResult = ref<OnboardingResult | null>(null)
 const gameState = ref<GameState | null>(null)
@@ -506,6 +508,14 @@ watch([step, selectedIndustry, selectedCityId, selectedProductId, selectedIpoRai
 
 function regeneratePersonalAccountName() {
   personalAccountName.value = generatePersonalAccountName()
+  isRegeneratingPersonalAccountName.value = true
+  if (personalAccountRegenerateAnimationTimeout) {
+    clearTimeout(personalAccountRegenerateAnimationTimeout)
+  }
+  personalAccountRegenerateAnimationTimeout = setTimeout(() => {
+    isRegeneratingPersonalAccountName.value = false
+    personalAccountRegenerateAnimationTimeout = null
+  }, 300)
 }
 
 async function ensurePersonalAccountNameForOnboarding() {
@@ -1132,6 +1142,10 @@ async function loadGameState() {
 
 onUnmounted(() => {
   stopTickCountdown()
+  if (personalAccountRegenerateAnimationTimeout) {
+    clearTimeout(personalAccountRegenerateAnimationTimeout)
+    personalAccountRegenerateAnimationTimeout = null
+  }
 })
 
 useTickRefresh(async () => {
@@ -1292,7 +1306,8 @@ useTickRefresh(async () => {
             <h3>{{ t('onboarding.personalAccountNameTitle') }}</h3>
             <button
               v-if="!hasExistingPersonalAccountName"
-              class="btn btn-secondary"
+              class="btn btn-secondary personal-name-regenerate-btn"
+              :class="{ 'is-regenerating': isRegeneratingPersonalAccountName }"
               type="button"
               @click="regeneratePersonalAccountName"
             >
@@ -2328,6 +2343,24 @@ useTickRefresh(async () => {
 
 .personal-name-card-header h3 {
   margin: 0;
+}
+
+.personal-name-regenerate-btn.is-regenerating {
+  animation: personal-name-regenerate-pulse 0.3s ease;
+}
+
+@keyframes personal-name-regenerate-pulse {
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+
+  100% {
+    transform: scale(1);
+  }
 }
 
 .personal-name-label {
