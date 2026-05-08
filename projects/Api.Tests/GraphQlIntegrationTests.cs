@@ -25662,5 +25662,81 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         Assert.Equal("The game has ended. No further operations are allowed.", errorMessage);
     }
 
+    [Fact]
+    public async Task PurchaseLot_WhenGameIsEnded_ReturnsGameEndedError()
+    {
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, $"game-ended-lot-{Guid.NewGuid():N}@test.com", "EndedLot");
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var gameState = await db.GameStates.FirstAsync();
+            gameState.IsEnded = true;
+            gameState.EndedAtUtc = DateTime.UtcNow;
+            gameState.WinnerDisplayName = "Winner";
+            await db.SaveChangesAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            isolatedClient,
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { building { id } }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    lotId = Guid.NewGuid(),
+                    companyId = Guid.NewGuid(),
+                    buildingType = "FACTORY",
+                    buildingName = "Ended Factory",
+                },
+            },
+            token);
+
+        var errorCode = result.GetProperty("errors")[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("GAME_ENDED", errorCode);
+    }
+
+    [Fact]
+    public async Task UpdatePublicSalesPrice_WhenGameIsEnded_ReturnsGameEndedError()
+    {
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, $"game-ended-price-{Guid.NewGuid():N}@test.com", "EndedPrice");
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var gameState = await db.GameStates.FirstAsync();
+            gameState.IsEnded = true;
+            gameState.EndedAtUtc = DateTime.UtcNow;
+            gameState.WinnerDisplayName = "Winner";
+            await db.SaveChangesAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            isolatedClient,
+            """
+            mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+              updatePublicSalesPrice(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    unitId = Guid.NewGuid(),
+                    newMinPrice = 12m,
+                },
+            },
+            token);
+
+        var errorCode = result.GetProperty("errors")[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("GAME_ENDED", errorCode);
+    }
+
     #endregion
 }
