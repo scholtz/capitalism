@@ -314,6 +314,26 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
         Assert.Contains("AUTH_NOT_AUTHENTICATED", errors[0].GetProperty("extensions").GetProperty("code").GetString());
     }
 
+    [Theory]
+    [InlineData("AB", "PERSONAL_ACCOUNT_NAME_TOO_SHORT")]
+    [InlineData("Aster Nova Finchington Evergreen", "PERSONAL_ACCOUNT_NAME_TOO_LONG")]
+    [InlineData("Aster Nova 123", "PERSONAL_ACCOUNT_NAME_INVALID_CHARACTERS")]
+    public async Task UpdatePersonalAccountName_InvalidInput_ReturnsValidationError(string personalAccountName, string expectedCode)
+    {
+        var (token, _) = await RegisterAndGetTokenAsync($"personal-invalid-{Guid.NewGuid():N}@example.com");
+
+        var result = await GraphQlAsync("""
+            mutation UpdatePersonalAccountName($input: UpdatePersonalAccountNameInput!) {
+              updatePersonalAccountName(input: $input) { personalAccountName }
+            }
+            """,
+            new { input = new { personalAccountName, onlyIfMissing = false } },
+            token);
+
+        Assert.True(result.TryGetProperty("errors", out var errors));
+        Assert.Contains(expectedCode, errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
     [Fact]
     public async Task Register_DuplicateEmail_ReturnsError()
     {
