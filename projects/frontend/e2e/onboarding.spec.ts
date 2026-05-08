@@ -252,6 +252,7 @@ test.describe('Onboarding wizard', () => {
 
     const generatedName = (await page.locator('.personal-name-preview').textContent())?.trim() ?? ''
     expect(generatedName.split(' ')).toHaveLength(3)
+    expect(generatedName.length).toBeLessThanOrEqual(30)
 
     await page.getByRole('button', { name: 'Regenerate' }).click()
     await expect(page.locator('.personal-name-preview')).not.toHaveText(generatedName)
@@ -266,6 +267,12 @@ test.describe('Onboarding wizard', () => {
     await expect(page.getByText(regeneratedName, { exact: true })).toBeVisible()
 
     await page.goto('/settings')
+    const previousSettingsName = (await page.getByLabel('Personal account name').inputValue()).trim()
+    await page.getByRole('button', { name: 'Generate random name' }).click()
+    const generatedSettingsName = (await page.getByLabel('Personal account name').inputValue()).trim()
+    expect(generatedSettingsName.split(' ')).toHaveLength(3)
+    expect(generatedSettingsName.length).toBeLessThanOrEqual(30)
+    expect(generatedSettingsName).not.toBe(previousSettingsName)
     await page.getByLabel('Personal account name').fill('Aster Nova Finch')
     await expect(page.getByText('Name is available.')).toBeVisible()
     await page.getByRole('button', { name: 'Save' }).click()
@@ -273,6 +280,31 @@ test.describe('Onboarding wizard', () => {
 
     await page.goto('/leaderboard')
     await expect(page.getByText('Aster Nova Finch', { exact: true })).toBeVisible()
+  })
+
+  test('retries personal account name reservation on duplicate during onboarding', async ({ page }) => {
+    const player = makePlayer({ displayName: 'player@test.com', personalAccountName: null })
+    const state = setupMockApi(page, { players: [player], forcePersonalAccountNameDuplicateOnce: true })
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.goto('/onboarding')
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    await page.getByLabel('Company Name').fill('Retry Name Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    expect(state.forcePersonalAccountNameDuplicateOnce).toBe(false)
+    expect(player.personalAccountName).not.toBeNull()
+    expect((player.personalAccountName ?? '').split(' ')).toHaveLength(3)
   })
 
   test('complete full onboarding flow', async ({ page }) => {

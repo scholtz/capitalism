@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { gqlRequest as gqlMasterRequest, GraphQLError } from '@/lib/graphqlMasterServer'
+import { generatePersonalAccountName } from '@/lib/personalAccountNameGenerator'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -132,6 +133,10 @@ async function savePersonalAccountName() {
   }
 }
 
+function generateRandomPersonalAccountName() {
+  personalAccountName.value = generatePersonalAccountName()
+}
+
 onMounted(() => {
   auth.initFromStorage()
   if (!auth.player && auth.isAuthenticated) {
@@ -156,9 +161,15 @@ onMounted(() => {
         id="personalAccountName"
         v-model="personalAccountName"
         type="text"
-        maxlength="120"
+        maxlength="30"
         :placeholder="t('playerSettings.displayNamePlaceholder')"
       />
+
+      <div class="actions actions-secondary">
+        <button class="btn btn-secondary" type="button" :disabled="saving" @click="generateRandomPersonalAccountName">
+          {{ t('playerSettings.generateRandomName') }}
+        </button>
+      </div>
 
       <p v-if="availabilityChecking" class="availability-hint">{{ t('playerSettings.checkingAvailability') }}</p>
       <p v-else-if="availabilityMessage" class="availability-hint" :class="{ available: isAvailable, unavailable: isAvailable === false }">
@@ -214,6 +225,11 @@ onMounted(() => {
 .actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.actions-secondary {
+  justify-content: flex-start;
+  margin-bottom: 0.75rem;
 }
 
 .availability-hint {

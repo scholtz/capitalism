@@ -513,29 +513,43 @@ async function ensurePersonalAccountNameForOnboarding() {
     return
   }
 
-  const trimmedName = personalAccountName.value.trim()
-  if (!trimmedName) {
-    return
+  if (!personalAccountName.value.trim()) {
+    regeneratePersonalAccountName()
   }
 
-  const data = await gqlMasterRequest<{ updatePersonalAccountName: { personalAccountName: string | null } }>(
-    UPDATE_PERSONAL_ACCOUNT_NAME_MUTATION,
-    {
-      input: {
-        personalAccountName: trimmedName,
-        onlyIfMissing: true,
-      },
-    },
-  )
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      const data = await gqlMasterRequest<{ updatePersonalAccountName: { personalAccountName: string | null } }>(
+        UPDATE_PERSONAL_ACCOUNT_NAME_MUTATION,
+        {
+          input: {
+            personalAccountName: personalAccountName.value.trim(),
+            onlyIfMissing: true,
+          },
+        },
+      )
 
-  const resolved = data.updatePersonalAccountName.personalAccountName
-  if (resolved) {
-    personalAccountName.value = resolved
-    hasExistingPersonalAccountName.value = true
-    if (auth.player) {
-      auth.player.personalAccountName = resolved
+      const resolved = data.updatePersonalAccountName.personalAccountName
+      if (resolved) {
+        personalAccountName.value = resolved
+        hasExistingPersonalAccountName.value = true
+        if (auth.player) {
+          auth.player.personalAccountName = resolved
+        }
+      }
+      return
+    } catch (e: unknown) {
+      const errorCode = typeof e === 'object' && e !== null && 'code' in e ? (e as { code?: string }).code : undefined
+      if (errorCode === 'DUPLICATE_PERSONAL_ACCOUNT_NAME') {
+        regeneratePersonalAccountName()
+        continue
+      }
+
+      throw e
     }
   }
+
+  throw new Error(t('onboarding.personalAccountNameGenerationFailed'))
 }
 
 watch(step, async (currentStep) => {
