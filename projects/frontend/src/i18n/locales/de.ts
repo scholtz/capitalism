@@ -541,6 +541,11 @@ export default {
     companyHowItWorksBody: 'Unternehmensvermögen ist Unternehmensbargeld plus Gebäude- und Lagerwert.',
     tick: 'Spielzeit',
     tickHint: 'Rankings werden jeden Spieltick aktualisiert. Die angezeigte Zeit entspricht dem aktuellsten Daten-Snapshot.',
+    realWorldTargetsTitle: 'Siegbedingung — Reale Ziele',
+    realWorldTargetsBody: 'Übertriff das niedrigste Ziel, um den Server zu beenden und den Sieg zu beanspruchen.',
+    realWorldTargetBadge: 'Ziel',
+    realWorldTargetSurpassed: 'Übertroffen',
+    realWorldTargetsLoadFailed: 'Vermögensziele konnten nicht geladen werden.',
   },
   globalExchange: {
     eyebrow: 'Stadtmärkte',

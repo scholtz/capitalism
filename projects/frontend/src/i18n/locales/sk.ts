@@ -540,6 +540,11 @@ export default {
     companyHowItWorksBody: 'Bohatstvo spoločnosti je firemná hotovosť plus hodnota budov a zásob.',
     tick: 'Herný čas',
     tickHint: 'Rebríček sa aktualizuje každý herný tik. Zobrazený čas zodpovedá poslednému datasnímku.',
+    realWorldTargetsTitle: 'Podmienka výhry — Reálne ciele',
+    realWorldTargetsBody: 'Prekonaj najnižší cieľ a ukonči server.',
+    realWorldTargetBadge: 'Cieľ',
+    realWorldTargetSurpassed: 'Prekonaný',
+    realWorldTargetsLoadFailed: 'Nepodarilo sa načítať ciele bohatstva.',
   },
   globalExchange: {
     eyebrow: 'Mestské trhy',

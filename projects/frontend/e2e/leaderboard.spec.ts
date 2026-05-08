@@ -431,3 +431,105 @@ test.describe('Leaderboard tick-refresh stability', () => {
     await expect(page.locator('.state-box', { hasText: 'loading' })).toBeHidden()
   })
 })
+
+test.describe('Leaderboard real-world wealth targets', () => {
+  test('shows real-world targets panel with five milestone rows', async ({ page }) => {
+    const player = makePlayer({ displayName: 'Target Tester' })
+    player.companies.push({
+      id: 'comp-target',
+      playerId: player.id,
+      name: 'Target Corp',
+      cash: 1000000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+    setupMockApi(page, { players: [player] })
+    await page.goto('/leaderboard')
+
+    const panel = page.locator('[aria-label="Real-world wealth targets"]')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText('Win Condition — Real-World Targets')).toBeVisible()
+    // All five names visible
+    await expect(panel.getByText('Elon Musk')).toBeVisible()
+    await expect(panel.getByText('Jeff Bezos')).toBeVisible()
+    await expect(panel.getByText('Mark Zuckerberg')).toBeVisible()
+    await expect(panel.getByText('Larry Ellison')).toBeVisible()
+    await expect(panel.getByText('Bernard Arnault')).toBeVisible()
+  })
+
+  test('shows Target badges for all five milestones when no player has surpassed them', async ({
+    page,
+  }) => {
+    const player = makePlayer({ displayName: 'Beginner' })
+    player.companies.push({
+      id: 'comp-beginner',
+      playerId: player.id,
+      name: 'Beginner Corp',
+      cash: 1000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+    setupMockApi(page, { players: [player] })
+    await page.goto('/leaderboard')
+
+    const panel = page.locator('[aria-label="Real-world wealth targets"]')
+    await expect(panel).toBeVisible()
+    const badges = panel.locator('.badge-target')
+    await expect(badges).toHaveCount(5)
+  })
+
+  test('shows Surpassed badge when leading player wealth exceeds a target', async ({ page }) => {
+    // Player with wealth above Bernard Arnault (170B) — the lowest target
+    const player = makePlayer({
+      displayName: 'Billionaire',
+      personalCash: 175_000_000_000,
+    })
+    setupMockApi(page, { players: [player] })
+    await page.goto('/leaderboard')
+
+    const panel = page.locator('[aria-label="Real-world wealth targets"]')
+    await expect(panel).toBeVisible()
+    // Bernard Arnault row should show Surpassed badge
+    const arnaultRow = panel.locator('.target-row').filter({ hasText: 'Bernard Arnault' })
+    await expect(arnaultRow.locator('.badge-surpassed')).toBeVisible()
+    await expect(arnaultRow.getByText('Surpassed')).toBeVisible()
+  })
+
+  test('shows formatted wealth values for each real-world target', async ({ page }) => {
+    const player = makePlayer({ displayName: 'Wealth Viewer' })
+    setupMockApi(page, { players: [player] })
+    await page.goto('/leaderboard')
+
+    const panel = page.locator('[aria-label="Real-world wealth targets"]')
+    await expect(panel).toBeVisible()
+    // Elon Musk wealth is 430B
+    await expect(panel.getByText('$430B')).toBeVisible()
+    // Bernard Arnault wealth is 170B
+    await expect(panel.getByText('$170B')).toBeVisible()
+  })
+
+  test('real-world targets panel is visible only on players tab', async ({ page }) => {
+    const player = makePlayer({ displayName: 'TabChecker' })
+    player.companies.push({
+      id: 'comp-tab-check',
+      playerId: player.id,
+      name: 'Tab Check Corp',
+      cash: 500000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+    setupMockApi(page, { players: [player] })
+    await page.goto('/leaderboard')
+
+    // Visible on players tab
+    await expect(page.locator('[aria-label="Real-world wealth targets"]')).toBeVisible()
+
+    // Switch to companies tab — targets panel should not be visible
+    await page.getByRole('tab', { name: 'Richest Companies' }).click()
+    await expect(page.locator('[aria-label="Real-world wealth targets"]')).not.toBeVisible()
+
+    // Switch back to players — should reappear
+    await page.getByRole('tab', { name: 'Richest Players' }).click()
+    await expect(page.locator('[aria-label="Real-world wealth targets"]')).toBeVisible()
+  })
+})
