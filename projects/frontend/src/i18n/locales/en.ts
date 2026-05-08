@@ -539,6 +539,11 @@ export default {
     companyHowItWorksBody: 'Company wealth equals company cash plus building assets and inventory value.',
     tick: 'Game Time',
     tickHint: 'Rankings update every game tick. The displayed time is the latest data snapshot.',
+    realWorldTargetsTitle: 'Win Condition — Real-World Targets',
+    realWorldTargetsBody: 'Surpass the lowest target to end the server and claim victory.',
+    realWorldTargetBadge: 'Target',
+    realWorldTargetSurpassed: 'Surpassed',
+    realWorldTargetsLoadFailed: 'Could not load wealth targets.',
   },
   globalExchange: {
     eyebrow: 'City Markets',

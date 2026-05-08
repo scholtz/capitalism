@@ -9,7 +9,7 @@ import { useGameStateStore } from '@/stores/gameState'
 import { useScrollPreservation } from '@/composables/useScrollPreservation'
 import { deepEqual } from '@/lib/utils'
 import { formatInGameTime } from '@/lib/gameTime'
-import type { PlayerRanking, CompanyRanking } from '@/types'
+import type { PlayerRanking, CompanyRanking, EndgameTargetPerson } from '@/types'
 
 const { t, locale } = useI18n()
 const auth = useAuthStore()
@@ -20,11 +20,13 @@ const { saveScrollPosition, restoreScrollPosition } = useScrollPreservation()
 
 const rankings = ref<PlayerRanking[]>([])
 const companyRankings = ref<CompanyRanking[]>([])
+const realWorldTargets = ref<EndgameTargetPerson[]>([])
 const playerLoading = ref(true)
 const companyLoading = ref(false)
 const playerError = ref<string | null>(null)
 const companyError = ref<string | null>(null)
 const companyRankingsLoaded = ref(false)
+const realWorldTargetsError = ref<string | null>(null)
 
 function getInitialTab(): 'players' | 'companies' {
   const queryTab = route.query.tab
@@ -104,12 +106,26 @@ async function fetchCompanyRankings(isRefresh = false) {
   }
 }
 
+async function fetchRealWorldTargets() {
+  realWorldTargetsError.value = null
+  try {
+    const data = await gqlRequest<{ realWorldBenchmarks: EndgameTargetPerson[] }>(
+      `{ realWorldBenchmarks { name estimatedUsdWealth } }`,
+    )
+    if (!deepEqual(realWorldTargets.value, data.realWorldBenchmarks)) {
+      realWorldTargets.value = data.realWorldBenchmarks
+    }
+  } catch {
+    realWorldTargetsError.value = t('leaderboard.realWorldTargetsLoadFailed')
+  }
+}
+
 onMounted(async () => {
   auth.initFromStorage()
   if (auth.isAuthenticated) {
     void auth.fetchMe()
   }
-  await Promise.allSettled([fetchPlayerRankings(), fetchCompanyRankings()])
+  await Promise.allSettled([fetchPlayerRankings(), fetchCompanyRankings(), fetchRealWorldTargets()])
 })
 
 useTickRefresh(async () => {
@@ -144,11 +160,27 @@ function formatWealth(value: number): string {
   return `$${value.toLocaleString()}`
 }
 
+function formatLargeWealth(value: number): string {
+  if (value >= 1_000_000_000) {
+    return `$${(value / 1_000_000_000).toFixed(0)}B`
+  }
+  if (value >= 1_000_000) {
+    return `$${(value / 1_000_000).toFixed(0)}M`
+  }
+  return `$${value.toLocaleString()}`
+}
+
 function rankBadge(index: number): string {
   if (index === 0) return '🥇'
   if (index === 1) return '🥈'
   if (index === 2) return '🥉'
   return `${index + 1}`
+}
+
+function getTargetIcon(leadingWealth: number, target: EndgameTargetPerson, index: number): string {
+  if (leadingWealth >= target.estimatedUsdWealth) return '✅'
+  if (index === 0) return '🎯'
+  return '🏆'
 }
 
 const currentPlayerId = computed(() => auth.player?.id ?? null)
@@ -157,6 +189,15 @@ const currentGameTime = computed(() => {
   const utc = gameStateStore.gameState?.currentGameTimeUtc
   return utc ? formatInGameTime(utc, locale.value) : null
 })
+// Returns 0 when no players are on the leaderboard yet — safe fallback for target comparison
+const leadingPlayerWealth = computed(() => rankings.value[0]?.totalWealth ?? 0)
+
+function isTargetClosest(leadingWealth: number, target: EndgameTargetPerson, index: number): boolean {
+  if (leadingWealth >= target.estimatedUsdWealth) return false
+  if (index === 0) return true
+  const prev = realWorldTargets.value[index - 1]
+  return prev !== undefined && leadingWealth >= prev.estimatedUsdWealth
+}
 </script>
 
 <template>
@@ -243,6 +284,41 @@ const currentGameTime = computed(() => {
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Real-world wealth targets panel -->
+        <div
+          v-if="realWorldTargets.length > 0"
+          class="real-world-targets-panel"
+          aria-label="Real-world wealth targets"
+        >
+          <h3 class="real-world-targets-title">👑 {{ t('leaderboard.realWorldTargetsTitle') }}</h3>
+          <p class="real-world-targets-body">{{ t('leaderboard.realWorldTargetsBody') }}</p>
+          <div class="real-world-targets-list">
+            <div
+              v-for="(target, index) in realWorldTargets"
+              :key="target.name"
+              class="target-row"
+              :class="{
+                'target-surpassed': leadingPlayerWealth >= target.estimatedUsdWealth,
+                'target-closest': isTargetClosest(leadingPlayerWealth, target, index),
+              }"
+            >
+              <span class="target-icon">{{ getTargetIcon(leadingPlayerWealth, target, index) }}</span>
+              <span class="target-name">{{ target.name }}</span>
+              <span
+                class="target-badge"
+                :class="leadingPlayerWealth >= target.estimatedUsdWealth ? 'badge-surpassed' : 'badge-target'"
+              >
+                {{ leadingPlayerWealth >= target.estimatedUsdWealth ? t('leaderboard.realWorldTargetSurpassed') : t('leaderboard.realWorldTargetBadge') }}
+              </span>
+              <span class="target-wealth">{{ formatLargeWealth(target.estimatedUsdWealth) }}</span>
+            </div>
+          </div>
+        </div>
+        <div v-else-if="realWorldTargetsError" class="state-box state-error">
+          <span class="state-icon">⚠️</span>
+          <p>{{ realWorldTargetsError }}</p>
         </div>
       </template>
 
@@ -644,6 +720,115 @@ const currentGameTime = computed(() => {
 
   .wealth-breakdown {
     justify-content: flex-start;
+  }
+}
+
+/* ── Real-world wealth targets ───────────────────────────────────────────── */
+.real-world-targets-panel {
+  max-width: 800px;
+  margin: 0 auto 2rem;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.04) 0%, var(--color-surface) 100%);
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+}
+
+.real-world-targets-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+  color: #ffd700;
+}
+
+.real-world-targets-body {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 1rem;
+}
+
+.real-world-targets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.target-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 215, 0, 0.12);
+  transition: border-color 0.15s;
+}
+
+.target-row.target-surpassed {
+  border-color: rgba(0, 200, 100, 0.4);
+  background: rgba(0, 200, 100, 0.06);
+}
+
+.target-row.target-closest {
+  border-color: rgba(255, 215, 0, 0.5);
+  background: rgba(255, 215, 0, 0.06);
+}
+
+.target-icon {
+  font-size: 1.1rem;
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.target-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.target-badge {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 9999px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.badge-target {
+  background: rgba(255, 215, 0, 0.15);
+  color: #ffd700;
+  border: 1px solid rgba(255, 215, 0, 0.35);
+}
+
+.badge-surpassed {
+  background: rgba(0, 200, 100, 0.15);
+  color: #00c864;
+  border: 1px solid rgba(0, 200, 100, 0.35);
+}
+
+.target-wealth {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--color-secondary);
+  text-align: right;
+  min-width: 4rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .target-row {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .target-wealth {
+    width: 100%;
+    text-align: left;
+    padding-left: calc(1.5rem + 0.75rem);
   }
 }
 </style>
