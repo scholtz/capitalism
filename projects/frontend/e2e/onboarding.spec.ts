@@ -259,6 +259,7 @@ test.describe('Onboarding wizard', () => {
     const regenerateButton = page.getByRole('button', { name: 'Regenerate' })
     await regenerateButton.click()
     await expect(regenerateButton).toHaveClass(/is-regenerating/)
+    await expect(regenerateButton).not.toHaveClass(/is-regenerating/)
     await expect(nameInput).not.toHaveValue(generatedName)
 
     const manualOnboardingName = 'Aster Nova Finch'
