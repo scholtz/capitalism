@@ -252,6 +252,7 @@ test.describe('Onboarding wizard', () => {
 
     const generatedName = (await page.locator('.personal-name-preview').textContent())?.trim() ?? ''
     expect(generatedName.split(' ')).toHaveLength(3)
+    expect(generatedName.length).toBeLessThanOrEqual(30)
 
     await page.getByRole('button', { name: 'Regenerate' }).click()
     await expect(page.locator('.personal-name-preview')).not.toHaveText(generatedName)
@@ -266,6 +267,12 @@ test.describe('Onboarding wizard', () => {
     await expect(page.getByText(regeneratedName, { exact: true })).toBeVisible()
 
     await page.goto('/settings')
+    const previousSettingsName = (await page.getByLabel('Personal account name').inputValue()).trim()
+    await page.getByRole('button', { name: 'Generate random name' }).click()
+    const generatedSettingsName = (await page.getByLabel('Personal account name').inputValue()).trim()
+    expect(generatedSettingsName.split(' ')).toHaveLength(3)
+    expect(generatedSettingsName.length).toBeLessThanOrEqual(30)
+    expect(generatedSettingsName).not.toBe(previousSettingsName)
     await page.getByLabel('Personal account name').fill('Aster Nova Finch')
     await expect(page.getByText('Name is available.')).toBeVisible()
     await page.getByRole('button', { name: 'Save' }).click()

@@ -9,4 +9,14 @@ describe('generatePersonalAccountName', () => {
     expect(parts).toHaveLength(3)
     expect(parts.every((part) => part.length > 0)).toBe(true)
   })
+
+  it('respects the 30 character limit', () => {
+    const samples = Array.from({ length: 50 }, () => generatePersonalAccountName())
+    expect(samples.every((sample) => sample.length <= 30)).toBe(true)
+  })
+
+  it('generates diverse names across calls', () => {
+    const samples = Array.from({ length: 20 }, () => generatePersonalAccountName())
+    expect(new Set(samples).size).toBeGreaterThan(1)
+  })
 })
