@@ -188,6 +188,7 @@ export default {
     offline: 'Sie sind offline - zwischengespeicherte Inhalte werden angezeigt.',
     updateAvailable: 'Eine neue Version ist verf\u00fcgbar.',
     refreshToUpdate: 'Aktualisieren',
+    referralApplied: 'Willkommen! Ihr Empfehlungscode wurde angewendet. Genie\u00dfen Sie Ihren Vorsprung auf dem Markt.',
   },
   chat: {
     eyebrow: 'Gemeinsamer Kanal',

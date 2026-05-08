@@ -188,6 +188,7 @@ export default {
     offline: "You're offline - showing cached content. Some information may not be up to date.",
     updateAvailable: 'A new version of the app is available.',
     refreshToUpdate: 'Refresh to update',
+    referralApplied: "Welcome! Your referral code has been applied. Enjoy your head start in the market.",
   },
   chat: {
     eyebrow: 'Shared channel',
