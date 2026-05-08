@@ -240,6 +240,9 @@ export default {
     subtitle: 'Wählen Sie Ihre Branche, sichern Sie sich Ihre ersten Stadtgrundstücke und starten Sie Ihr erstes Produkt.',
     step1Title: 'Branche wählen',
     step1Desc: 'Wählen Sie die Branche, auf die Sie sich spezialisieren möchten.',
+    gameGoalTitle: '🎯 Spielziel',
+    gameGoalBody:
+      'Baue persönliches Vermögen auf (Bargeld + Aktienportfolio), bis du die fünftreichste reale Benchmark übertriffst. Sobald ein Spieler dieses Ziel schlägt, endet der Server und die finale Rangliste wird veröffentlicht.',
     step2Title: 'Stadt wählen',
     step2Desc: 'Wählen Sie die Stadt, in der Ihr erstes Unternehmen arbeiten wird. Diese Karte bestimmt Fabrik und erstes Geschäft.',
     step3Title: 'Erstes Fabrikgrundstück wählen',
@@ -545,6 +548,7 @@ export default {
     realWorldTargetsBody: 'Übertriff das niedrigste Ziel, um den Server zu beenden und den Sieg zu beanspruchen.',
     realWorldTargetBadge: 'Ziel',
     realWorldTargetSurpassed: 'Übertroffen',
+    realWorldTargetMeta: 'Quelle: {source} · {date}',
     realWorldTargetsLoadFailed: 'Vermögensziele konnten nicht geladen werden.',
   },
   globalExchange: {

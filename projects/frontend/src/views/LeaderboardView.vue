@@ -110,7 +110,7 @@ async function fetchRealWorldTargets() {
   realWorldTargetsError.value = null
   try {
     const data = await gqlRequest<{ realWorldBenchmarks: EndgameTargetPerson[] }>(
-      `{ realWorldBenchmarks { name estimatedUsdWealth } }`,
+      `{ realWorldBenchmarks { name estimatedUsdWealth source sourceDateUtc } }`,
     )
     if (!deepEqual(realWorldTargets.value, data.realWorldBenchmarks)) {
       realWorldTargets.value = data.realWorldBenchmarks
@@ -168,6 +168,17 @@ function formatLargeWealth(value: number): string {
     return `$${(value / 1_000_000).toFixed(0)}M`
   }
   return `$${value.toLocaleString()}`
+}
+
+function formatTargetSourceDate(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return new Intl.DateTimeFormat(locale.value, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(parsed)
 }
 
 function rankBadge(index: number): string {
@@ -305,7 +316,15 @@ function isTargetClosest(leadingWealth: number, target: EndgameTargetPerson, ind
               }"
             >
               <span class="target-icon">{{ getTargetIcon(leadingPlayerWealth, target, index) }}</span>
-              <span class="target-name">{{ target.name }}</span>
+              <span class="target-details">
+                <span class="target-name">{{ target.name }}</span>
+                <span class="target-meta">{{
+                  t('leaderboard.realWorldTargetMeta', {
+                    source: target.source,
+                    date: formatTargetSourceDate(target.sourceDateUtc),
+                  })
+                }}</span>
+              </span>
               <span
                 class="target-badge"
                 :class="leadingPlayerWealth >= target.estimatedUsdWealth ? 'badge-surpassed' : 'badge-target'"
@@ -780,9 +799,21 @@ function isTargetClosest(leadingWealth: number, target: EndgameTargetPerson, ind
 }
 
 .target-name {
-  flex: 1;
   font-weight: 600;
   font-size: 0.9375rem;
+}
+
+.target-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.target-meta {
+  font-size: 0.74rem;
+  color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -21,6 +21,9 @@ public class Program
         builder.Services.Configure<GameAdministrationOptions>(
             builder.Configuration.GetSection(GameAdministrationOptions.SectionName));
 
+        builder.Services.Configure<RealWorldWealthOptions>(
+            builder.Configuration.GetSection(RealWorldWealthOptions.SectionName));
+
         builder.Services.Configure<JwtOptions>(
             builder.Configuration.GetSection(JwtOptions.SectionName));
 

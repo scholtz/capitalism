@@ -455,6 +455,7 @@ test.describe('Leaderboard real-world wealth targets', () => {
     await expect(panel.getByText('Mark Zuckerberg')).toBeVisible()
     await expect(panel.getByText('Larry Ellison')).toBeVisible()
     await expect(panel.getByText('Bernard Arnault')).toBeVisible()
+    await expect(panel.getByText(/Source: Forbes Real-Time Billionaires/).first()).toBeVisible()
   })
 
   test('shows Target badges for all five milestones when no player has surpassed them', async ({
@@ -526,7 +527,7 @@ test.describe('Leaderboard real-world wealth targets', () => {
 
     // Switch to companies tab — targets panel should not be visible
     await page.getByRole('tab', { name: 'Richest Companies' }).click()
-    await expect(page.locator('[aria-label="Real-world wealth targets"]')).not.toBeVisible()
+    await expect(page.locator('[aria-label="Real-world wealth targets"]')).toBeHidden()
 
     // Switch back to players — should reappear
     await page.getByRole('tab', { name: 'Richest Players' }).click()

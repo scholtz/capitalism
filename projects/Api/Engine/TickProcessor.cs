@@ -175,6 +175,59 @@ public sealed class TickProcessor(
             string.Empty,
             ranking.Take(10).Select((row, index) =>
                 $"<li>#{index + 1} {row.DisplayName}: ${row.TotalWealth:N0}</li>"));
+        var companyRankings = await db.Companies
+            .AsNoTracking()
+            .Include(company => company.Player)
+            .Include(company => company.Buildings)
+            .ThenInclude(building => building.Units)
+            .Where(company => company.Player != null && company.Player.Role != PlayerRole.Admin)
+            .AsSplitQuery()
+            .ToListAsync(ct);
+        var companyBuildingIds = companyRankings
+            .SelectMany(company => company.Buildings)
+            .Select(building => building.Id)
+            .ToList();
+        var companyInventories = await db.Inventories
+            .AsNoTracking()
+            .Where(inventory => companyBuildingIds.Contains(inventory.BuildingId))
+            .Include(inventory => inventory.ResourceType)
+            .Include(inventory => inventory.ProductType)
+            .ToListAsync(ct);
+        var inventoryByBuilding = companyInventories
+            .GroupBy(inventory => inventory.BuildingId)
+            .ToDictionary(group => group.Key, group => group.ToList());
+        var companyRankingHtml = string.Join(
+            string.Empty,
+            companyRankings
+                .Select(company =>
+                {
+                    var buildingValue = company.Buildings.Sum(WealthCalculator.GetBuildingValue);
+                    var inventoryValue = company.Buildings.Sum(building =>
+                        inventoryByBuilding.TryGetValue(building.Id, out var inv)
+                            ? inv.Sum(item => item.Quantity * WealthCalculator.GetItemBasePrice(item))
+                            : 0m);
+                    return new
+                    {
+                        company.Name,
+                        TotalWealth = company.Cash + buildingValue + inventoryValue,
+                    };
+                })
+                .OrderByDescending(entry => entry.TotalWealth)
+                .Take(10)
+                .Select((entry, index) => $"<li>#{index + 1} {entry.Name}: ${entry.TotalWealth:N0}</li>"));
+        var mostProfitableCompany = await db.LedgerEntries
+            .AsNoTracking()
+            .GroupBy(entry => entry.CompanyId)
+            .Select(group => new
+            {
+                CompanyId = group.Key,
+                Profit = group.Sum(entry => entry.Amount),
+            })
+            .OrderByDescending(entry => entry.Profit)
+            .FirstOrDefaultAsync(ct);
+        var mostProfitableCompanyHtml = mostProfitableCompany is null
+            ? string.Empty
+            : $"<p><strong>Most profitable company:</strong> {(await db.Companies.AsNoTracking().Where(c => c.Id == mostProfitableCompany.CompanyId).Select(c => c.Name).FirstOrDefaultAsync(ct)) ?? "Unknown"} (${mostProfitableCompany.Profit:N0}).</p>";
         var statsHtml = bestRevenueTick is null
             ? string.Empty
             : $"<p><strong>Highest revenue tick:</strong> Tick {bestRevenueTick.Tick} with ${bestRevenueTick.Revenue:N0}.</p>";
@@ -198,21 +251,21 @@ public sealed class TickProcessor(
                         Locale = "en",
                         Title = title,
                         Summary = summary,
-                        HtmlContent = BuildLocalizedEndgameHtml("en", gameState, durationRealDays, durationGameDays, rankingHtml, statsHtml, largestCompanyHtml),
+                        HtmlContent = BuildLocalizedEndgameHtml("en", gameState, durationRealDays, durationGameDays, rankingHtml, companyRankingHtml, statsHtml, largestCompanyHtml, mostProfitableCompanyHtml),
                     },
                     new GameNewsLocalizationInput
                     {
                         Locale = "sk",
                         Title = $"Hra ukončená: {gameState.WinnerDisplayName} dosiahol ${gameState.WinnerWealth.Value:N0}",
                         Summary = $"{gameState.WinnerDisplayName} prekonal cieľ {gameState.WinningTargetName} a ukončil tento server.",
-                        HtmlContent = BuildLocalizedEndgameHtml("sk", gameState, durationRealDays, durationGameDays, rankingHtml, statsHtml, largestCompanyHtml),
+                        HtmlContent = BuildLocalizedEndgameHtml("sk", gameState, durationRealDays, durationGameDays, rankingHtml, companyRankingHtml, statsHtml, largestCompanyHtml, mostProfitableCompanyHtml),
                     },
                     new GameNewsLocalizationInput
                     {
                         Locale = "de",
                         Title = $"Spiel beendet: {gameState.WinnerDisplayName} erreichte ${gameState.WinnerWealth.Value:N0}",
                         Summary = $"{gameState.WinnerDisplayName} hat das Ziel {gameState.WinningTargetName} übertroffen und diesen Server abgeschlossen.",
-                        HtmlContent = BuildLocalizedEndgameHtml("de", gameState, durationRealDays, durationGameDays, rankingHtml, statsHtml, largestCompanyHtml),
+                        HtmlContent = BuildLocalizedEndgameHtml("de", gameState, durationRealDays, durationGameDays, rankingHtml, companyRankingHtml, statsHtml, largestCompanyHtml, mostProfitableCompanyHtml),
                     },
                 ],
                 cancellationToken: ct);
@@ -229,8 +282,10 @@ public sealed class TickProcessor(
         int durationRealDays,
         long durationGameDays,
         string rankingHtml,
+        string companyRankingHtml,
         string statsHtml,
-        string largestCompanyHtml)
+        string largestCompanyHtml,
+        string mostProfitableCompanyHtml)
     {
         return locale switch
         {
@@ -241,8 +296,11 @@ public sealed class TickProcessor(
                 <p><strong>Trvanie:</strong> {durationRealDays} reálnych dní, {durationGameDays} herných dní, tick {gameState.CurrentTick}.</p>
                 {statsHtml}
                 {largestCompanyHtml}
+                {mostProfitableCompanyHtml}
                 <h3>Finálny rebríček osobného bohatstva</h3>
                 <ol>{rankingHtml}</ol>
+                <h3>Finálny rebríček spoločností</h3>
+                <ol>{companyRankingHtml}</ol>
                 """,
             "de" => $"""
                 <h2>Finaler Spielbericht</h2>
@@ -251,8 +309,11 @@ public sealed class TickProcessor(
                 <p><strong>Dauer:</strong> {durationRealDays} reale Tage, {durationGameDays} Spieltage, Tick {gameState.CurrentTick}.</p>
                 {statsHtml}
                 {largestCompanyHtml}
+                {mostProfitableCompanyHtml}
                 <h3>Finale Rangliste des persönlichen Vermögens</h3>
                 <ol>{rankingHtml}</ol>
+                <h3>Finale Unternehmensrangliste</h3>
+                <ol>{companyRankingHtml}</ol>
                 """,
             _ => $"""
                 <h2>Final Game Report</h2>
@@ -261,8 +322,11 @@ public sealed class TickProcessor(
                 <p><strong>Duration:</strong> {durationRealDays} real day(s), {durationGameDays} in-game day(s), tick {gameState.CurrentTick}.</p>
                 {statsHtml}
                 {largestCompanyHtml}
+                {mostProfitableCompanyHtml}
                 <h3>Final personal wealth ranking</h3>
                 <ol>{rankingHtml}</ol>
+                <h3>Final company ranking</h3>
+                <ol>{companyRankingHtml}</ol>
                 """,
         };
     }

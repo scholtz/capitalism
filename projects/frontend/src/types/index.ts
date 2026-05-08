@@ -634,6 +634,8 @@ export interface GameState {
 export interface EndgameTargetPerson {
   name: string
   estimatedUsdWealth: number
+  source: string
+  sourceDateUtc: string
 }
 
 /** Matches backend BuildingLot entity */

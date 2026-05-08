@@ -42,11 +42,54 @@ export interface MockPlayer {
   canClaimStartupPack: boolean
 }
 
+export interface MockRealWorldWealthBenchmark {
+  name: string
+  estimatedUsdWealth: number
+  source: string
+  snapshotDateUtc: string
+}
+
 export interface MockState {
   servers: MockGameServer[]
+  realWorldWealthBenchmarks: MockRealWorldWealthBenchmark[]
   currentToken: string | null
   currentPlayer: MockPlayer | null
   subscription: MockSubscription | null
+}
+
+export function makeRealWorldWealthBenchmarks(): MockRealWorldWealthBenchmark[] {
+  return [
+    {
+      name: 'Elon Musk',
+      estimatedUsdWealth: 430000000000,
+      source: 'Forbes Real-Time Billionaires',
+      snapshotDateUtc: '2026-05-01T00:00:00Z',
+    },
+    {
+      name: 'Jeff Bezos',
+      estimatedUsdWealth: 240000000000,
+      source: 'Forbes Real-Time Billionaires',
+      snapshotDateUtc: '2026-05-01T00:00:00Z',
+    },
+    {
+      name: 'Mark Zuckerberg',
+      estimatedUsdWealth: 220000000000,
+      source: 'Forbes Real-Time Billionaires',
+      snapshotDateUtc: '2026-05-01T00:00:00Z',
+    },
+    {
+      name: 'Larry Ellison',
+      estimatedUsdWealth: 190000000000,
+      source: 'Forbes Real-Time Billionaires',
+      snapshotDateUtc: '2026-05-01T00:00:00Z',
+    },
+    {
+      name: 'Bernard Arnault',
+      estimatedUsdWealth: 170000000000,
+      source: 'Forbes Real-Time Billionaires',
+      snapshotDateUtc: '2026-05-01T00:00:00Z',
+    },
+  ]
 }
 
 export function makeServer(overrides: Partial<MockGameServer> = {}): MockGameServer {
@@ -104,6 +147,8 @@ export function makeSubscription(overrides: Partial<MockSubscription> = {}): Moc
 export function setupMockApi(page: Page, initialState: Partial<MockState> = {}): MockState {
   const state: MockState = {
     servers: initialState.servers ?? [],
+    realWorldWealthBenchmarks:
+      initialState.realWorldWealthBenchmarks ?? makeRealWorldWealthBenchmarks(),
     currentToken: initialState.currentToken ?? null,
     currentPlayer: initialState.currentPlayer ?? null,
     subscription: initialState.subscription ?? null,
@@ -342,6 +387,17 @@ export function setupMockApi(page: Page, initialState: Partial<MockState> = {}):
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ data: { gameServers: state.servers } }),
+      })
+      return
+    }
+
+    if (query.includes('realWorldWealthBenchmarks')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: { realWorldWealthBenchmarks: state.realWorldWealthBenchmarks },
+        }),
       })
       return
     }

@@ -22,6 +22,13 @@ export interface GameServerSummary {
   isOnline: boolean
 }
 
+export interface RealWorldWealthBenchmark {
+  name: string
+  estimatedUsdWealth: number
+  source: string
+  snapshotDateUtc: string
+}
+
 export interface MasterPlayerProfile {
   id: string
   email: string
@@ -52,6 +59,10 @@ interface GameServersPayload {
   gameServers: GameServerSummary[]
 }
 
+interface RealWorldWealthBenchmarksPayload {
+  realWorldWealthBenchmarks: RealWorldWealthBenchmark[]
+}
+
 const GAME_SERVERS_QUERY = `
   query GetGameServers {
     gameServers {
@@ -74,6 +85,17 @@ const GAME_SERVERS_QUERY = `
       registeredAtUtc
       lastHeartbeatAtUtc
       isOnline
+    }
+  }
+`
+
+const REAL_WORLD_WEALTH_BENCHMARKS_QUERY = `
+  query GetRealWorldWealthBenchmarks {
+    realWorldWealthBenchmarks {
+      name
+      estimatedUsdWealth
+      source
+      snapshotDateUtc
     }
   }
 `
@@ -188,6 +210,13 @@ const UPDATE_PERSONAL_ACCOUNT_NAME_MUTATION = `
 export async function fetchGameServers(): Promise<GameServerSummary[]> {
   const data = await gqlRequest<GameServersPayload>(GAME_SERVERS_QUERY)
   return data.gameServers
+}
+
+export async function fetchRealWorldWealthBenchmarks(): Promise<RealWorldWealthBenchmark[]> {
+  const data = await gqlRequest<RealWorldWealthBenchmarksPayload>(
+    REAL_WORLD_WEALTH_BENCHMARKS_QUERY,
+  )
+  return data.realWorldWealthBenchmarks
 }
 
 export async function registerAccount(

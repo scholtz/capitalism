@@ -328,6 +328,8 @@ public sealed partial class Query
             {
                 Name = target.Name,
                 EstimatedUsdWealth = target.EstimatedUsdWealth,
+                Source = target.Source,
+                SourceDateUtc = target.SourceDateUtc,
             })
             .ToList();
     }

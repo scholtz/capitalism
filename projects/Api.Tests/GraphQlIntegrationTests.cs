@@ -25434,12 +25434,14 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     [Fact]
     public async Task RealWorldBenchmarks_ReturnsTopFiveRealWorldBenchmarks()
     {
-        var result = await ExecuteGraphQlAsync("{ realWorldBenchmarks { name estimatedUsdWealth } }");
+        var result = await ExecuteGraphQlAsync("{ realWorldBenchmarks { name estimatedUsdWealth source sourceDateUtc } }");
         var items = result.GetProperty("data").GetProperty("realWorldBenchmarks").EnumerateArray().ToList();
 
         Assert.Equal(5, items.Count);
         Assert.Equal("Elon Musk", items[0].GetProperty("name").GetString());
         Assert.Equal(170_000_000_000m, items[^1].GetProperty("estimatedUsdWealth").GetDecimal());
+        Assert.Equal("Forbes Real-Time Billionaires", items[0].GetProperty("source").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(items[0].GetProperty("sourceDateUtc").GetString()));
     }
 
     [Fact]

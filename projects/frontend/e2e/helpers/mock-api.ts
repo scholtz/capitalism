@@ -4320,11 +4320,11 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
 
     if (query.includes('endgameTargetLeaderboard') || query.includes('realWorldBenchmarks')) {
       const benchmarks = [
-        { name: 'Elon Musk', estimatedUsdWealth: 430000000000 },
-        { name: 'Jeff Bezos', estimatedUsdWealth: 240000000000 },
-        { name: 'Mark Zuckerberg', estimatedUsdWealth: 220000000000 },
-        { name: 'Larry Ellison', estimatedUsdWealth: 190000000000 },
-        { name: 'Bernard Arnault', estimatedUsdWealth: 170000000000 },
+        { name: 'Elon Musk', estimatedUsdWealth: 430000000000, source: 'Forbes Real-Time Billionaires', sourceDateUtc: '2026-05-01T00:00:00Z' },
+        { name: 'Jeff Bezos', estimatedUsdWealth: 240000000000, source: 'Forbes Real-Time Billionaires', sourceDateUtc: '2026-05-01T00:00:00Z' },
+        { name: 'Mark Zuckerberg', estimatedUsdWealth: 220000000000, source: 'Forbes Real-Time Billionaires', sourceDateUtc: '2026-05-01T00:00:00Z' },
+        { name: 'Larry Ellison', estimatedUsdWealth: 190000000000, source: 'Forbes Real-Time Billionaires', sourceDateUtc: '2026-05-01T00:00:00Z' },
+        { name: 'Bernard Arnault', estimatedUsdWealth: 170000000000, source: 'Forbes Real-Time Billionaires', sourceDateUtc: '2026-05-01T00:00:00Z' },
       ]
       return route.fulfill({
         status: 200,
