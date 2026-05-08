@@ -301,7 +301,7 @@ When unit is being modified user can still change it. For example when user upgr
 
 ## The onboarding 
 
-**Status: 94% complete** (May 2026)
+**Status: 100% complete** (May 2026)
 
 Onboarding process:
 1. User is given $200000 to his personal account and he picks the game player name

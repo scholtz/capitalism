@@ -170,6 +170,21 @@ const CLAIM_STARTUP_PACK_MUTATION = `
   }
 `
 
+const PERSONAL_ACCOUNT_NAME_QUERY = `
+  query {
+    personalAccountName
+  }
+`
+
+const UPDATE_PERSONAL_ACCOUNT_NAME_MUTATION = `
+  mutation UpdatePersonalAccountName($input: UpdatePersonalAccountNameInput!) {
+    updatePersonalAccountName(input: $input) {
+      id
+      personalAccountName
+    }
+  }
+`
+
 export async function fetchGameServers(): Promise<GameServerSummary[]> {
   const data = await gqlRequest<GameServersPayload>(GAME_SERVERS_QUERY)
   return data.gameServers
@@ -226,4 +241,29 @@ export async function claimStartupPack(token: string): Promise<SubscriptionInfo>
     token,
   )
   return data.claimStartupPack
+}
+
+export async function fetchPersonalAccountName(token: string): Promise<string | null> {
+  const data = await gqlRequest<{ personalAccountName: string | null }>(
+    PERSONAL_ACCOUNT_NAME_QUERY,
+    undefined,
+    token,
+  )
+  return data.personalAccountName
+}
+
+export async function updatePersonalAccountName(
+  token: string,
+  personalAccountName: string,
+): Promise<MasterPlayerProfile> {
+  const data = await gqlRequest<{ updatePersonalAccountName: MasterPlayerProfile }>(
+    UPDATE_PERSONAL_ACCOUNT_NAME_MUTATION,
+    {
+      input: {
+        personalAccountName,
+      },
+    },
+    token,
+  )
+  return data.updatePersonalAccountName
 }

@@ -261,7 +261,8 @@ export default {
     companyName: 'Názov firmy',
     companyNamePlaceholder: 'Zadajte názov firmy',
     personalAccountNameTitle: 'Meno osobného účtu',
-    personalAccountNameDesc: 'Tento pseudonym sa zobrazí v rebríčkoch na všetkých serveroch.',
+    personalAccountNameDesc:
+      'Toto je vaša verejná herná identita. Nepoužívajte svoje skutočné meno. Tento pseudonym sa zobrazí v rebríčkoch na všetkých serveroch.',
     personalAccountNameExisting: 'Vaše existujúce meno osobného účtu sa znovu použije a tu sa neprepíše.',
     personalAccountNameGenerationFailed: 'Momentálne sa nepodarilo vyhradiť jedinečné meno osobného účtu. Skúste to prosím znova.',
     regeneratePersonalAccountName: 'Vygenerovať znova',

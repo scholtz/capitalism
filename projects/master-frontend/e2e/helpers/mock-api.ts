@@ -120,6 +120,7 @@ export function setupMockApi(page: Page, initialState: Partial<MockState> = {}):
         id: 'new-player-001',
         email: vars?.input?.email ?? 'test@example.com',
         displayName: vars?.input?.displayName ?? 'Test Player',
+        personalAccountName: null,
         createdAtUtc: new Date().toISOString(),
         startupPackClaimedAtUtc: null,
         canClaimStartupPack: true,
@@ -233,6 +234,43 @@ export function setupMockApi(page: Page, initialState: Partial<MockState> = {}):
       return
     }
 
+    if (query.includes('mutation') && query.includes('updatePersonalAccountName')) {
+      if (!state.currentPlayer) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            errors: [
+              { message: 'Not authenticated.', extensions: { code: 'AUTH_NOT_AUTHENTICATED' } },
+            ],
+          }),
+        })
+        return
+      }
+
+      const input = body.variables as {
+        input?: {
+          personalAccountName?: string
+        }
+      }
+      const nextName = input.input?.personalAccountName?.trim() ?? ''
+      state.currentPlayer = {
+        ...state.currentPlayer,
+        personalAccountName: nextName || null,
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            updatePersonalAccountName: state.currentPlayer,
+          },
+        }),
+      })
+      return
+    }
+
     // Me query — must not match gameServers, mySubscription, or prolongSubscription
     if (
       query.includes('me') &&
@@ -276,6 +314,19 @@ export function setupMockApi(page: Page, initialState: Partial<MockState> = {}):
               expiresAtUtc: null,
               startsAtUtc: null,
             },
+          },
+        }),
+      })
+      return
+    }
+
+    if (query.includes('personalAccountName')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            personalAccountName: state.currentPlayer?.personalAccountName ?? null,
           },
         }),
       })

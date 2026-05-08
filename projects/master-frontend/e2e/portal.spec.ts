@@ -202,6 +202,23 @@ test.describe('Authenticated home page', () => {
     await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
   })
 
+  test('updates in-game name from the account settings panel', async ({ page }) => {
+    const player = makePlayer({ displayName: 'Bob', personalAccountName: 'John Michael Rivers' })
+    const state = setupMockApi(page, { servers: [] })
+    state.subscription = makeSubscription()
+    await loginAs(page, state, player)
+    await page.goto('/')
+
+    const nameInput = page.getByRole('textbox', { name: 'Personal Account Name' })
+    await expect(nameInput).toHaveValue('John Michael Rivers')
+
+    await nameInput.fill('Aster Nova Finch')
+    await page.getByRole('button', { name: 'Save In-game Name' }).click()
+
+    await expect(page.getByText('✓ In-game name updated.')).toBeVisible()
+    await expect(page.locator('.nav-player')).toHaveText('Aster Nova Finch')
+  })
+
   test('shows player display name and Sign out button', async ({ page }) => {
     const player = makePlayer({ displayName: 'Bob' })
     const state = setupMockApi(page, { servers: [] })
