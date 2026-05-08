@@ -678,6 +678,8 @@ export type MockState = {
   buildingLayouts: MockBuildingLayoutTemplate[]
   /** When set, the next StoreBuildingConfiguration call returns this string as a CONTRADICTORY_LINK error. */
   forceBuildingConfigError: string | null
+  /** When true, first personal account name update returns DUPLICATE_PERSONAL_ACCOUNT_NAME once. */
+  forcePersonalAccountNameDuplicateOnce: boolean
 }
 
 const mockStateByPage = new WeakMap<Page, MockState>()
@@ -1590,6 +1592,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
     impersonationSession: null,
     buildingLayouts: [],
     forceBuildingConfigError: null,
+    forcePersonalAccountNameDuplicateOnce: false,
     ...initial,
   }
 
@@ -1877,6 +1880,14 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       }
       const isTakenByOther = state.players.some((candidate) => candidate.id !== player.id && (candidate.personalAccountName ?? '').trim().toLowerCase() === nextName.toLowerCase())
       if (isTakenByOther) {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Personal account name is already taken.', extensions: { code: 'DUPLICATE_PERSONAL_ACCOUNT_NAME' } }] }),
+        })
+      }
+      if (state.forcePersonalAccountNameDuplicateOnce) {
+        state.forcePersonalAccountNameDuplicateOnce = false
         return route.fulfill({
           status: 200,
           contentType: 'application/json',

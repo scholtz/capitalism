@@ -282,6 +282,31 @@ test.describe('Onboarding wizard', () => {
     await expect(page.getByText('Aster Nova Finch', { exact: true })).toBeVisible()
   })
 
+  test('retries personal account name reservation on duplicate during onboarding', async ({ page }) => {
+    const player = makePlayer({ displayName: 'player@test.com', personalAccountName: null })
+    const state = setupMockApi(page, { players: [player], forcePersonalAccountNameDuplicateOnce: true })
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.goto('/onboarding')
+    await page.locator('.industry-card', { hasText: 'Furniture' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+    await page.locator('.city-card', { hasText: 'Bratislava' }).click()
+    await page.getByRole('button', { name: 'Next' }).click()
+
+    await page.getByLabel('Company Name').fill('Retry Name Corp')
+    await page.getByRole('button', { name: 'List View' }).click()
+    await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
+    await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+
+    await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
+    expect(state.forcePersonalAccountNameDuplicateOnce).toBe(false)
+    expect(player.personalAccountName).not.toBeNull()
+    expect((player.personalAccountName ?? '').split(' ')).toHaveLength(3)
+  })
+
   test('complete full onboarding flow', async ({ page }) => {
     const player = makePlayer()
     const state = setupMockApi(page, { players: [player] })

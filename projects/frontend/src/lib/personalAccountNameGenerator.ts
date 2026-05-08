@@ -22,5 +22,5 @@ export function generatePersonalAccountName() {
   )
   const shortLastName = faker.person.lastName().slice(0, remainingLastNameLength)
 
-  return `${shortFirstName} ${shortMiddleName} ${shortLastName}`
+  return `${shortFirstName} ${shortMiddleName} ${shortLastName}`.slice(0, MAX_PERSONAL_ACCOUNT_NAME_LENGTH)
 }

@@ -513,11 +513,11 @@ async function ensurePersonalAccountNameForOnboarding() {
     return
   }
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    if (!personalAccountName.value.trim()) {
-      regeneratePersonalAccountName()
-    }
+  if (!personalAccountName.value.trim()) {
+    regeneratePersonalAccountName()
+  }
 
+  for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
       const data = await gqlMasterRequest<{ updatePersonalAccountName: { personalAccountName: string | null } }>(
         UPDATE_PERSONAL_ACCOUNT_NAME_MUTATION,
@@ -539,7 +539,8 @@ async function ensurePersonalAccountNameForOnboarding() {
       }
       return
     } catch (e: unknown) {
-      if (e instanceof GraphQLError && e.code === 'DUPLICATE_PERSONAL_ACCOUNT_NAME') {
+      const errorCode = typeof e === 'object' && e !== null && 'code' in e ? (e as { code?: string }).code : undefined
+      if (errorCode === 'DUPLICATE_PERSONAL_ACCOUNT_NAME') {
         regeneratePersonalAccountName()
         continue
       }

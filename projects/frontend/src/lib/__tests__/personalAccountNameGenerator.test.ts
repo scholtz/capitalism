@@ -17,6 +17,6 @@ describe('generatePersonalAccountName', () => {
 
   it('generates diverse names across calls', () => {
     const samples = Array.from({ length: 20 }, () => generatePersonalAccountName())
-    expect(new Set(samples).size).toBeGreaterThan(1)
+    expect(new Set(samples).size).toBeGreaterThanOrEqual(15)
   })
 })
