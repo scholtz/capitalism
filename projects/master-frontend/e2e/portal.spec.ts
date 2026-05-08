@@ -210,12 +210,20 @@ test.describe('Authenticated home page', () => {
     await page.goto('/')
 
     const nameInput = page.getByRole('textbox', { name: 'Personal Account Name' })
+    const saveButton = page.getByRole('button', { name: 'Save In-game Name' })
     await expect(nameInput).toHaveValue('John Michael Rivers')
+    await expect(saveButton).toBeDisabled()
 
     await nameInput.fill('Aster Nova Finch')
-    await page.getByRole('button', { name: 'Save In-game Name' }).click()
+    await expect(saveButton).toBeEnabled()
+    await saveButton.click()
 
     await expect(page.getByText('✓ In-game name updated.')).toBeVisible()
+    await expect(page.locator('.nav-player')).toHaveText('Aster Nova Finch')
+    await expect(saveButton).toBeDisabled()
+
+    await page.reload()
+    await expect(nameInput).toHaveValue('Aster Nova Finch')
     await expect(page.locator('.nav-player')).toHaveText('Aster Nova Finch')
   })
 

@@ -1309,9 +1309,10 @@ useTickRefresh(async () => {
             class="personal-name-input"
             maxlength="30"
             :disabled="hasExistingPersonalAccountName"
+            :aria-describedby="hasExistingPersonalAccountName ? 'onboarding-personal-name-note' : undefined"
           />
           <p class="personal-name-preview">{{ personalAccountName }}</p>
-          <p class="personal-name-note">
+          <p id="onboarding-personal-name-note" class="personal-name-note">
             {{
               hasExistingPersonalAccountName
                 ? t('onboarding.personalAccountNameExisting')

@@ -267,6 +267,7 @@ test.describe('Onboarding wizard', () => {
     await page.getByRole('button', { name: 'List View' }).click()
     await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
     await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+    expect(player.personalAccountName).toBe(manualOnboardingName)
 
     await page.goto('/leaderboard')
     await expect(page.getByText(manualOnboardingName, { exact: true })).toBeVisible()
