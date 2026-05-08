@@ -189,7 +189,15 @@ const currentGameTime = computed(() => {
   const utc = gameStateStore.gameState?.currentGameTimeUtc
   return utc ? formatInGameTime(utc, locale.value) : null
 })
+// Returns 0 when no players are on the leaderboard yet — safe fallback for target comparison
 const leadingPlayerWealth = computed(() => rankings.value[0]?.totalWealth ?? 0)
+
+function isTargetClosest(leadingWealth: number, target: EndgameTargetPerson, index: number): boolean {
+  if (leadingWealth >= target.estimatedUsdWealth) return false
+  if (index === 0) return true
+  const prev = realWorldTargets.value[index - 1]
+  return prev !== undefined && leadingWealth >= prev.estimatedUsdWealth
+}
 </script>
 
 <template>
@@ -293,10 +301,7 @@ const leadingPlayerWealth = computed(() => rankings.value[0]?.totalWealth ?? 0)
               class="target-row"
               :class="{
                 'target-surpassed': leadingPlayerWealth >= target.estimatedUsdWealth,
-                'target-closest': (() => {
-                  const prev = realWorldTargets[index - 1]
-                  return leadingPlayerWealth < target.estimatedUsdWealth && (index === 0 || (prev !== undefined && leadingPlayerWealth >= prev.estimatedUsdWealth))
-                })(),
+                'target-closest': isTargetClosest(leadingPlayerWealth, target, index),
               }"
             >
               <span class="target-icon">{{ getTargetIcon(leadingPlayerWealth, target, index) }}</span>
