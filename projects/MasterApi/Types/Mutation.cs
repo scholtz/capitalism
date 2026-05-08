@@ -16,6 +16,8 @@ public sealed partial class Mutation
 {
     private const int StartupPackDurationMonths = 3;
     internal const string PersonalAccountNameClaimType = "capitalism/personal-account-name";
+    private const int MinPersonalAccountNameLength = 3;
+    private const int MaxPersonalAccountNameLength = 30;
 
 
     private static string NormalizeRequiredUrl(string url, string errorCode)
@@ -151,12 +153,34 @@ public sealed partial class Mutation
                     .Build());
         }
 
-        if (normalized.Length > 120)
+        if (normalized.Length < MinPersonalAccountNameLength)
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Personal account name is too short.")
+                    .SetCode("PERSONAL_ACCOUNT_NAME_TOO_SHORT")
+                    .Build());
+        }
+
+        if (normalized.Length > MaxPersonalAccountNameLength)
         {
             throw new GraphQLException(
                 ErrorBuilder.New()
                     .SetMessage("Personal account name is too long.")
                     .SetCode("PERSONAL_ACCOUNT_NAME_TOO_LONG")
+                    .Build());
+        }
+
+        if (normalized.Any(character =>
+            !char.IsLetter(character)
+            && !char.IsWhiteSpace(character)
+            && character != '\''
+            && character != '-'))
+        {
+            throw new GraphQLException(
+                ErrorBuilder.New()
+                    .SetMessage("Personal account name contains invalid characters.")
+                    .SetCode("PERSONAL_ACCOUNT_NAME_INVALID_CHARACTERS")
                     .Build());
         }
 
