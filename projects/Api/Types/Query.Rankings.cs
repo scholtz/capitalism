@@ -372,8 +372,8 @@ public sealed partial class Query
             {
                 Name = target.Name,
                 WealthUsd = target.EstimatedUsdWealth,
-                SourceUrl = target.Source.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                    ? target.Source
+                SourceUrl = Uri.TryCreate(target.Source, UriKind.Absolute, out var sourceUri)
+                    ? sourceUri.ToString()
                     : ForbesRealTimeBillionairesUrl,
                 SourceDateUtc = target.SourceDateUtc,
             })
