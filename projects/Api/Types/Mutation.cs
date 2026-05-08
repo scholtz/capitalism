@@ -96,7 +96,7 @@ public sealed partial class Mutation
 
         throw new GraphQLException(
             ErrorBuilder.New()
-                .SetMessage("This game server has ended and is now in read-only mode.")
+                .SetMessage("The game has ended. No further operations are allowed.")
                 .SetCode("GAME_ENDED")
                 .Build());
     }
