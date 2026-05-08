@@ -25565,5 +25565,45 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         Assert.Equal("GAME_ENDED", errorCode);
     }
 
+    [Fact]
+    public async Task MergeCompany_WhenGameIsEnded_ReturnsGameEndedError()
+    {
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, $"game-ended-merge-{Guid.NewGuid():N}@test.com", "EndedMerge");
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var gameState = await db.GameStates.FirstAsync();
+            gameState.IsEnded = true;
+            gameState.EndedAtUtc = DateTime.UtcNow;
+            gameState.WinnerDisplayName = "Winner";
+            await db.SaveChangesAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            isolatedClient,
+            """
+            mutation MergeCompany($input: MergeCompanyInput!) {
+              mergeCompany(input: $input) { destinationCompanyId }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    targetCompanyId = Guid.NewGuid(),
+                    destinationCompanyId = Guid.NewGuid(),
+                },
+            },
+            token);
+
+        var error = result.GetProperty("errors")[0];
+        var errorCode = error.GetProperty("extensions").GetProperty("code").GetString();
+        var errorMessage = error.GetProperty("message").GetString();
+        Assert.Equal("GAME_ENDED", errorCode);
+        Assert.Equal("The game has ended. No further operations are allowed.", errorMessage);
+    }
+
     #endregion
 }

@@ -323,6 +323,8 @@ public sealed partial class Mutation
         [Service] AppDbContext db,
         [Service] IHttpContextAccessor httpContextAccessor)
     {
+        await EnsureGameIsActiveAsync(db);
+
         var userId = httpContextAccessor.HttpContext!.User.GetRequiredUserId();
 
         var companies = await db.Companies.ToListAsync();
