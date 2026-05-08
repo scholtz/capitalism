@@ -38,6 +38,15 @@ public sealed class EndgameTargetPersonResult
     public DateTime SourceDateUtc { get; set; }
 }
 
+/// <summary>Canonical endgame billionaire payload required by product issue naming.</summary>
+public sealed class TopRealWorldBillionaireResult
+{
+    public string Name { get; set; } = string.Empty;
+    public decimal WealthUsd { get; set; }
+    public string SourceUrl { get; set; } = string.Empty;
+    public DateTime SourceDateUtc { get; set; }
+}
+
 /// <summary>Compact game-over status payload used by frontend endgame overlays.</summary>
 public sealed class GameStatusResult
 {
@@ -69,6 +78,30 @@ public sealed class GameEndStateResult
     public GameEndWinnerResult? Winner { get; set; }
     public DateTime? EndedAt { get; set; }
     public List<GameEndTopRankingEntry> TopRanking { get; set; } = [];
+}
+
+/// <summary>Winner details for endgameStatus query.</summary>
+public sealed class EndgameStatusWinnerResult
+{
+    public string Name { get; set; } = string.Empty;
+    public decimal Wealth { get; set; }
+}
+
+/// <summary>Ranking entry returned by endgameStatus.</summary>
+public sealed class EndgameStatusRankingEntry
+{
+    public int Rank { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal Wealth { get; set; }
+}
+
+/// <summary>Compatibility endgame payload matching issue acceptance criteria field names.</summary>
+public sealed class EndgameStatusResult
+{
+    public bool IsEnded { get; set; }
+    public EndgameStatusWinnerResult? Winner { get; set; }
+    public DateTime? EndedAtUtc { get; set; }
+    public List<EndgameStatusRankingEntry> FinalRankings { get; set; } = [];
 }
 
 /// <summary>Individual company ranking for the leaderboard.</summary>
