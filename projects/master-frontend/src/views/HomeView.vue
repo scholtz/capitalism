@@ -5,7 +5,9 @@ import { useRouter } from 'vue-router'
 import {
   fetchGameServers,
   fetchPersonalAccountName,
+  fetchRealWorldWealthBenchmarks,
   type GameServerSummary,
+  type RealWorldWealthBenchmark,
   updatePersonalAccountName,
 } from '@/lib/masterApi'
 import { formatHeartbeatDistance } from '@/lib/time'
@@ -21,8 +23,10 @@ const auth = useAuthStore()
 const router = useRouter()
 
 const servers = ref<GameServerSummary[]>([])
+const realWorldBenchmarks = ref<RealWorldWealthBenchmark[]>([])
 const loading = ref(true)
 const errorMessage = ref('')
+const benchmarkErrorMessage = ref('')
 
 const prolongMonths = ref(1)
 const prolongLoading = ref(false)
@@ -70,6 +74,34 @@ async function loadServers() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadRealWorldBenchmarks() {
+  benchmarkErrorMessage.value = ''
+  try {
+    realWorldBenchmarks.value = await fetchRealWorldWealthBenchmarks()
+  } catch (error) {
+    benchmarkErrorMessage.value =
+      error instanceof Error ? error.message : 'Unable to load real-world wealth benchmarks.'
+    realWorldBenchmarks.value = []
+  }
+}
+
+function formatBenchmarkWealth(value: number) {
+  return `$${value.toLocaleString()}`
+}
+
+function formatBenchmarkDate(value: string) {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return value
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(parsed)
 }
 
 async function loadPersonalName() {
@@ -152,6 +184,7 @@ function logout() {
 
 onMounted(() => {
   void loadServers()
+  void loadRealWorldBenchmarks()
   if (auth.isAuthenticated) {
     void loadPersonalName()
   }
@@ -400,6 +433,24 @@ onMounted(() => {
           </div>
 
           <button class="refresh-button" type="button" @click="loadServers">Refresh</button>
+        </div>
+
+        <div class="wealth-benchmarks" aria-label="Real-world wealth benchmarks">
+          <h3>🏆 Race to the Top — Beat the World's Richest</h3>
+          <p v-if="benchmarkErrorMessage" class="state-message state-error">{{ benchmarkErrorMessage }}</p>
+          <ul v-else class="wealth-benchmarks-list">
+            <li
+              v-for="benchmark in realWorldBenchmarks"
+              :key="benchmark.name"
+              class="wealth-benchmark-card"
+            >
+              <strong>{{ benchmark.name }}</strong>
+              <span class="wealth-benchmark-value">{{ formatBenchmarkWealth(benchmark.estimatedUsdWealth) }}</span>
+              <span class="wealth-benchmark-meta">
+                Source: {{ benchmark.source }} · {{ formatBenchmarkDate(benchmark.snapshotDateUtc) }}
+              </span>
+            </li>
+          </ul>
         </div>
 
         <p v-if="loading" class="state-message">Loading registered servers...</p>
@@ -1038,6 +1089,45 @@ onMounted(() => {
 .state-error {
   background: rgba(176, 67, 44, 0.08);
   color: #a03826;
+}
+
+.wealth-benchmarks {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(17, 41, 79, 0.12);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.wealth-benchmarks h3 {
+  margin: 0 0 0.65rem;
+  font-size: 1rem;
+}
+
+.wealth-benchmarks-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wealth-benchmark-card {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  background: rgba(18, 44, 83, 0.05);
+}
+
+.wealth-benchmark-value {
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.wealth-benchmark-meta {
+  font-size: 0.78rem;
+  color: var(--color-muted);
 }
 
 .server-list {

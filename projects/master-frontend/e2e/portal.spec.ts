@@ -15,6 +15,18 @@ test.describe('Unauthenticated home page', () => {
     await expect(page.getByRole('link', { name: 'Get started free →' })).toBeVisible()
   })
 
+  test('shows top five real-world wealth benchmarks', async ({ page }) => {
+    setupMockApi(page, { servers: [] })
+    await page.goto('/')
+
+    const section = page.locator('[aria-label="Real-world wealth benchmarks"]')
+    await expect(section).toBeVisible()
+    await expect(section.getByText("Race to the Top — Beat the World's Richest")).toBeVisible()
+    await expect(section.getByText('Elon Musk')).toBeVisible()
+    await expect(section.getByText('Bernard Arnault')).toBeVisible()
+    await expect(section.getByText(/Forbes Real-Time Billionaires/).first()).toBeVisible()
+  })
+
   test('shows "How it works" pitch column for guest users', async ({ page }) => {
     setupMockApi(page, { servers: [] })
     await page.goto('/')
@@ -100,7 +112,7 @@ test.describe('Unauthenticated home page', () => {
       await route.abort('failed')
     })
     await page.goto('/')
-    await expect(page.locator('.state-error')).toBeVisible()
+    await expect(page.locator('.servers-panel .state-error').first()).toBeVisible()
   })
 
   test('refresh button reloads server list', async ({ page }) => {

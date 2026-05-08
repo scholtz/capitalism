@@ -9,6 +9,45 @@ namespace MasterApi.Types;
 
 public sealed class Query
 {
+    private static readonly IReadOnlyList<RealWorldWealthBenchmark> DefaultRealWorldWealthBenchmarks =
+    [
+        new RealWorldWealthBenchmark
+        {
+            Name = "Elon Musk",
+            EstimatedUsdWealth = 430_000_000_000m,
+            Source = "Forbes Real-Time Billionaires",
+            SnapshotDateUtc = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc),
+        },
+        new RealWorldWealthBenchmark
+        {
+            Name = "Jeff Bezos",
+            EstimatedUsdWealth = 240_000_000_000m,
+            Source = "Forbes Real-Time Billionaires",
+            SnapshotDateUtc = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc),
+        },
+        new RealWorldWealthBenchmark
+        {
+            Name = "Mark Zuckerberg",
+            EstimatedUsdWealth = 220_000_000_000m,
+            Source = "Forbes Real-Time Billionaires",
+            SnapshotDateUtc = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc),
+        },
+        new RealWorldWealthBenchmark
+        {
+            Name = "Larry Ellison",
+            EstimatedUsdWealth = 190_000_000_000m,
+            Source = "Forbes Real-Time Billionaires",
+            SnapshotDateUtc = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc),
+        },
+        new RealWorldWealthBenchmark
+        {
+            Name = "Bernard Arnault",
+            EstimatedUsdWealth = 170_000_000_000m,
+            Source = "Forbes Real-Time Billionaires",
+            SnapshotDateUtc = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc),
+        },
+    ];
+
     public async Task<List<GameServerSummary>> GetGameServers(
         [Service] MasterDbContext db,
         [Service] IOptions<MasterServerOptions> options)
@@ -26,6 +65,27 @@ public sealed class Query
             .OrderByDescending(server => server.IsOnline)
             .ThenBy(server => server.DisplayName)
             .ToList();
+    }
+
+    public List<RealWorldWealthBenchmark> GetRealWorldWealthBenchmarks(
+        [Service] IOptions<RealWorldWealthOptions> options)
+    {
+        var configured = options.Value.Benchmarks
+            .Where(row => !string.IsNullOrWhiteSpace(row.Name) && row.EstimatedUsdWealth > 0m)
+            .OrderByDescending(row => row.EstimatedUsdWealth)
+            .Take(5)
+            .Select(row => new RealWorldWealthBenchmark
+            {
+                Name = row.Name.Trim(),
+                EstimatedUsdWealth = row.EstimatedUsdWealth,
+                Source = string.IsNullOrWhiteSpace(row.Source) ? "Forbes Real-Time Billionaires" : row.Source.Trim(),
+                SnapshotDateUtc = row.SnapshotDateUtc == default
+                    ? DateTime.SpecifyKind(DateTime.UtcNow.Date, DateTimeKind.Utc)
+                    : row.SnapshotDateUtc,
+            })
+            .ToList();
+
+        return configured.Count >= 5 ? configured : DefaultRealWorldWealthBenchmarks.ToList();
     }
 
     [HotChocolate.Authorization.Authorize]

@@ -240,6 +240,9 @@ export default {
     subtitle: 'Vyberte si odvetvie, získajte prvé mestské pozemky a spustite svoj prvý produkt.',
     step1Title: 'Vyberte odvetvie',
     step1Desc: 'Vyberte odvetvie, na ktoré sa chcete špecializovať.',
+    gameGoalTitle: '🎯 Cieľ hry',
+    gameGoalBody:
+      'Buduj osobné bohatstvo (hotovosť + akciové portfólio), kým neprekonáš 5. najbohatší reálny benchmark. Keď tento cieľ prekoná ktorýkoľvek hráč, server sa ukončí a zverejní sa finálny rebríček.',
     step2Title: 'Vyberte mesto',
     step2Desc: 'Vyberte mesto, v ktorom bude pôsobiť vaša prvá firma. Táto mapa určí továreň aj prvú predajňu.',
     step3Title: 'Vyberte prvý pozemok pre továreň',
@@ -544,6 +547,7 @@ export default {
     realWorldTargetsBody: 'Prekonaj najnižší cieľ a ukonči server.',
     realWorldTargetBadge: 'Cieľ',
     realWorldTargetSurpassed: 'Prekonaný',
+    realWorldTargetMeta: 'Zdroj: {source} · {date}',
     realWorldTargetsLoadFailed: 'Nepodarilo sa načítať ciele bohatstva.',
   },
   globalExchange: {

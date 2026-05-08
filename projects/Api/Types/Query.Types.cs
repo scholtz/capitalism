@@ -34,6 +34,8 @@ public sealed class EndgameTargetPersonResult
 {
     public string Name { get; set; } = string.Empty;
     public decimal EstimatedUsdWealth { get; set; }
+    public string Source { get; set; } = string.Empty;
+    public DateTime SourceDateUtc { get; set; }
 }
 
 /// <summary>Compact game-over status payload used by frontend endgame overlays.</summary>

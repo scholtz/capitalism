@@ -5,7 +5,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Api.Engine;
 
-public sealed record EndgameTargetPerson(string Name, decimal EstimatedUsdWealth);
+public sealed record EndgameTargetPerson(
+    string Name,
+    decimal EstimatedUsdWealth,
+    string Source,
+    DateTime SourceDateUtc);
 
 public sealed record EndgamePlayerWealth(
     Guid PlayerId,
@@ -21,11 +25,11 @@ public static class EndgameService
 {
     private static readonly IReadOnlyList<EndgameTargetPerson> DefaultTargetRichList =
     [
-        new("Elon Musk", 430_000_000_000m),
-        new("Jeff Bezos", 240_000_000_000m),
-        new("Mark Zuckerberg", 220_000_000_000m),
-        new("Larry Ellison", 190_000_000_000m),
-        new("Bernard Arnault", 170_000_000_000m),
+        new("Elon Musk", 430_000_000_000m, "Forbes Real-Time Billionaires", new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc)),
+        new("Jeff Bezos", 240_000_000_000m, "Forbes Real-Time Billionaires", new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc)),
+        new("Mark Zuckerberg", 220_000_000_000m, "Forbes Real-Time Billionaires", new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc)),
+        new("Larry Ellison", 190_000_000_000m, "Forbes Real-Time Billionaires", new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc)),
+        new("Bernard Arnault", 170_000_000_000m, "Forbes Real-Time Billionaires", new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc)),
     ];
 
     public static async Task<List<EndgameTargetPerson>> GetTargetRichListAsync(AppDbContext db, CancellationToken ct = default)
@@ -34,7 +38,11 @@ public static class EndgameService
             .AsNoTracking()
             .OrderBy(row => row.Rank)
             .Take(5)
-            .Select(row => new EndgameTargetPerson(row.Name, row.EstimatedNetWorthUsd))
+            .Select(row => new EndgameTargetPerson(
+                row.Name,
+                row.EstimatedNetWorthUsd,
+                "Forbes Real-Time Billionaires",
+                row.UpdatedAtUtc))
             .ToListAsync(ct);
 
         return persistedTargets.Count >= 5 ? persistedTargets : DefaultTargetRichList.ToList();

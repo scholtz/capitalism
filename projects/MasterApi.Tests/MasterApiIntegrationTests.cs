@@ -154,6 +154,29 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
     }
 
     [Fact]
+    public async Task RealWorldWealthBenchmarks_ReturnsConfiguredTopFiveTargets()
+    {
+        var result = await GraphQlAsync("""
+            query {
+              realWorldWealthBenchmarks {
+                name
+                estimatedUsdWealth
+                source
+                snapshotDateUtc
+              }
+            }
+            """);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        var items = result.GetProperty("data").GetProperty("realWorldWealthBenchmarks").EnumerateArray().ToList();
+        Assert.Equal(5, items.Count);
+        Assert.Equal("Elon Musk", items[0].GetProperty("name").GetString());
+        Assert.Equal(170000000000m, items[^1].GetProperty("estimatedUsdWealth").GetDecimal());
+        Assert.Equal("Forbes Real-Time Billionaires", items[0].GetProperty("source").GetString());
+        Assert.Equal("2026-05-01T00:00:00.000Z", items[0].GetProperty("snapshotDateUtc").GetString());
+    }
+
+    [Fact]
     public async Task RegisterGameServer_InvalidRegistrationKey_ReturnsError()
     {
         var result = await GraphQlAsync("""

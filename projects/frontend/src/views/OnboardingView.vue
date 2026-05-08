@@ -1199,6 +1199,10 @@ useTickRefresh(async () => {
           <h2>{{ t('onboarding.step1Title') }}</h2>
           <p class="step-desc">{{ t('onboarding.step1Desc') }}</p>
         </div>
+        <article class="game-goal-card" aria-label="Game goal">
+          <h3>{{ t('onboarding.gameGoalTitle') }}</h3>
+          <p>{{ t('onboarding.gameGoalBody') }}</p>
+        </article>
         <div class="industry-grid">
           <button v-for="ind in industries" :key="ind" class="industry-card" :class="{ selected: selectedIndustry === ind }" @click="selectedIndustry = ind">
             <span class="card-icon">{{ industryIcons[ind] || '🏭' }}</span>
@@ -2079,6 +2083,25 @@ useTickRefresh(async () => {
 .step-desc {
   color: var(--color-text-secondary);
   font-size: 0.875rem;
+}
+
+.game-goal-card {
+  margin: 0 0 1rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 215, 0, 0.35);
+  background: rgba(255, 215, 0, 0.08);
+}
+
+.game-goal-card h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.game-goal-card p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
 }
 
 .industry-grid {

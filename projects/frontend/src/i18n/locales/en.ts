@@ -240,6 +240,9 @@ export default {
     subtitle: 'Choose your industry, claim your first city lots, and launch your first product.',
     step1Title: 'Choose Your Industry',
     step1Desc: 'Select the industry you want to specialize in. This determines what products you can manufacture.',
+    gameGoalTitle: '🎯 Game Goal',
+    gameGoalBody:
+      'Build personal wealth (cash + stock portfolio) until you surpass the 5th richest real-world benchmark. Once any player beats that target, the server ends and final rankings are published.',
     step2Title: 'Choose Your City',
     step2Desc: 'Pick the city where your first company will operate. This sets the map for your first factory and first shop.',
     step3Title: 'Choose Your First Factory Lot',
@@ -543,6 +546,7 @@ export default {
     realWorldTargetsBody: 'Surpass the lowest target to end the server and claim victory.',
     realWorldTargetBadge: 'Target',
     realWorldTargetSurpassed: 'Surpassed',
+    realWorldTargetMeta: 'Source: {source} · {date}',
     realWorldTargetsLoadFailed: 'Could not load wealth targets.',
   },
   globalExchange: {

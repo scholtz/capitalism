@@ -98,6 +98,17 @@ public sealed class GameServerSummary
     public bool IsOnline { get; init; }
 }
 
+public sealed class RealWorldWealthBenchmark
+{
+    public string Name { get; init; } = string.Empty;
+
+    public decimal EstimatedUsdWealth { get; init; }
+
+    public string Source { get; init; } = string.Empty;
+
+    public DateTime SnapshotDateUtc { get; init; }
+}
+
 public sealed class MasterAuthPayload
 {
     public string Token { get; set; } = string.Empty;
