@@ -25445,6 +25445,19 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     }
 
     [Fact]
+    public async Task TopRealWorldBillionaires_ReturnsTopFiveWithUsdWealthAndSourceUrl()
+    {
+        var result = await ExecuteGraphQlAsync("{ topRealWorldBillionaires { name wealthUsd sourceUrl sourceDateUtc } }");
+        var items = result.GetProperty("data").GetProperty("topRealWorldBillionaires").EnumerateArray().ToList();
+
+        Assert.Equal(5, items.Count);
+        Assert.Equal("Elon Musk", items[0].GetProperty("name").GetString());
+        Assert.Equal(170_000_000_000m, items[^1].GetProperty("wealthUsd").GetDecimal());
+        Assert.Equal("https://www.forbes.com/real-time-billionaires/", items[0].GetProperty("sourceUrl").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(items[0].GetProperty("sourceDateUtc").GetString()));
+    }
+
+    [Fact]
     public async Task RealWorldBillionaireTable_IsSeededWithFiveRows()
     {
         await using var isolatedFactory = new ApiWebApplicationFactory();
@@ -25531,6 +25544,48 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     }
 
     [Fact]
+    public async Task EndgameStatus_WhenEnded_ReturnsWinnerEndedAtUtcAndFinalRankings()
+    {
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        var client = isolatedFactory.CreateClient();
+        var tokenA = await RegisterAndGetTokenAsync(client, $"endgame-status-a-{Guid.NewGuid():N}@test.com", "Endgame Status A");
+        var tokenB = await RegisterAndGetTokenAsync(client, $"endgame-status-b-{Guid.NewGuid():N}@test.com", "Endgame Status B");
+        _ = tokenA;
+        _ = tokenB;
+
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var players = await db.Players.Where(player => player.Role != PlayerRole.Admin).ToListAsync();
+            var playerA = players.Single(player => player.DisplayName == "Endgame Status A");
+            var playerB = players.Single(player => player.DisplayName == "Endgame Status B");
+            playerA.PersonalCash = 172_000_000_000m;
+            playerB.PersonalCash = 141_000_000_000m;
+
+            var gameState = await db.GameStates.FirstAsync();
+            gameState.IsEnded = true;
+            gameState.EndedAtUtc = DateTime.UtcNow;
+            gameState.WinnerDisplayName = playerA.PersonalAccountName ?? playerA.DisplayName;
+            gameState.WinnerWealth = playerA.PersonalCash;
+            await db.SaveChangesAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            client,
+            "{ endgameStatus { isEnded endedAtUtc winner { name wealth } finalRankings { rank name wealth } } }");
+
+        var endgameStatus = result.GetProperty("data").GetProperty("endgameStatus");
+        Assert.True(endgameStatus.GetProperty("isEnded").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(endgameStatus.GetProperty("endedAtUtc").GetString()));
+        Assert.Equal("Endgame Status A", endgameStatus.GetProperty("winner").GetProperty("name").GetString());
+        Assert.Equal(172_000_000_000m, endgameStatus.GetProperty("winner").GetProperty("wealth").GetDecimal());
+        var finalRankings = endgameStatus.GetProperty("finalRankings").EnumerateArray().ToList();
+        Assert.NotEmpty(finalRankings);
+        Assert.Equal(1, finalRankings[0].GetProperty("rank").GetInt32());
+        Assert.Equal("Endgame Status A", finalRankings[0].GetProperty("name").GetString());
+    }
+
+    [Fact]
     public async Task BuyShares_WhenGameIsEnded_ReturnsGameEndedError()
     {
         await using var isolatedFactory = new ApiWebApplicationFactory();
@@ -25605,6 +25660,82 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         var errorMessage = error.GetProperty("message").GetString();
         Assert.Equal("GAME_ENDED", errorCode);
         Assert.Equal("The game has ended. No further operations are allowed.", errorMessage);
+    }
+
+    [Fact]
+    public async Task PurchaseLot_WhenGameIsEnded_ReturnsGameEndedError()
+    {
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, $"game-ended-lot-{Guid.NewGuid():N}@test.com", "EndedLot");
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var gameState = await db.GameStates.FirstAsync();
+            gameState.IsEnded = true;
+            gameState.EndedAtUtc = DateTime.UtcNow;
+            gameState.WinnerDisplayName = "Winner";
+            await db.SaveChangesAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            isolatedClient,
+            """
+            mutation PurchaseLot($input: PurchaseLotInput!) {
+              purchaseLot(input: $input) { building { id } }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    lotId = Guid.NewGuid(),
+                    companyId = Guid.NewGuid(),
+                    buildingType = "FACTORY",
+                    buildingName = "Ended Factory",
+                },
+            },
+            token);
+
+        var errorCode = result.GetProperty("errors")[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("GAME_ENDED", errorCode);
+    }
+
+    [Fact]
+    public async Task UpdatePublicSalesPrice_WhenGameIsEnded_ReturnsGameEndedError()
+    {
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        using var isolatedClient = isolatedFactory.CreateClient();
+        var token = await RegisterAndGetTokenAsync(isolatedClient, $"game-ended-price-{Guid.NewGuid():N}@test.com", "EndedPrice");
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var gameState = await db.GameStates.FirstAsync();
+            gameState.IsEnded = true;
+            gameState.EndedAtUtc = DateTime.UtcNow;
+            gameState.WinnerDisplayName = "Winner";
+            await db.SaveChangesAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            isolatedClient,
+            """
+            mutation UpdatePublicSalesPrice($input: UpdatePublicSalesPriceInput!) {
+              updatePublicSalesPrice(input: $input) { id }
+            }
+            """,
+            new
+            {
+                input = new
+                {
+                    unitId = Guid.NewGuid(),
+                    newMinPrice = 12m,
+                },
+            },
+            token);
+
+        var errorCode = result.GetProperty("errors")[0].GetProperty("extensions").GetProperty("code").GetString();
+        Assert.Equal("GAME_ENDED", errorCode);
     }
 
     #endregion

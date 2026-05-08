@@ -635,6 +635,13 @@ test.describe('Onboarding wizard', () => {
     await expect(page).toHaveURL(/\/onboarding/)
   })
 
+  test('shows win-condition game goal card on step 1', async ({ page }) => {
+    setupMockApi(page)
+    await page.goto('/onboarding')
+    await expect(page.locator('.game-goal-card').getByRole('heading', { name: '🎯 Game Goal' })).toBeVisible()
+    await expect(page.locator('.game-goal-card')).toContainText('surpass the 5th richest real-world benchmark')
+  })
+
   test('industry cards show first product hint for each starter industry', async ({ page }) => {
     // ROADMAP: "Each option should explain the fantasy, likely first product, and why a player might choose it."
     setupMockApi(page)

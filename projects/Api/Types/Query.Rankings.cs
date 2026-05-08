@@ -16,6 +16,8 @@ namespace Api.Types;
 /// </summary>
 public sealed partial class Query
 {
+    private const string ForbesRealTimeBillionairesUrl = "https://www.forbes.com/real-time-billionaires/";
+
     /// <summary>
     /// Gets the player ranking (leaderboard) sorted by total wealth.
     ///
@@ -361,6 +363,23 @@ public sealed partial class Query
     /// <summary>Canonical endgame benchmark query used by docs and frontend progress views.</summary>
     public Task<List<EndgameTargetPersonResult>> GetRealWorldBenchmarks([Service] AppDbContext db) => GetEndgameTargetLeaderboard(db);
 
+    /// <summary>Compatibility alias matching issue naming for top real-world billionaire targets.</summary>
+    public async Task<List<TopRealWorldBillionaireResult>> GetTopRealWorldBillionaires([Service] AppDbContext db)
+    {
+        var targets = await EndgameService.GetTargetRichListAsync(db);
+        return targets
+            .Select(target => new TopRealWorldBillionaireResult
+            {
+                Name = target.Name,
+                WealthUsd = target.EstimatedUsdWealth,
+                SourceUrl = Uri.TryCreate(target.Source, UriKind.Absolute, out var sourceUri)
+                    ? sourceUri.ToString()
+                    : ForbesRealTimeBillionairesUrl,
+                SourceDateUtc = target.SourceDateUtc,
+            })
+            .ToList();
+    }
+
     /// <summary>Canonical game-end payload containing winner details and final top-10 personal ranking.</summary>
     public async Task<GameEndStateResult?> GetGameEndState([Service] AppDbContext db)
     {
@@ -409,5 +428,36 @@ public sealed partial class Query
             .ToList();
 
         return result;
+    }
+
+    /// <summary>Compatibility alias matching issue naming for full endgame status payload.</summary>
+    public async Task<EndgameStatusResult?> GetEndgameStatus([Service] AppDbContext db)
+    {
+        var gameEndState = await GetGameEndState(db);
+        if (gameEndState is null)
+        {
+            return null;
+        }
+
+        return new EndgameStatusResult
+        {
+            IsEnded = gameEndState.IsEnded,
+            EndedAtUtc = gameEndState.EndedAt,
+            Winner = gameEndState.Winner is null
+                ? null
+                : new EndgameStatusWinnerResult
+                {
+                    Name = gameEndState.Winner.Name,
+                    Wealth = gameEndState.Winner.NetWorth,
+                },
+            FinalRankings = gameEndState.TopRanking
+                .Select(entry => new EndgameStatusRankingEntry
+                {
+                    Rank = entry.Rank,
+                    Name = entry.Name,
+                    Wealth = entry.NetWorth,
+                })
+                .ToList(),
+        };
     }
 }
