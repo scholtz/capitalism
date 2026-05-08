@@ -250,21 +250,27 @@ test.describe('Onboarding wizard', () => {
     await page.locator('.city-card', { hasText: 'Bratislava' }).click()
     await page.getByRole('button', { name: 'Next' }).click()
 
-    const generatedName = (await page.locator('.personal-name-preview').textContent())?.trim() ?? ''
+    const nameInput = page.getByRole('textbox', { name: 'Personal account name' })
+    const generatedName = (await nameInput.inputValue()).trim()
     expect(generatedName.split(' ')).toHaveLength(3)
     expect(generatedName.length).toBeLessThanOrEqual(30)
+    await expect(page.getByText('Do not use your real name.')).toBeVisible()
 
     await page.getByRole('button', { name: 'Regenerate' }).click()
-    await expect(page.locator('.personal-name-preview')).not.toHaveText(generatedName)
-    const regeneratedName = ((await page.locator('.personal-name-preview').textContent()) ?? '').trim()
+    await expect(nameInput).not.toHaveValue(generatedName)
+
+    const manualOnboardingName = 'Aster Nova Finch'
+    await nameInput.fill(manualOnboardingName)
+    await expect(nameInput).toHaveValue(manualOnboardingName)
 
     await page.getByLabel('Company Name').fill('Name Driven Corp')
     await page.getByRole('button', { name: 'List View' }).click()
     await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
     await page.getByRole('button', { name: 'Purchase First Factory' }).click()
+    expect(player.personalAccountName).toBe(manualOnboardingName)
 
     await page.goto('/leaderboard')
-    await expect(page.getByText(regeneratedName, { exact: true })).toBeVisible()
+    await expect(page.getByText(manualOnboardingName, { exact: true })).toBeVisible()
 
     await page.goto('/settings')
     const previousSettingsName = (await page.getByLabel('Personal account name').inputValue()).trim()
@@ -273,13 +279,13 @@ test.describe('Onboarding wizard', () => {
     expect(generatedSettingsName.split(' ')).toHaveLength(3)
     expect(generatedSettingsName.length).toBeLessThanOrEqual(30)
     expect(generatedSettingsName).not.toBe(previousSettingsName)
-    await page.getByLabel('Personal account name').fill('Aster Nova Finch')
+    await page.getByLabel('Personal account name').fill('Nova Ember Hart')
     await expect(page.getByText('Name is available.')).toBeVisible()
     await page.getByRole('button', { name: 'Save' }).click()
     await expect(page.getByText('Display name updated.')).toBeVisible()
 
     await page.goto('/leaderboard')
-    await expect(page.getByText('Aster Nova Finch', { exact: true })).toBeVisible()
+    await expect(page.getByText('Nova Ember Hart', { exact: true })).toBeVisible()
   })
 
   test('retries personal account name reservation on duplicate during onboarding', async ({ page }) => {

@@ -261,7 +261,8 @@ export default {
     companyName: 'Firmenname',
     companyNamePlaceholder: 'Firmennamen eingeben',
     personalAccountNameTitle: 'Name Ihres persönlichen Kontos',
-    personalAccountNameDesc: 'Dieses Pseudonym wird in Ranglisten auf allen Servern angezeigt.',
+    personalAccountNameDesc:
+      'Dies ist Ihre öffentliche In-Game-Identität. Verwenden Sie nicht Ihren echten Namen. Dieses Pseudonym wird in Ranglisten auf allen Servern angezeigt.',
     personalAccountNameExisting: 'Ihr vorhandener persönlicher Kontoname wird wiederverwendet und hier nicht überschrieben.',
     personalAccountNameGenerationFailed: 'Ein eindeutiger persönlicher Kontoname konnte gerade nicht reserviert werden. Bitte versuchen Sie es erneut.',
     regeneratePersonalAccountName: 'Neu generieren',

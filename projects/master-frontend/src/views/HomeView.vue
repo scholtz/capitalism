@@ -2,7 +2,12 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { fetchGameServers, type GameServerSummary } from '@/lib/masterApi'
+import {
+  fetchGameServers,
+  fetchPersonalAccountName,
+  type GameServerSummary,
+  updatePersonalAccountName,
+} from '@/lib/masterApi'
 import { formatHeartbeatDistance } from '@/lib/time'
 import {
   formatProlongLabel,
@@ -26,8 +31,17 @@ const prolongSuccess = ref(false)
 const startupPackLoading = ref(false)
 const startupPackError = ref('')
 const startupPackSuccess = ref(false)
+const personalAccountName = ref('')
+const originalPersonalAccountName = ref('')
+const personalNameLoading = ref(false)
+const personalNameSaving = ref(false)
+const personalNameError = ref('')
+const personalNameSuccess = ref(false)
 
 const onlineCount = computed(() => servers.value.filter((server) => server.isOnline).length)
+const hasPersonalNameChanges = computed(
+  () => personalAccountName.value.trim() !== originalPersonalAccountName.value.trim(),
+)
 const startupPackClaimedAtLabel = computed(() => {
   const claimedAt = auth.player?.startupPackClaimedAtUtc
   if (!claimedAt) {
@@ -55,6 +69,24 @@ async function loadServers() {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load game servers.'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadPersonalName() {
+  if (!auth.token) return
+
+  personalNameLoading.value = true
+  personalNameError.value = ''
+  personalNameSuccess.value = false
+  try {
+    const loadedName = await fetchPersonalAccountName(auth.token)
+    const nextName = loadedName ?? auth.player?.displayName ?? ''
+    personalAccountName.value = nextName
+    originalPersonalAccountName.value = nextName
+  } catch (error) {
+    personalNameError.value = error instanceof Error ? error.message : 'Failed to load in-game name.'
+  } finally {
+    personalNameLoading.value = false
   }
 }
 
@@ -86,6 +118,33 @@ async function handleStartupPackClaim() {
   }
 }
 
+async function handlePersonalNameSave() {
+  if (!auth.token || !hasPersonalNameChanges.value) return
+
+  const trimmedName = personalAccountName.value.trim()
+  if (!trimmedName) {
+    personalNameError.value = 'In-game Name is required.'
+    return
+  }
+
+  personalNameSaving.value = true
+  personalNameError.value = ''
+  personalNameSuccess.value = false
+  try {
+    const updatedProfile = await updatePersonalAccountName(auth.token, trimmedName)
+    personalAccountName.value = updatedProfile.personalAccountName ?? trimmedName
+    originalPersonalAccountName.value = personalAccountName.value
+    if (auth.player) {
+      auth.player.personalAccountName = personalAccountName.value
+    }
+    personalNameSuccess.value = true
+  } catch (error) {
+    personalNameError.value = error instanceof Error ? error.message : 'Failed to save in-game name.'
+  } finally {
+    personalNameSaving.value = false
+  }
+}
+
 function logout() {
   auth.logout()
   void router.push('/')
@@ -93,6 +152,9 @@ function logout() {
 
 onMounted(() => {
   void loadServers()
+  if (auth.isAuthenticated) {
+    void loadPersonalName()
+  }
 })
 </script>
 
@@ -149,6 +211,34 @@ onMounted(() => {
         >
           <p class="section-kicker">Your account</p>
           <h2>Subscription</h2>
+
+          <section class="personal-name-card" aria-label="Personal account name settings">
+            <h3>In-game Name</h3>
+            <p class="personal-name-note">
+              Do not use your real name. This name will be visible publicly on leaderboards.
+            </p>
+            <label for="master-personal-account-name" class="personal-name-label">Personal Account Name</label>
+            <input
+              id="master-personal-account-name"
+              v-model="personalAccountName"
+              type="text"
+              maxlength="30"
+              class="personal-name-input"
+              :disabled="personalNameLoading || personalNameSaving"
+            />
+            <div class="personal-name-actions">
+              <button
+                class="prolong-btn"
+                type="button"
+                :disabled="personalNameLoading || personalNameSaving || !hasPersonalNameChanges"
+                @click="handlePersonalNameSave"
+              >
+                {{ personalNameSaving ? 'Saving…' : 'Save In-game Name' }}
+              </button>
+            </div>
+            <p v-if="personalNameError" class="prolong-error" role="alert">{{ personalNameError }}</p>
+            <p v-if="personalNameSuccess" class="prolong-success" role="status">✓ In-game name updated.</p>
+          </section>
 
           <section class="startup-pack-card" aria-label="Startup Pack">
             <div class="startup-pack-header">
@@ -627,6 +717,46 @@ onMounted(() => {
     radial-gradient(circle at top left, rgba(236, 145, 5, 0.16), transparent 42%),
     rgba(18, 44, 83, 0.04);
   border: 1px solid rgba(236, 145, 5, 0.18);
+}
+
+.personal-name-card {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 18px;
+  background: rgba(18, 44, 83, 0.04);
+}
+
+.personal-name-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.personal-name-note {
+  margin-top: 0.4rem;
+  color: var(--color-muted);
+  font-size: 0.88rem;
+}
+
+.personal-name-label {
+  display: block;
+  margin-top: 0.9rem;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.personal-name-input {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--color-ink);
+  font: inherit;
+}
+
+.personal-name-actions {
+  margin-top: 0.75rem;
 }
 
 .startup-pack-header {

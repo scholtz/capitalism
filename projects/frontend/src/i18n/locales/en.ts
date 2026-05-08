@@ -261,7 +261,8 @@ export default {
     companyName: 'Company Name',
     companyNamePlaceholder: 'Enter your company name',
     personalAccountNameTitle: 'Your personal account name',
-    personalAccountNameDesc: 'This pseudonym will appear on leaderboards across all servers.',
+    personalAccountNameDesc:
+      'This is your public in-game identity. Do not use your real name. It will appear on leaderboards across all servers.',
     personalAccountNameExisting: 'Your existing personal account name is reused and cannot be overwritten here.',
     personalAccountNameGenerationFailed: 'Unable to reserve a unique personal account name right now. Please try again.',
     regeneratePersonalAccountName: 'Regenerate',

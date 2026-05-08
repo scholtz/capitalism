@@ -1299,8 +1299,19 @@ useTickRefresh(async () => {
               {{ t('onboarding.regeneratePersonalAccountName') }}
             </button>
           </div>
-          <p class="personal-name-preview">{{ personalAccountName }}</p>
-          <p class="personal-name-note">
+          <label for="onboarding-personal-account-name" class="personal-name-label">
+            {{ t('playerSettings.displayNameLabel') }}
+          </label>
+          <input
+            id="onboarding-personal-account-name"
+            v-model="personalAccountName"
+            type="text"
+            class="personal-name-input"
+            maxlength="30"
+            :disabled="hasExistingPersonalAccountName"
+            :aria-describedby="hasExistingPersonalAccountName ? 'onboarding-personal-name-note' : undefined"
+          />
+          <p id="onboarding-personal-name-note" class="personal-name-note">
             {{
               hasExistingPersonalAccountName
                 ? t('onboarding.personalAccountNameExisting')
@@ -2319,11 +2330,22 @@ useTickRefresh(async () => {
   margin: 0;
 }
 
-.personal-name-preview {
-  margin: 0.6rem 0 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--color-secondary);
+.personal-name-label {
+  display: block;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.personal-name-input {
+  width: 100%;
+  margin-top: 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0.55rem 0.7rem;
+  font: inherit;
 }
 
 .personal-name-note {
