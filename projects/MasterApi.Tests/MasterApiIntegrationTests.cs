@@ -316,8 +316,10 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
 
     [Theory]
     [InlineData("AB", "PERSONAL_ACCOUNT_NAME_TOO_SHORT")]
+    [InlineData("Aster Nova Finchington Evergree", "PERSONAL_ACCOUNT_NAME_TOO_LONG")]
     [InlineData("Aster Nova Finchington Evergreen", "PERSONAL_ACCOUNT_NAME_TOO_LONG")]
     [InlineData("Aster Nova 123", "PERSONAL_ACCOUNT_NAME_INVALID_CHARACTERS")]
+    [InlineData("Aster@Nova Finch", "PERSONAL_ACCOUNT_NAME_INVALID_CHARACTERS")]
     public async Task UpdatePersonalAccountName_InvalidInput_ReturnsValidationError(string personalAccountName, string expectedCode)
     {
         var (token, _) = await RegisterAndGetTokenAsync($"personal-invalid-{Guid.NewGuid():N}@example.com");
