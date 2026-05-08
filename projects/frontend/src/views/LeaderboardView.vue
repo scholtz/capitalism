@@ -279,7 +279,9 @@ function isTargetClosest(leadingWealth: number, target: EndgameTargetPerson, ind
             <div class="rank-badge">{{ rankBadge(index) }}</div>
             <div class="rank-info">
               <div class="rank-name">
-                <span class="personal-account-name">{{ rank.personalAccountName ?? rank.displayName }}</span>
+                <RouterLink class="personal-account-name personal-account-link" :to="`/player/${rank.playerId}`">
+                  {{ rank.personalAccountName ?? rank.displayName }}
+                </RouterLink>
                 <span v-if="rank.playerId === currentPlayerId" class="you-badge">{{ t('leaderboard.you') }}</span>
               </div>
               <div class="rank-companies">
@@ -642,6 +644,16 @@ function isTargetClosest(leadingWealth: number, target: EndgameTargetPerson, ind
 
 .personal-account-name {
   color: var(--color-secondary);
+}
+
+.personal-account-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.personal-account-link:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
 }
 
 .you-badge {

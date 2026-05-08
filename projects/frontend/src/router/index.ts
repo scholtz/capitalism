@@ -9,6 +9,7 @@ const router = createRouter({
     { path: '/onboarding', name: 'onboarding', component: () => import('@/views/OnboardingView.vue') },
     { path: '/dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue') },
     { path: '/settings', name: 'player-settings', component: () => import('@/views/PlayerSettingsView.vue') },
+    { path: '/player/:id', name: 'player-profile', component: () => import('@/views/PlayerProfileView.vue') },
     { path: '/news', name: 'news', component: () => import('@/views/NewsView.vue') },
     {
       path: '/operations',

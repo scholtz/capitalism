@@ -1862,17 +1862,21 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       return routeJson({ isPersonalAccountNameAvailable: !isTakenByOther })
     }
 
-    if (query.includes('updatePersonalAccountName')) {
+    if (query.includes('updatePersonalAccountName') || query.includes('setPersonalAccountName')) {
       const player = resolveCurrentPlayer()
       if (!player) {
         return routeJsonError('Not authenticated.')
       }
       const input = body.variables?.input
-      const nextName = (input?.personalAccountName as string | undefined)?.trim() ?? ''
+      const nextName = ((body.variables?.name as string | undefined) ?? (input?.personalAccountName as string | undefined) ?? '').trim()
       const onlyIfMissing = !!input?.onlyIfMissing
       if (onlyIfMissing && player.personalAccountName) {
         return routeJson({
           updatePersonalAccountName: {
+            id: player.id,
+            personalAccountName: player.personalAccountName,
+          },
+          setPersonalAccountName: {
             id: player.id,
             personalAccountName: player.personalAccountName,
           },
@@ -1900,6 +1904,10 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
           id: player.id,
           personalAccountName: player.personalAccountName,
         },
+        setPersonalAccountName: {
+          id: player.id,
+          personalAccountName: player.personalAccountName,
+        },
       })
     }
 
@@ -1909,6 +1917,7 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       !query.includes('rankings') &&
       !query.includes('companyRankings') &&
       !query.includes('updatePersonalAccountName') &&
+      !query.includes('setPersonalAccountName') &&
       !query.includes('isPersonalAccountNameAvailable')
 
     if (isStandalonePersonalAccountNameQuery) {

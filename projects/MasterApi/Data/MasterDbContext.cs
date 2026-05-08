@@ -41,7 +41,6 @@ public sealed class MasterDbContext(DbContextOptions<MasterDbContext> options) :
         var player = modelBuilder.Entity<PlayerAccount>();
         player.HasKey(p => p.Id);
         player.HasIndex(p => p.Email).IsUnique();
-        player.HasIndex(p => p.PersonalAccountName).IsUnique();
         player.Property(p => p.Email).HasMaxLength(200);
         player.Property(p => p.DisplayName).HasMaxLength(120);
         player.Property(p => p.PersonalAccountName).HasMaxLength(120);

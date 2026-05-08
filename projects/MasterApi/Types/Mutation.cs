@@ -17,7 +17,7 @@ public sealed partial class Mutation
     private const int StartupPackDurationMonths = 3;
     internal const string PersonalAccountNameClaimType = "capitalism/personal-account-name";
     private const int MinPersonalAccountNameLength = 3;
-    private const int MaxPersonalAccountNameLength = 30;
+    private const int MaxPersonalAccountNameLength = 60;
 
 
     private static string NormalizeRequiredUrl(string url, string errorCode)

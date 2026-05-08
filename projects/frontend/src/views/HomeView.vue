@@ -125,7 +125,11 @@ useTickRefresh(() => loadHomeData(true))
         <tbody>
           <tr v-for="(rank, index) in rankings.slice(0, 5)" :key="rank.playerId">
             <td class="rank-num">{{ index + 1 }}</td>
-            <td class="leaderboard-personal-name">{{ rank.personalAccountName ?? rank.displayName }}</td>
+            <td class="leaderboard-personal-name">
+              <RouterLink class="player-link" :to="`/player/${rank.playerId}`">
+                {{ rank.personalAccountName ?? rank.displayName }}
+              </RouterLink>
+            </td>
             <td class="wealth">${{ rank.totalWealth.toLocaleString() }}</td>
             <td>{{ rank.companyCount }}</td>
           </tr>
@@ -282,6 +286,16 @@ section {
 
 .leaderboard-personal-name {
   font-weight: 700;
+}
+
+.player-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.player-link:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
 }
 
 .wealth {

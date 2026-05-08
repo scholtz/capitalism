@@ -674,12 +674,16 @@ onMounted(async () => {
     if (hasAuthenticatedSession.value) {
       try {
         const personalData = await gqlMasterRequest<{ personalAccountName: string | null }>(PERSONAL_ACCOUNT_NAME_QUERY)
-        if (personalData.personalAccountName) {
-          personalAccountName.value = personalData.personalAccountName
+        const existingPersonalAccountName = personalData.personalAccountName ?? auth.player?.personalAccountName
+        if (existingPersonalAccountName) {
+          personalAccountName.value = existingPersonalAccountName
           hasExistingPersonalAccountName.value = true
         }
       } catch {
-        // Keep onboarding functional even if master name lookup fails.
+        if (auth.player?.personalAccountName) {
+          personalAccountName.value = auth.player.personalAccountName
+          hasExistingPersonalAccountName.value = true
+        }
       }
       await syncOngoingOnboardingState()
     }
@@ -1326,7 +1330,7 @@ useTickRefresh(async () => {
             v-model="personalAccountName"
             type="text"
             class="personal-name-input"
-            maxlength="30"
+            maxlength="60"
             :disabled="hasExistingPersonalAccountName"
             :aria-describedby="hasExistingPersonalAccountName ? 'onboarding-personal-name-note' : undefined"
           />
