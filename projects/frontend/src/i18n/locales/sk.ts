@@ -188,6 +188,7 @@ export default {
     offline: 'Ste offline - zobrazuje sa ulo\u017een\u00fd obsah.',
     updateAvailable: 'K dispoz\u00edcii je nov\u00e1 verzia.',
     refreshToUpdate: 'Obnovi\u0165',
+    referralApplied: 'Vitajte! V\u00e1\u0161 odpor\u00fa\u010dac\u00ed k\u00f3d bol aplik\u00f3van\u00fd. Vychutnajte si \u0161tart na trhu.',
   },
   chat: {
     eyebrow: 'Spolo\u010dn\u00fd kan\u00e1l',

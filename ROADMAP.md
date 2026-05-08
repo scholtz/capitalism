@@ -301,7 +301,7 @@ When unit is being modified user can still change it. For example when user upgr
 
 ## The onboarding 
 
-**Status: 75% complete** (May 2026, personal account alias generation, public profiles, and cross-server display-name settings completed)
+**Status: 85% complete** (May 2026, personal account alias generation, public profiles, cross-server display-name settings, and referral code UX (capture + post-login clear) completed)
 
 Onboarding process:
 1. User is given $200000 to his personal account and he picks the game player name
