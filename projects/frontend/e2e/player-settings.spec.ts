@@ -162,9 +162,61 @@ test.describe('Referral code UX', () => {
 
     await page.goto('/')
 
-    // After mounting with auth token present, the referral code is cleared
+    // After mounting with auth token present, the referral code is cleared from localStorage
     await expect(page.locator('.referral-banner--pending')).toBeHidden()
     const stored = await page.evaluate(() => localStorage.getItem('referral_code'))
     expect(stored).toBeNull()
+  })
+
+  test('referral welcome banner is shown after login when a referral code was present', async ({
+    page,
+  }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+
+    // Pre-store a referral code and authenticate — the app detects the code on mount and marks it applied
+    await page.addInitScript(
+      ({ token, expires }) => {
+        localStorage.setItem('referral_code', 'SHOWBANNER')
+        localStorage.setItem('auth_token', token)
+        localStorage.setItem('auth_expires', expires)
+      },
+      {
+        token: `token-${player.id}`,
+        expires: new Date(Date.now() + 7200000).toISOString(),
+      },
+    )
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.goto('/')
+
+    // The welcome banner MUST be shown after login when a referral code was present
+    await expect(page.locator('.referral-banner')).toBeVisible()
+    await expect(page.locator('.referral-banner')).toContainText('referral code has been applied')
+  })
+
+  test('referral welcome banner can be dismissed', async ({ page }) => {
+    const player = makePlayer()
+    const state = setupMockApi(page, { players: [player] })
+
+    await page.addInitScript(
+      ({ token, expires }) => {
+        localStorage.setItem('referral_code', 'DISMISSTEST')
+        localStorage.setItem('auth_token', token)
+        localStorage.setItem('auth_expires', expires)
+      },
+      {
+        token: `token-${player.id}`,
+        expires: new Date(Date.now() + 7200000).toISOString(),
+      },
+    )
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await page.goto('/')
+    await expect(page.locator('.referral-banner')).toBeVisible()
+    await page.locator('.referral-dismiss').click()
+    await expect(page.locator('.referral-banner')).toBeHidden()
   })
 })
