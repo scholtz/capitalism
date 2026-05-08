@@ -1311,7 +1311,6 @@ useTickRefresh(async () => {
             :disabled="hasExistingPersonalAccountName"
             :aria-describedby="hasExistingPersonalAccountName ? 'onboarding-personal-name-note' : undefined"
           />
-          <p class="personal-name-preview">{{ personalAccountName }}</p>
           <p id="onboarding-personal-name-note" class="personal-name-note">
             {{
               hasExistingPersonalAccountName
@@ -2329,13 +2328,6 @@ useTickRefresh(async () => {
 
 .personal-name-card-header h3 {
   margin: 0;
-}
-
-.personal-name-preview {
-  margin: 0.55rem 0 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--color-secondary);
 }
 
 .personal-name-label {

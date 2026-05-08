@@ -112,6 +112,9 @@ export function setupMockApi(page: Page, initialState: Partial<MockState> = {}):
   page.route('**/graphql', async (route) => {
     const body = route.request().postDataJSON() as { query: string; variables?: unknown }
     const query = body.query ?? ''
+    const isMeQuery = /\bme\s*\{/.test(query)
+    const isPersonalAccountNameQuery =
+      /\bpersonalAccountName\b/.test(query) && !query.includes('updatePersonalAccountName')
 
     // Register mutation
     if (query.includes('mutation') && query.includes('register')) {
@@ -273,7 +276,7 @@ export function setupMockApi(page: Page, initialState: Partial<MockState> = {}):
 
     // Me query — must not match gameServers, mySubscription, or prolongSubscription
     if (
-      query.includes('me') &&
+      isMeQuery &&
       !query.includes('gameServers') &&
       !query.includes('mySubscription') &&
       !query.includes('prolongSubscription')
@@ -320,7 +323,7 @@ export function setupMockApi(page: Page, initialState: Partial<MockState> = {}):
       return
     }
 
-    if (query.includes('personalAccountName')) {
+    if (isPersonalAccountNameQuery && !isMeQuery) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

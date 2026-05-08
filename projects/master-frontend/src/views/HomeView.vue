@@ -80,7 +80,7 @@ async function loadPersonalName() {
   personalNameSuccess.value = false
   try {
     const loadedName = await fetchPersonalAccountName(auth.token)
-    const nextName = loadedName ?? auth.player?.personalAccountName ?? auth.player?.displayName ?? ''
+    const nextName = loadedName ?? auth.player?.displayName ?? ''
     personalAccountName.value = nextName
     originalPersonalAccountName.value = nextName
   } catch (error) {

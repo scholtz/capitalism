@@ -261,7 +261,7 @@ test.describe('Onboarding wizard', () => {
 
     const manualOnboardingName = 'Aster Nova Finch'
     await nameInput.fill(manualOnboardingName)
-    await expect(page.locator('.personal-name-preview')).toHaveText(manualOnboardingName)
+    await expect(nameInput).toHaveValue(manualOnboardingName)
 
     await page.getByLabel('Company Name').fill('Name Driven Corp')
     await page.getByRole('button', { name: 'List View' }).click()
