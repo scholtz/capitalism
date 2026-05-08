@@ -45,6 +45,30 @@ public sealed class GameStatusResult
     public decimal TopRealWorldWealth { get; set; }
 }
 
+/// <summary>Winner details for game-end state payloads.</summary>
+public sealed class GameEndWinnerResult
+{
+    public string Name { get; set; } = string.Empty;
+    public decimal NetWorth { get; set; }
+}
+
+/// <summary>Top-ranking entry returned when the server is ended.</summary>
+public sealed class GameEndTopRankingEntry
+{
+    public int Rank { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal NetWorth { get; set; }
+}
+
+/// <summary>Canonical game-end state payload for frontend lockout UX.</summary>
+public sealed class GameEndStateResult
+{
+    public bool IsEnded { get; set; }
+    public GameEndWinnerResult? Winner { get; set; }
+    public DateTime? EndedAt { get; set; }
+    public List<GameEndTopRankingEntry> TopRanking { get; set; } = [];
+}
+
 /// <summary>Individual company ranking for the leaderboard.</summary>
 public sealed class CompanyRanking
 {

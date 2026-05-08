@@ -101,6 +101,11 @@ public sealed partial class AppDbInitializer(
             SeedProducts();
         }
 
+        if (!await dbContext.RealWorldBillionaires.AnyAsync())
+        {
+            SeedRealWorldBillionaires();
+        }
+
         await dbContext.SaveChangesAsync();
 
         if (!await dbContext.CityResources.AnyAsync())
@@ -152,6 +157,17 @@ public sealed partial class AppDbInitializer(
             new City { Id = CreateDeterministicGuid("city:bratislava"), Name = "Bratislava", CountryCode = "SK", Latitude = 48.1486, Longitude = 17.1077, Population = 475_000, AverageRentPerSqm = 14m, BaseSalaryPerManhour = 18m },
             new City { Id = CreateDeterministicGuid("city:prague"), Name = "Prague", CountryCode = "CZ", Latitude = 50.0755, Longitude = 14.4378, Population = 1_350_000, AverageRentPerSqm = 18m, BaseSalaryPerManhour = 22m },
             new City { Id = CreateDeterministicGuid("city:vienna"), Name = "Vienna", CountryCode = "AT", Latitude = 48.2082, Longitude = 16.3738, Population = 1_900_000, AverageRentPerSqm = 22m, BaseSalaryPerManhour = 28m });
+    }
+
+    private void SeedRealWorldBillionaires()
+    {
+        var now = DateTime.UtcNow;
+        dbContext.RealWorldBillionaires.AddRange(
+            new RealWorldBillionaire { Id = CreateDeterministicGuid("endgame:target:1"), Rank = 1, Name = "Elon Musk", EstimatedNetWorthUsd = 430_000_000_000m, UpdatedAtUtc = now },
+            new RealWorldBillionaire { Id = CreateDeterministicGuid("endgame:target:2"), Rank = 2, Name = "Jeff Bezos", EstimatedNetWorthUsd = 240_000_000_000m, UpdatedAtUtc = now },
+            new RealWorldBillionaire { Id = CreateDeterministicGuid("endgame:target:3"), Rank = 3, Name = "Mark Zuckerberg", EstimatedNetWorthUsd = 220_000_000_000m, UpdatedAtUtc = now },
+            new RealWorldBillionaire { Id = CreateDeterministicGuid("endgame:target:4"), Rank = 4, Name = "Larry Ellison", EstimatedNetWorthUsd = 190_000_000_000m, UpdatedAtUtc = now },
+            new RealWorldBillionaire { Id = CreateDeterministicGuid("endgame:target:5"), Rank = 5, Name = "Bernard Arnault", EstimatedNetWorthUsd = 170_000_000_000m, UpdatedAtUtc = now });
     }
 
 

@@ -4318,19 +4318,21 @@ export function setupMockApi(page: Page, initial?: Partial<MockState>): MockStat
       })
     }
 
-    if (query.includes('endgameTargetLeaderboard')) {
+    if (query.includes('endgameTargetLeaderboard') || query.includes('realWorldBenchmarks')) {
+      const benchmarks = [
+        { name: 'Elon Musk', estimatedUsdWealth: 430000000000 },
+        { name: 'Jeff Bezos', estimatedUsdWealth: 240000000000 },
+        { name: 'Mark Zuckerberg', estimatedUsdWealth: 220000000000 },
+        { name: 'Larry Ellison', estimatedUsdWealth: 190000000000 },
+        { name: 'Bernard Arnault', estimatedUsdWealth: 170000000000 },
+      ]
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           data: {
-            endgameTargetLeaderboard: [
-              { name: 'Elon Musk', estimatedUsdWealth: 430000000000 },
-              { name: 'Jeff Bezos', estimatedUsdWealth: 240000000000 },
-              { name: 'Mark Zuckerberg', estimatedUsdWealth: 220000000000 },
-              { name: 'Larry Ellison', estimatedUsdWealth: 190000000000 },
-              { name: 'Bernard Arnault', estimatedUsdWealth: 170000000000 },
-            ],
+            endgameTargetLeaderboard: benchmarks,
+            realWorldBenchmarks: benchmarks,
           },
         }),
       })

@@ -173,7 +173,7 @@ public sealed class TickProcessor(
 
         var rankingHtml = string.Join(
             string.Empty,
-            ranking.Select((row, index) =>
+            ranking.Take(10).Select((row, index) =>
                 $"<li>#{index + 1} {row.DisplayName}: ${row.TotalWealth:N0}</li>"));
         var statsHtml = bestRevenueTick is null
             ? string.Empty

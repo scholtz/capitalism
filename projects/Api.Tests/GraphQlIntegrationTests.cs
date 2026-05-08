@@ -25432,6 +25432,35 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     }
 
     [Fact]
+    public async Task RealWorldBenchmarks_ReturnsTopFiveRealWorldBenchmarks()
+    {
+        var result = await ExecuteGraphQlAsync("{ realWorldBenchmarks { name estimatedUsdWealth } }");
+        var items = result.GetProperty("data").GetProperty("realWorldBenchmarks").EnumerateArray().ToList();
+
+        Assert.Equal(5, items.Count);
+        Assert.Equal("Elon Musk", items[0].GetProperty("name").GetString());
+        Assert.Equal(170_000_000_000m, items[^1].GetProperty("estimatedUsdWealth").GetDecimal());
+    }
+
+    [Fact]
+    public async Task RealWorldBillionaireTable_IsSeededWithFiveRows()
+    {
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        _ = isolatedFactory.CreateClient();
+
+        await using var scope = isolatedFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var rows = await db.RealWorldBillionaires
+            .AsNoTracking()
+            .OrderBy(row => row.Rank)
+            .ToListAsync();
+
+        Assert.Equal(5, rows.Count);
+        Assert.Equal("Elon Musk", rows[0].Name);
+        Assert.Equal(170_000_000_000m, rows[^1].EstimatedNetWorthUsd);
+    }
+
+    [Fact]
     public async Task GameStatus_ReturnsGameOverFieldsAndWinThreshold()
     {
         await using var isolatedFactory = new ApiWebApplicationFactory();
@@ -25456,6 +25485,47 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
         Assert.Equal("Endgame Champion", gameStatus.GetProperty("winnerName").GetString());
         Assert.Equal(170_000_000_000m, gameStatus.GetProperty("topRealWorldWealth").GetDecimal());
         Assert.NotNull(gameStatus.GetProperty("gameOverAt").GetString());
+    }
+
+    [Fact]
+    public async Task GameEndState_WhenEnded_ReturnsWinnerAndTopRanking()
+    {
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        var client = isolatedFactory.CreateClient();
+        var tokenA = await RegisterAndGetTokenAsync(client, $"endgame-state-a-{Guid.NewGuid():N}@test.com", "Endgame A");
+        var tokenB = await RegisterAndGetTokenAsync(client, $"endgame-state-b-{Guid.NewGuid():N}@test.com", "Endgame B");
+        _ = tokenA;
+        _ = tokenB;
+
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var players = await db.Players.Where(player => player.Role != PlayerRole.Admin).ToListAsync();
+            var playerA = players.Single(player => player.DisplayName == "Endgame A");
+            var playerB = players.Single(player => player.DisplayName == "Endgame B");
+            playerA.PersonalCash = 171_000_000_000m;
+            playerB.PersonalCash = 140_000_000_000m;
+
+            var gameState = await db.GameStates.FirstAsync();
+            gameState.IsEnded = true;
+            gameState.EndedAtUtc = DateTime.UtcNow;
+            gameState.WinnerDisplayName = playerA.PersonalAccountName ?? playerA.DisplayName;
+            gameState.WinnerWealth = playerA.PersonalCash;
+            await db.SaveChangesAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            client,
+            "{ gameEndState { isEnded endedAt winner { name netWorth } topRanking { rank name netWorth } } }");
+
+        var gameEndState = result.GetProperty("data").GetProperty("gameEndState");
+        Assert.True(gameEndState.GetProperty("isEnded").GetBoolean());
+        Assert.Equal("Endgame A", gameEndState.GetProperty("winner").GetProperty("name").GetString());
+        Assert.Equal(171_000_000_000m, gameEndState.GetProperty("winner").GetProperty("netWorth").GetDecimal());
+        var topRanking = gameEndState.GetProperty("topRanking").EnumerateArray().ToList();
+        Assert.NotEmpty(topRanking);
+        Assert.Equal(1, topRanking[0].GetProperty("rank").GetInt32());
+        Assert.Equal("Endgame A", topRanking[0].GetProperty("name").GetString());
     }
 
     [Fact]

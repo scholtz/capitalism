@@ -320,9 +320,10 @@ public sealed partial class Query
     }
 
     /// <summary>Returns the top real-world wealth targets for the endgame win condition.</summary>
-    public List<EndgameTargetPersonResult> GetEndgameTargetLeaderboard()
+    public async Task<List<EndgameTargetPersonResult>> GetEndgameTargetLeaderboard([Service] AppDbContext db)
     {
-        return EndgameService.GetTargetRichList()
+        var targets = await EndgameService.GetTargetRichListAsync(db);
+        return targets
             .Select(target => new EndgameTargetPersonResult
             {
                 Name = target.Name,
@@ -348,10 +349,63 @@ public sealed partial class Query
             IsGameOver = gameState.IsEnded,
             GameOverAt = gameState.EndedAtUtc,
             WinnerName = gameState.WinnerDisplayName,
-            TopRealWorldWealth = EndgameService.GetWinThresholdWealth(),
+            TopRealWorldWealth = await EndgameService.GetWinThresholdWealthAsync(db),
         };
     }
 
     /// <summary>Alias of endgameTargetLeaderboard for compatibility with rich-list naming in product docs.</summary>
-    public List<EndgameTargetPersonResult> GetRichList() => GetEndgameTargetLeaderboard();
+    public Task<List<EndgameTargetPersonResult>> GetRichList([Service] AppDbContext db) => GetEndgameTargetLeaderboard(db);
+
+    /// <summary>Canonical endgame benchmark query used by docs and frontend progress views.</summary>
+    public Task<List<EndgameTargetPersonResult>> GetRealWorldBenchmarks([Service] AppDbContext db) => GetEndgameTargetLeaderboard(db);
+
+    /// <summary>Canonical game-end payload containing winner details and final top-10 personal ranking.</summary>
+    public async Task<GameEndStateResult?> GetGameEndState([Service] AppDbContext db)
+    {
+        var gameState = await db.GameStates
+            .AsNoTracking()
+            .Select(state => new
+            {
+                state.IsEnded,
+                state.EndedAtUtc,
+                state.WinnerDisplayName,
+                state.WinnerWealth,
+            })
+            .FirstOrDefaultAsync();
+        if (gameState is null)
+        {
+            return null;
+        }
+
+        var result = new GameEndStateResult
+        {
+            IsEnded = gameState.IsEnded,
+            EndedAt = gameState.EndedAtUtc,
+            Winner = gameState.WinnerDisplayName is null
+                ? null
+                : new GameEndWinnerResult
+                {
+                    Name = gameState.WinnerDisplayName,
+                    NetWorth = gameState.WinnerWealth ?? 0m,
+                },
+        };
+
+        if (!gameState.IsEnded)
+        {
+            return result;
+        }
+
+        var ranking = await EndgameService.ComputePlayerWealthRankingAsync(db);
+        result.TopRanking = ranking
+            .Take(10)
+            .Select((entry, index) => new GameEndTopRankingEntry
+            {
+                Rank = index + 1,
+                Name = entry.DisplayName,
+                NetWorth = entry.TotalWealth,
+            })
+            .ToList();
+
+        return result;
+    }
 }
