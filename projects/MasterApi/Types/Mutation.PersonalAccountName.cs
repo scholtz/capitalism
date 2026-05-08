@@ -6,10 +6,24 @@ namespace MasterApi.Types;
 public sealed partial class Mutation
 {
     [HotChocolate.Authorization.Authorize]
+    public async Task<MasterPlayerProfile> SetPersonalAccountName(
+        string name,
+        ClaimsPrincipal claimsPrincipal,
+        [Service] Data.MasterDbContext db)
+        => await SavePersonalAccountNameAsync(name, onlyIfMissing: false, claimsPrincipal, db);
+
+    [HotChocolate.Authorization.Authorize]
     public async Task<MasterPlayerProfile> UpdatePersonalAccountName(
         UpdatePersonalAccountNameInput input,
         ClaimsPrincipal claimsPrincipal,
         [Service] Data.MasterDbContext db)
+        => await SavePersonalAccountNameAsync(input.PersonalAccountName, input.OnlyIfMissing, claimsPrincipal, db);
+
+    private static async Task<MasterPlayerProfile> SavePersonalAccountNameAsync(
+        string personalAccountName,
+        bool onlyIfMissing,
+        ClaimsPrincipal claimsPrincipal,
+        Data.MasterDbContext db)
     {
         var player = await Query.GetCurrentUserAsync(claimsPrincipal, db)
             ?? throw new GraphQLException(
@@ -18,27 +32,12 @@ public sealed partial class Mutation
                     .SetCode("PLAYER_NOT_FOUND")
                     .Build());
 
-        if (input.OnlyIfMissing && !string.IsNullOrWhiteSpace(player.PersonalAccountName))
+        if (onlyIfMissing && !string.IsNullOrWhiteSpace(player.PersonalAccountName))
         {
             return Query.ToProfile(player);
         }
 
-        var normalized = NormalizePersonalAccountName(input.PersonalAccountName);
-        var exists = await db.PlayerAccounts
-            .AnyAsync(candidate =>
-                candidate.Id != player.Id
-                && candidate.PersonalAccountName != null
-                && candidate.PersonalAccountName.ToLower() == normalized.ToLower());
-
-        if (exists)
-        {
-            throw new GraphQLException(
-                ErrorBuilder.New()
-                    .SetMessage("Personal account name is already taken.")
-                    .SetCode("DUPLICATE_PERSONAL_ACCOUNT_NAME")
-                    .Build());
-        }
-
+        var normalized = NormalizePersonalAccountName(personalAccountName);
         player.PersonalAccountName = normalized;
         await db.SaveChangesAsync();
         return Query.ToProfile(player);

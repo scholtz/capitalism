@@ -250,10 +250,10 @@ test.describe('Onboarding wizard', () => {
     await page.locator('.city-card', { hasText: 'Bratislava' }).click()
     await page.getByRole('button', { name: 'Next' }).click()
 
-    const nameInput = page.getByRole('textbox', { name: 'Personal account name' })
+    const nameInput = page.getByRole('textbox', { name: 'Your Player Alias' })
     const generatedName = (await nameInput.inputValue()).trim()
     expect(generatedName.split(' ')).toHaveLength(3)
-    expect(generatedName.length).toBeLessThanOrEqual(30)
+    expect(generatedName.length).toBeLessThanOrEqual(60)
     await expect(page.getByText('Do not use your real name.')).toBeVisible()
 
     const regenerateButton = page.getByRole('button', { name: 'Regenerate' })
@@ -276,14 +276,15 @@ test.describe('Onboarding wizard', () => {
     await expect(page.getByText(manualOnboardingName, { exact: true })).toBeVisible()
 
     await page.goto('/settings')
-    const previousSettingsName = (await page.getByLabel('Personal account name').inputValue()).trim()
+    const previousSettingsName = (await page.getByLabel('Your Player Alias').inputValue()).trim()
     await page.getByRole('button', { name: 'Generate random name' }).click()
-    const generatedSettingsName = (await page.getByLabel('Personal account name').inputValue()).trim()
+    const generatedSettingsName = (await page.getByLabel('Your Player Alias').inputValue()).trim()
     expect(generatedSettingsName.split(' ')).toHaveLength(3)
-    expect(generatedSettingsName.length).toBeLessThanOrEqual(30)
+    expect(generatedSettingsName.length).toBeLessThanOrEqual(60)
     expect(generatedSettingsName).not.toBe(previousSettingsName)
-    await page.getByLabel('Personal account name').fill('Nova Ember Hart')
-    await expect(page.getByText('Name is available.')).toBeVisible()
+    await page.getByLabel('Your Player Alias').fill('Nova Ember Hart')
+    await expect(page.getByText('Leaderboard preview')).toBeVisible()
+    await expect(page.getByText('Nova Ember Hart', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Save' }).click()
     await expect(page.getByText('Display name updated.')).toBeVisible()
 
@@ -291,9 +292,9 @@ test.describe('Onboarding wizard', () => {
     await expect(page.getByText('Nova Ember Hart', { exact: true })).toBeVisible()
   })
 
-  test('retries personal account name reservation on duplicate during onboarding', async ({ page }) => {
-    const player = makePlayer({ displayName: 'player@test.com', personalAccountName: null })
-    const state = setupMockApi(page, { players: [player], forcePersonalAccountNameDuplicateOnce: true })
+  test('reuses an existing personal account name during onboarding', async ({ page }) => {
+    const player = makePlayer({ displayName: 'player@test.com', personalAccountName: 'Existing Alias' })
+    const state = setupMockApi(page, { players: [player] })
 
     await authenticateViaLocalStorage(page, `token-${player.id}`)
     state.currentUserId = player.id
@@ -305,15 +306,15 @@ test.describe('Onboarding wizard', () => {
     await page.locator('.city-card', { hasText: 'Bratislava' }).click()
     await page.getByRole('button', { name: 'Next' }).click()
 
+    await expect(page.getByRole('textbox', { name: 'Your Player Alias' })).toHaveValue('Existing Alias')
+    await expect(page.getByRole('textbox', { name: 'Your Player Alias' })).toBeDisabled()
     await page.getByLabel('Company Name').fill('Retry Name Corp')
     await page.getByRole('button', { name: 'List View' }).click()
     await page.getByRole('button', { name: /Industrial Plot A1/i }).click()
     await page.getByRole('button', { name: 'Purchase First Factory' }).click()
 
     await expect(page.getByRole('heading', { name: 'Choose Product & First Shop Lot' })).toBeVisible()
-    expect(state.forcePersonalAccountNameDuplicateOnce).toBe(false)
-    expect(player.personalAccountName).not.toBeNull()
-    expect((player.personalAccountName ?? '').split(' ')).toHaveLength(3)
+    expect(player.personalAccountName).toBe('Existing Alias')
   })
 
   test('complete full onboarding flow', async ({ page }) => {

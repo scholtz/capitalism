@@ -250,7 +250,27 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
     }
 
     [Fact]
-    public async Task UpdatePersonalAccountName_DuplicateName_ReturnsError()
+    public async Task SetPersonalAccountName_Succeeds()
+    {
+        var (token, _) = await RegisterAndGetTokenAsync($"personal-set-{Guid.NewGuid():N}@example.com");
+
+        var result = await GraphQlAsync("""
+            mutation SetPersonalAccountName($name: String!) {
+              setPersonalAccountName(name: $name) {
+                id
+                personalAccountName
+              }
+            }
+            """,
+            new { name = "Aster Nova Finch" },
+            token);
+
+        Assert.False(result.TryGetProperty("errors", out _));
+        Assert.Equal("Aster Nova Finch", result.GetProperty("data").GetProperty("setPersonalAccountName").GetProperty("personalAccountName").GetString());
+    }
+
+    [Fact]
+    public async Task UpdatePersonalAccountName_DuplicateName_IsAllowed()
     {
         var unique = Guid.NewGuid().ToString("N");
         var (tokenA, _) = await RegisterAndGetTokenAsync($"personal-a-{unique}@example.com");
@@ -272,8 +292,8 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
             new { input = new { personalAccountName = "Echo Prime Vale", onlyIfMissing = false } },
             tokenB);
 
-        Assert.True(duplicate.TryGetProperty("errors", out var errors));
-        Assert.Contains("DUPLICATE_PERSONAL_ACCOUNT_NAME", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+        Assert.False(duplicate.TryGetProperty("errors", out _));
+        Assert.Equal("Echo Prime Vale", duplicate.GetProperty("data").GetProperty("updatePersonalAccountName").GetProperty("personalAccountName").GetString());
     }
 
     [Fact]
@@ -316,8 +336,7 @@ public sealed class MasterApiIntegrationTests : IClassFixture<MasterApiWebApplic
 
     [Theory]
     [InlineData("AB", "PERSONAL_ACCOUNT_NAME_TOO_SHORT")]
-    [InlineData("Aster Nova Finchington Evergree", "PERSONAL_ACCOUNT_NAME_TOO_LONG")]
-    [InlineData("Aster Nova Finchington Evergreen Rutherford Montgomery", "PERSONAL_ACCOUNT_NAME_TOO_LONG")]
+    [InlineData("Aster Nova Finchington Evergreen Rutherford Montgomery Somerset", "PERSONAL_ACCOUNT_NAME_TOO_LONG")]
     [InlineData("Aster Nova 123", "PERSONAL_ACCOUNT_NAME_INVALID_CHARACTERS")]
     [InlineData("Aster@Nova Finch", "PERSONAL_ACCOUNT_NAME_INVALID_CHARACTERS")]
     public async Task UpdatePersonalAccountName_InvalidInput_ReturnsValidationError(string personalAccountName, string expectedCode)

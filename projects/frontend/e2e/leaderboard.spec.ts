@@ -54,6 +54,29 @@ test.describe('Leaderboard page', () => {
     await expect(cards.first()).toContainText('Alice')
   })
 
+  test('opens a public player profile from the leaderboard', async ({ page }) => {
+    const player = makePlayer({ id: 'player-profile', displayName: 'player@test.com', personalAccountName: 'Nova Ember Hart' })
+    player.companies.push({
+      id: 'comp-profile',
+      playerId: player.id,
+      name: 'Profile Corp',
+      cash: 850000,
+      foundedAtUtc: '2026-01-01T00:00:00Z',
+      buildings: [],
+    })
+
+    const state = setupMockApi(page, { players: [player] })
+    addPlayerShareholding(state, player.id, 'comp-profile', 5000)
+
+    await page.goto('/leaderboard')
+    await page.getByRole('link', { name: 'Nova Ember Hart' }).click()
+
+    await expect(page).toHaveURL(/\/player\/player-profile/)
+    await expect(page.getByRole('heading', { name: 'Nova Ember Hart' })).toBeVisible()
+    await expect(page.getByText('Public Profile')).toBeVisible()
+    await expect(page.getByText('Share portfolio')).toBeVisible()
+  })
+
   test('shows wealth breakdown per entry', async ({ page }) => {
     const player = makePlayer({ displayName: 'Tycoon' })
     player.companies.push({

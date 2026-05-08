@@ -124,22 +124,15 @@ public sealed class Query
         ClaimsPrincipal claimsPrincipal,
         [Service] MasterDbContext db)
     {
-        var currentPlayer = await GetCurrentUserAsync(claimsPrincipal, db)
+        _ = await GetCurrentUserAsync(claimsPrincipal, db)
             ?? throw new GraphQLException(
                 ErrorBuilder.New()
                     .SetMessage("Player not found.")
                     .SetCode("PLAYER_NOT_FOUND")
                     .Build());
 
-        var normalized = Mutation.NormalizePersonalAccountName(personalAccountName);
-        var isTakenByOther = await db.PlayerAccounts
-            .AsNoTracking()
-            .AnyAsync(player =>
-                player.Id != currentPlayer.Id
-                && player.PersonalAccountName != null
-                && player.PersonalAccountName.ToLower() == normalized.ToLower());
-
-        return !isTakenByOther;
+        _ = Mutation.NormalizePersonalAccountName(personalAccountName);
+        return true;
     }
 
     [HotChocolate.Authorization.Authorize]

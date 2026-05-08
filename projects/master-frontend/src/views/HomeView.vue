@@ -255,7 +255,7 @@ onMounted(() => {
               id="master-personal-account-name"
               v-model="personalAccountName"
               type="text"
-              maxlength="30"
+              maxlength="60"
               class="personal-name-input"
               :disabled="personalNameLoading || personalNameSaving"
             />
