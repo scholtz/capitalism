@@ -330,4 +330,28 @@ public sealed partial class Query
             })
             .ToList();
     }
+
+    /// <summary>Returns the current game-over status for endgame-aware UI surfaces.</summary>
+    public async Task<GameStatusResult?> GetGameStatus([Service] AppDbContext db)
+    {
+        var gameState = await db.GameStates
+            .AsNoTracking()
+            .Select(state => new { state.IsEnded, state.EndedAtUtc, state.WinnerDisplayName })
+            .FirstOrDefaultAsync();
+        if (gameState is null)
+        {
+            return null;
+        }
+
+        return new GameStatusResult
+        {
+            IsGameOver = gameState.IsEnded,
+            GameOverAt = gameState.EndedAtUtc,
+            WinnerName = gameState.WinnerDisplayName,
+            TopRealWorldWealth = EndgameService.GetWinThresholdWealth(),
+        };
+    }
+
+    /// <summary>Alias of endgameTargetLeaderboard for compatibility with rich-list naming in product docs.</summary>
+    public List<EndgameTargetPersonResult> GetRichList() => GetEndgameTargetLeaderboard();
 }

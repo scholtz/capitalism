@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppFooter from '@/components/layout/AppFooter.vue'
+import GameOverOverlay from '@/components/layout/GameOverOverlay.vue'
 import { usePwa } from '@/composables/usePwa'
 import { useAuthStore } from '@/stores/auth'
 import { useGameStateStore } from '@/stores/gameState'
@@ -15,6 +17,7 @@ const auth = useAuthStore()
 const gameStateStore = useGameStateStore()
 const newsStore = useNewsStore()
 const gameAdminStore = useGameAdminStore()
+const { gameState } = storeToRefs(gameStateStore)
 gameStateStore.start()
 
 onMounted(() => {
@@ -64,6 +67,7 @@ watch(
       <RouterView />
     </main>
     <AppFooter />
+    <GameOverOverlay :game-state="gameState" />
   </div>
 </template>
 

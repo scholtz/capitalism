@@ -36,6 +36,15 @@ public sealed class EndgameTargetPersonResult
     public decimal EstimatedUsdWealth { get; set; }
 }
 
+/// <summary>Compact game-over status payload used by frontend endgame overlays.</summary>
+public sealed class GameStatusResult
+{
+    public bool IsGameOver { get; set; }
+    public DateTime? GameOverAt { get; set; }
+    public string? WinnerName { get; set; }
+    public decimal TopRealWorldWealth { get; set; }
+}
+
 /// <summary>Individual company ranking for the leaderboard.</summary>
 public sealed class CompanyRanking
 {

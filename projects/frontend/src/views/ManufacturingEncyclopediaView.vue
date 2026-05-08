@@ -230,6 +230,13 @@ function navigateToEntry(slug: string) {
       </div>
     </header>
 
+    <section class="win-condition-card" aria-label="Win Condition">
+      <h2>{{ t('encyclopedia.winConditionTitle') }}</h2>
+      <p>{{ t('encyclopedia.winConditionBody') }}</p>
+      <h3>{{ t('encyclopedia.winConditionGoalTitle') }}</h3>
+      <p>{{ t('encyclopedia.winConditionGoalBody') }}</p>
+    </section>
+
     <div v-if="loading" class="loading">{{ t('common.loading') }}</div>
     <div v-else-if="error" class="error-message" role="alert">{{ error }}</div>
     <section v-else class="resources-section">
@@ -314,6 +321,22 @@ function navigateToEntry(slug: string) {
 .hero {
   justify-content: space-between;
   align-items: flex-end;
+}
+
+.win-condition-card {
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(30, 41, 59, 0.1));
+}
+
+.win-condition-card h2,
+.win-condition-card h3 {
+  margin: 0;
+}
+
+.win-condition-card h3 {
+  margin-top: 0.75rem;
 }
 
 .eyebrow,

@@ -25421,6 +25421,44 @@ public sealed class TickAndScheduledActionsTests : IClassFixture<ApiWebApplicati
     }
 
     [Fact]
+    public async Task RichList_ReturnsTopFiveRealWorldBenchmarks()
+    {
+        var result = await ExecuteGraphQlAsync("{ richList { name estimatedUsdWealth } }");
+        var items = result.GetProperty("data").GetProperty("richList").EnumerateArray().ToList();
+
+        Assert.Equal(5, items.Count);
+        Assert.Equal("Elon Musk", items[0].GetProperty("name").GetString());
+        Assert.Equal(170_000_000_000m, items[^1].GetProperty("estimatedUsdWealth").GetDecimal());
+    }
+
+    [Fact]
+    public async Task GameStatus_ReturnsGameOverFieldsAndWinThreshold()
+    {
+        await using var isolatedFactory = new ApiWebApplicationFactory();
+        _ = isolatedFactory.CreateClient();
+
+        await using (var scope = isolatedFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var gameState = await db.GameStates.FirstAsync();
+            gameState.IsEnded = true;
+            gameState.EndedAtUtc = DateTime.UtcNow;
+            gameState.WinnerDisplayName = "Endgame Champion";
+            await db.SaveChangesAsync();
+        }
+
+        var result = await ExecuteGraphQlAsync(
+            isolatedFactory.CreateClient(),
+            "{ gameStatus { isGameOver gameOverAt winnerName topRealWorldWealth } }");
+
+        var gameStatus = result.GetProperty("data").GetProperty("gameStatus");
+        Assert.True(gameStatus.GetProperty("isGameOver").GetBoolean());
+        Assert.Equal("Endgame Champion", gameStatus.GetProperty("winnerName").GetString());
+        Assert.Equal(170_000_000_000m, gameStatus.GetProperty("topRealWorldWealth").GetDecimal());
+        Assert.NotNull(gameStatus.GetProperty("gameOverAt").GetString());
+    }
+
+    [Fact]
     public async Task BuyShares_WhenGameIsEnded_ReturnsGameEndedError()
     {
         await using var isolatedFactory = new ApiWebApplicationFactory();

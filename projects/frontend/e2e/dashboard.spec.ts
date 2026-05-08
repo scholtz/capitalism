@@ -2010,8 +2010,35 @@ test.describe('Dashboard tick-refresh stability', () => {
     await authenticateViaLocalStorage(page, `token-${player.id}`)
     await page.goto('/dashboard')
 
+    const gameOverDialog = page.getByRole('dialog', { name: 'Server completed' })
+    await expect(gameOverDialog).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Game Over' })).toBeVisible()
-    await expect(page.getByText('Tycoon Winner has completed this server by surpassing Bernard Arnault.')).toBeVisible()
+    await expect(gameOverDialog.getByText('Tycoon Winner has completed this server by surpassing Bernard Arnault.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Share victory' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Read-only mode' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Read-only mode' })).toHaveAttribute(
+      'title',
+      'This action is disabled because this server has already ended.',
+    )
+  })
+
+  test('shows personal endgame progress meter in founder view', async ({ page }) => {
+    const player = makePlayer({
+      onboardingCompletedAtUtc: '2026-01-01T00:00:00Z',
+      personalCash: 500000,
+      companies: [],
+      activeAccountType: 'PERSON',
+      activeCompanyId: null,
+    })
+    const state = setupMockApi(page, { players: [player] })
+    state.currentUserId = player.id
+    state.currentToken = `token-${player.id}`
+
+    await authenticateViaLocalStorage(page, `token-${player.id}`)
+    await page.goto('/dashboard')
+
+    await expect(page.getByText('Progress to endgame target')).toBeVisible()
+    await expect(page.getByRole('progressbar', { name: 'Progress to endgame target' })).toBeVisible()
+    await expect(page.getByText('You\'re at $')).toBeVisible()
   })
 })

@@ -78,6 +78,19 @@ test.describe('Manufacturing encyclopedia', () => {
     await expect(page.locator('.composition-node.ingredient').nth(1)).toContainText('10 packs')
   })
 
+  test('shows the win-condition help section', async ({ page }) => {
+    setupMockApi(page, {
+      resourceTypes: [woodResource],
+      productTypes: [electronicComponents, electronicTableProduct],
+    })
+
+    await page.goto('/encyclopedia')
+
+    await expect(page.getByRole('heading', { name: 'Win condition' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'How to finish a server' })).toBeVisible()
+    await expect(page.getByText('The server ends when any player beats the lowest wealth target')).toBeVisible()
+  })
+
   test('localizes encyclopedia resource names when language changes', async ({ page }) => {
     setupMockApi(page, {
       resourceTypes: [{ ...woodResource, imageUrl: null }],
